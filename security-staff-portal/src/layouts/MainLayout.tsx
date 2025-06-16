@@ -27,9 +27,20 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   // Get user display name
-  const userDisplayName = authState.user
-    ? `${authState.user.firstName} ${authState.user.lastName}`
-    : 'User';
+  const userDisplayName = (() => {
+    if (!authState.user) return 'User';
+
+    const user = authState.user;
+    const firstName = user.firstName || user.first_name || '';
+    const lastName = user.lastName || user.last_name || '';
+
+    if (firstName || lastName) {
+      return `${firstName} ${lastName}`.trim();
+    }
+    
+    // Fallback to username if names aren't available
+    return user.username || 'User';
+  })();
 
   // Define navigation items based on role
   const getNavItems = (): INavLinkGroup[] => {

@@ -5,21 +5,27 @@ import type {
   CapacityCheck,
   ToiletCheck,
   EnforcementVisit,
-  Venue
+  Venue,
+  ScheduledShift,
+  ShiftTemplate,
+  RecurringShiftPattern,
+  RecurringPatternType,
+  StaffProfile,
+  ScheduledShiftStatus
 } from '../types';
 import { AcceptedVenueTerms } from '../types/profile';
 
 class ShiftService {
   // Venue-related methods
   async getVenues(): Promise<Venue[]> {
-    const response = await api.get<Venue[]>('/api/venues/');
+    const response = await api.get<Venue[]>('/venues/');
     return response.data;
   }
 
   // Terms and conditions acceptance
   async hasAcceptedVenueTerms(venueId: number): Promise<boolean> {
     try {
-      const response = await api.get<{ hasAccepted: boolean }>(`/api/venues/${venueId}/terms-acceptance`);
+      const response = await api.get<{ hasAccepted: boolean }>(`/venues/${venueId}/terms-acceptance`);
       return response.data.hasAccepted;
     } catch (error) {
       console.error('Error checking terms acceptance:', error);
@@ -28,19 +34,296 @@ class ShiftService {
   }
 
   async acceptVenueTerms(venueId: number): Promise<AcceptedVenueTerms> {
-    const response = await api.post<AcceptedVenueTerms>(`/api/venues/${venueId}/accept-terms`, {});
+    const response = await api.post<AcceptedVenueTerms>(`/venues/${venueId}/accept-terms`, {});
+    return response.data;
+  }
+
+  // Staff profile methods
+  async getStaffProfiles(): Promise<StaffProfile[]> {
+    try {
+      // Get users from the API instead of staff-profiles
+      const response = await api.get<any[]>('/users/');
+      
+      // Check for empty response
+      if (!response || !response.data) {
+        console.warn('Empty response from users API');
+        return [];
+      }
+      
+      // Ensure data is an array
+      if (!Array.isArray(response.data)) {
+        console.warn('Users data is not an array:', response.data);
+        return [];
+      }
+      
+      // Map the user data to StaffProfile format
+      const profiles: StaffProfile[] = response.data.map(user => ({
+        id: user.id,
+        userId: user.id,
+        firstName: user.first_name || '',
+        lastName: user.last_name || '',
+        email: user.email,
+        phone: user.profile?.phone_number || null,
+        profileImage: user.profile?.profile_image_url || null,
+        qualifications: null,
+        isActive: user.is_active
+      }));
+      
+      return profiles;
+    } catch (error) {
+      console.error('Error fetching staff profiles:', error);
+      return [];
+    }
+  }
+
+  // Scheduled Shifts methods
+  async getScheduledShifts(params?: {
+    startDate?: string,
+    endDate?: string,
+    venueId?: number,
+    staffId?: number,
+    status?: ScheduledShiftStatus,
+    isPublished?: boolean
+  }): Promise<ScheduledShift[]> {
+    const queryParams = new URLSearchParams();
+    
+    if (params) {
+      if (params.startDate) queryParams.append('start_date', params.startDate);
+      if (params.endDate) queryParams.append('end_date', params.endDate);
+      if (params.venueId) queryParams.append('venue', params.venueId.toString());
+      if (params.staffId) queryParams.append('staff', params.staffId.toString());
+      if (params.status) queryParams.append('status', params.status);
+      if (params.isPublished !== undefined) queryParams.append('is_published', params.isPublished.toString());
+    }
+    
+    const url = `/scheduled-shifts/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await api.get<ScheduledShift[]>(url);
+    return response.data;
+  }
+
+  async getScheduledShiftById(shiftId: number): Promise<ScheduledShift> {
+    const response = await api.get<ScheduledShift>(`/scheduled-shifts/${shiftId}/`);
+    return response.data;
+  }
+
+  async createScheduledShift(data: {
+    venueId: number,
+    staffId?: number | null,
+    startTime: string,
+    endTime: string,
+    notes?: string | null,
+    isPublished?: boolean,
+    requiresFireSafetyChecks?: boolean,
+    requiresCapacityMonitoring?: boolean,
+    requiresToiletChecks?: boolean,
+    payRate?: number | null
+  }): Promise<ScheduledShift> {
+    const requestData = {
+      venue: data.venueId,
+      staff: data.staffId || null,
+      start_time: data.startTime,
+      end_time: data.endTime,
+      notes: data.notes || null,
+      is_published: data.isPublished !== undefined ? data.isPublished : false,
+      requires_fire_safety_checks: data.requiresFireSafetyChecks !== undefined ? data.requiresFireSafetyChecks : false,
+      requires_capacity_monitoring: data.requiresCapacityMonitoring !== undefined ? data.requiresCapacityMonitoring : false,
+      requires_toilet_checks: data.requiresToiletChecks !== undefined ? data.requiresToiletChecks : false,
+      pay_rate: data.payRate || null
+    };
+    
+    const response = await api.post<ScheduledShift>('/scheduled-shifts/', requestData);
+    return response.data;
+  }
+
+  async updateScheduledShift(shiftId: number, data: Partial<{
+    venueId: number,
+    staffId: number | null,
+    startTime: string,
+    endTime: string,
+    notes: string | null,
+    isPublished: boolean,
+    status: ScheduledShiftStatus,
+    requiresFireSafetyChecks: boolean,
+    requiresCapacityMonitoring: boolean,
+    requiresToiletChecks: boolean,
+    payRate: number | null
+  }>): Promise<ScheduledShift> {
+    const requestData = {} as any;
+    
+    if (data.venueId !== undefined) requestData.venue = data.venueId;
+    if (data.staffId !== undefined) requestData.staff = data.staffId;
+    if (data.startTime !== undefined) requestData.start_time = data.startTime;
+    if (data.endTime !== undefined) requestData.end_time = data.endTime;
+    if (data.notes !== undefined) requestData.notes = data.notes;
+    if (data.isPublished !== undefined) requestData.is_published = data.isPublished;
+    if (data.status !== undefined) requestData.status = data.status;
+    if (data.requiresFireSafetyChecks !== undefined) requestData.requires_fire_safety_checks = data.requiresFireSafetyChecks;
+    if (data.requiresCapacityMonitoring !== undefined) requestData.requires_capacity_monitoring = data.requiresCapacityMonitoring;
+    if (data.requiresToiletChecks !== undefined) requestData.requires_toilet_checks = data.requiresToiletChecks;
+    if (data.payRate !== undefined) requestData.pay_rate = data.payRate;
+    
+    const response = await api.patch<ScheduledShift>(`/scheduled-shifts/${shiftId}/`, requestData);
+    return response.data;
+  }
+
+  async deleteScheduledShift(shiftId: number): Promise<void> {
+    await api.delete(`/scheduled-shifts/${shiftId}/`);
+  }
+
+  async publishScheduledShifts(shiftIds: number[]): Promise<ScheduledShift[]> {
+    const response = await api.post<ScheduledShift[]>('/scheduled-shifts/publish/', { shift_ids: shiftIds });
+    return response.data;
+  }
+
+  async assignStaffToShift(shiftId: number, staffId: number): Promise<ScheduledShift> {
+    const response = await api.post<ScheduledShift>(`/scheduled-shifts/${shiftId}/assign/`, { staff_id: staffId });
+    return response.data;
+  }
+
+  async unassignStaffFromShift(shiftId: number): Promise<ScheduledShift> {
+    const response = await api.post<ScheduledShift>(`/scheduled-shifts/${shiftId}/unassign/`, {});
+    return response.data;
+  }
+
+  // Recurring shift pattern methods
+  async createRecurringPattern(data: {
+    shiftId: number,
+    patternType: RecurringPatternType,
+    daysOfWeek?: number[],
+    interval?: number,
+    endDate?: string | null,
+    endOccurrences?: number | null
+  }): Promise<RecurringShiftPattern> {
+    const requestData = {
+      shift: data.shiftId,
+      pattern_type: data.patternType,
+      days_of_week: data.daysOfWeek || [],
+      interval: data.interval || 1,
+      end_date: data.endDate || null,
+      end_occurrences: data.endOccurrences || null
+    };
+    
+    const response = await api.post<RecurringShiftPattern>('/recurring-patterns/', requestData);
+    return response.data;
+  }
+
+  async generateRecurringShifts(patternId: number): Promise<ScheduledShift[]> {
+    const response = await api.post<ScheduledShift[]>(`/recurring-patterns/${patternId}/generate/`, {});
+    return response.data;
+  }
+
+  // Shift templates methods
+  async getShiftTemplates(): Promise<ShiftTemplate[]> {
+    const response = await api.get<ShiftTemplate[]>('/shift-templates/');
+    return response.data;
+  }
+
+  async createShiftTemplate(data: {
+    name: string,
+    description?: string | null,
+    venueId: number,
+    startTime: string,
+    endTime: string,
+    dayOfWeek?: number | null,
+    requiresFireSafetyChecks?: boolean,
+    requiresCapacityMonitoring?: boolean,
+    requiresToiletChecks?: boolean
+  }): Promise<ShiftTemplate> {
+    const requestData = {
+      name: data.name,
+      description: data.description || null,
+      venue: data.venueId,
+      start_time: data.startTime,
+      end_time: data.endTime,
+      day_of_week: data.dayOfWeek !== undefined ? data.dayOfWeek : null,
+      requires_fire_safety_checks: data.requiresFireSafetyChecks !== undefined ? data.requiresFireSafetyChecks : false,
+      requires_capacity_monitoring: data.requiresCapacityMonitoring !== undefined ? data.requiresCapacityMonitoring : false,
+      requires_toilet_checks: data.requiresToiletChecks !== undefined ? data.requiresToiletChecks : false
+    };
+    
+    const response = await api.post<ShiftTemplate>('/shift-templates/', requestData);
+    return response.data;
+  }
+
+  async applyShiftTemplate(templateId: number, data: {
+    startDate: string,
+    endDate: string,
+    daysOfWeek?: number[],
+    staffIds?: number[]
+  }): Promise<ScheduledShift[]> {
+    const requestData = {
+      start_date: data.startDate,
+      end_date: data.endDate,
+      days_of_week: data.daysOfWeek || [],
+      staff_ids: data.staffIds || []
+    };
+    
+    const response = await api.post<ScheduledShift[]>(`/shift-templates/${templateId}/apply/`, requestData);
+    return response.data;
+  }
+
+  // Bulk operations
+  async createBulkShifts(data: {
+    venueId: number,
+    startDate: string,
+    endDate: string,
+    startTime: string,
+    endTime: string,
+    daysOfWeek: number[],
+    staffIds?: number[],
+    notes?: string,
+    isPublished?: boolean,
+    requiresFireSafetyChecks?: boolean,
+    requiresCapacityMonitoring?: boolean,
+    requiresToiletChecks?: boolean
+  }): Promise<ScheduledShift[]> {
+    const requestData = {
+      venue_id: data.venueId,
+      start_date: data.startDate,
+      end_date: data.endDate,
+      start_time: data.startTime,
+      end_time: data.endTime,
+      days_of_week: data.daysOfWeek,
+      staff_ids: data.staffIds || [],
+      notes: data.notes || '',
+      is_published: data.isPublished !== undefined ? data.isPublished : false,
+      requires_fire_safety_checks: data.requiresFireSafetyChecks !== undefined ? data.requiresFireSafetyChecks : false,
+      requires_capacity_monitoring: data.requiresCapacityMonitoring !== undefined ? data.requiresCapacityMonitoring : false,
+      requires_toilet_checks: data.requiresToiletChecks !== undefined ? data.requiresToiletChecks : false
+    };
+    
+    const response = await api.post<ScheduledShift[]>('/scheduled-shifts/bulk/', requestData);
+    return response.data;
+  }
+
+  async copyShifts(data: {
+    sourceStartDate: string,
+    sourceEndDate: string,
+    targetStartDate: string,
+    venueIds?: number[],
+    includeStaffAssignments?: boolean
+  }): Promise<ScheduledShift[]> {
+    const requestData = {
+      source_start_date: data.sourceStartDate,
+      source_end_date: data.sourceEndDate,
+      target_start_date: data.targetStartDate,
+      venue_ids: data.venueIds || [],
+      include_staff_assignments: data.includeStaffAssignments !== undefined ? data.includeStaffAssignments : true
+    };
+    
+    const response = await api.post<ScheduledShift[]>('/scheduled-shifts/copy/', requestData);
     return response.data;
   }
 
   // Shift-related methods
   async getShifts(staffId?: number): Promise<Shift[]> {
-    const url = staffId ? `/api/shifts/?staff=${staffId}` : '/api/shifts/';
+    const url = staffId ? `/shifts/?staff=${staffId}` : '/shifts/';
     const response = await api.get<Shift[]>(url);
     return response.data;
   }
 
   async getShiftById(shiftId: number): Promise<Shift> {
-    const response = await api.get<Shift>(`/api/shift/${shiftId}/`);
+    const response = await api.get<Shift>(`/shifts/${shiftId}/`);
     return response.data;
   }
 
@@ -54,12 +337,12 @@ class ShiftService {
       await this.acceptVenueTerms(data.venueId);
     }
 
-    const response = await api.post<Shift>('/api/shift/submit/', data);
+    const response = await api.post<Shift>('/shifts/submit/', data);
     return response.data;
   }
 
   async endShift(shiftId: number, endSignature: string): Promise<Shift> {
-    const response = await api.post<Shift>(`/api/shift/${shiftId}/end/`, {
+    const response = await api.post<Shift>(`/shifts/${shiftId}/end/`, {
       endSignature
     });
     return response.data;
@@ -70,48 +353,48 @@ class ShiftService {
     managerSignature: string,
     managerNotes?: string
   }): Promise<Shift> {
-    const response = await api.post<Shift>(`/api/manager/approve/${shiftId}/`, data);
+    const response = await api.post<Shift>(`/shifts/${shiftId}/approve/`, data);
     return response.data;
   }
 
   // Check-related methods
   async getFireExitChecks(shiftId: number): Promise<FireExitCheck[]> {
-    const response = await api.get<FireExitCheck[]>(`/api/shift/${shiftId}/fire-exit-checks/`);
+    const response = await api.get<FireExitCheck[]>(`/shifts/${shiftId}/fire-exit-checks/`);
     return response.data;
   }
 
   async addFireExitCheck(shiftId: number, data: Omit<FireExitCheck, 'id' | 'shift' | 'timestamp'>): Promise<FireExitCheck> {
-    const response = await api.post<FireExitCheck>(`/api/shift/${shiftId}/fire-exit-checks/`, data);
+    const response = await api.post<FireExitCheck>(`/shifts/${shiftId}/fire-exit-checks/`, data);
     return response.data;
   }
 
   async getCapacityChecks(shiftId: number): Promise<CapacityCheck[]> {
-    const response = await api.get<CapacityCheck[]>(`/api/shift/${shiftId}/capacity-checks/`);
+    const response = await api.get<CapacityCheck[]>(`/shifts/${shiftId}/capacity-checks/`);
     return response.data;
   }
 
   async addCapacityCheck(shiftId: number, data: Omit<CapacityCheck, 'id' | 'shift' | 'timestamp'>): Promise<CapacityCheck> {
-    const response = await api.post<CapacityCheck>(`/api/shift/${shiftId}/capacity-checks/`, data);
+    const response = await api.post<CapacityCheck>(`/shifts/${shiftId}/capacity-checks/`, data);
     return response.data;
   }
 
   async getToiletChecks(shiftId: number): Promise<ToiletCheck[]> {
-    const response = await api.get<ToiletCheck[]>(`/api/shift/${shiftId}/toilet-checks/`);
+    const response = await api.get<ToiletCheck[]>(`/shifts/${shiftId}/toilet-checks/`);
     return response.data;
   }
 
   async addToiletCheck(shiftId: number, data: Omit<ToiletCheck, 'id' | 'shift' | 'timestamp'>): Promise<ToiletCheck> {
-    const response = await api.post<ToiletCheck>(`/api/shift/${shiftId}/toilet-checks/`, data);
+    const response = await api.post<ToiletCheck>(`/shifts/${shiftId}/toilet-checks/`, data);
     return response.data;
   }
 
   async getEnforcementVisits(shiftId: number): Promise<EnforcementVisit[]> {
-    const response = await api.get<EnforcementVisit[]>(`/api/shift/${shiftId}/enforcement-visits/`);
+    const response = await api.get<EnforcementVisit[]>(`/shifts/${shiftId}/enforcement-visits/`);
     return response.data;
   }
 
   async addEnforcementVisit(shiftId: number, data: Omit<EnforcementVisit, 'id' | 'shift' | 'timestamp'>): Promise<EnforcementVisit> {
-    const response = await api.post<EnforcementVisit>(`/api/shift/${shiftId}/enforcement-visits/`, data);
+    const response = await api.post<EnforcementVisit>(`/shifts/${shiftId}/enforcement-visits/`, data);
     return response.data;
   }
 }

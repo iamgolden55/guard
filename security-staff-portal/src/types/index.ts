@@ -3,3 +3,4 @@ export * from './shift';
 export * from './invoice';
 export * from './deputy';
 export * from './profile';
+export * from './venue';

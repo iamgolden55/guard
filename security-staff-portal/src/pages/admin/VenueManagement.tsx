@@ -1,5 +1,7 @@
 import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
+import venueService from '../../services/venueService';
+import { Venue as ApiVenue } from '../../types/venue';
 import {
   DetailsList,
   DetailsListLayoutMode,
@@ -34,6 +36,7 @@ import { MainLayout } from '../../layouts';
 const addIcon: IIconProps = { iconName: 'Add' };
 const refreshIcon: IIconProps = { iconName: 'Refresh' };
 
+// Define local interface for UI venues (using camelCase)
 interface Venue {
   id: number;
   name: string;
@@ -45,12 +48,50 @@ interface Venue {
   contactEmail: string;
   contactPhone: string;
   isActive: boolean;
-  hasFireSafetyRequirements: boolean;
+  hasFireSafetyRequirements: boolean; // maps to requires_fire_safety_checks
   requiresCapacityMonitoring: boolean;
   requiresToiletChecks: boolean;
-  description: string; // Added description field
-  termsAndConditions: string; // Added terms and conditions field
+  description: string;
+  termsAndConditions: string;
 }
+
+// Convert API venue to UI venue format
+const mapToUiVenue = (apiVenue: ApiVenue): Venue => ({
+  id: apiVenue.id || 0,
+  name: apiVenue.name,
+  address: apiVenue.address,
+  city: apiVenue.city,
+  postalCode: apiVenue.postal_code,
+  capacity: apiVenue.capacity,
+  contactName: apiVenue.contact_name,
+  contactEmail: apiVenue.contact_email,
+  contactPhone: apiVenue.contact_phone,
+  isActive: apiVenue.is_active,
+  hasFireSafetyRequirements: apiVenue.requires_fire_safety_checks,
+  requiresCapacityMonitoring: apiVenue.requires_capacity_monitoring,
+  requiresToiletChecks: apiVenue.requires_toilet_checks,
+  description: apiVenue.description,
+  termsAndConditions: apiVenue.terms_and_conditions
+});
+
+// Convert UI venue to API venue format
+const mapToApiVenue = (uiVenue: Venue): ApiVenue => ({
+  name: uiVenue.name,
+  address: uiVenue.address,
+  city: uiVenue.city,
+  postal_code: uiVenue.postalCode,
+  country: 'United Kingdom', // Default to UK
+  is_active: uiVenue.isActive,
+  capacity: uiVenue.capacity,
+  contact_name: uiVenue.contactName,
+  contact_email: uiVenue.contactEmail,
+  contact_phone: uiVenue.contactPhone,
+  description: uiVenue.description,
+  terms_and_conditions: uiVenue.termsAndConditions,
+  requires_fire_safety_checks: uiVenue.hasFireSafetyRequirements,
+  requires_capacity_monitoring: uiVenue.requiresCapacityMonitoring,
+  requires_toilet_checks: uiVenue.requiresToiletChecks
+});
 
 const VenueManagement: React.FC = () => {
   const [venues, setVenues] = useState<Venue[]>([]);
@@ -80,6 +121,9 @@ const VenueManagement: React.FC = () => {
     description: '', // Added description field
     termsAndConditions: '' // Added terms and conditions field
   });
+
+  // Add state for auth issues
+  const [hasAuthIssue, setHasAuthIssue] = useState(false);
 
   // Set up columns for the DetailsList
   const columns: IColumn[] = [
@@ -198,109 +242,86 @@ const VenueManagement: React.FC = () => {
     },
   ];
 
+  // Function to handle authentication issues
+  const handleLogout = useCallback(() => {
+    console.log('Manual logout triggered');
+    // Clear all auth data
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+    // Redirect to login
+    window.location.href = '/login';
+  }, []);
+
   // Load venues from API - using useCallback to avoid dependency issues in useEffect
   const loadVenues = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setHasAuthIssue(false);
+    
     try {
-      // In a real application, this would use the actual API
-      // const response = await venueService.getAllVenues();
-      // setVenues(response);
+      console.log('Attempting to fetch venues...');
 
-      // For demo purposes, we'll use mock data
-      const mockVenues: Venue[] = [
-        {
-          id: 1,
-          name: 'The Grand Hall',
-          address: '123 Main Street',
-          city: 'London',
-          postalCode: 'SW1A 1AA',
-          capacity: 500,
-          contactName: 'John Smith',
-          contactEmail: 'john.smith@thegrandhall.com',
-          contactPhone: '+44 20 1234 5678',
-          isActive: true,
-          hasFireSafetyRequirements: true,
-          requiresCapacityMonitoring: true,
-          requiresToiletChecks: true,
-          description: 'Historic venue in central London with grand architecture and modern facilities.',
-          termsAndConditions: 'The security staff must adhere to the venue\'s fire safety protocols. Regular headcounts must be performed. Staff must wear venue-approved uniforms.'
-        },
-        {
-          id: 2,
-          name: 'City Nightclub',
-          address: '45 Club Avenue',
-          city: 'Manchester',
-          postalCode: 'M1 1BB',
-          capacity: 250,
-          contactName: 'Sarah Johnson',
-          contactEmail: 'sarah@citynightclub.com',
-          contactPhone: '+44 161 9876 5432',
-          isActive: true,
-          hasFireSafetyRequirements: true,
-          requiresCapacityMonitoring: true,
-          requiresToiletChecks: true,
-          description: 'Popular nightclub in Manchester with three dance floors and VIP areas.',
-          termsAndConditions: 'Security staff must check IDs at entry. Zero tolerance for drugs policy must be enforced. Staff must be trained in conflict resolution.'
-        },
-        {
-          id: 3,
-          name: 'The Old Theatre',
-          address: '78 Cultural Street',
-          city: 'Edinburgh',
-          postalCode: 'EH1 2CD',
-          capacity: 350,
-          contactName: 'Robert Wilson',
-          contactEmail: 'bookings@oldtheatre.com',
-          contactPhone: '+44 131 5551 2345',
-          isActive: false,
-          hasFireSafetyRequirements: true,
-          requiresCapacityMonitoring: false,
-          requiresToiletChecks: true,
-          description: 'Historic theatre venue with period features and state-of-the-art lighting.',
-          termsAndConditions: 'Staff must be familiar with the venue\'s evacuation procedures. No food or drinks allowed in the main auditorium. Staff must assist with accessibility requirements.'
-        },
-        {
-          id: 4,
-          name: 'Riverside Event Space',
-          address: '12 Dock Road',
-          city: 'Liverpool',
-          postalCode: 'L1 3DE',
-          capacity: 400,
-          contactName: 'Emma Thompson',
-          contactEmail: 'events@riverside.co.uk',
-          contactPhone: '+44 151 4567 8901',
-          isActive: true,
-          hasFireSafetyRequirements: true,
-          requiresCapacityMonitoring: true,
-          requiresToiletChecks: false,
-          description: 'Modern riverside venue with outdoor areas and panoramic views.',
-          termsAndConditions: 'Security staff must monitor the waterfront areas. Outdoor patrols required every 30 minutes. Staff must be trained in water safety procedures.'
-        },
-        {
-          id: 5,
-          name: 'The Sports Arena',
-          address: '90 Olympic Way',
-          city: 'Birmingham',
-          postalCode: 'B5 6EF',
-          capacity: 1000,
-          contactName: 'David Brown',
-          contactEmail: 'bookings@sportsarena.com',
-          contactPhone: '+44 121 2345 6789',
-          isActive: true,
-          hasFireSafetyRequirements: true,
-          requiresCapacityMonitoring: true,
-          requiresToiletChecks: true,
-          description: 'Large multi-purpose sports venue with indoor and outdoor facilities.',
-          termsAndConditions: 'Security staff must be familiar with emergency medical procedures. Segregation of rival fans may be required. Staff must enforce the venue\'s code of conduct.'
+      // Check if authentication token exists
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('No authentication token found in localStorage');
+        setError('Authentication token missing. Please log out and log back in.');
+        setHasAuthIssue(true);
+        setIsLoading(false);
+        return;
+      }
+
+      // Use the venue service to fetch venues
+      const apiVenues = await venueService.getAllVenues();
+      console.log('API response received:', apiVenues);
+
+      if (!apiVenues || apiVenues.length === 0) {
+        console.log('No venues returned from API');
+        // This is not an error - just an empty state
+        setVenues([]);
+        setFilteredVenues([]);
+      } else {
+        const uiVenues = apiVenues.map(mapToUiVenue);
+        console.log('Mapped venues to UI format:', uiVenues);
+        setVenues(uiVenues);
+        setFilteredVenues(uiVenues);
+      }
+    } catch (error: any) {
+      console.error('Error fetching venues:', error);
+      
+      // More detailed error reporting
+      if (error.response) {
+        // Server responded with an error status
+        console.error('Server error:', error.response.status, error.response.data);
+        
+        if (error.response.status === 401) {
+          // Authentication error - token may be expired
+          console.error('Authentication error. Token may be expired.');
+          
+          // Clear invalid tokens and redirect to login
+          localStorage.removeItem('token');
+          localStorage.removeItem('refreshToken');
+          
+          setError('Your session has expired. Please log in again.');
+          setHasAuthIssue(true);
+        } else {
+          setError(`Server error (${error.response.status}): ${error.response.data?.message || 'Failed to load venues'}`);
         }
-      ];
-
-      setVenues(mockVenues);
-      setFilteredVenues(mockVenues);
-    } catch (error) {
-      console.error('Failed to load venues:', error);
-      setError('Failed to load venues. Please try again later.');
+      } else if (error.request) {
+        // Request was made but no response received - network error
+        console.error('Network error, no response received:', error.request);
+        setError('Network error. Please check your connection and try again.');
+      } else {
+        // Something else happened while setting up the request
+        console.error('Error setting up request:', error.message);
+        setError(`Unexpected error: ${error.message}`);
+        
+        // If the error message suggests auth issues
+        if (error.message.includes('Authentication') || error.message.includes('token')) {
+          setHasAuthIssue(true);
+        }
+      }
     } finally {
       setIsLoading(false);
     }
@@ -328,16 +349,22 @@ const VenueManagement: React.FC = () => {
     setShowEditVenuePanel(true);
   }, []);
 
-  const handleToggleStatus = useCallback((venue: Venue) => {
-    // In a real application, this would call the API
-    // await venueService.updateVenueStatus(venue.id, !venue.isActive);
-
-    // For demo purposes, we'll just update the local state
-    const updatedVenues = venues.map(v =>
-      v.id === venue.id ? { ...v, isActive: !v.isActive } : v
-    );
-    setVenues(updatedVenues);
-    setFilteredVenues(updatedVenues);
+  const handleToggleStatus = useCallback(async (venue: Venue) => {
+    try {
+      // Call the API to update venue status
+      await venueService.updateVenueStatus(venue.id, !venue.isActive);
+      
+      // Update local state
+      const updatedVenues = venues.map(v =>
+        v.id === venue.id ? { ...v, isActive: !v.isActive } : v
+      );
+      
+      setVenues(updatedVenues);
+      setFilteredVenues(updatedVenues);
+    } catch (error) {
+      console.error('Failed to update venue status:', error);
+      setError('Failed to update venue status. Please try again.');
+    }
   }, [venues]);
 
   const handleDeleteVenue = useCallback((venue: Venue) => {
@@ -349,10 +376,10 @@ const VenueManagement: React.FC = () => {
     if (!selectedVenue) return;
 
     try {
-      // In a real application, this would call the API
-      // await venueService.deleteVenue(selectedVenue.id);
-
-      // For demo purposes, we'll just update the local state
+      // Call the API to delete the venue
+      await venueService.deleteVenue(selectedVenue.id);
+      
+      // Update local state
       const updatedVenues = venues.filter(v => v.id !== selectedVenue.id);
       setVenues(updatedVenues);
       setFilteredVenues(updatedVenues);
@@ -393,29 +420,31 @@ const VenueManagement: React.FC = () => {
         return;
       }
 
-      // In a real application, this would call the API
-      // const newVenue = await venueService.createVenue({...formData, capacity});
-
-      // For demo purposes, we'll just update the local state
-      const newVenue: Venue = {
-        id: Math.max(...venues.map(v => v.id)) + 1,
+      // Create venue object from form data
+      const newApiVenue: ApiVenue = {
         name: formData.name,
         address: formData.address,
         city: formData.city,
-        postalCode: formData.postalCode,
+        postal_code: formData.postalCode,
+        country: 'United Kingdom', // Default to UK
+        is_active: formData.isActive,
         capacity: capacity,
-        contactName: formData.contactName,
-        contactEmail: formData.contactEmail,
-        contactPhone: formData.contactPhone,
-        isActive: formData.isActive,
-        hasFireSafetyRequirements: formData.hasFireSafetyRequirements,
-        requiresCapacityMonitoring: formData.requiresCapacityMonitoring,
-        requiresToiletChecks: formData.requiresToiletChecks,
+        contact_name: formData.contactName,
+        contact_email: formData.contactEmail,
+        contact_phone: formData.contactPhone,
         description: formData.description,
-        termsAndConditions: formData.termsAndConditions
+        terms_and_conditions: formData.termsAndConditions,
+        requires_fire_safety_checks: formData.hasFireSafetyRequirements,
+        requires_capacity_monitoring: formData.requiresCapacityMonitoring,
+        requires_toilet_checks: formData.requiresToiletChecks
       };
 
-      const updatedVenues = [...venues, newVenue];
+      // Call API to create venue
+      const createdVenue = await venueService.createVenue(newApiVenue);
+      
+      // Map to UI format and update state
+      const newUiVenue = mapToUiVenue(createdVenue);
+      const updatedVenues = [...venues, newUiVenue];
       setVenues(updatedVenues);
       setFilteredVenues(updatedVenues);
       setShowAddVenuePanel(false);
@@ -436,32 +465,51 @@ const VenueManagement: React.FC = () => {
         return;
       }
 
-      // In a real application, this would call the API
-      // await venueService.updateVenue(selectedVenue.id, {...formData, capacity});
+      // Create venue object from form data
+      const updatedApiVenue: ApiVenue = {
+        name: formData.name,
+        address: formData.address,
+        city: formData.city,
+        postal_code: formData.postalCode,
+        country: 'United Kingdom', // Default to UK
+        is_active: formData.isActive,
+        capacity: capacity,
+        contact_name: formData.contactName,
+        contact_email: formData.contactEmail,
+        contact_phone: formData.contactPhone,
+        description: formData.description,
+        terms_and_conditions: formData.termsAndConditions,
+        requires_fire_safety_checks: formData.hasFireSafetyRequirements,
+        requires_capacity_monitoring: formData.requiresCapacityMonitoring,
+        requires_toilet_checks: formData.requiresToiletChecks
+      };
 
-      // For demo purposes, we'll just update the local state
-      const updatedVenues = venues.map(v =>
-        v.id === selectedVenue.id
-          ? {
-              ...v,
-              name: formData.name,
-              address: formData.address,
-              city: formData.city,
-              postalCode: formData.postalCode,
-              capacity: capacity,
-              contactName: formData.contactName,
-              contactEmail: formData.contactEmail,
-              contactPhone: formData.contactPhone,
-              isActive: formData.isActive,
-              hasFireSafetyRequirements: formData.hasFireSafetyRequirements,
-              requiresCapacityMonitoring: formData.requiresCapacityMonitoring,
-              requiresToiletChecks: formData.requiresToiletChecks,
-              description: formData.description,
-              termsAndConditions: formData.termsAndConditions
-            }
-          : v
+      // Call API to update venue
+      await venueService.updateVenue(selectedVenue.id, updatedApiVenue);
+      
+      // Update local state
+      const updatedUiVenue = {
+        ...selectedVenue,
+        name: formData.name,
+        address: formData.address,
+        city: formData.city,
+        postalCode: formData.postalCode,
+        capacity: capacity,
+        contactName: formData.contactName,
+        contactEmail: formData.contactEmail,
+        contactPhone: formData.contactPhone,
+        isActive: formData.isActive,
+        hasFireSafetyRequirements: formData.hasFireSafetyRequirements,
+        requiresCapacityMonitoring: formData.requiresCapacityMonitoring,
+        requiresToiletChecks: formData.requiresToiletChecks,
+        description: formData.description,
+        termsAndConditions: formData.termsAndConditions
+      };
+      
+      const updatedVenues = venues.map(v => 
+        v.id === selectedVenue.id ? updatedUiVenue : v
       );
-
+      
       setVenues(updatedVenues);
       setFilteredVenues(updatedVenues);
       setShowEditVenuePanel(false);
@@ -473,8 +521,8 @@ const VenueManagement: React.FC = () => {
   }, [selectedVenue, formData, venues]);
 
   const handleRefresh = useCallback(() => {
+    console.log('Manual refresh triggered');
     loadVenues();
-    return false; // Return false to prevent default behavior
   }, [loadVenues]);
 
   const handleFormInputChange = useCallback((field: string, value: string | boolean) => {
@@ -553,6 +601,22 @@ const VenueManagement: React.FC = () => {
           onClear={() => setSearchText('')}
           value={searchText}
         />
+
+        {/* Show auth error message with logout button if needed */}
+        {hasAuthIssue && (
+          <MessageBar
+            messageBarType={MessageBarType.severeWarning}
+            isMultiline={false}
+            dismissButtonAriaLabel="Close"
+            actions={
+              <div>
+                <DefaultButton onClick={handleLogout}>Log Out & Sign In Again</DefaultButton>
+              </div>
+            }
+          >
+            Authentication issue detected. Please sign out and sign back in to resolve this problem.
+          </MessageBar>
+        )}
 
         {error && (
           <MessageBar

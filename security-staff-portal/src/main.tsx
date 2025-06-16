@@ -8,8 +8,5 @@ if (!rootElement) {
   throw new Error('Failed to find root element');
 }
 
-ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+// Remove StrictMode to avoid hydration issues
+ReactDOM.createRoot(rootElement).render(<App />);

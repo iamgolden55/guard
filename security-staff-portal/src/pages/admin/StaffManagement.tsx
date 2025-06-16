@@ -32,27 +32,47 @@ import {
   type IIconProps,
   Panel,
   PanelType,
-  Label
+  Label,
+  Persona,
+  PersonaSize,
+  ActionButton
 } from '@fluentui/react';
 import { useNavigate } from 'react-router-dom';
 import { MainLayout } from '../../layouts';
 import { UserRole } from '../../types';
+import api from '../../services/api';
+import profileService from '../../services/profileService';
 
 // Icons
 const addIcon: IIconProps = { iconName: 'PersonAdd' };
 const filterIcon: IIconProps = { iconName: 'Filter' };
 const refreshIcon: IIconProps = { iconName: 'Refresh' };
+const reviewIcon: IIconProps = { iconName: 'View' };
 
+// Interface to match backend User response 
+interface User {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Interface for frontend staff display with camelCase
 interface Staff {
   id: number;
   firstName: string;
   lastName: string;
   email: string;
-  phone: string;
+  phone?: string;
   role: UserRole;
   isActive: boolean;
   dateJoined: string;
-  lastLogin: string | null;
+  lastLogin?: string | null;
   address?: {
     street: string;
     city: string;
@@ -60,6 +80,51 @@ interface Staff {
     country: string;
   };
 }
+
+// Extend Staff interface or create a new one for the profile details with user nested
+interface StaffProfileDetail {
+  id: number;
+  user: {
+    id: number;
+    username: string;
+    email: string;
+    first_name: string;
+    last_name: string;
+    role: string;
+    is_active: boolean;
+  };
+  phone_number: string;
+  date_of_birth: string;
+  national_insurance_number: string;
+  street: string;
+  city: string;
+  postal_code: string;
+  country: string;
+  profile_image_url?: string;
+  notes?: string;
+  is_approved: boolean;
+  security_roles?: string[];
+  sia_licenses: Array<{
+    id: number;
+    license_number: string;
+    license_type: string;
+    issue_date: string;
+    expiry_date: string;
+    status: string;
+    document_url?: string;
+  }>;
+}
+
+// Add mapping for SIA License Type display names
+const SIA_LICENSE_TYPE_DISPLAY: { [key: string]: string } = {
+  ds: 'Door Supervisor',
+  sg: 'Security Guard',
+  cctv: 'CCTV Operator',
+  cp: 'Close Protection',
+  k9: 'Dog Handler',
+  vs: 'Vehicle Security',
+  key: 'Key Holding',
+};
 
 const StaffManagement: React.FC = () => {
   const navigate = useNavigate();
@@ -74,6 +139,13 @@ const StaffManagement: React.FC = () => {
   const [showEditStaffPanel, setShowEditStaffPanel] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
+  const [pendingStaff, setPendingStaff] = useState<StaffProfileDetail[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(true);
+  const [pendingError, setPendingError] = useState<string | null>(null);
+  const [showReviewPanel, setShowReviewPanel] = useState(false);
+  const [reviewingStaff, setReviewingStaff] = useState<StaffProfileDetail | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   // Form state for new/edit staff
   const [formData, setFormData] = useState({
@@ -214,108 +286,115 @@ const StaffManagement: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // In a real application, this would use the actual API
-      // const response = await authService.getAllStaff();
-      // setStaffList(response);
-
-      // For demo purposes, we'll use mock data
-      const mockStaff: Staff[] = [
-        {
-          id: 1,
-          firstName: 'John',
-          lastName: 'Doe',
-          email: 'john.doe@example.com',
-          phone: '+44 7700 900123',
-          role: UserRole.STAFF,
-          isActive: true,
-          dateJoined: '2023-01-15T00:00:00Z',
-          lastLogin: '2025-04-08T10:30:00Z',
-          address: {
-            street: '123 Main St',
-            city: 'London',
-            postalCode: 'SW1A 1AA',
-            country: 'UK'
-          }
-        },
-        {
-          id: 2,
-          firstName: 'Jane',
-          lastName: 'Smith',
-          email: 'jane.smith@example.com',
-          phone: '+44 7700 900124',
-          role: UserRole.MANAGER,
-          isActive: true,
-          dateJoined: '2023-02-01T00:00:00Z',
-          lastLogin: '2025-04-09T09:15:00Z',
-          address: {
-            street: '456 High St',
-            city: 'Manchester',
-            postalCode: 'M1 1AA',
-            country: 'UK'
-          }
-        },
-        {
-          id: 3,
-          firstName: 'Mike',
-          lastName: 'Johnson',
-          email: 'mike.johnson@example.com',
-          phone: '+44 7700 900125',
-          role: UserRole.STAFF,
-          isActive: false,
-          dateJoined: '2023-03-10T00:00:00Z',
-          lastLogin: '2025-03-01T14:45:00Z',
-          address: {
-            street: '789 Park Lane',
-            city: 'Birmingham',
-            postalCode: 'B1 1AA',
-            country: 'UK'
-          }
-        },
-        {
-          id: 4,
-          firstName: 'Sarah',
-          lastName: 'Williams',
-          email: 'sarah.williams@example.com',
-          phone: '+44 7700 900126',
-          role: UserRole.ADMIN,
-          isActive: true,
-          dateJoined: '2022-11-05T00:00:00Z',
-          lastLogin: '2025-04-09T08:30:00Z',
-          address: {
-            street: '10 Queen St',
-            city: 'Edinburgh',
-            postalCode: 'EH1 1AA',
-            country: 'UK'
-          }
-        },
-        {
-          id: 5,
-          firstName: 'David',
-          lastName: 'Brown',
-          email: 'david.brown@example.com',
-          phone: '+44 7700 900127',
-          role: UserRole.STAFF,
-          isActive: true,
-          dateJoined: '2024-01-20T00:00:00Z',
-          lastLogin: '2025-04-07T17:10:00Z',
-          address: {
-            street: '25 George St',
-            city: 'Glasgow',
-            postalCode: 'G1 1AA',
-            country: 'UK'
-          }
-        },
-      ];
-
-      setStaffList(mockStaff);
-      setFilteredStaff(mockStaff);
-    } catch (error) {
-      console.error('Failed to load staff:', error);
-      setError('Failed to load staff. Please try again later.');
+      // Fetch users from the API
+      const response = await api.get<User[]>('/users/');
+      console.log('API Response:', response.data);
+      
+      // Map API response to Staff interface
+      const mappedStaff: Staff[] = response.data.map(user => ({
+        id: user.id,
+        firstName: user.first_name || '',
+        lastName: user.last_name || '',
+        email: user.email,
+        phone: '', // Phone might be in user.profile if available
+        role: user.role as UserRole,
+        isActive: user.is_active,
+        dateJoined: user.created_at || new Date().toISOString(),
+        lastLogin: null,
+        // Address would be extracted from profile if available
+      }));
+      
+      setStaffList(mappedStaff);
+    } catch (err) {
+      console.error('API Error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load staff data.');
     } finally {
       setIsLoading(false);
     }
+  }, []); // Empty dependency array - runs once on mount
+
+  const loadPendingStaff = useCallback(async () => {
+    setPendingLoading(true);
+    profileService.getPendingStaffProfiles()
+      .then(data => {
+        console.log('Received pending staff data:', data);
+        let pendingStaffData = [];
+        
+        if (data && Array.isArray(data.results)) {
+          pendingStaffData = data.results;
+        } else if (Array.isArray(data)) { // Fallback if API doesn't paginate
+          pendingStaffData = data;
+        } else {
+          console.error('Pending staff data is not an array or paginated object:', data);
+          setPendingError('Received invalid data format for pending staff.');
+          setPendingStaff([]);
+          setPendingLoading(false);
+          return;
+        }
+        
+        // Additional frontend filter: only include staff with SIA licenses
+        const filteredPendingStaff = pendingStaffData.filter((staff: StaffProfileDetail) => 
+          staff.sia_licenses && 
+          staff.sia_licenses.length > 0 &&
+          !staff.is_approved
+        );
+        
+        console.log('Original pending staff count:', pendingStaffData.length);
+        console.log('Filtered pending staff count:', filteredPendingStaff.length);
+        
+        setPendingStaff(filteredPendingStaff);
+        setPendingError(null);
+      })
+      .catch(err => {
+        console.error('Error fetching pending staff:', err);
+        setPendingError('Failed to load pending staff.');
+        setPendingStaff([]);
+      })
+      .finally(() => setPendingLoading(false));
   }, []);
+
+  // Effect to load staff on component mount
+  useEffect(() => {
+    loadStaff();
+    loadPendingStaff();
+  }, [loadStaff, loadPendingStaff]);
+
+  // Effect to apply filters when search/filter changes
+  useEffect(() => {
+    if (!staffList.length) {
+      setFilteredStaff([]);
+      return;
+    }
+
+    let filtered = [...staffList];
+
+    // Apply text search
+    if (searchText) {
+      const lowerCaseSearchText = searchText.toLowerCase();
+      filtered = filtered.filter(
+        staff =>
+          staff.firstName.toLowerCase().includes(lowerCaseSearchText) ||
+          staff.lastName.toLowerCase().includes(lowerCaseSearchText) ||
+          staff.email.toLowerCase().includes(lowerCaseSearchText) ||
+          `${staff.firstName} ${staff.lastName}`.toLowerCase().includes(lowerCaseSearchText)
+      );
+    }
+
+    // Apply role filter
+    if (roleFilter) {
+      filtered = filtered.filter(staff => staff.role === roleFilter);
+    }
+
+    // Apply status filter
+    if (statusFilter) {
+      filtered = filtered.filter(staff => 
+        (statusFilter === 'active' && staff.isActive) ||
+        (statusFilter === 'inactive' && !staff.isActive)
+      );
+    }
+
+    setFilteredStaff(filtered);
+  }, [staffList, searchText, roleFilter, statusFilter]);
 
   // Handler functions
   const handleEditStaff = useCallback((staff: Staff) => {
@@ -324,7 +403,7 @@ const StaffManagement: React.FC = () => {
       firstName: staff.firstName,
       lastName: staff.lastName,
       email: staff.email,
-      phone: staff.phone,
+      phone: staff.phone || '',
       role: staff.role,
       isActive: staff.isActive,
       street: staff.address?.street || '',
@@ -335,16 +414,34 @@ const StaffManagement: React.FC = () => {
     setShowEditStaffPanel(true);
   }, []);
 
-  const handleToggleStatus = useCallback((staff: Staff) => {
-    // In a real application, this would call the API
-    // await authService.updateStaffStatus(staff.id, !staff.isActive);
-
-    // For demo purposes, we'll just update the local state
-    const updatedStaff = staffList.map(s =>
-      s.id === staff.id ? { ...s, isActive: !s.isActive } : s
-    );
-    setStaffList(updatedStaff);
-    setFilteredStaff(updatedStaff);
+  const handleToggleStatus = useCallback(async (staff: Staff) => {
+    try {
+      console.log('Toggling status for staff ID:', staff.id, 'Current status:', staff.isActive);
+      
+      // Call the API to update the user's active status
+      await api.patch(`/users/${staff.id}/`, {
+        is_active: !staff.isActive
+      });
+      
+      try {
+        // If API call was successful, update the local state
+        const updatedStaff = staffList.map(s =>
+          s.id === staff.id ? { ...s, isActive: !s.isActive } : s
+        );
+        setStaffList(updatedStaff);
+        setFilteredStaff(updatedStaff);
+        
+        // Show success message
+        setError(null);
+      } catch (stateError) {
+        console.error('Error updating UI state after status toggle:', stateError);
+        // Reload the page as fallback
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('Failed to toggle status:', err);
+      setError('Failed to update user status. Please try again.');
+    }
   }, [staffList]);
 
   const handleDeleteStaff = useCallback((staff: Staff) => {
@@ -356,20 +453,34 @@ const StaffManagement: React.FC = () => {
     if (!selectedStaff) return;
 
     try {
-      // In a real application, this would call the API
-      // await authService.deleteStaff(selectedStaff.id);
-
-      // For demo purposes, we'll just update the local state
-      const updatedStaff = staffList.filter(s => s.id !== selectedStaff.id);
-      setStaffList(updatedStaff);
-      setFilteredStaff(updatedStaff);
-      setShowDeleteDialog(false);
-      setSelectedStaff(null);
-    } catch (error) {
-      console.error('Failed to delete staff:', error);
+      console.log('Deleting staff ID:', selectedStaff.id);
+      
+      // Call the API to delete the user
+      await api.delete(`/users/${selectedStaff.id}/`);
+      
+      try {
+        // If API call was successful, update the local state
+        const updatedStaff = staffList.filter(s => s.id !== selectedStaff.id);
+        setStaffList(updatedStaff);
+        setFilteredStaff(filteredStaff.filter(s => s.id !== selectedStaff.id));
+        setShowDeleteDialog(false);
+        setSelectedStaff(null);
+        
+        // Show success message
+        setError(null);
+      } catch (stateError) {
+        console.error('Error updating UI state after staff deletion:', stateError);
+        // Still close dialog even if state update fails
+        setShowDeleteDialog(false);
+        setSelectedStaff(null);
+        // Reload the page as fallback
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('Failed to delete staff:', err);
       setError('Failed to delete staff. Please try again.');
     }
-  }, [selectedStaff, staffList]);
+  }, [selectedStaff, staffList, filteredStaff]);
 
   const handleAddStaff = useCallback(() => {
     setFormData({
@@ -389,34 +500,61 @@ const StaffManagement: React.FC = () => {
 
   const handleSubmitNewStaff = useCallback(async () => {
     try {
-      // In a real application, this would call the API
-      // const newStaff = await authService.createStaff(formData);
-
-      // For demo purposes, we'll just update the local state
-      const newStaff: Staff = {
-        id: Math.max(...staffList.map(s => s.id)) + 1,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
+      // Prepare data for API call in the format expected by the backend
+      const userData = {
+        username: formData.email.split('@')[0], // Create username from email
         email: formData.email,
-        phone: formData.phone,
-        role: formData.role,
-        isActive: formData.isActive,
-        dateJoined: new Date().toISOString(),
-        lastLogin: null,
-        address: {
-          street: formData.street,
-          city: formData.city,
-          postalCode: formData.postalCode,
-          country: formData.country,
-        }
+        password: 'temppassword123', // Set a temporary password that user will need to change
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        role: formData.role.toLowerCase(), // Backend expects lowercase roles
+        is_active: formData.isActive
       };
+      
+      console.log('Submitting new staff data:', userData);
+      
+      // Call the API to create a new user
+      const response = await api.post('/users/', userData);
+      
+      console.log('API response for new staff:', response.data);
+      
+      try {
+        // Map the response to our Staff interface
+        const newStaff: Staff = {
+          id: response.data.id,
+          firstName: response.data.first_name,
+          lastName: response.data.last_name,
+          email: response.data.email,
+          phone: formData.phone || '',
+          role: response.data.role as UserRole,
+          isActive: response.data.is_active,
+          dateJoined: response.data.created_at,
+          lastLogin: null
+        };
 
-      const updatedStaff = [...staffList, newStaff];
-      setStaffList(updatedStaff);
-      setFilteredStaff(updatedStaff);
-      setShowAddStaffPanel(false);
-    } catch (error) {
-      console.error('Failed to add staff:', error);
+        // Update local state with the new staff member
+        const updatedStaff = [...staffList, newStaff];
+        setStaffList(updatedStaff);
+        setFilteredStaff(updatedStaff); // Make sure filtered list is also updated
+        
+        // Close the panel
+        setShowAddStaffPanel(false);
+        
+        // Show success message
+        setError(null);
+        
+        // Force refresh page to prevent blank screen issue
+        // This is a temporary workaround - ideally, the state updates above would be sufficient
+        window.location.reload();
+      } catch (stateError) {
+        console.error('Error updating UI state after staff creation:', stateError);
+        // Still close the panel even if state update fails
+        setShowAddStaffPanel(false);
+        // Reload the page as fallback to show the updated data
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('Failed to add staff:', err);
       setError('Failed to add staff. Please try again.');
     }
   }, [formData, staffList]);
@@ -425,36 +563,59 @@ const StaffManagement: React.FC = () => {
     if (!selectedStaff) return;
 
     try {
-      // In a real application, this would call the API
-      // await authService.updateStaff(selectedStaff.id, formData);
-
-      // For demo purposes, we'll just update the local state
-      const updatedStaff = staffList.map(s =>
-        s.id === selectedStaff.id
-          ? {
-              ...s,
-              firstName: formData.firstName,
-              lastName: formData.lastName,
-              email: formData.email,
-              phone: formData.phone,
-              role: formData.role,
-              isActive: formData.isActive,
-              address: {
-                street: formData.street,
-                city: formData.city,
-                postalCode: formData.postalCode,
-                country: formData.country,
+      // Prepare data for API call in the format expected by the backend
+      const userData = {
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        email: formData.email,
+        role: formData.role.toLowerCase(), // Backend expects lowercase roles
+        is_active: formData.isActive
+      };
+      
+      console.log('Updating staff data for ID:', selectedStaff.id, userData);
+      
+      // Call the API to update the user
+      await api.patch(`/users/${selectedStaff.id}/`, userData);
+      
+      try {
+        // If API call was successful, update the local state
+        const updatedStaff = staffList.map(s =>
+          s.id === selectedStaff.id
+            ? {
+                ...s,
+                firstName: formData.firstName,
+                lastName: formData.lastName,
+                email: formData.email,
+                phone: formData.phone || '',
+                role: formData.role,
+                isActive: formData.isActive,
+                address: {
+                  street: formData.street,
+                  city: formData.city,
+                  postalCode: formData.postalCode,
+                  country: formData.country,
+                }
               }
-            }
-          : s
-      );
+            : s
+        );
 
-      setStaffList(updatedStaff);
-      setFilteredStaff(updatedStaff);
-      setShowEditStaffPanel(false);
-      setSelectedStaff(null);
-    } catch (error) {
-      console.error('Failed to update staff:', error);
+        setStaffList(updatedStaff);
+        setFilteredStaff(updatedStaff); // Make sure filtered list is also updated
+        setShowEditStaffPanel(false);
+        setSelectedStaff(null);
+        
+        // Show success message
+        setError(null);
+      } catch (stateError) {
+        console.error('Error updating UI state after staff update:', stateError);
+        // Still close the panel even if state update fails
+        setShowEditStaffPanel(false);
+        setSelectedStaff(null);
+        // Reload the page as fallback to show the updated data
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('Failed to update staff:', err);
       setError('Failed to update staff. Please try again.');
     }
   }, [selectedStaff, formData, staffList]);
@@ -470,6 +631,40 @@ const StaffManagement: React.FC = () => {
       [field]: value
     }));
   }, []);
+
+  const handleOpenReviewPanel = useCallback(async (staffListItem: StaffProfileDetail) => {
+    setShowReviewPanel(true);
+    setReviewingStaff(null); // Clear previous data
+    setReviewLoading(true);
+    setReviewError(null);
+    try {
+      // Fetch full profile details using the ID from the list item
+      const response = await api.get<StaffProfileDetail>(`/staff-profiles/${staffListItem.id}/`);
+      console.log("Full staff details received for review:", response.data);
+      setReviewingStaff(response.data);
+    } catch (err) {
+      console.error('Failed to fetch staff details for review:', err);
+      setReviewError('Could not load staff details. Please try again.');
+    } finally {
+      setReviewLoading(false);
+    }
+  }, []);
+
+  const handleApproveStaff = useCallback(async (profileId: number) => {
+    if (!reviewingStaff || reviewingStaff.id !== profileId) return;
+    // No need for separate loading state here, can use panel loading
+    // setReviewLoading(true); // Remove this if approval is quick
+    try {
+      await profileService.approveStaffProfile(profileId);
+      setPendingStaff(prev => prev.filter(p => p.id !== profileId));
+      setShowReviewPanel(false);
+      setReviewingStaff(null);
+    } catch (err) {
+      alert('Failed to approve staff.');
+    } finally {
+      // setReviewLoading(false); // Remove this if approval is quick
+    }
+  }, [reviewingStaff]);
 
   // Command bar items
   const commandBarItems: ICommandBarItemProps[] = [
@@ -549,46 +744,12 @@ const StaffManagement: React.FC = () => {
     },
   ];
 
-  // Apply filters when search text, role filter, or status filter changes
-  useEffect(() => {
-    let result = staffList;
-
-    // Apply search filter
-    if (searchText) {
-      const lowerCaseSearch = searchText.toLowerCase();
-      result = result.filter(staff =>
-        `${staff.firstName} ${staff.lastName}`.toLowerCase().includes(lowerCaseSearch) ||
-        staff.email.toLowerCase().includes(lowerCaseSearch) ||
-        staff.phone.includes(searchText)
-      );
-    }
-
-    // Apply role filter
-    if (roleFilter) {
-      result = result.filter(staff => staff.role === roleFilter);
-    }
-
-    // Apply status filter
-    if (statusFilter === 'active') {
-      result = result.filter(staff => staff.isActive);
-    } else if (statusFilter === 'inactive') {
-      result = result.filter(staff => !staff.isActive);
-    }
-
-    setFilteredStaff(result);
-  }, [searchText, roleFilter, statusFilter, staffList]);
-
-  // Load staff when component mounts
-  useEffect(() => {
-    loadStaff();
-  }, [loadStaff]);
-
   // Validate form
   const isFormValid = () => {
     return formData.firstName.trim() !== '' &&
            formData.lastName.trim() !== '' &&
-           formData.email.trim() !== '' &&
-           formData.phone.trim() !== '';
+           formData.email.trim() !== '';
+    // Phone is now optional
   };
 
   return (
@@ -596,6 +757,50 @@ const StaffManagement: React.FC = () => {
       <Stack tokens={{ childrenGap: 20 }}>
         <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
           <Text variant="xxLarge">Staff Management</Text>
+        </Stack>
+
+        {/* Pending Staff Approval Section - Simplified List */}
+        <Stack tokens={{ childrenGap: 12 }} style={{ background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 8, padding: 16 }}>
+          <Text variant="xLarge">Only Staff Pending Approval with Valid Submitted Credentials ({pendingStaff.length})</Text>
+          {pendingLoading ? (
+            <Spinner size={SpinnerSize.medium} label="Loading pending staff..." />
+          ) : pendingError ? (
+            <MessageBar messageBarType={MessageBarType.error}>{pendingError}</MessageBar>
+          ) : pendingStaff.length === 0 ? (
+            <Stack tokens={{ childrenGap: 8 }}>
+              <Text>No staff with submitted credentials are pending approval.</Text>
+              <MessageBar messageBarType={MessageBarType.info}>
+                Staff members must submit valid SIA license information before they will appear here for approval.
+              </MessageBar>
+            </Stack>
+          ) : (
+            <DetailsList
+              items={pendingStaff}
+              columns={[
+                {
+                  key: 'pendingName', name: 'Name', minWidth: 150, isResizable: true,
+                  onRender: (item: StaffProfileDetail) => (
+                    <Text>{item.user ? `${item.user.first_name} ${item.user.last_name}` : `Profile ID: ${item.id}`}</Text>
+                  )
+                },
+                {
+                  key: 'pendingEmail', name: 'Email', minWidth: 200, isResizable: true,
+                  onRender: (item: StaffProfileDetail) => <Text>{item.user?.email || 'N/A'}</Text>
+                },
+                {
+                  key: 'pendingActions', name: 'Actions', minWidth: 100,
+                  onRender: (item: StaffProfileDetail) => (
+                    <ActionButton iconProps={reviewIcon} onClick={() => handleOpenReviewPanel(item)}>
+                      Review
+                    </ActionButton>
+                  )
+                }
+              ]}
+              layoutMode={DetailsListLayoutMode.justified}
+              selectionMode={SelectionMode.none}
+              compact={true}
+            />
+          )}
         </Stack>
 
         <CommandBar items={commandBarItems} />
@@ -894,6 +1099,91 @@ const StaffManagement: React.FC = () => {
           />
         </DialogFooter>
       </Dialog>
+
+      {/* Staff Review Panel - Updated */}
+      <Panel
+        isOpen={showReviewPanel}
+        onDismiss={() => {
+          setShowReviewPanel(false);
+          setReviewingStaff(null);
+          setReviewError(null); // Clear error on dismiss
+        }}
+        // Use optional chaining and provide defaults for header before data loads
+        headerText={`Review Staff: ${reviewingStaff?.user?.first_name || 'Loading...'} ${reviewingStaff?.user?.last_name || ''}`}
+        closeButtonAriaLabel="Close"
+        type={PanelType.large}
+        isLightDismiss
+      >
+        {reviewLoading ? (
+          <Spinner label="Loading details..." style={{ padding: '20px' }} />
+        ) : reviewError ? (
+          <MessageBar messageBarType={MessageBarType.error} style={{ margin: '20px' }}>{reviewError}</MessageBar>
+        ) : reviewingStaff ? (
+          <Stack tokens={{ childrenGap: 20 }} style={{ padding: '20px' }}>
+            {/* Use optional chaining for user details */}
+            <Persona
+              imageUrl={reviewingStaff.profile_image_url}
+              text={`${reviewingStaff.user?.first_name || ''} ${reviewingStaff.user?.last_name || ''}`}
+              secondaryText={reviewingStaff.user?.email || 'N/A'}
+              tertiaryText={`Role: ${reviewingStaff.user?.role || 'N/A'}`}
+              size={PersonaSize.size72}
+            />
+            {/* Other sections remain similar, ensure they use reviewingStaff fields */}
+            <Stack tokens={{ childrenGap: 10 }}>
+              <Label>Contact Info</Label>
+              <Text>Phone: {reviewingStaff.phone_number || 'N/A'}</Text>
+            </Stack>
+            <Stack tokens={{ childrenGap: 10 }}>
+              <Label>Address</Label>
+              <Text>{reviewingStaff.street || 'N/A'}</Text>
+              <Text>{reviewingStaff.city || 'N/A'}, {reviewingStaff.postal_code || 'N/A'}</Text>
+              <Text>{reviewingStaff.country || 'N/A'}</Text>
+            </Stack>
+            <Stack tokens={{ childrenGap: 10 }}>
+              <Label>Personal Details</Label>
+              <Text>DOB: {reviewingStaff.date_of_birth || 'N/A'}</Text>
+              <Text>NI Number: {reviewingStaff.national_insurance_number || 'N/A'}</Text>
+            </Stack>
+            <Stack tokens={{ childrenGap: 10 }}>
+              <Label>Security Roles</Label>
+              {/* Check if security_roles exists and is an array */}
+              <Text>{Array.isArray(reviewingStaff.security_roles) && reviewingStaff.security_roles.length > 0 ? reviewingStaff.security_roles.join(', ') : 'None specified'}</Text>
+            </Stack>
+            <Stack tokens={{ childrenGap: 10 }}>
+              <Label>SIA License(s)</Label>
+              {reviewingStaff.sia_licenses && reviewingStaff.sia_licenses.length > 0 ? (
+                reviewingStaff.sia_licenses.map((lic, idx) => (
+                  <Stack key={idx} tokens={{ childrenGap: 4 }} style={{ borderBottom: '1px solid #eee', paddingBottom: 8, marginBottom: 8 }}>
+                    <Text>Number: {lic.license_number}</Text>
+                    {/* Use the display mapping for type */}
+                    <Text>Type: {SIA_LICENSE_TYPE_DISPLAY[lic.license_type] || lic.license_type}</Text>
+                    <Text>Status: {lic.status}</Text>
+                    <Text>Issue Date: {lic.issue_date}</Text>
+                    <Text>Expiry Date: {lic.expiry_date}</Text>
+                    {lic.document_url && (
+                      <Link href={lic.document_url} target="_blank" rel="noopener noreferrer">View Submitted Document</Link>
+                    )}
+                  </Stack>
+                ))
+              ) : (
+                <Text>No SIA license details found.</Text>
+              )}
+            </Stack>
+
+            <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }} style={{ marginTop: 30 }}>
+              <PrimaryButton
+                text="Approve Staff Member"
+                iconProps={{ iconName: 'CheckMark' }}
+                onClick={() => handleApproveStaff(reviewingStaff.id)}
+                // Disable button while loading review details or if already approved
+                disabled={reviewLoading || reviewingStaff.is_approved}
+              />
+            </Stack>
+          </Stack>
+        ) : (
+          <Text style={{ padding: '20px' }}>No staff selected or failed to load details.</Text>
+        )}
+      </Panel>
     </MainLayout>
   );
 };

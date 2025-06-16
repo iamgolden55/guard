@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Stack,
   Text,
@@ -39,23 +39,22 @@ import {
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
 import { Card } from '../../components';
+import { BulkShiftModal } from '../../components/BulkShiftModal';
 import { useAuth } from '../../contexts/AuthContext';
-import { shiftService } from '../../services';
-import type { Venue, User } from '../../types';
+import shiftService from '../../services/shiftService';
+import venueService from '../../services/venueService';
+import settingsService from '../../services/settingsService';
+import type { 
+  Venue, 
+  StaffProfile,
+  ScheduledShift,
+  ScheduledShiftStatus,
+  RecurringPatternType,
+  Shift, // Add Shift import
+  ShiftStatus // Add ShiftStatus import
+} from '../../types';
 import { UserRole } from '../../types';
-
-// Mock data - replace with actual API calls
-const mockVenues: Venue[] = [
-  { id: 1, name: 'Downtown Club', address: '123 Main St', isActive: true },
-  { id: 2, name: 'Riverside Bar', address: '456 Water St', isActive: true },
-  { id: 3, name: 'Westside Security', address: '789 West Ave', isActive: true },
-];
-
-const mockStaff: User[] = [
-  { id: 1, username: 'staff1', email: 'staff1@example.com', firstName: 'John', lastName: 'Doe', role: UserRole.STAFF, isActive: true },
-  { id: 2, username: 'staff2', email: 'staff2@example.com', firstName: 'Jane', lastName: 'Smith', role: UserRole.STAFF, isActive: true },
-  { id: 3, username: 'staff3', email: 'staff3@example.com', firstName: 'Mike', lastName: 'Johnson', role: UserRole.STAFF, isActive: true },
-];
+import { getShifts, bulkCreateShifts } from '../../services/api';
 
 interface ScheduleShift {
   id: number;
@@ -150,9 +149,9 @@ const ShiftScheduling: React.FC = () => {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [calendarDays, setCalendarDays] = useState<Date[]>([]);
   const [shifts, setShifts] = useState<ScheduleShift[]>([]);
-  const [venues, setVenues] = useState<Venue[]>(mockVenues); // Replace with API call
-  const [staff, setStaff] = useState<User[]>(mockStaff); // Replace with API call
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [venues, setVenues] = useState<Venue[]>([]);
+  const [staff, setStaff] = useState<StaffProfile[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedShift, setSelectedShift] = useState<ScheduleShift | null>(null);
 
@@ -190,109 +189,284 @@ const ShiftScheduling: React.FC = () => {
   const [recurringType, setRecurringType] = useState<string>('0');
   const [recurringDays, setRecurringDays] = useState<number[]>([]);
   const [recurringEndDate, setRecurringEndDate] = useState<Date | null>(null);
+  const [newShiftRequiresFire, setNewShiftRequiresFire] = useState<boolean>(false);
+  const [newShiftRequiresCapacity, setNewShiftRequiresCapacity] = useState<boolean>(false);
+  const [newShiftRequiresToilet, setNewShiftRequiresToilet] = useState<boolean>(false);
+  const [newShiftNotes, setNewShiftNotes] = useState<string>('');
+  const [newShiftPayRate, setNewShiftPayRate] = useState<string>('');
 
   // Filter states
-  const [venueFilter, setVenueFilter] = useState<number | null>(null);
-  const [staffFilter, setStaffFilter] = useState<number | null>(null);
+  const [venueFilter, setVenueFilter] = useState<string | null>(null);
+  const [staffFilter, setStaffFilter] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState<Date | null>(null);
 
   // Month picker states
   const [isMonthPickerOpen, setIsMonthPickerOpen] = useState<boolean>(false);
   const [selectedMonthYear, setSelectedMonthYear] = useState<Date>(new Date());
 
+  // State for fetched system setting rates
+  const [fetchedStaticRate, setFetchedStaticRate] = useState<string>('...'); 
+  const [fetchedStandardRate, setFetchedStandardRate] = useState<string>('...');
+  const [isSettingsLoading, setIsSettingsLoading] = useState<boolean>(true);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
+  // Add to the state:
+  const [payRateType, setPayRateType] = useState<'static' | 'standard' | 'custom'>('static');
+  const [customPayRate, setCustomPayRate] = useState<string>('');
+
+  // Fetch system settings (including pay rates)
+  useEffect(() => {
+    const loadSystemSettings = async () => {
+      setIsSettingsLoading(true);
+      setSettingsError(null);
+      try {
+        const settingsData = await settingsService.getSettings();
+        setFetchedStaticRate(settingsData.default_hourly_rate.toString());
+        setFetchedStandardRate(settingsData.special_event_pay_rate.toString());
+      } catch (err) {
+        console.error("Failed to load system settings:", err);
+        setSettingsError("Could not load default pay rates.");
+        // Set default values as fallback
+        setFetchedStaticRate('15.50'); 
+        setFetchedStandardRate('18.00');
+      } finally {
+        setIsSettingsLoading(false);
+      }
+    };
+    loadSystemSettings();
+  }, []); // Run once on mount
+
+  // Load venues and staff data
+  useEffect(() => {
+    const loadInitialData = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        // Load venues
+        const venuesData = await venueService.getAllVenues();
+        // Ensure venuesData is an array and map it to include isActive
+        const mappedVenues = (Array.isArray(venuesData) ? venuesData : []).map(venue => ({
+          ...venue,
+          id: venue.id ?? 0, // Provide default for potentially undefined id
+          isActive: true // Add default isActive property
+        }));
+        setVenues(mappedVenues);
+        
+        // Load staff profiles
+        const staffData = await shiftService.getStaffProfiles();
+        // Ensure staffData is an array before setting state
+        if (!staffData || !Array.isArray(staffData)) {
+          console.error('Staff data is not an array:', staffData);
+          setStaff([]);
+          setError('Failed to load staff profiles correctly. Please try refreshing the page.');
+        } else {
+          setStaff(staffData);
+        }
+      } catch (err) {
+        console.error('Failed to load initial data:', err);
+        setError('Failed to load venues and staff data. Please try refreshing the page.');
+        // Ensure state is reset to empty arrays on error
+        setVenues([]);
+        setStaff([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadInitialData();
+  }, []);
+
   // Initialize calendar and load data
   useEffect(() => {
-    generateCalendarDays(currentDate);
-    loadShifts();
+    try {
+      generateCalendarDays(currentDate);
+      loadShifts();
+    } catch (error) {
+      console.error("Error initializing calendar:", error);
+      setError("Failed to initialize calendar. Please try refreshing the page.");
+    }
   }, [currentDate]);
 
   // Helper to generate days for the current month view
   const generateCalendarDays = (date: Date) => {
-    const days: Date[] = [];
-    const year = date.getFullYear();
-    const month = date.getMonth();
+    try {
+      const days: Date[] = [];
+      const year = date.getFullYear();
+      const month = date.getMonth();
 
-    // Get the first day of the month
-    const firstDay = new Date(year, month, 1);
-    const startingDayOfWeek = firstDay.getDay();
+      console.log(`Generating calendar days for ${year}-${month + 1}`);
 
-    // Get the last day of the month
-    const lastDay = new Date(year, month + 1, 0);
-    const lastDate = lastDay.getDate();
+      // Get the first day of the month
+      const firstDay = new Date(year, month, 1);
+      const startingDayOfWeek = firstDay.getDay();
 
-    // Add days from previous month to fill the first row
-    const prevMonthLastDay = new Date(year, month, 0).getDate();
-    for (let i = startingDayOfWeek - 1; i >= 0; i--) {
-      days.push(new Date(year, month - 1, prevMonthLastDay - i));
-    }
+      // Get the last day of the month
+      const lastDay = new Date(year, month + 1, 0);
+      const lastDate = lastDay.getDate();
 
-    // Add all days from current month
-    for (let i = 1; i <= lastDate; i++) {
-      days.push(new Date(year, month, i));
-    }
-
-    // Add days from next month to complete the last row
-    const remainingDays = 7 - (days.length % 7);
-    if (remainingDays < 7) {
-      for (let i = 1; i <= remainingDays; i++) {
-        days.push(new Date(year, month + 1, i));
+      // Add days from previous month to fill the first row
+      const prevMonthLastDay = new Date(year, month, 0).getDate();
+      for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+        days.push(new Date(year, month - 1, prevMonthLastDay - i));
       }
-    }
 
-    setCalendarDays(days);
+      // Add all days from current month
+      for (let i = 1; i <= lastDate; i++) {
+        days.push(new Date(year, month, i));
+      }
+
+      // Add days from next month to complete the last row
+      const remainingDays = 7 - (days.length % 7);
+      if (remainingDays < 7) {
+        for (let i = 1; i <= remainingDays; i++) {
+          days.push(new Date(year, month + 1, i));
+        }
+      }
+
+      console.log(`Generated ${days.length} calendar days`);
+      setCalendarDays(days);
+    } catch (error) {
+      console.error("Error generating calendar days:", error);
+      // Set a minimal fallback calendar
+      const today = new Date();
+      const days = [today];
+      setCalendarDays(days);
+    }
   };
 
-  // Load shifts - replace with actual API call
-  const loadShifts = () => {
-    setIsLoading(true);
-    setError(null);
-
-    // Mock data for demonstration
-    const mockShifts: ScheduleShift[] = [
-      {
-        id: 1,
-        staffId: 1,
-        staffName: 'John Doe',
-        venueId: 1,
-        venueName: 'Downtown Club',
-        date: new Date(currentDate.getFullYear(), currentDate.getMonth(), 15),
-        startTime: '20:00',
-        endTime: '04:00',
-        isPublished: true,
-        isRecurring: false
-      },
-      {
-        id: 2,
-        staffId: null,
-        staffName: null,
-        venueId: 2,
-        venueName: 'Riverside Bar',
-        date: new Date(currentDate.getFullYear(), currentDate.getMonth(), 16),
-        startTime: '18:00',
-        endTime: '02:00',
-        isPublished: true,
-        isRecurring: true,
-        recurringDays: [5, 6], // Friday and Saturday
-        recurringEndDate: new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 16)
-      },
-      {
-        id: 3,
-        staffId: 2,
-        staffName: 'Jane Smith',
-        venueId: 3,
-        venueName: 'Westside Security',
-        date: new Date(currentDate.getFullYear(), currentDate.getMonth(), 17),
-        startTime: '22:00',
-        endTime: '06:00',
-        isPublished: false,
-        isRecurring: false
+  // Load shifts for the current month view
+  const loadShifts = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Make sure calendarDays has been initialized
+      if (!calendarDays.length) {
+        console.log("Calendar days not initialized yet, skipping shift load");
+        return;
       }
-    ];
-
-    setTimeout(() => {
-      setShifts(mockShifts);
+      
+      // Calculate start and end dates for the current month view
+      const firstDay = calendarDays[0];
+      const lastDay = calendarDays[calendarDays.length - 1];
+      
+      // Format dates for API request
+      const startDate = firstDay.toISOString();
+      const endDate = new Date(lastDay);
+      endDate.setHours(23, 59, 59, 999);
+      const endDateStr = endDate.toISOString();
+      
+      // Build query params
+      let queryParams = new URLSearchParams({
+        startDate,
+        endDate: endDateStr,
+      });
+      
+      // Add filters if selected
+      if (venueFilter) {
+        queryParams.append('venueId', venueFilter);
+      }
+      
+      if (staffFilter) {
+        queryParams.append('staffId', staffFilter);
+      }
+      
+      console.log("Fetching shifts with params:", queryParams.toString());
+      
+      try {
+        const response = await fetch(`/api/shifts?${queryParams.toString()}`);
+        
+        if (!response.ok) {
+          console.error("Shift API error:", response.status, response.statusText);
+          const errorText = await response.text();
+          console.error("Error response:", errorText);
+          
+          // Don't throw, just log the error and continue with empty shifts
+          console.warn('Using empty shifts array due to API error');
+          setShifts([]);
+          return;
+        }
+        
+        // Check if the response is empty
+        const text = await response.text();
+        if (!text || text.trim() === '') {
+          console.warn('Empty response from shifts API');
+          setShifts([]);
+          return;
+        }
+        
+        try {
+          // Parse the JSON manually to handle potential errors
+          const data = JSON.parse(text);
+          console.log("Loaded shifts:", data.length);
+          const filteredShiftsFromApi = await getShifts({
+            venueId: venueFilter,
+            staffId: staffFilter
+          });
+          // Map the API response to ScheduleShift type
+          const mappedShifts = filteredShiftsFromApi.map(shift => ({
+            ...shift,
+            id: parseInt(shift.id, 10), // Convert id to number
+            venueId: parseInt(shift.venueId, 10), // Convert venueId to number
+            staffId: shift.staffId ? parseInt(shift.staffId, 10) : null, // Convert staffId to number or null
+            staffName: shift.staffName || null, // Convert undefined staffName to null
+            date: new Date(shift.date), // Ensure date is a Date object
+            isPublished: false, // Add default value
+            isRecurring: false, // Add default value
+            // Add other necessary mappings or defaults if needed
+          }));
+          setShifts(mappedShifts);
+        } catch (jsonError) {
+          console.error('Error parsing JSON response:', jsonError, 'Response text:', text);
+          setError('Failed to parse server response. Please try refreshing the page.');
+          setShifts([]);
+        }
+      } catch (apiError) {
+        console.error('Fetch error in loadShifts:', apiError);
+        // Continue with empty shifts
+        setShifts([]);
+      }
+    } catch (err) {
+      console.error('Error loading shifts:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while loading shifts');
+      setShifts([]);
+    } finally {
       setIsLoading(false);
-    }, 500);
+    }
+  };
+  
+  // Load venues for dropdown selection
+  const loadVenues = async () => {
+    try {
+      const response = await fetch('/api/venues');
+      
+      if (!response.ok) {
+        throw new Error('Failed to load venues');
+      }
+      
+      const data = await response.json();
+      setVenues(data);
+    } catch (err) {
+      console.error('Error loading venues:', err);
+      setVenues([]);
+    }
+  };
+  
+  // Load staff members for dropdown selection
+  const loadStaff = async () => {
+    try {
+      const response = await fetch('/api/staff');
+      
+      if (!response.ok) {
+        throw new Error('Failed to load staff');
+      }
+      
+      const data = await response.json();
+      setStaff(data);
+    } catch (err) {
+      console.error('Error loading staff:', err);
+      setStaff([]);
+    }
   };
 
   // Filter shifts for a specific day
@@ -319,33 +493,205 @@ const ShiftScheduling: React.FC = () => {
     setIsNewShiftDialogOpen(true);
   };
 
-  // Handle creating a new shift
-  const handleCreateShift = () => {
+  // Handle closing the new shift dialog
+  const handleCloseNewShiftDialog = () => {
+    setIsNewShiftDialogOpen(false);
+    resetNewShiftForm();
+  };
+
+  // Reset new shift form values
+  const resetNewShiftForm = () => {
+    setNewShiftDate(null);
+    setNewShiftVenue(null);
+    setNewShiftStaff(null);
+    setNewShiftStartTime('');
+    setNewShiftEndTime('');
+    setNewShiftNotes('');
+    setNewShiftPayRate('');
+    setNewShiftRequiresFire(false);
+    setNewShiftRequiresCapacity(false);
+    setNewShiftRequiresToilet(false);
+    setIsShiftRecurring(false);
+    setRecurringType('0');
+    setRecurringDays([]);
+    setRecurringEndDate(null);
+  };
+
+  // Create a single shift
+  const createShift = async (shiftData: Partial<Shift>): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const response = await fetch('/api/shifts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(shiftData),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to create shift');
+      }
+      
+      // Successfully created shift
+      return true;
+    } catch (err) {
+      console.error('Error creating shift:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while creating the shift');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle new shift form submission
+  const handleNewShiftSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate required fields
     if (!newShiftDate || !newShiftVenue || !newShiftStartTime || !newShiftEndTime) {
-      setError('Please fill in all required fields');
+      setError('Please fill out all required fields: date, venue, start time, and end time');
       return;
     }
-
-    const newShift: ScheduleShift = {
-      id: shifts.length + 1, // Would be assigned by API
-      staffId: newShiftStaff,
-      staffName: newShiftStaff
-        ? `${staff.find(s => s.id === newShiftStaff)?.firstName} ${staff.find(s => s.id === newShiftStaff)?.lastName}`
-        : null,
-      venueId: newShiftVenue,
-      venueName: venues.find(v => v.id === newShiftVenue)?.name || '',
-      date: newShiftDate,
-      startTime: newShiftStartTime,
-      endTime: newShiftEndTime,
-      isPublished: false,
-      isRecurring: isShiftRecurring,
-      recurringDays: isShiftRecurring ? recurringDays : undefined,
-      recurringEndDate: isShiftRecurring ? recurringEndDate || undefined : undefined
+    
+    // Format times to ISO string format
+    const formatTimeToISO = (date: Date, timeString: string): string => {
+      const [hours, minutes] = timeString.split(':').map(Number);
+      const dateObj = new Date(date);
+      dateObj.setHours(hours, minutes, 0, 0);
+      return dateObj.toISOString();
     };
+    
+    const startDateTime = formatTimeToISO(newShiftDate, newShiftStartTime);
+    let endDateTime = formatTimeToISO(newShiftDate, newShiftEndTime);
+    
+    // Handle shifts that cross midnight
+    if (new Date(endDateTime) < new Date(startDateTime)) {
+      const nextDay = new Date(newShiftDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      endDateTime = formatTimeToISO(nextDay, newShiftEndTime);
+    }
+    
+    // Use fetched rates from state
+    let selectedPayRateValue: string | null = null;
+    let isSpecialEvent = false;
 
-    setShifts([...shifts, newShift]);
-    setIsNewShiftDialogOpen(false);
-    setError(null);
+    if (payRateType === 'static') {
+      selectedPayRateValue = fetchedStaticRate;
+      isSpecialEvent = false; // Static is not a special event
+    } else if (payRateType === 'standard') {
+      selectedPayRateValue = fetchedStandardRate;
+      isSpecialEvent = true; // Standard rate is for special events
+    } else if (payRateType === 'custom') {
+      selectedPayRateValue = customPayRate;
+      isSpecialEvent = false; // Assume custom rate isn't inherently special event
+    }
+
+    const baseShiftData = {
+      venueId: newShiftVenue,
+      staffId: newShiftStaff || null,
+      startTime: startDateTime,
+      endTime: endDateTime,
+      notes: newShiftNotes,
+      payRate: selectedPayRateValue ? parseFloat(selectedPayRateValue) : null,
+      isSpecialEvent,
+      requirementsFire: newShiftRequiresFire,
+      requirementsCapacity: newShiftRequiresCapacity,
+      requirementsToilet: newShiftRequiresToilet,
+      status: 'draft' as ShiftStatus // Explicitly cast to ShiftStatus
+    };
+    
+    let success = false;
+    
+    if (!isShiftRecurring) {
+      // Create a single shift
+      success = await createShift(baseShiftData);
+    } else {
+      // Handle recurring shifts
+      if (!recurringEndDate) {
+        setError('Please select an end date for recurring shifts');
+        return;
+      }
+      
+      if (recurringType === '0' && recurringDays.length === 0) {
+        setError('Please select at least one day of the week for weekly recurring shifts');
+        return;
+      }
+      
+      // Create array of dates for recurring shifts
+      const dates: Date[] = [];
+      const startDate = new Date(newShiftDate!);
+      const endDate = new Date(recurringEndDate);
+      
+      if (recurringType === '0') { // Weekly recurrence
+        // Get day of week for selected days (0-6)
+        const selectedDays = recurringDays;
+        
+        // Generate all dates between start and end date that match selected days
+        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+          const dayOfWeek = d.getDay();
+          if (selectedDays.includes(dayOfWeek)) {
+            dates.push(new Date(d));
+          }
+        }
+      } else { // Monthly recurrence
+        const dayOfMonth = startDate.getDate();
+        let currentDate = new Date(startDate);
+        
+        while (currentDate <= endDate) {
+          dates.push(new Date(currentDate));
+          
+          // Move to next month
+          let nextMonth = currentDate.getMonth() + 1;
+          let nextYear = currentDate.getFullYear();
+          
+          if (nextMonth > 11) {
+            nextMonth = 0;
+            nextYear += 1;
+          }
+          
+          currentDate = new Date(nextYear, nextMonth, dayOfMonth);
+        }
+      }
+      
+      // Create shifts for all generated dates
+      let allSuccessful = true;
+      for (const date of dates) {
+        const shiftDate = new Date(date);
+        
+        // Create shift with adjusted date
+        const recurringShiftData = {
+          ...baseShiftData,
+          startTime: formatTimeToISO(shiftDate, newShiftStartTime),
+          endTime: formatTimeToISO(shiftDate, newShiftEndTime),
+        };
+        
+        // Handle shifts that cross midnight
+        if (new Date(recurringShiftData.endTime) < new Date(recurringShiftData.startTime)) {
+          const nextDay = new Date(shiftDate);
+          nextDay.setDate(nextDay.getDate() + 1);
+          recurringShiftData.endTime = formatTimeToISO(nextDay, newShiftEndTime);
+        }
+        
+        const result = await createShift(recurringShiftData);
+        if (!result) {
+          allSuccessful = false;
+          break;
+        }
+      }
+      
+      success = allSuccessful;
+    }
+    
+    if (success) {
+      // Close dialog and reset form
+      handleCloseNewShiftDialog();
+      // Reload shifts to show newly created ones
+      loadShifts();
+    }
   };
 
   // Handle editing a shift
@@ -417,105 +763,71 @@ const ShiftScheduling: React.FC = () => {
     setIsTemplateDialogOpen(false);
   };
 
-  // Handle bulk shift dialog
+  // Handle opening bulk shift dialog
   const handleOpenBulkShiftDialog = () => {
-    // Reset form
+    // Reset the form to default values
+    const today = new Date();
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 7);
+    
     setBulkShiftDetails({
-      venueId: null,
-      startDate: new Date(),
-      endDate: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0), // Last day of current month
+      venueId: venues.length > 0 ? venues[0].id : null,
+      startDate: today,
+      endDate: nextWeek,
       startTime: '20:00',
       endTime: '04:00',
-      daysOfWeek: [],
+      daysOfWeek: [5, 6], // Default to Friday and Saturday
       selectedStaff: [],
       isSequential: false
     });
+    
+    setError(null);
     setIsBulkShiftDialogOpen(true);
   };
 
   // Handle creating bulk shifts
-  const handleCreateBulkShifts = () => {
-    const {
-      venueId,
-      startDate,
-      endDate,
-      startTime,
-      endTime,
-      daysOfWeek,
-      selectedStaff,
-      isSequential
-    } = bulkShiftDetails;
-
-    if (!venueId || !startDate || !endDate || !startTime || !endTime || daysOfWeek.length === 0 || selectedStaff.length === 0) {
-      setError('Please fill in all required fields and select at least one day and one staff member.');
-      return;
-    }
-
-    // Create new shifts based on the bulk criteria
-    const newShifts: ScheduleShift[] = [];
-    let nextShiftId = shifts.length + 1;
-    const selectedVenue = venues.find(v => v.id === venueId);
-
-    // Calculate all dates within the range that match the selected days of week
-    const allDates: Date[] = [];
-    const currentDate = new Date(startDate);
-
-    while (currentDate <= endDate) {
-      if (daysOfWeek.includes(currentDate.getDay())) {
-        allDates.push(new Date(currentDate));
+  const handleCreateBulkShifts = async (shifts: Array<{
+    venueId: string;
+    startTime: string;
+    endTime: string;
+  }>) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      console.log(`Attempting to create ${shifts.length} shifts`);
+      
+      if (!shifts.length) {
+        setError('No shifts to create. Please check your selection.');
+        setIsLoading(false);
+        return;
       }
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    if (isSequential && selectedStaff.length > 0) {
-      // Sequential assignment: each staff member gets assigned to different days in rotation
-      let staffIndex = 0;
-
-      for (const date of allDates) {
-        const staffId = selectedStaff[staffIndex % selectedStaff.length];
-        const staffMember = staff.find(s => s.id === staffId);
-
-        newShifts.push({
-          id: nextShiftId++,
-          staffId,
-          staffName: staffMember ? `${staffMember.firstName} ${staffMember.lastName}` : null,
-          venueId,
-          venueName: selectedVenue?.name || '',
-          date,
-          startTime,
-          endTime,
-          isPublished: false,
-          isRecurring: false
-        });
-
-        staffIndex++;
-      }
-    } else {
-      // All staff to all days: create a shift for each staff member for each date
-      for (const date of allDates) {
-        for (const staffId of selectedStaff) {
-          const staffMember = staff.find(s => s.id === staffId);
-
-          newShifts.push({
-            id: nextShiftId++,
-            staffId,
-            staffName: staffMember ? `${staffMember.firstName} ${staffMember.lastName}` : null,
-            venueId,
-            venueName: selectedVenue?.name || '',
-            date,
-            startTime,
-            endTime,
-            isPublished: false,
-            isRecurring: false
-          });
+      
+      // Validate shifts data
+      for (const shift of shifts) {
+        if (!shift.venueId || !shift.startTime || !shift.endTime) {
+          setError('Invalid shift data. Please check your inputs.');
+          setIsLoading(false);
+          return;
         }
       }
+      
+      const result = await bulkCreateShifts(shifts);
+      
+      if (result) {
+        // Reload shifts after bulk creation
+        console.log('Shifts created successfully, reloading data');
+        await loadShifts();
+        setIsBulkShiftDialogOpen(false);
+      } else {
+        setError('Failed to create shifts. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error creating bulk shifts:', err);
+      setError('An error occurred while creating shifts. ' + (err instanceof Error ? err.message : ''));
+    } finally {
+      setIsLoading(false);
     }
-
-    // Add new shifts to the existing ones
-    setShifts([...shifts, ...newShifts]);
-    setIsBulkShiftDialogOpen(false);
-    setError(null);
   };
 
   // Handle updating bulk shift details
@@ -749,15 +1061,13 @@ const ShiftScheduling: React.FC = () => {
 
   // Render recurring options in the form
   const renderRecurringOptions = () => {
-    if (!isShiftRecurring) return null;
-
     return (
       <Stack tokens={{ childrenGap: 10 }}>
         <Dropdown
           label="Recurrence Pattern"
           options={recurringOptions}
           selectedKey={recurringType}
-          onChange={(_, option) => option && setRecurringType(option.key as string)}
+          onChange={(event, option) => option && setRecurringType(option.key as string)}
         />
 
         {recurringType === '1' || recurringType === '2' ? (
@@ -768,7 +1078,7 @@ const ShiftScheduling: React.FC = () => {
                 key={day}
                 label={day.substring(0, 3)}
                 checked={recurringDays.includes(daysOfWeek.indexOf(day))}
-                onChange={(_, checked) => {
+                onChange={(event, checked) => {
                   if (checked === undefined) return;
                   const index = daysOfWeek.indexOf(day);
                   if (checked) {
@@ -795,6 +1105,103 @@ const ShiftScheduling: React.FC = () => {
       </Stack>
     );
   };
+
+  // Handle venue filter change
+  const handleVenueFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    setVenueFilter(value === 'all' ? null : value);
+  };
+  
+  // Handle staff filter change
+  const handleStaffFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    setStaffFilter(value === 'all' ? null : value);
+  };
+  
+  // Apply filters and reload shifts
+  const applyFilters = async () => {
+    try {
+      setIsLoading(true);
+      // Get shifts with filters applied
+      const filteredShiftsFromApi = await getShifts({
+        venueId: venueFilter,
+        staffId: staffFilter
+      });
+      // Map the API response to ScheduleShift type
+      const mappedShifts = filteredShiftsFromApi.map(shift => ({
+        ...shift,
+        id: parseInt(shift.id, 10), // Convert id to number
+        venueId: parseInt(shift.venueId, 10), // Convert venueId to number
+        staffId: shift.staffId ? parseInt(shift.staffId, 10) : null, // Convert staffId to number or null
+        staffName: shift.staffName || null, // Convert undefined staffName to null
+        date: new Date(shift.date), // Ensure date is a Date object
+        isPublished: false, // Add default value
+        isRecurring: false, // Add default value
+        // Add other necessary mappings or defaults if needed
+      }));
+      setShifts(mappedShifts);
+    } catch (error) {
+      console.error('Error applying filters:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Clear all filters
+  const clearFilters = async () => {
+    setVenueFilter(null);
+    setStaffFilter(null);
+    
+    try {
+      setIsLoading(true);
+      // Reload shifts without filters
+      const shiftsDataFromApi = await getShifts();
+      // Map the API response to ScheduleShift type
+      const mappedShifts = shiftsDataFromApi.map(shift => ({
+        ...shift,
+        id: parseInt(shift.id, 10), // Convert id to number
+        venueId: parseInt(shift.venueId, 10), // Convert venueId to number
+        staffId: shift.staffId ? parseInt(shift.staffId, 10) : null, // Convert staffId to number or null
+        staffName: shift.staffName || null, // Convert undefined staffName to null
+        date: new Date(shift.date), // Ensure date is a Date object
+        isPublished: false, // Add default value
+        isRecurring: false, // Add default value
+        // Add other necessary mappings or defaults if needed
+      }));
+      setShifts(mappedShifts);
+    } catch (error) {
+      console.error('Error clearing filters:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Filtered shifts based on applied filters
+  const filteredShifts = shifts.filter(shift => {
+    let matchesVenue = true;
+    let matchesStaff = true;
+    
+    if (venueFilter) {
+      matchesVenue = shift.venueId === parseInt(venueFilter, 10);
+    }
+    
+    if (staffFilter) {
+      matchesStaff = shift.staffId === parseInt(staffFilter, 10);
+    }
+    
+    return matchesVenue && matchesStaff;
+  });
+
+  // Add a check for data loading before rendering
+  if (isLoading && (!venues.length || !staff.length)) {
+    return (
+      <MainLayout>
+        <Stack tokens={{ childrenGap: 20 }}>
+          <Spinner size={SpinnerSize.large} label="Loading schedule data..." />
+        </Stack>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
@@ -837,19 +1244,25 @@ const ShiftScheduling: React.FC = () => {
             placeholder="Select Venue"
             options={venues.map(venue => ({ key: venue.id, text: venue.name }))}
             selectedKey={venueFilter}
-            onChange={(_, option) => setVenueFilter(option ? Number(option.key) : null)}
+            onChange={(event, option) => setVenueFilter(option ? String(option.key) : null)}
           />
           <ComboBox
             label="Staff Filter"
             placeholder="Select Staff"
-            options={staff.map(s => ({ key: s.id, text: `${s.firstName} ${s.lastName}` }))}
+            options={Array.isArray(staff) ? staff.map(s => ({ key: s.id, text: `${s.firstName} ${s.lastName}` })) : []}
             selectedKey={staffFilter}
-            onChange={(_, option) => setStaffFilter(option ? Number(option.key) : null)}
+            onChange={(event, option) => setStaffFilter(option ? String(option.key) : null)}
           />
         </Stack>
 
         {isLoading ? (
           <Spinner size={SpinnerSize.large} label="Loading schedule..." />
+        ) : error ? (
+          <MessageBar messageBarType={MessageBarType.error}>{error}</MessageBar>
+        ) : !calendarDays.length ? (
+          <MessageBar messageBarType={MessageBarType.warning}>
+            No calendar data available. Please try refreshing the page.
+          </MessageBar>
         ) : (
           <div className={styles.calendarGrid}>
             {daysOfWeek.map((day) => (
@@ -879,8 +1292,8 @@ const ShiftScheduling: React.FC = () => {
                       handleEditShift(shift);
                     }}
                   >
-                    <div>{shift.venueName}</div>
-                    <div>{shift.startTime} - {shift.endTime}</div>
+                    <div>{shift.venueName || 'Unknown Venue'}</div>
+                    <div>{shift.startTime || '--:--'} - {shift.endTime || '--:--'}</div>
                     <div>{shift.staffName || 'Open Shift'}</div>
                   </div>
                 ))}
@@ -892,81 +1305,111 @@ const ShiftScheduling: React.FC = () => {
         {/* New Shift Dialog */}
         <Dialog
           hidden={!isNewShiftDialogOpen}
-          onDismiss={() => setIsNewShiftDialogOpen(false)}
+          onDismiss={handleCloseNewShiftDialog}
           dialogContentProps={{
             type: DialogType.normal,
             title: 'Create New Shift'
           }}
           minWidth={600}
         >
-          <Stack tokens={{ childrenGap: 15 }}>
-            <DatePicker
-              label="Date"
-              value={newShiftDate || undefined}
-              isRequired
-              onSelectDate={(date: Date | null | undefined) => {
-                if (date) {
-                  setNewShiftDate(date);
-                }
-              }}
-            />
-
-            <Dropdown
-              label="Venue"
-              placeholder="Select venue"
-              options={venues.map(venue => ({ key: venue.id, text: venue.name }))}
-              selectedKey={newShiftVenue}
-              required
-              onChange={(_, option) => option && setNewShiftVenue(Number(option.key))}
-            />
-
-            <Dropdown
-              label="Staff Member"
-              placeholder="Select staff (or leave empty for open shift)"
-              options={[
-                { key: 'open', text: 'Open Shift (No Staff Assigned)' },
-                ...staff.map(s => ({ key: s.id, text: `${s.firstName} ${s.lastName}` }))
-              ]}
-              selectedKey={newShiftStaff || 'open'}
-              onChange={(_, option) => {
-                if (option) {
-                  setNewShiftStaff(option.key === 'open' ? null : Number(option.key));
-                }
-              }}
-            />
-
-            <Stack horizontal tokens={{ childrenGap: 10 }}>
-              <TextField
-                label="Start Time"
-                type="time"
-                value={newShiftStartTime}
-                required
-                onChange={(_, value) => setNewShiftStartTime(value || '')}
-                styles={{ root: { width: '50%' } }}
+          <form onSubmit={handleNewShiftSubmit}>
+            <Stack tokens={{ childrenGap: 15 }}>
+              <DatePicker
+                label="Date"
+                value={newShiftDate || undefined}
+                isRequired
+                onSelectDate={(date: Date | null | undefined) => {
+                  if (date) {
+                    setNewShiftDate(date);
+                  }
+                }}
               />
-              <TextField
-                label="End Time"
-                type="time"
-                value={newShiftEndTime}
+
+              <Dropdown
+                label="Venue"
+                placeholder="Select venue"
+                options={venues.map(venue => ({ key: venue.id, text: venue.name }))}
+                selectedKey={newShiftVenue}
                 required
-                onChange={(_, value) => setNewShiftEndTime(value || '')}
-                styles={{ root: { width: '50%' } }}
+                onChange={(event, option) => option && setNewShiftVenue(Number(option.key))}
               />
+
+              <Dropdown
+                label="Staff Member"
+                placeholder="Select staff (or leave empty for open shift)"
+                options={[
+                  { key: 'open', text: 'Open Shift (No Staff Assigned)' },
+                  ...(Array.isArray(staff) ? staff.map(s => ({ key: s.id, text: `${s.firstName} ${s.lastName}` })) : [])
+                ]}
+                selectedKey={newShiftStaff || 'open'}
+                onChange={(event, option) => {
+                  if (option) {
+                    setNewShiftStaff(option.key === 'open' ? null : Number(option.key));
+                  }
+                }}
+              />
+
+              <Stack horizontal tokens={{ childrenGap: 10 }}>
+                <TextField
+                  label="Start Time"
+                  type="time"
+                  value={newShiftStartTime}
+                  required
+                  onChange={(event, value) => setNewShiftStartTime(value || '')}
+                  styles={{ root: { width: '50%' } }}
+                />
+                <TextField
+                  label="End Time"
+                  type="time"
+                  value={newShiftEndTime}
+                  required
+                  onChange={(event, value) => setNewShiftEndTime(value || '')}
+                  styles={{ root: { width: '50%' } }}
+                />
+              </Stack>
+
+              <Toggle
+                label="Recurring Shift"
+                checked={isShiftRecurring}
+                onChange={(event, checked) => checked !== undefined && setIsShiftRecurring(checked)}
+              />
+
+              {isShiftRecurring && renderRecurringOptions()}
+
+              <Stack tokens={{ childrenGap: 10 }}>
+                <Label>Pay Rate {isSettingsLoading ? '(Loading rates...)' : settingsError ? '(Error loading rates)' : ''}</Label>
+                <Dropdown
+                  label="Select Pay Rate Type"
+                  options={[
+                    { key: 'static', text: `Static (£${fetchedStaticRate})` },
+                    { key: 'standard', text: `Standard (£${fetchedStandardRate})` },
+                    { key: 'custom', text: 'Custom' }
+                  ]}
+                  selectedKey={payRateType}
+                  onChange={(_, option) => setPayRateType(option?.key as 'static' | 'standard' | 'custom')}
+                  disabled={isSettingsLoading || !!settingsError}
+                />
+                {payRateType === 'custom' && (
+                  <TextField
+                    label="Custom Pay Rate (£)"
+                    value={customPayRate}
+                    onChange={(_, value) => setCustomPayRate(value || '')}
+                    type="number"
+                    min={0}
+                  />
+                )}
+              </Stack>
             </Stack>
 
-            <Toggle
-              label="Recurring Shift"
-              checked={isShiftRecurring}
-              onChange={(_, checked) => checked !== undefined && setIsShiftRecurring(checked)}
-            />
-
-            {renderRecurringOptions()}
-          </Stack>
-
-          <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }} styles={{ root: { marginTop: 20 } }}>
-            <DefaultButton text="Cancel" onClick={() => setIsNewShiftDialogOpen(false)} />
-            <PrimaryButton text="Create Shift" onClick={handleCreateShift} />
-          </Stack>
+            <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }} styles={{ root: { marginTop: 20 } }}>
+              <DefaultButton text="Cancel" onClick={handleCloseNewShiftDialog} />
+              <PrimaryButton 
+                text="Create Shift" 
+                type="submit"
+                disabled={isSettingsLoading}
+              />
+            </Stack>
+          </form>
         </Dialog>
 
         {/* Edit Shift Dialog */}
@@ -997,7 +1440,7 @@ const ShiftScheduling: React.FC = () => {
               options={venues.map(venue => ({ key: venue.id, text: venue.name }))}
               selectedKey={newShiftVenue}
               required
-              onChange={(_, option) => option && setNewShiftVenue(Number(option.key))}
+              onChange={(event, option) => option && setNewShiftVenue(Number(option.key))}
             />
 
             <Dropdown
@@ -1005,10 +1448,10 @@ const ShiftScheduling: React.FC = () => {
               placeholder="Select staff (or leave empty for open shift)"
               options={[
                 { key: 'open', text: 'Open Shift (No Staff Assigned)' },
-                ...staff.map(s => ({ key: s.id, text: `${s.firstName} ${s.lastName}` }))
+                ...(Array.isArray(staff) ? staff.map(s => ({ key: s.id, text: `${s.firstName} ${s.lastName}` })) : [])
               ]}
               selectedKey={newShiftStaff || 'open'}
-              onChange={(_, option) => {
+              onChange={(event, option) => {
                 if (option) {
                   setNewShiftStaff(option.key === 'open' ? null : Number(option.key));
                 }
@@ -1021,7 +1464,7 @@ const ShiftScheduling: React.FC = () => {
                 type="time"
                 value={newShiftStartTime}
                 required
-                onChange={(_, value) => setNewShiftStartTime(value || '')}
+                onChange={(event, value) => setNewShiftStartTime(value || '')}
                 styles={{ root: { width: '50%' } }}
               />
               <TextField
@@ -1029,7 +1472,7 @@ const ShiftScheduling: React.FC = () => {
                 type="time"
                 value={newShiftEndTime}
                 required
-                onChange={(_, value) => setNewShiftEndTime(value || '')}
+                onChange={(event, value) => setNewShiftEndTime(value || '')}
                 styles={{ root: { width: '50%' } }}
               />
             </Stack>
@@ -1037,10 +1480,10 @@ const ShiftScheduling: React.FC = () => {
             <Toggle
               label="Recurring Shift"
               checked={isShiftRecurring}
-              onChange={(_, checked) => checked !== undefined && setIsShiftRecurring(checked)}
+              onChange={(event, checked) => checked !== undefined && setIsShiftRecurring(checked)}
             />
 
-            {renderRecurringOptions()}
+            {isShiftRecurring && renderRecurringOptions()}
           </Stack>
 
           <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }} styles={{ root: { marginTop: 20 } }}>
@@ -1148,7 +1591,7 @@ const ShiftScheduling: React.FC = () => {
               options={venues.map(venue => ({ key: venue.id, text: venue.name }))}
               selectedKey={bulkShiftDetails.venueId}
               required
-              onChange={(_, option) => option && updateBulkShiftDetails('venueId', Number(option.key))}
+              onChange={(event, option) => option && updateBulkShiftDetails('venueId', Number(option.key))}
             />
 
             <Stack horizontal tokens={{ childrenGap: 10 }}>
@@ -1175,7 +1618,7 @@ const ShiftScheduling: React.FC = () => {
                 type="time"
                 value={bulkShiftDetails.startTime}
                 required
-                onChange={(_, value) => value && updateBulkShiftDetails('startTime', value)}
+                onChange={(event, value) => value && updateBulkShiftDetails('startTime', value)}
                 styles={{ root: { width: '50%' } }}
               />
               <TextField
@@ -1183,7 +1626,7 @@ const ShiftScheduling: React.FC = () => {
                 type="time"
                 value={bulkShiftDetails.endTime}
                 required
-                onChange={(_, value) => value && updateBulkShiftDetails('endTime', value)}
+                onChange={(event, value) => value && updateBulkShiftDetails('endTime', value)}
                 styles={{ root: { width: '50%' } }}
               />
             </Stack>
@@ -1195,7 +1638,7 @@ const ShiftScheduling: React.FC = () => {
                   key={day}
                   label={day}
                   checked={bulkShiftDetails.daysOfWeek.includes(index)}
-                  onChange={(_, checked) => handleDayOfWeekToggle(index, checked)}
+                  onChange={(event, checked) => handleDayOfWeekToggle(index, checked)}
                   styles={{ root: { marginRight: 12 } }}
                 />
               ))}
@@ -1205,40 +1648,17 @@ const ShiftScheduling: React.FC = () => {
               <PivotItem headerText="Select Staff">
                 <Stack tokens={{ childrenGap: 10, padding: 10 }}>
                   <Label required>Select Staff Members</Label>
-                  <Stack className="staff-selection-container" styles={{ root: { maxHeight: 200, overflowY: 'auto', padding: 10, border: '1px solid #eee' }}}>
+                  <Stack className="staff-selection-container" styles={{ root: { maxHeight: 200, overflowY: 'auto', padding: 10, border: '1px solid #eee'}}}>
                     {staff.map((staffMember) => (
                       <Checkbox
                         key={staffMember.id}
                         label={`${staffMember.firstName} ${staffMember.lastName}`}
                         checked={bulkShiftDetails.selectedStaff.includes(staffMember.id)}
-                        onChange={(_, checked) => handleStaffToggle(staffMember.id, checked)}
+                        onChange={(event, checked) => handleStaffToggle(staffMember.id, checked)}
                         styles={{ root: { marginBottom: 8 } }}
                       />
                     ))}
                   </Stack>
-
-                  <Toggle
-                    label="Sequential Assignment"
-                    inlineLabel
-                    checked={bulkShiftDetails.isSequential}
-                    onChange={(_, checked) => checked !== undefined && updateBulkShiftDetails('isSequential', checked)}
-                  />
-                  <Text styles={{ root: { fontSize: 12, color: '#666' } }}>
-                    {bulkShiftDetails.isSequential
-                      ? "Staff will be assigned sequentially to different days (rotation)."
-                      : "Each staff member will be assigned to all selected days."}
-                  </Text>
-                </Stack>
-              </PivotItem>
-              <PivotItem headerText="Preview">
-                <Stack tokens={{ padding: 10 }}>
-                  <Text variant="medium">Scheduled Days: {bulkShiftDetails.daysOfWeek.map(d => daysOfWeek[d]).join(", ")}</Text>
-                  <Text variant="medium">Staff Members: {bulkShiftDetails.selectedStaff.length}</Text>
-                  <Text variant="medium">
-                    {bulkShiftDetails.isSequential
-                      ? `Creating approximately ${Math.min(bulkShiftDetails.selectedStaff.length, bulkShiftDetails.daysOfWeek.length)} shifts per week`
-                      : `Creating approximately ${bulkShiftDetails.selectedStaff.length * bulkShiftDetails.daysOfWeek.length} shifts per week`}
-                  </Text>
                 </Stack>
               </PivotItem>
             </Pivot>
@@ -1246,81 +1666,60 @@ const ShiftScheduling: React.FC = () => {
 
           <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }} styles={{ root: { marginTop: 20 } }}>
             <DefaultButton text="Cancel" onClick={() => setIsBulkShiftDialogOpen(false)} />
-            <PrimaryButton text="Create Shifts" onClick={handleCreateBulkShifts} />
+            <PrimaryButton text="Create Shifts" onClick={() => {
+              try {
+                const { venueId, startDate, endDate, startTime, endTime, daysOfWeek } = bulkShiftDetails;
+                
+                if (!venueId || !startDate || !endDate) {
+                  setError('Please select venue and date range');
+                  return;
+                }
+                
+                if (!startTime || !endTime) {
+                  setError('Please enter start and end times');
+                  return;
+                }
+                
+                if (!daysOfWeek || daysOfWeek.length === 0) {
+                  setError('Please select at least one day of the week');
+                  return;
+                }
+                
+                // Generate shifts for the selected date range and days
+                const shiftsToCreate = [];
+                const currentDate = new Date(startDate);
+                const endDateObj = new Date(endDate);
+                
+                console.log(`Generating shifts from ${currentDate.toDateString()} to ${endDateObj.toDateString()}`);
+                
+                while (currentDate <= endDateObj) {
+                  const dayOfWeek = currentDate.getDay();
+                  if (daysOfWeek.includes(dayOfWeek)) {
+                    const dateStr = currentDate.toISOString().split('T')[0];
+                    shiftsToCreate.push({
+                      venueId: venueId.toString(),
+                      startTime: `${dateStr}T${startTime}:00`,
+                      endTime: `${dateStr}T${endTime}:00`
+                    });
+                  }
+                  // Move to next day
+                  currentDate.setDate(currentDate.getDate() + 1);
+                }
+                
+                console.log(`Created ${shiftsToCreate.length} shifts for submission`);
+                
+                if (shiftsToCreate.length > 0) {
+                  handleCreateBulkShifts(shiftsToCreate);
+                } else {
+                  setError('No shifts would be created with the current selection. Please check your date range and days.');
+                }
+              } catch (error) {
+                console.error("Error preparing bulk shifts:", error);
+                setError("Failed to prepare shifts. Please check your inputs.");
+              }
+            }} />
           </Stack>
         </Dialog>
-
-        {/* Copy Shifts Dialog */}
-        <Dialog
-          hidden={!isCopyShiftsDialogOpen}
-          onDismiss={() => setIsCopyShiftsDialogOpen(false)}
-          dialogContentProps={{
-            type: DialogType.normal,
-            title: 'Copy Monthly Schedule'
-          }}
-          minWidth={500}
-        >
-          <Stack tokens={{ childrenGap: 15 }}>
-            <Text>
-              Copy the entire shift schedule from one month to another.
-              This will create new shifts in the target month with the same staff assignments, venues, and times.
-            </Text>
-
-            <Stack horizontal tokens={{ childrenGap: 20 }} horizontalAlign="space-between">
-              <Stack styles={{ root: { width: '45%' } }}>
-                <Label>Source Month</Label>
-                <Calendar
-                  onSelectDate={(date) => date && setSourceMonth(new Date(date.getFullYear(), date.getMonth(), 1))}
-                  value={sourceMonth || undefined}
-                  isMonthPickerVisible={true}
-                  showMonthPickerAsOverlay={false}
-                  highlightSelectedMonth={true}
-                  isDayPickerVisible={false}
-                  showGoToToday={false}
-                />
-                {sourceMonth && (
-                  <Text variant="medium" styles={{ root: { marginTop: 8 } }}>
-                    Selected: {sourceMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
-                  </Text>
-                )}
-              </Stack>
-
-              <Stack styles={{ root: { width: '45%' } }}>
-                <Label>Target Month</Label>
-                <Calendar
-                  onSelectDate={(date) => date && setTargetMonth(new Date(date.getFullYear(), date.getMonth(), 1))}
-                  value={targetMonth || undefined}
-                  isMonthPickerVisible={true}
-                  showMonthPickerAsOverlay={false}
-                  highlightSelectedMonth={true}
-                  isDayPickerVisible={false}
-                  showGoToToday={false}
-                />
-                {targetMonth && (
-                  <Text variant="medium" styles={{ root: { marginTop: 8 } }}>
-                    Selected: {targetMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
-                  </Text>
-                )}
-              </Stack>
-            </Stack>
-
-            {sourceMonth && targetMonth && sourceMonth.getTime() === targetMonth.getTime() && (
-              <MessageBar messageBarType={MessageBarType.warning}>
-                Source and target months are the same. Please select different months.
-              </MessageBar>
-            )}
-          </Stack>
-
-          <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }} styles={{ root: { marginTop: 20 } }}>
-            <DefaultButton text="Cancel" onClick={() => setIsCopyShiftsDialogOpen(false)} />
-            <PrimaryButton
-              text="Copy Shifts"
-              onClick={handleCopyShifts}
-              disabled={!sourceMonth || !targetMonth || (sourceMonth.getTime() === targetMonth.getTime())}
-            />
-          </Stack>
-        </Dialog>
-
       </Stack>
     </MainLayout>
   );

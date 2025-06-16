@@ -2,7 +2,7 @@ import api from './api';
 import type { ProfileUpdateRequest, SIALicenseUpdateRequest, StaffProfile, SIALicense } from '../types';
 
 // Demo mode flag - ensure this is true for testing
-const DEMO_MODE = true;
+const DEMO_MODE = false;
 
 // Mock data for demo profile
 const DEMO_PROFILE: StaffProfile = {
@@ -166,38 +166,20 @@ class ProfileService {
   /**
    * Add a new SIA license
    */
-  async addSIALicense(licenseData: SIALicenseUpdateRequest): Promise<SIALicense> {
-    if (DEMO_MODE) {
-      console.log('Demo mode: Adding SIA license', licenseData);
-
-      // Create a new license with the provided data
-      const newLicense: SIALicense = {
-        licenseNumber: licenseData.licenseNumber,
-        licenseType: licenseData.licenseType,
-        issueDate: licenseData.issueDate,
-        expiryDate: licenseData.expiryDate,
-        status: 'valid',
-        documentUrl: 'https://via.placeholder.com/300x200?text=New+SIA+License'
-      };
-
-      // Simulate a delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      return newLicense;
-    }
-
-    // In a real implementation, we'd use FormData to handle file uploads
-    const formData = new FormData();
-    formData.append('licenseNumber', licenseData.licenseNumber);
-    formData.append('licenseType', licenseData.licenseType);
-    formData.append('issueDate', licenseData.issueDate);
-    formData.append('expiryDate', licenseData.expiryDate);
-
-    if (licenseData.documentFile) {
-      formData.append('document', licenseData.documentFile);
-    }
-
-    const response = await api.post<SIALicense>('/profiles/me/sia-licenses', formData);
-    return response.data;
+  async addSIALicense(staffProfileId: number, licenseData: any) {
+    // Prepare payload with correct snake_case field names
+    const payload = {
+      staff_profile: staffProfileId,
+      license_number: licenseData.licenseNumber,
+      license_type: licenseData.licenseType,
+      issue_date: licenseData.issueDate,
+      expiry_date: licenseData.expiryDate,
+      status: licenseData.status || 'pending',
+      document_url: licenseData.document_url,
+      level: licenseData.level || 'qualified',
+    };
+    console.log('addSIALicense payload:', payload);
+    return api.post('/sia-licenses/', payload);
   }
 
   /**
@@ -266,6 +248,22 @@ class ProfileService {
     formData.append('profile_image', imageFile);
 
     const response = await api.post<{ imageUrl: string }>('/profiles/me/image', formData);
+    return response.data;
+  }
+
+  /**
+   * Get all staff profiles pending approval
+   */
+  async getPendingStaffProfiles() {
+    const response = await api.get('/staff-profiles/?is_approved=false');
+    return response.data;
+  }
+
+  /**
+   * Approve a staff profile by ID
+   */
+  async approveStaffProfile(profileId: number) {
+    const response = await api.patch(`/staff-profiles/${profileId}/approve/`);
     return response.data;
   }
 }

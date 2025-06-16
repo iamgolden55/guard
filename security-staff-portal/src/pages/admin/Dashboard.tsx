@@ -13,8 +13,9 @@ import {
 import { MainLayout } from '../../layouts';
 import { Card } from '../../components';
 import { useAuth } from '../../contexts/AuthContext';
-import { shiftService, invoiceService, deputyService } from '../../services';
-import type { DeputyStatus } from '../../types';
+import { shiftService, invoiceService, deputyService, venueService } from '../../services';
+import api from '../../services/api';
+import type { DeputyStatus, User, Venue, Shift, Invoice } from '../../types';
 
 // Placeholder component for statistics card
 interface StatCardProps {
@@ -67,23 +68,44 @@ const AdminDashboard: React.FC = () => {
       try {
         setIsLoading(true);
 
-        // Get shifts for stats
-        const shifts = await shiftService.getShifts();
-        const activeShifts = shifts.filter(shift => shift.status === 'active').length;
-        const pendingApprovals = shifts.filter(
-          shift => shift.status === 'completed' && !shift.managerApproved
+        // Fetch all data in parallel for better performance
+        const [
+          shiftsResult,
+          invoicesResult,
+          deputyStatusDataResult,
+          usersResult, // Fetch the full user list
+          venuesResult // Fetch the full venue list
+        ] = await Promise.allSettled([
+          shiftService.getShifts(),
+          invoiceService.getInvoices(),
+          deputyService.getDeputyStatus(),
+          api.get<User[]>('/users/'), // Use api.get to fetch users
+          venueService.getAllVenues() // Use venueService to fetch venues
+        ]);
+
+        // Process shifts - Assuming shiftService returns Shift[] directly
+        const shiftsData = shiftsResult.status === 'fulfilled' && Array.isArray(shiftsResult.value) ? shiftsResult.value : [];
+        const activeShifts = shiftsData.filter((shift: Shift) => shift.status === 'active').length;
+        const pendingApprovals = shiftsData.filter(
+          (shift: Shift) => shift.status === 'completed' && !shift.managerApproved
         ).length;
+        if (shiftsResult.status === 'rejected') {
+            console.error("Failed to load shifts:", shiftsResult.reason);
+        }
 
-        // Get invoices stats
-        const invoices = await invoiceService.getInvoices();
-        const pendingInvoices = invoices.filter(invoice => invoice.status === 'pending').length;
+        // Process invoices - Assuming invoiceService returns Invoice[] directly
+        const invoicesData = invoicesResult.status === 'fulfilled' && Array.isArray(invoicesResult.value) ? invoicesResult.value : [];
+        const pendingInvoices = invoicesData.filter((invoice: Invoice) => invoice.status === 'pending').length;
+        if (invoicesResult.status === 'rejected') {
+            console.error("Failed to load invoices:", invoicesResult.reason);
+        }
 
-        // Get Deputy status
+        // Process Deputy Status
         let deputyStatusData: DeputyStatus | null = null;
-        try {
-          deputyStatusData = await deputyService.getDeputyStatus();
-        } catch (error) {
-          console.error('Failed to load Deputy status:', error);
+        if (deputyStatusDataResult.status === 'fulfilled') {
+          deputyStatusData = deputyStatusDataResult.value;
+        } else {
+          console.error('Failed to load Deputy status:', deputyStatusDataResult.reason);
           deputyStatusData = {
             isConnected: false,
             lastSyncDate: null,
@@ -92,20 +114,52 @@ const AdminDashboard: React.FC = () => {
             errorMessage: 'Failed to connect to Deputy'
           };
         }
+        setDeputyStatus(deputyStatusData);
 
-        // Set stats (venue count and total staff would come from additional API calls)
+        // Process user list to get staff count
+        let totalStaff = 0;
+        if (usersResult.status === 'fulfilled') {
+             // Assuming the API response has a 'data' property containing the array
+            totalStaff = Array.isArray(usersResult.value?.data) ? usersResult.value.data.length : 0;
+        } else {
+             console.error('Failed to load user data:', usersResult.reason);
+             // Keep totalStaff as 0 or set to specific error indicator if needed
+        }
+
+        // Process venue list to get venue count - Assuming venueService returns Venue[] directly
+        let venueCount = 0;
+        if (venuesResult.status === 'fulfilled') {
+          if (Array.isArray(venuesResult.value)) {
+               venueCount = venuesResult.value.length;
+           } else {
+               // Log a warning if the structure is unexpected
+               console.warn('Unexpected response structure for venues:', venuesResult.value);
+           }
+        } else {
+             console.error('Failed to load venue data:', venuesResult.reason);
+             // Keep venueCount as 0 or set to specific error indicator if needed
+        }
+
+        // Set stats
         setStats({
           activeShifts,
           pendingApprovals,
-          totalStaff: 25, // Placeholder value
+          totalStaff,
           pendingInvoices,
-          venueCount: 10 // Placeholder value
+          venueCount // Use fetched value
         });
 
-        setDeputyStatus(deputyStatusData);
-
       } catch (error) {
-        console.error('Failed to load dashboard data:', error);
+        // This catch block might not be necessary if using Promise.allSettled and handling errors individually
+        console.error('An unexpected error occurred while loading dashboard data:', error);
+        // Optionally set stats to error values or show an error message
+         setStats({
+          activeShifts: 0,
+          pendingApprovals: 0,
+          totalStaff: 0, // Indicate error or N/A
+          pendingInvoices: 0,
+          venueCount: 0 // Indicate error or N/A
+        });
       } finally {
         setIsLoading(false);
       }

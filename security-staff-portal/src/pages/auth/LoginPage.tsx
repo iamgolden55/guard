@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   PrimaryButton,
   TextField,
@@ -17,7 +17,15 @@ import { useAuth } from '../../contexts/AuthContext';
 const LoginPage: React.FC = () => {
   const { login, authState } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [loginError, setLoginError] = React.useState<string | null>(null);
+
+  // Check for expired session parameter
+  const searchParams = new URLSearchParams(window.location.search);
+  const sessionExpired = searchParams.get('expired') === 'true';
+
+  // Get the previous location the user was trying to access
+  const from = location.state?.from?.pathname || '/';
 
   // Redirect if already authenticated
   React.useEffect(() => {
@@ -27,10 +35,17 @@ const LoginPage: React.FC = () => {
     );
 
     if (authState.isAuthenticated && !authState.isLoading) {
-      console.log('User is authenticated, redirecting to dashboard');
-      navigate('/');
+      console.log('User is authenticated, redirecting to dashboard or previous page:', from);
+      navigate(from);
     }
-  }, [authState, navigate]);
+  }, [authState, navigate, from]);
+
+  // If session expired, show that message instead of any previous errors
+  React.useEffect(() => {
+    if (sessionExpired) {
+      setLoginError('Your session has expired. Please log in again.');
+    }
+  }, [sessionExpired]);
 
   // Login form validation schema
   const validationSchema = Yup.object({

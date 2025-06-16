@@ -10,12 +10,13 @@ export interface SIALicense {
 }
 
 export enum SIALicenseType {
-  DOOR_SUPERVISION = 'Door Supervision',
-  SECURITY_GUARDING = 'Security Guarding',
-  CCTV = 'CCTV Operation',
-  CLOSE_PROTECTION = 'Close Protection',
-  VEHICLE_IMMOBILIZATION = 'Vehicle Immobilization',
-  KEY_HOLDING = 'Key Holding'
+  DOOR_SUPERVISION = 'ds',
+  SECURITY_GUARDING = 'sg',
+  CCTV = 'cctv',
+  CLOSE_PROTECTION = 'cp',
+  DOG_HANDLER = 'k9',
+  VEHICLE_SECURITY = 'vs',
+  KEY_HOLDING = 'key'
 }
 
 export interface Address {
@@ -59,6 +60,8 @@ export interface StaffProfile extends User {
   notes?: string;
   passwordLastChanged?: string;
   acceptedVenueTerms?: AcceptedVenueTerms[]; // Track which venue terms have been accepted
+  isApproved?: boolean; // Admin approval status
+  securityRoles?: string[]; // List of security roles for staff
 }
 
 export interface ProfileUpdateRequest {
