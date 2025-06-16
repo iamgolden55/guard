@@ -68,4 +68,6 @@
   .ms-section-subtitle {
     @apply text-ms-gray-600 text-lg mb-12 max-w-3xl mx-auto;
   }
+  
+  /* No custom animation styles needed - using Framer Motion instead */
 }

@@ -178,7 +178,7 @@ const ServiceFilter = () => {
                     ))}
                   </div>
                   <Link
-                    to={`/services#${service.id}`}
+                    to={`/services/${service.id}`}
                     className="text-primary font-medium inline-flex items-center group/link"
                   >
                     Learn More

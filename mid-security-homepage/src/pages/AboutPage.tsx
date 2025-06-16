@@ -1,28 +1,8 @@
-import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 
 const AboutPage = () => {
   return (
     <>
-      {/* Page Header */}
-      <section
-        className="relative bg-cover bg-center bg-no-repeat py-32"
-        style={{
-          backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('https://ext.same-assets.com/764186857/1001001560.jpeg')`
-        }}
-      >
-        <div className="container text-center">
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6">
-            About Us
-          </h1>
-          <div className="flex justify-center">
-            <nav className="flex text-white">
-              <Link to="/" className="hover:text-primary">Home</Link>
-              <span className="mx-2">»</span>
-              <span className="text-primary">About Us</span>
-            </nav>
-          </div>
-        </div>
-      </section>
 
       {/* About Company */}
       <section className="py-16">
@@ -54,10 +34,12 @@ const AboutPage = () => {
                 </li>
               </ul>
               <p className="text-gray-700 mb-4">
-                Mead Security is an independent professional organization dedicated to bringing you security services tailored to your needs. We provide expert security guards across Bristol and throughout the South West. With over 15 years combined experience, we are dedicated to providing cost effective security solutions delivered by fully SIA licensed and experienced personnel.
+              Mead Security is a Bristol-based security company committed to delivering professional, dependable, and people-focused protection across the South West and beyond. With deep roots in the local community and a reputation built on trust, we provide tailored security solutions that keep people safe and businesses secure.
+
               </p>
               <p className="text-gray-700">
-                We pride ourselves on providing well trained and hand picked SIA professionals throughout our venues. We understand that each venue is unique and requires different policies and flexibility. This is why we work closely with our clients so we are able to deliver quality professional security. At Mead Security we understand that customer service is a key aspect of security and we excel at providing the best possible experience for our customers.
+              Our team of SIA-licensed officers bring a wealth of frontline experience to every contract, whether it’s door supervision, static site guarding, mobile patrols, educational campuses or event security. We pride ourselves on being highly visible when needed, discreet when required, and always adaptable to the needs of our clients.
+              We don’t believe in a one-size-fits-all approach. Instead, we take the time to understand your environment, your risks, and your expectations—then deliver a service that exceeds them.
               </p>
             </div>
             <div>
@@ -78,10 +60,12 @@ const AboutPage = () => {
             <h2 className="text-3xl md:text-4xl font-bold mb-6">Our Mission</h2>
             <div className="w-20 h-1 bg-primary mx-auto mb-6"></div>
             <p className="text-gray-700 text-lg mb-4">
-              At Mead Security, our mission is to deliver exceptional security services that protect our clients' assets, staff, and customers while maintaining a welcoming and professional environment.
+            At Mead Security, our mission is simple:
+To protect what matters most—through professionalism, presence, and people-first service.
+
             </p>
             <p className="text-gray-700 text-lg">
-              We believe that effective security goes beyond just physical presence - it requires trained professionals who understand customer service, communication, and the unique needs of each venue. Our goal is to be the most trusted security provider in Bristol and the South West, known for our reliability, professionalism, and commitment to excellence.
+            We aim to set the standard for local security by combining expert personnel, clear communication, and genuine community care.
             </p>
           </div>
         </div>
@@ -157,25 +141,87 @@ const AboutPage = () => {
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="py-16 bg-primary text-white">
-        <div className="container text-center">
-          <h2 className="text-3xl md:text-4xl font-bold mb-6">
-            Ready to work with our professional team?
-          </h2>
-          <p className="max-w-2xl mx-auto mb-8">
-            Contact us today for a free security assessment and quotation. Our team is ready to help you find the perfect security solution for your needs.
-          </p>
-          <div className="flex flex-wrap justify-center gap-4">
-            <Link to="/contact" className="inline-block px-8 py-4 font-bold bg-white text-primary rounded-lg hover:bg-opacity-90 transition-all">
-              Contact Us Today
-            </Link>
-            <a href="https://same-rqmlmf5nx6q-latest.netlify.app" target="_blank" rel="noopener noreferrer" className="inline-block px-8 py-4 font-bold border-2 border-white text-white rounded-lg hover:bg-white hover:text-primary transition-all">
-              Staff Portal
-            </a>
+            {/* Clients Logo Slider */}
+            <section className="py-16 bg-white border-t border-b border-gray-100">
+        <div className="container mx-auto px-6">
+          <motion.div
+            className="text-center mb-10"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            viewport={{ once: true, amount: 0.5 }}
+          >
+            <h2 className="text-3xl font-bold mb-3">Trusted by Businesses Across Bristol</h2>
+            <p className="text-ms-gray-600 max-w-2xl mx-auto">We're proud to provide security services for these leading local businesses</p>
+          </motion.div>
+          
+          <div className="relative overflow-hidden py-4 bg-white">
+            {/* Mobile-optimized logo slider */}
+            <motion.div 
+              className="flex"
+              animate={{ x: [0, -1500] }} 
+              transition={{ 
+                x: { 
+                  repeat: Infinity, 
+                  repeatType: "loop", 
+                  duration: 30,
+                  ease: "linear"
+                }
+              }}
+            >
+              {/* All logos in a row with larger sizing */}
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/MeadLogowhite.png" alt="Mead Security Logo" className="h-12 sm:h-16 object-contain filter brightness-0" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/BIMM.png" alt="BIMM Music Institute Logo" className="h-12 sm:h-16 object-contain" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/rough-trade.svg" alt="Rough Trade Logo" className="h-12 sm:h-16 object-contain" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/renatos logo.png" alt="Renatos Logo" className="h-12 sm:h-16 object-contain" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/Left_Handed_Giant_Brewery_Logo_white.avif" alt="Left Handed Giant Brewery Logo" className="h-12 sm:h-16 object-contain filter brightness-0" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/LOGOMAIN.png" alt="Logo Main" className="h-12 sm:h-16 object-contain" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/SIA+Approved-80h.webp" alt="SIA Approved Logo" className="h-12 sm:h-16 object-contain" />
+              </div>
+              
+              {/* Duplicate set for continuous looping */}
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/MeadLogowhite.png" alt="Mead Security Logo" className="h-12 sm:h-16 object-contain filter brightness-0" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/BIMM.png" alt="BIMM Music Institute Logo" className="h-12 sm:h-16 object-contain" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/rough-trade.svg" alt="Rough Trade Logo" className="h-12 sm:h-16 object-contain" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/renatos logo.png" alt="Renatos Logo" className="h-12 sm:h-16 object-contain" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/Left_Handed_Giant_Brewery_Logo_white.avif" alt="Left Handed Giant Brewery Logo" className="h-12 sm:h-16 object-contain filter brightness-0" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/LOGOMAIN.png" alt="Logo Main" className="h-12 sm:h-16 object-contain" />
+              </div>
+              <div className="flex-shrink-0 flex items-center justify-center h-20 sm:h-28 w-32 sm:w-40 mx-3 sm:mx-5">
+                <img src="/logos/SIA+Approved-80h.webp" alt="SIA Approved Logo" className="h-12 sm:h-16 object-contain" />
+              </div>
+            </motion.div>
+            
+            {/* Add subtle gradient overlay at edges for fade effect */}
+            <div className="absolute top-0 left-0 h-full w-12 sm:w-24 bg-gradient-to-r from-white to-transparent z-10"></div>
+            <div className="absolute top-0 right-0 h-full w-12 sm:w-24 bg-gradient-to-l from-white to-transparent z-10"></div>
           </div>
         </div>
-      </section>
+            </section>
     </>
   );
 };

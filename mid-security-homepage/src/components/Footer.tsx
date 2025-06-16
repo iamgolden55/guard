@@ -16,7 +16,7 @@ const Footer = () => {
             </h3>
             <div className="mb-6">
               <img
-                src="https://ext.same-assets.com/764186857/1360736008.png"
+                src="/logos/MeadLogowhite.png"
                 alt="Mead Security Logo"
                 className="h-12"
               />
@@ -26,15 +26,7 @@ const Footer = () => {
               We are dedicated to providing cost effective security solutions delivered by fully SIA licensed and experienced personnel.
             </p>
             <div className="flex space-x-2">
-              <a
-                href="https://www.facebook.com/Mead-Security-335205733994020/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="bg-ms-gray-800 hover:bg-primary w-10 h-10 rounded-ms flex items-center justify-center transition-colors duration-200"
-                aria-label="Facebook"
-              >
-                <i className="fab fa-facebook-f"></i>
-              </a>
+            <img src="/logos/SIA+Approved-80h.webp" alt="SIA Approved Logo" className="h-12 sm:h-16 object-contain" />
               <a
                 href="https://www.instagram.com/mead_security/"
                 target="_blank"
