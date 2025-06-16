@@ -33,7 +33,7 @@ const Header = () => {
         <div className="py-4 flex justify-between items-center">
           <Link to="/" className="flex items-center">
             <img
-              src="https://ext.same-assets.com/759128491/431135145.png"
+              src="/logos/LOGOMAIN.png"
               alt="Mead Security Logo"
               className="h-12"
             />
