@@ -11,6 +11,6 @@ export default defineConfig({
 	},
 	define: {
 		// This makes process.env.REACT_APP_* available in the client code
-		'process.env.REACT_APP_API_URL': JSON.stringify('http://localhost:8000/api'),
+		'process.env.REACT_APP_API_URL': JSON.stringify('http://localhost:8000/api/v1'),
 	}
 });

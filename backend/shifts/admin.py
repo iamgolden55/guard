@@ -85,4 +85,5 @@ class ShiftAdmin(admin.ModelAdmin):
         return "-"
     formatted_end_time.short_description = 'End Time'
 
-admin.site.register(Shift, ShiftAdmin) 
+# Shift model is already registered in api/admin.py
+# admin.site.register(Shift, ShiftAdmin) 

@@ -54,7 +54,7 @@ import type {
   ShiftStatus // Add ShiftStatus import
 } from '../../types';
 import { UserRole } from '../../types';
-import { getShifts, bulkCreateShifts } from '../../services/api';
+import { getShifts, bulkCreateShifts, updateShift } from '../../services/api';
 
 interface ScheduleShift {
   id: number;
@@ -69,6 +69,8 @@ interface ScheduleShift {
   isRecurring: boolean;
   recurringDays?: number[];
   recurringEndDate?: Date;
+  shiftGroup?: string | null;
+  requiredSecurityRole?: string;
 }
 
 // Add interface for bulk scheduling
@@ -183,6 +185,8 @@ const ShiftScheduling: React.FC = () => {
   const [newShiftDate, setNewShiftDate] = useState<Date | null>(null);
   const [newShiftVenue, setNewShiftVenue] = useState<number | null>(null);
   const [newShiftStaff, setNewShiftStaff] = useState<number | null>(null);
+  const [isMultiStaffMode, setIsMultiStaffMode] = useState<boolean>(false);
+  const [newShiftMultiStaff, setNewShiftMultiStaff] = useState<number[]>([]);
   const [newShiftStartTime, setNewShiftStartTime] = useState<string>('');
   const [newShiftEndTime, setNewShiftEndTime] = useState<string>('');
   const [isShiftRecurring, setIsShiftRecurring] = useState<boolean>(false);
@@ -276,16 +280,79 @@ const ShiftScheduling: React.FC = () => {
     loadInitialData();
   }, []);
 
-  // Initialize calendar and load data
+  // Load shifts for the current month view
+  const loadShifts = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      console.log("Fetching shifts with filters:", { venueFilter, staffFilter });
+      
+      // Use the updated getShifts function
+      const filteredShiftsFromApi = await getShifts({
+        venueId: venueFilter,
+        staffId: staffFilter
+      });
+      
+      console.log("Raw API response:", filteredShiftsFromApi);
+      
+      // Map the API response to ScheduleShift type
+      const mappedShifts = filteredShiftsFromApi.map((shift: any) => {
+        // Extract date from start_time for calendar display
+        const startDate = new Date(shift.start_time);
+        const endDate = new Date(shift.end_time);
+        
+        
+        return {
+          id: shift.id,
+          venueId: shift.venue,
+          venueName: shift.venue_details?.name || 'Unknown Venue',
+          staffId: shift.staff_user || null,
+          staffName: shift.staff_details ? `${shift.staff_details.first_name} ${shift.staff_details.last_name}` : null,
+          date: startDate,
+          startTime: startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+          endTime: endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+          isPublished: true, // Assume scheduled shifts are published
+          isRecurring: false,
+          status: shift.status,
+          shiftGroup: shift.shift_group || null,
+          requiredSecurityRole: shift.required_security_role || 'sg'
+        };
+      });
+      
+      console.log("Loaded and mapped shifts:", mappedShifts.length, mappedShifts);
+      setShifts(mappedShifts);
+    } catch (err) {
+      console.error('Error loading shifts:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while loading shifts');
+      setShifts([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [venueFilter, staffFilter]);
+
+  // Initialize calendar when date changes
   useEffect(() => {
     try {
       generateCalendarDays(currentDate);
-      loadShifts();
     } catch (error) {
       console.error("Error initializing calendar:", error);
       setError("Failed to initialize calendar. Please try refreshing the page.");
     }
   }, [currentDate]);
+
+  // Load shifts when component mounts and when filters change
+  useEffect(() => {
+    loadShifts();
+  }, [loadShifts]);
+  
+  // Also reload shifts when calendar days are ready (fallback)
+  useEffect(() => {
+    if (calendarDays.length > 0) {
+      console.log('Calendar days ready, ensuring shifts are loaded');
+      loadShifts();
+    }
+  }, [calendarDays, loadShifts]);
 
   // Helper to generate days for the current month view
   const generateCalendarDays = (date: Date) => {
@@ -334,139 +401,12 @@ const ShiftScheduling: React.FC = () => {
     }
   };
 
-  // Load shifts for the current month view
-  const loadShifts = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Make sure calendarDays has been initialized
-      if (!calendarDays.length) {
-        console.log("Calendar days not initialized yet, skipping shift load");
-        return;
-      }
-      
-      // Calculate start and end dates for the current month view
-      const firstDay = calendarDays[0];
-      const lastDay = calendarDays[calendarDays.length - 1];
-      
-      // Format dates for API request
-      const startDate = firstDay.toISOString();
-      const endDate = new Date(lastDay);
-      endDate.setHours(23, 59, 59, 999);
-      const endDateStr = endDate.toISOString();
-      
-      // Build query params
-      let queryParams = new URLSearchParams({
-        startDate,
-        endDate: endDateStr,
-      });
-      
-      // Add filters if selected
-      if (venueFilter) {
-        queryParams.append('venueId', venueFilter);
-      }
-      
-      if (staffFilter) {
-        queryParams.append('staffId', staffFilter);
-      }
-      
-      console.log("Fetching shifts with params:", queryParams.toString());
-      
-      try {
-        const response = await fetch(`/api/shifts?${queryParams.toString()}`);
-        
-        if (!response.ok) {
-          console.error("Shift API error:", response.status, response.statusText);
-          const errorText = await response.text();
-          console.error("Error response:", errorText);
-          
-          // Don't throw, just log the error and continue with empty shifts
-          console.warn('Using empty shifts array due to API error');
-          setShifts([]);
-          return;
-        }
-        
-        // Check if the response is empty
-        const text = await response.text();
-        if (!text || text.trim() === '') {
-          console.warn('Empty response from shifts API');
-          setShifts([]);
-          return;
-        }
-        
-        try {
-          // Parse the JSON manually to handle potential errors
-          const data = JSON.parse(text);
-          console.log("Loaded shifts:", data.length);
-          const filteredShiftsFromApi = await getShifts({
-            venueId: venueFilter,
-            staffId: staffFilter
-          });
-          // Map the API response to ScheduleShift type
-          const mappedShifts = filteredShiftsFromApi.map(shift => ({
-            ...shift,
-            id: parseInt(shift.id, 10), // Convert id to number
-            venueId: parseInt(shift.venueId, 10), // Convert venueId to number
-            staffId: shift.staffId ? parseInt(shift.staffId, 10) : null, // Convert staffId to number or null
-            staffName: shift.staffName || null, // Convert undefined staffName to null
-            date: new Date(shift.date), // Ensure date is a Date object
-            isPublished: false, // Add default value
-            isRecurring: false, // Add default value
-            // Add other necessary mappings or defaults if needed
-          }));
-          setShifts(mappedShifts);
-        } catch (jsonError) {
-          console.error('Error parsing JSON response:', jsonError, 'Response text:', text);
-          setError('Failed to parse server response. Please try refreshing the page.');
-          setShifts([]);
-        }
-      } catch (apiError) {
-        console.error('Fetch error in loadShifts:', apiError);
-        // Continue with empty shifts
-        setShifts([]);
-      }
-    } catch (err) {
-      console.error('Error loading shifts:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred while loading shifts');
-      setShifts([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
-  // Load venues for dropdown selection
-  const loadVenues = async () => {
-    try {
-      const response = await fetch('/api/venues');
-      
-      if (!response.ok) {
-        throw new Error('Failed to load venues');
-      }
-      
-      const data = await response.json();
-      setVenues(data);
-    } catch (err) {
-      console.error('Error loading venues:', err);
-      setVenues([]);
-    }
-  };
-  
-  // Load staff members for dropdown selection
-  const loadStaff = async () => {
-    try {
-      const response = await fetch('/api/staff');
-      
-      if (!response.ok) {
-        throw new Error('Failed to load staff');
-      }
-      
-      const data = await response.json();
-      setStaff(data);
-    } catch (err) {
-      console.error('Error loading staff:', err);
-      setStaff([]);
-    }
+  // Venues and staff are loaded in the useEffect above, no need for separate functions
+
+  // Get shifts in the same group as the selected shift
+  const getGroupShifts = (shiftGroup: string | null) => {
+    if (!shiftGroup) return [];
+    return shifts.filter(shift => shift.shiftGroup === shiftGroup);
   };
 
   // Filter shifts for a specific day
@@ -504,6 +444,8 @@ const ShiftScheduling: React.FC = () => {
     setNewShiftDate(null);
     setNewShiftVenue(null);
     setNewShiftStaff(null);
+    setIsMultiStaffMode(false);
+    setNewShiftMultiStaff([]);
     setNewShiftStartTime('');
     setNewShiftEndTime('');
     setNewShiftNotes('');
@@ -517,23 +459,92 @@ const ShiftScheduling: React.FC = () => {
     setRecurringEndDate(null);
   };
 
+  // Create multi-staff shifts
+  const createMultiStaffShifts = async (
+    venue: number,
+    staffUsers: number[],
+    startTime: string,
+    endTime: string,
+    notes?: string
+  ): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:8000/api/shifts/create_multi_staff/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          venue,
+          staff_users: staffUsers,
+          start_time: startTime,
+          end_time: endTime,
+          status: 'scheduled',
+          required_security_role: 'sg',
+          notes: notes || ''
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Multi-staff shift creation failed:', response.status, errorData);
+        
+        // Handle validation errors
+        if (response.status === 400) {
+          const errorMessage = errorData.detail || Object.values(errorData).join(', ');
+          throw new Error(errorMessage);
+        }
+        
+        throw new Error(`Failed to create shifts: ${response.status} - ${errorData.detail || 'Unknown error'}`);
+      }
+      
+      const result = await response.json();
+      console.log('Multi-staff shifts created successfully:', result);
+      return true;
+    } catch (err) {
+      console.error('Error creating multi-staff shifts:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while creating the shifts');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Create a single shift
   const createShift = async (shiftData: Partial<Shift>): Promise<boolean> => {
     try {
       setIsLoading(true);
       setError(null);
       
-      const response = await fetch('/api/shifts', {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:8000/api/shifts/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(shiftData),
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to create shift');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Shift creation failed:', response.status, errorData);
+        
+        // Handle duplicate shift errors specifically
+        if (response.status === 400 && errorData.non_field_errors) {
+          const duplicateError = errorData.non_field_errors.find((error: string) => 
+            error.includes('shift already exists')
+          );
+          if (duplicateError) {
+            throw new Error(duplicateError);
+          }
+        }
+        
+        throw new Error(`Failed to create shift: ${response.status} - ${errorData.detail || 'Unknown error'}`);
       }
       
       // Successfully created shift
@@ -555,6 +566,14 @@ const ShiftScheduling: React.FC = () => {
     if (!newShiftDate || !newShiftVenue || !newShiftStartTime || !newShiftEndTime) {
       setError('Please fill out all required fields: date, venue, start time, and end time');
       return;
+    }
+    
+    // Validate staff selection based on mode
+    if (isMultiStaffMode) {
+      if (newShiftMultiStaff.length === 0) {
+        setError('Please select at least one staff member for multi-staff mode');
+        return;
+      }
     }
     
     // Format times to ISO string format
@@ -591,24 +610,30 @@ const ShiftScheduling: React.FC = () => {
     }
 
     const baseShiftData = {
-      venueId: newShiftVenue,
-      staffId: newShiftStaff || null,
-      startTime: startDateTime,
-      endTime: endDateTime,
+      venue: newShiftVenue,
+      staff_user: newShiftStaff || null,
+      start_time: startDateTime,
+      end_time: endDateTime,
       notes: newShiftNotes,
-      payRate: selectedPayRateValue ? parseFloat(selectedPayRateValue) : null,
-      isSpecialEvent,
-      requirementsFire: newShiftRequiresFire,
-      requirementsCapacity: newShiftRequiresCapacity,
-      requirementsToilet: newShiftRequiresToilet,
-      status: 'draft' as ShiftStatus // Explicitly cast to ShiftStatus
+      status: 'scheduled', // Use valid status choice
+      required_security_role: 'sg' // Default to Security Guard
     };
     
     let success = false;
     
     if (!isShiftRecurring) {
-      // Create a single shift
-      success = await createShift(baseShiftData);
+      // Create shift(s) based on mode
+      if (isMultiStaffMode) {
+        success = await createMultiStaffShifts(
+          newShiftVenue,
+          newShiftMultiStaff,
+          startDateTime,
+          endDateTime,
+          newShiftNotes
+        );
+      } else {
+        success = await createShift(baseShiftData);
+      }
     } else {
       // Handle recurring shifts
       if (!recurringEndDate) {
@@ -709,32 +734,95 @@ const ShiftScheduling: React.FC = () => {
   };
 
   // Handle updating a shift
-  const handleUpdateShift = () => {
+  const handleUpdateShift = async () => {
     if (!selectedShift) return;
 
-    const updatedShifts = shifts.map(shift => {
-      if (shift.id === selectedShift.id) {
-        return {
-          ...shift,
-          staffId: newShiftStaff,
-          staffName: newShiftStaff
-            ? `${staff.find(s => s.id === newShiftStaff)?.firstName} ${staff.find(s => s.id === newShiftStaff)?.lastName}`
-            : null,
-          venueId: newShiftVenue || 0,
-          venueName: venues.find(v => v.id === newShiftVenue)?.name || '',
-          date: newShiftDate || new Date(),
-          startTime: newShiftStartTime,
-          endTime: newShiftEndTime,
-          isRecurring: isShiftRecurring,
-          recurringDays: isShiftRecurring ? recurringDays : undefined,
-          recurringEndDate: isShiftRecurring ? recurringEndDate || undefined : undefined
-        };
-      }
-      return shift;
-    });
+    // Validation
+    if (!newShiftDate || !newShiftVenue || !newShiftStartTime || !newShiftEndTime) {
+      setError('Please fill out all required fields: date, venue, start time, and end time');
+      return;
+    }
 
-    setShifts(updatedShifts);
-    setIsEditShiftDialogOpen(false);
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // Format times to ISO string format (same logic as create)
+      const formatTimeToISO = (date: Date, timeString: string): string => {
+        const [hours, minutes] = timeString.split(':').map(Number);
+        const dateObj = new Date(date);
+        dateObj.setHours(hours, minutes, 0, 0);
+        return dateObj.toISOString();
+      };
+
+      const startDateTime = formatTimeToISO(newShiftDate, newShiftStartTime);
+      let endDateTime = formatTimeToISO(newShiftDate, newShiftEndTime);
+
+      // Handle shifts that cross midnight
+      if (new Date(endDateTime) < new Date(startDateTime)) {
+        const nextDay = new Date(newShiftDate);
+        nextDay.setDate(nextDay.getDate() + 1);
+        endDateTime = formatTimeToISO(nextDay, newShiftEndTime);
+      }
+
+      // Prepare update data with backend format
+      const updateData = {
+        venue: newShiftVenue,
+        staff_user: newShiftStaff || null,
+        start_time: startDateTime,
+        end_time: endDateTime,
+        notes: newShiftNotes || '',
+        status: 'scheduled',
+        shift_group: selectedShift.shiftGroup || null,
+        required_security_role: selectedShift.requiredSecurityRole || 'sg'
+      };
+
+      console.log('Updating shift:', selectedShift.id, updateData);
+
+      // Call API to update the shift
+      const updatedShift = await updateShift(selectedShift.id.toString(), updateData);
+
+      if (updatedShift) {
+        console.log('Shift updated successfully:', updatedShift);
+        
+        // Update local state with the response
+        const updatedShifts = shifts.map(shift => {
+          if (shift.id === selectedShift.id) {
+            return {
+              ...shift,
+              staffId: newShiftStaff,
+              staffName: newShiftStaff
+                ? `${staff.find(s => s.id === newShiftStaff)?.firstName} ${staff.find(s => s.id === newShiftStaff)?.lastName}`
+                : null,
+              venueId: newShiftVenue || 0,
+              venueName: venues.find(v => v.id === newShiftVenue)?.name || '',
+              date: newShiftDate || new Date(),
+              startTime: newShiftStartTime,
+              endTime: newShiftEndTime,
+              isRecurring: isShiftRecurring,
+              recurringDays: isShiftRecurring ? recurringDays : undefined,
+              recurringEndDate: isShiftRecurring ? recurringEndDate || undefined : undefined
+            };
+          }
+          return shift;
+        });
+
+        setShifts(updatedShifts);
+        setIsEditShiftDialogOpen(false);
+        setSelectedShift(null);
+        resetNewShiftForm();
+        
+        // Optionally reload shifts from server to ensure consistency
+        await loadShifts();
+      } else {
+        setError('Failed to update shift. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error updating shift:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while updating the shift');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Handle deleting a shift
@@ -790,6 +878,8 @@ const ShiftScheduling: React.FC = () => {
     venueId: string;
     startTime: string;
     endTime: string;
+    staffIds?: number[];
+    isSequential?: boolean;
   }>) => {
     setIsLoading(true);
     setError(null);
@@ -1334,20 +1424,82 @@ const ShiftScheduling: React.FC = () => {
                 onChange={(event, option) => option && setNewShiftVenue(Number(option.key))}
               />
 
-              <Dropdown
-                label="Staff Member"
-                placeholder="Select staff (or leave empty for open shift)"
-                options={[
-                  { key: 'open', text: 'Open Shift (No Staff Assigned)' },
-                  ...(Array.isArray(staff) ? staff.map(s => ({ key: s.id, text: `${s.firstName} ${s.lastName}` })) : [])
-                ]}
-                selectedKey={newShiftStaff || 'open'}
-                onChange={(event, option) => {
-                  if (option) {
-                    setNewShiftStaff(option.key === 'open' ? null : Number(option.key));
+              <Toggle
+                label="Multi-Staff Mode"
+                checked={isMultiStaffMode}
+                onText="Multiple Staff"
+                offText="Single Staff"
+                onChange={(event, checked) => {
+                  setIsMultiStaffMode(checked || false);
+                  // Reset selections when mode changes
+                  if (checked) {
+                    setNewShiftStaff(null);
+                  } else {
+                    setNewShiftMultiStaff([]);
                   }
                 }}
+                styles={{ root: { marginBottom: 10 } }}
               />
+
+              {!isMultiStaffMode ? (
+                <Dropdown
+                  label="Staff Member"
+                  placeholder="Select staff (or leave empty for open shift)"
+                  options={[
+                    { key: 'open', text: 'Open Shift (No Staff Assigned)' },
+                    ...(Array.isArray(staff) ? staff.map(s => ({ key: s.id, text: `${s.firstName} ${s.lastName}` })) : [])
+                  ]}
+                  selectedKey={newShiftStaff || 'open'}
+                  onChange={(event, option) => {
+                    if (option) {
+                      setNewShiftStaff(option.key === 'open' ? null : Number(option.key));
+                    }
+                  }}
+                />
+              ) : (
+                <div>
+                  <Label required>Staff Members</Label>
+                  <DetailsList
+                    items={Array.isArray(staff) ? staff.map(s => ({
+                      id: s.id,
+                      name: `${s.firstName} ${s.lastName}`,
+                      selected: newShiftMultiStaff.includes(s.id)
+                    })) : []}
+                    columns={[
+                      {
+                        key: 'checkbox',
+                        name: '',
+                        minWidth: 30,
+                        maxWidth: 30,
+                        onRender: (item) => (
+                          <Checkbox
+                            checked={item.selected}
+                            onChange={(event, checked) => {
+                              if (checked) {
+                                setNewShiftMultiStaff([...newShiftMultiStaff, item.id]);
+                              } else {
+                                setNewShiftMultiStaff(newShiftMultiStaff.filter(id => id !== item.id));
+                              }
+                            }}
+                          />
+                        )
+                      },
+                      {
+                        key: 'name',
+                        name: 'Staff Member',
+                        minWidth: 200,
+                        onRender: (item) => <Text>{item.name}</Text>
+                      }
+                    ]}
+                    selectionMode={SelectionMode.none}
+                    compact={true}
+                    styles={{ root: { maxHeight: 200, overflowY: 'auto' } }}
+                  />
+                  <Text variant="small" styles={{ root: { marginTop: 5, color: '#666' } }}>
+                    Selected: {newShiftMultiStaff.length} staff member(s)
+                  </Text>
+                </div>
+              )}
 
               <Stack horizontal tokens={{ childrenGap: 10 }}>
                 <TextField
@@ -1404,9 +1556,9 @@ const ShiftScheduling: React.FC = () => {
             <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }} styles={{ root: { marginTop: 20 } }}>
               <DefaultButton text="Cancel" onClick={handleCloseNewShiftDialog} />
               <PrimaryButton 
-                text="Create Shift" 
+                text={isLoading ? "Creating..." : "Create Shift"} 
                 type="submit"
-                disabled={isSettingsLoading}
+                disabled={isSettingsLoading || isLoading}
               />
             </Stack>
           </form>
@@ -1423,6 +1575,17 @@ const ShiftScheduling: React.FC = () => {
           minWidth={600}
         >
           <Stack tokens={{ childrenGap: 15 }}>
+            {/* Show shift group information if applicable */}
+            {selectedShift?.shiftGroup && (
+              <MessageBar messageBarType={MessageBarType.info} isMultiline={false}>
+                <Text>
+                  <strong>Multi-Staff Shift Group:</strong> This shift is part of a group with{' '}
+                  {getGroupShifts(selectedShift.shiftGroup).length} staff members.{' '}
+                  Changes will only affect {selectedShift.staffName}'s individual shift.
+                </Text>
+              </MessageBar>
+            )}
+
             <DatePicker
               label="Date"
               value={newShiftDate || undefined}
@@ -1493,7 +1656,11 @@ const ShiftScheduling: React.FC = () => {
               onClick={() => setIsConfirmDialogOpen(true)}
             />
             <DefaultButton text="Cancel" onClick={() => setIsEditShiftDialogOpen(false)} />
-            <PrimaryButton text="Update Shift" onClick={handleUpdateShift} />
+            <PrimaryButton 
+              text={isLoading ? "Updating..." : "Update Shift"} 
+              onClick={handleUpdateShift}
+              disabled={isLoading}
+            />
           </Stack>
         </Dialog>
 
@@ -1659,6 +1826,25 @@ const ShiftScheduling: React.FC = () => {
                       />
                     ))}
                   </Stack>
+                  
+                  {bulkShiftDetails.selectedStaff.length > 1 && (
+                    <Stack tokens={{ childrenGap: 5 }}>
+                      <Toggle
+                        label="Assignment Mode"
+                        onText="Sequential (Rotate Staff)"
+                        offText="Parallel (All Staff Every Shift)"
+                        checked={bulkShiftDetails.isSequential}
+                        onChange={(event, checked) => updateBulkShiftDetails('isSequential', !!checked)}
+                        styles={{ root: { marginTop: 10 } }}
+                      />
+                      <Text variant="small" styles={{ root: { color: '#666' } }}>
+                        {bulkShiftDetails.isSequential 
+                          ? 'Each shift will be assigned to a different staff member in rotation'
+                          : 'All selected staff will be assigned to every shift (multi-staff shifts)'
+                        }
+                      </Text>
+                    </Stack>
+                  )}
                 </Stack>
               </PivotItem>
             </Pivot>
@@ -1668,7 +1854,7 @@ const ShiftScheduling: React.FC = () => {
             <DefaultButton text="Cancel" onClick={() => setIsBulkShiftDialogOpen(false)} />
             <PrimaryButton text="Create Shifts" onClick={() => {
               try {
-                const { venueId, startDate, endDate, startTime, endTime, daysOfWeek } = bulkShiftDetails;
+                const { venueId, startDate, endDate, startTime, endTime, daysOfWeek, selectedStaff, isSequential } = bulkShiftDetails;
                 
                 if (!venueId || !startDate || !endDate) {
                   setError('Please select venue and date range');
@@ -1689,18 +1875,38 @@ const ShiftScheduling: React.FC = () => {
                 const shiftsToCreate = [];
                 const currentDate = new Date(startDate);
                 const endDateObj = new Date(endDate);
+                let shiftIndex = 0;
                 
                 console.log(`Generating shifts from ${currentDate.toDateString()} to ${endDateObj.toDateString()}`);
+                console.log(`Selected staff: ${selectedStaff.length}, Sequential mode: ${isSequential}`);
                 
                 while (currentDate <= endDateObj) {
                   const dayOfWeek = currentDate.getDay();
                   if (daysOfWeek.includes(dayOfWeek)) {
                     const dateStr = currentDate.toISOString().split('T')[0];
+                    
+                    let staffIdsForShift: number[] = [];
+                    
+                    if (selectedStaff.length > 0) {
+                      if (isSequential) {
+                        // Sequential mode: Rotate through staff members for each shift
+                        const staffMemberIndex = shiftIndex % selectedStaff.length;
+                        staffIdsForShift = [selectedStaff[staffMemberIndex]];
+                      } else {
+                        // Parallel mode: Assign all selected staff to each shift
+                        staffIdsForShift = [...selectedStaff];
+                      }
+                    }
+                    
                     shiftsToCreate.push({
                       venueId: venueId.toString(),
                       startTime: `${dateStr}T${startTime}:00`,
-                      endTime: `${dateStr}T${endTime}:00`
+                      endTime: `${dateStr}T${endTime}:00`,
+                      staffIds: staffIdsForShift,
+                      isSequential
                     });
+                    
+                    shiftIndex++;
                   }
                   // Move to next day
                   currentDate.setDate(currentDate.getDate() + 1);

@@ -9,7 +9,7 @@ from .views import (
     UserViewSet, StaffProfileViewSet, EmergencyContactViewSet,
     BankDetailsViewSet, SIALicenseViewSet, StaffAvailabilityViewSet,
     VenueViewSet, VenueTermsAcceptanceViewSet, PreferredVenueViewSet,
-    ShiftViewSet, FireExitCheckViewSet, CapacityCheckViewSet, ToiletCheckViewSet,
+    FireExitCheckViewSet, CapacityCheckViewSet, ToiletCheckViewSet,
     ShiftExchangeViewSet, InvoiceViewSet, InvoiceItemViewSet, PayRateViewSet,
     DeputyConfigViewSet, DeputyEmployeeViewSet, DeputyTimesheetViewSet,
     ShiftTemplateViewSet, DeputyConfigView, SystemSettingsView,
@@ -28,7 +28,7 @@ router.register('staff-availability', StaffAvailabilityViewSet)
 router.register('venues', VenueViewSet)
 router.register('venue-terms', VenueTermsAcceptanceViewSet)
 router.register('preferred-venues', PreferredVenueViewSet)
-router.register('shifts', ShiftViewSet)
+# Shifts moved to separate app - see /api/shifts/ endpoints
 router.register('fire-exit-checks', FireExitCheckViewSet)
 router.register('capacity-checks', CapacityCheckViewSet)
 router.register('toilet-checks', ToiletCheckViewSet)

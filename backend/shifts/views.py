@@ -3,12 +3,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
-from .models import Shift
+from api.models import Shift  # Import from api.models instead
 from .serializers import (
     ShiftSerializer, 
     ShiftDetailSerializer,
     FrontendShiftSerializer,
-    FrontendShiftDetailSerializer
+    FrontendShiftDetailSerializer,
+    MultiStaffShiftSerializer
 )
 from .filters import ShiftFilter
 from django.db.models import Q
@@ -158,10 +159,10 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
             
-        # Check if the shift is already canceled
-        if shift.status == 'canceled':
+        # Check if the shift is already cancelled
+        if shift.status == 'cancelled':
             return Response(
-                {"detail": "Shift already canceled"}, 
+                {"detail": "Shift already cancelled"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
             
@@ -173,12 +174,26 @@ class ShiftViewSet(viewsets.ModelViewSet):
             )
             
         # Perform cancellation
-        shift.canceled_time = datetime.now()
-        shift.status = 'canceled'
+        shift.status = 'cancelled'  # Use the correct status choice
         shift.save()
         
         serializer = self.get_serializer(shift)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['post'])
+    def create_multi_staff(self, request):
+        """Create shifts for multiple staff members at the same venue and time"""
+        serializer = MultiStaffShiftSerializer(data=request.data)
+        if serializer.is_valid():
+            shifts = serializer.save()
+            # Return the created shifts using the regular serializer
+            shift_data = ShiftSerializer(shifts, many=True).data
+            return Response({
+                'message': f'Successfully created {len(shifts)} shifts',
+                'shifts': shift_data,
+                'shift_group': shifts[0].shift_group if shifts else None
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class FrontendShiftViewSet(viewsets.ModelViewSet):
     """

@@ -1,6 +1,6 @@
 import django_filters
 from django.db.models import Q
-from .models import Shift
+from api.models import Shift
 
 class ShiftFilter(django_filters.FilterSet):
     """Filter for Shift model"""

@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'drf_yasg',
     'django_filters',
     'api',
+    'shifts',
 ]
 
 MIDDLEWARE = [
@@ -175,7 +176,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10,
+    'PAGE_SIZE': 100,  # Increased from 10 to 100 to show more shifts
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',

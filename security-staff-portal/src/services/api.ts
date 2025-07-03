@@ -1,7 +1,7 @@
 import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
 
-// Base API configuration
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+// Base API configuration  
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
 // Create an Axios instance with default config
 const api: AxiosInstance = axios.create({
@@ -210,25 +210,30 @@ export interface Shift {
   status: 'draft' | 'published' | 'assigned';
 }
 
-// Get all shifts
+// Get all shifts - Updated to use correct endpoint and handle pagination
 export const getShifts = async (params?: any): Promise<Shift[]> => {
   try {
-    // Build query string if params are provided
-    let queryString = '';
+    // Build query string if params are provided, but request all records
+    let queryString = '?page_size=1000'; // Request large page size to get all shifts
     if (params) {
       const queryParams = new URLSearchParams();
+      queryParams.append('page_size', '1000'); // Ensure we get all shifts
       Object.entries(params).forEach(([key, value]) => {
         if (value !== null && value !== undefined) {
           queryParams.append(key, String(value));
         }
       });
-      if (queryParams.toString()) {
-        queryString = `?${queryParams.toString()}`;
-      }
+      queryString = `?${queryParams.toString()}`;
     }
     
     console.log(`Fetching shifts with query: ${queryString}`);
-    const response = await api.get(`/shifts${queryString}`);
+    // Use the shifts API endpoint instead of the main API
+    const shiftsApiUrl = 'http://localhost:8000/api/shifts';
+    const response = await axios.get(`${shiftsApiUrl}${queryString}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    });
     
     // Ensure we got a valid response with data
     if (!response.data) {
@@ -236,13 +241,19 @@ export const getShifts = async (params?: any): Promise<Shift[]> => {
       return [];
     }
     
-    // Ensure the data is an array
-    if (!Array.isArray(response.data)) {
-      console.warn('Shift data is not an array:', response.data);
-      return [];
+    // Handle paginated response format
+    if (response.data && typeof response.data === 'object' && 'results' in response.data) {
+      console.log(`Found paginated response, extracting ${response.data.results.length} shifts from total: ${response.data.count}`);
+      return Array.isArray(response.data.results) ? response.data.results : [];
     }
     
-    return response.data;
+    // Handle direct array response
+    if (Array.isArray(response.data)) {
+      return response.data;
+    }
+    
+    console.warn('Unexpected shift data format:', response.data);
+    return [];
   } catch (error) {
     console.error('Error fetching shifts:', error);
     // Return empty array rather than throwing to avoid breaking UI
@@ -281,7 +292,13 @@ export const getFilteredShifts = async (venueId?: string, staffId?: string): Pro
 // Create a new shift
 export const createShift = async (shiftData: Omit<Shift, 'id'>): Promise<Shift | null> => {
   try {
-    const response = await api.post('/shifts', shiftData);
+    const shiftsApiUrl = 'http://localhost:8000/api/shifts';
+    const response = await axios.post(`${shiftsApiUrl}/`, shiftData, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
+    });
     return response.data;
   } catch (error) {
     console.error('Error creating shift:', error);
@@ -292,10 +309,21 @@ export const createShift = async (shiftData: Omit<Shift, 'id'>): Promise<Shift |
 // Update a shift
 export const updateShift = async (id: string, shiftData: Partial<Shift>): Promise<Shift | null> => {
   try {
-    const response = await api.put(`/shifts/${id}`, shiftData);
+    const shiftsApiUrl = 'http://localhost:8000/api/shifts';
+    const response = await axios.put(`${shiftsApiUrl}/${id}/`, shiftData, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
+    });
     return response.data;
   } catch (error) {
     console.error('Error updating shift:', error);
+    // Log the detailed error response for debugging
+    if (error.response) {
+      console.error('Error response data:', error.response.data);
+      console.error('Error response status:', error.response.status);
+    }
     return null;
   }
 };
@@ -311,27 +339,67 @@ export const deleteShift = async (id: string): Promise<boolean> => {
   }
 };
 
-// Bulk create shifts
+// Bulk create shifts with staff assignment support
 export const bulkCreateShifts = async (shifts: Array<{
   venueId: string;
   startTime: string;
   endTime: string;
+  staffIds?: number[];
+  isSequential?: boolean;
 }>): Promise<Shift[] | null> => {
   try {
-    const response = await fetch('/api/shifts/bulk', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ shifts }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to create shifts');
+    const shiftsApiUrl = 'http://localhost:8000/api/shifts';
+    const token = localStorage.getItem('token');
+    
+    const results = [];
+    
+    for (const shift of shifts) {
+      try {
+        // If no staff selected, create unassigned shift
+        if (!shift.staffIds || shift.staffIds.length === 0) {
+          const response = await axios.post(`${shiftsApiUrl}/`, {
+            venue: parseInt(shift.venueId),
+            start_time: shift.startTime,
+            end_time: shift.endTime,
+            status: 'draft',
+            required_security_role: 'sg'
+          }, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          results.push(response.data);
+        } else {
+          // Create multi-staff shift using the multi-staff endpoint
+          const response = await axios.post(`${shiftsApiUrl}/create_multi_staff/`, {
+            venue: parseInt(shift.venueId),
+            staff_users: shift.staffIds,
+            start_time: shift.startTime,
+            end_time: shift.endTime,
+            status: 'scheduled',
+            required_security_role: 'sg'
+          }, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          // The multi-staff endpoint returns an array of shifts
+          if (Array.isArray(response.data)) {
+            results.push(...response.data);
+          } else {
+            results.push(response.data);
+          }
+        }
+      } catch (shiftError) {
+        console.error('Error creating individual shift:', shiftError);
+        // Continue with other shifts even if one fails
+      }
     }
-
-    return response.json();
+    
+    return results.length > 0 ? results : null;
   } catch (error) {
     console.error('Error creating bulk shifts:', error);
     return null;

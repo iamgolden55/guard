@@ -657,6 +657,7 @@ class Shift(models.Model):
     staff_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shifts', null=True, blank=True)
     venue = models.ForeignKey(Venue, on_delete=models.CASCADE, related_name='shifts')
     template = models.ForeignKey(ShiftTemplate, on_delete=models.SET_NULL, null=True, blank=True, related_name='generated_shifts')
+    shift_group = models.CharField(max_length=50, null=True, blank=True, help_text="Groups multiple staff shifts for the same venue/time")
     start_time = models.DateTimeField()
     end_time = models.DateTimeField(null=True, blank=True)
     required_security_role = models.CharField(max_length=20)
@@ -686,10 +687,26 @@ class Shift(models.Model):
             ("can_view_all_shifts", "Can view all shifts"),
             ("can_manage_shifts", "Can manage shifts"),
         ]
+        # Note: Unique constraint for shift groups is handled in serializer validation
+        # to allow NULL values for single shifts
 
     def __str__(self):
         staff_name = self.staff_user.username if self.staff_user else "Unassigned"
-        return f"{staff_name} at {self.venue.name} ({self.start_time})"
+        group_info = f" (Group: {self.shift_group})" if self.shift_group else ""
+        return f"{staff_name} at {self.venue.name} ({self.start_time}){group_info}"
+    
+    @staticmethod
+    def generate_shift_group_id(venue_id, start_time):
+        """Generate a unique shift group ID for multi-staff shifts"""
+        import uuid
+        timestamp = start_time.strftime('%Y%m%d_%H%M')
+        return f"SG_{venue_id}_{timestamp}_{str(uuid.uuid4())[:8]}"
+    
+    def get_group_shifts(self):
+        """Get all shifts in the same shift group"""
+        if not self.shift_group:
+            return Shift.objects.filter(id=self.id)
+        return Shift.objects.filter(shift_group=self.shift_group)
 
     def save(self, *args, **kwargs):
         # Calculate actual hours worked
