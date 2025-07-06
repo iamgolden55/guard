@@ -36,6 +36,9 @@ class ShiftViewSet(viewsets.ModelViewSet):
         return ShiftSerializer
 
     def perform_create(self, serializer):
+        # Check if this is a copy operation that should allow past dates
+        allow_past_dates = self.request.data.get('allow_past_dates', False)
+        serializer.context['allow_past_dates'] = allow_past_dates
         serializer.save()
 
     @action(detail=False, methods=['get'])
@@ -183,7 +186,11 @@ class ShiftViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def create_multi_staff(self, request):
         """Create shifts for multiple staff members at the same venue and time"""
-        serializer = MultiStaffShiftSerializer(data=request.data)
+        # Check if this is a copy operation that should allow past dates
+        allow_past_dates = request.data.get('allow_past_dates', False)
+        context = {'allow_past_dates': allow_past_dates}
+        
+        serializer = MultiStaffShiftSerializer(data=request.data, context=context)
         if serializer.is_valid():
             shifts = serializer.save()
             # Return the created shifts using the regular serializer
@@ -214,6 +221,9 @@ class FrontendShiftViewSet(viewsets.ModelViewSet):
         return FrontendShiftSerializer
 
     def perform_create(self, serializer):
+        # Check if this is a copy operation that should allow past dates
+        allow_past_dates = self.request.data.get('allow_past_dates', False)
+        serializer.context['allow_past_dates'] = allow_past_dates
         serializer.save()
 
     @action(detail=True, methods=['post'])

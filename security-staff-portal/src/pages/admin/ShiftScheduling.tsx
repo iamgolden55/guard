@@ -54,7 +54,7 @@ import type {
   ShiftStatus // Add ShiftStatus import
 } from '../../types';
 import { UserRole } from '../../types';
-import { getShifts, bulkCreateShifts, updateShift } from '../../services/api';
+import { getShifts, bulkCreateShifts, updateShift, deleteShift } from '../../services/api';
 
 interface ScheduleShift {
   id: number;
@@ -84,6 +84,15 @@ interface BulkShiftDetails {
   selectedStaff: number[];
   isSequential: boolean; // If true, assign each staff to different days; if false, all staff to all days
 }
+
+// Add CSS for hover effect
+const hoverStyles = `
+  <style>
+    .shift-container:hover .shift-delete-btn {
+      opacity: 1 !important;
+    }
+  </style>
+`;
 
 const styles = mergeStyleSets({
   calendarGrid: {
@@ -156,12 +165,18 @@ const ShiftScheduling: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedShift, setSelectedShift] = useState<ScheduleShift | null>(null);
+  const [selectedShifts, setSelectedShifts] = useState<Set<number>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
 
   // Dialog states
   const [isNewShiftDialogOpen, setIsNewShiftDialogOpen] = useState<boolean>(false);
   const [isEditShiftDialogOpen, setIsEditShiftDialogOpen] = useState<boolean>(false);
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState<boolean>(false);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState<boolean>(false);
+  
+  // Template states
+  const [templateName, setTemplateName] = useState<string>('');
+  const [templateDescription, setTemplateDescription] = useState<string>('');
 
   // Bulk scheduling states
   const [isBulkShiftDialogOpen, setIsBulkShiftDialogOpen] = useState<boolean>(false);
@@ -826,29 +841,252 @@ const ShiftScheduling: React.FC = () => {
   };
 
   // Handle deleting a shift
-  const handleDeleteShift = () => {
+  const handleDeleteShift = async () => {
     if (!selectedShift) return;
 
-    const updatedShifts = shifts.filter(shift => shift.id !== selectedShift.id);
-    setShifts(updatedShifts);
-    setIsConfirmDialogOpen(false);
-    setIsEditShiftDialogOpen(false);
+    try {
+      setIsLoading(true);
+      
+      // Call the backend API to delete the shift
+      const success = await deleteShift(selectedShift.id.toString());
+      
+      if (success) {
+        // Remove the shift from local state
+        const updatedShifts = shifts.filter(shift => shift.id !== selectedShift.id);
+        setShifts(updatedShifts);
+        setIsConfirmDialogOpen(false);
+        setIsEditShiftDialogOpen(false);
+        
+        // Show success message
+        console.log(`Successfully deleted shift ${selectedShift.id}`);
+      } else {
+        // Show error message
+        console.error('Failed to delete shift');
+        alert('Failed to delete shift. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error deleting shift:', error);
+      alert('An error occurred while deleting the shift. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle bulk selection toggle
+  const toggleSelectionMode = () => {
+    setIsSelectionMode(!isSelectionMode);
+    if (isSelectionMode) {
+      setSelectedShifts(new Set()); // Clear selections when exiting selection mode
+    }
+  };
+
+  // Handle individual shift selection
+  const toggleShiftSelection = (shiftId: number) => {
+    const newSelected = new Set(selectedShifts);
+    if (newSelected.has(shiftId)) {
+      newSelected.delete(shiftId);
+    } else {
+      newSelected.add(shiftId);
+    }
+    setSelectedShifts(newSelected);
+  };
+
+  // Handle select all shifts
+  const selectAllShifts = () => {
+    const allShiftIds = new Set(shifts.map(shift => shift.id));
+    setSelectedShifts(allShiftIds);
+  };
+
+  // Handle clear all selections
+  const clearAllSelections = () => {
+    setSelectedShifts(new Set());
+  };
+
+  // Handle bulk delete
+  const handleBulkDelete = async () => {
+    if (selectedShifts.size === 0) return;
+    
+    const confirmed = window.confirm(`Are you sure you want to delete ${selectedShifts.size} shifts? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      setIsLoading(true);
+      const promises = Array.from(selectedShifts).map(shiftId => 
+        deleteShift(shiftId.toString())
+      );
+      
+      const results = await Promise.allSettled(promises);
+      const successCount = results.filter(result => result.status === 'fulfilled' && result.value).length;
+      const failCount = results.length - successCount;
+      
+      // Remove successful deletions from local state
+      const deletedIds = new Set<number>();
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value) {
+          deletedIds.add(Array.from(selectedShifts)[index]);
+        }
+      });
+      
+      const updatedShifts = shifts.filter(shift => !deletedIds.has(shift.id));
+      setShifts(updatedShifts);
+      setSelectedShifts(new Set());
+      
+      if (failCount > 0) {
+        alert(`Deleted ${successCount} shifts successfully. ${failCount} shifts failed to delete.`);
+      } else {
+        console.log(`Successfully deleted ${successCount} shifts`);
+      }
+    } catch (error) {
+      console.error('Error during bulk delete:', error);
+      alert('An error occurred during bulk deletion. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Handle publishing shifts
-  const handlePublishShifts = () => {
-    const updatedShifts = shifts.map(shift => ({
-      ...shift,
-      isPublished: true
-    }));
-    setShifts(updatedShifts);
+  const handlePublishShifts = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Get all shift IDs
+      const shiftIds = shifts.map(shift => shift.id);
+      
+      if (shiftIds.length === 0) {
+        setError('No shifts to publish');
+        return;
+      }
+      
+      // Confirm with user
+      const confirmed = window.confirm(
+        `Are you sure you want to publish ${shiftIds.length} shifts? This will make them visible to staff members.`
+      );
+      
+      if (!confirmed) {
+        return;
+      }
+      
+      // Call backend API using publishShifts from api.ts
+      const success = await publishShifts(shiftIds.map(String));
+      
+      if (success) {
+        // Update local state to reflect published status
+        const updatedShifts = shifts.map(shift => ({
+          ...shift,
+          isPublished: true,
+          status: 'published' as const
+        }));
+        setShifts(updatedShifts);
+        
+        console.log(`Successfully published ${shiftIds.length} shifts`);
+      } else {
+        setError('Failed to publish shifts. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error publishing shifts:', err);
+      setError('An error occurred while publishing shifts.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Handle creating a schedule template
-  const handleCreateTemplate = () => {
-    // Implementation for saving the current schedule as a template
-    alert('Template saved successfully');
-    setIsTemplateDialogOpen(false);
+  const handleCreateTemplate = async () => {
+    if (!templateName.trim()) {
+      setError('Template name is required');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // Analyze current month's schedule to extract patterns
+      const currentMonthShifts = shifts.filter(shift => {
+        const shiftDate = new Date(shift.date);
+        return shiftDate.getMonth() === currentDate.getMonth() &&
+               shiftDate.getFullYear() === currentDate.getFullYear();
+      });
+
+      if (currentMonthShifts.length === 0) {
+        setError('No shifts found in the current month to create a template');
+        return;
+      }
+
+      // Group shifts by venue and time pattern
+      const shiftPatterns = new Map<string, {
+        venue: number;
+        startTime: string;
+        endTime: string;
+        daysOfWeek: Set<number>;
+        staffCount: number;
+      }>();
+
+      currentMonthShifts.forEach(shift => {
+        const shiftDate = new Date(shift.date);
+        const dayOfWeek = shiftDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const patternKey = `${shift.venueId}-${shift.startTime}-${shift.endTime}`;
+
+        if (!shiftPatterns.has(patternKey)) {
+          shiftPatterns.set(patternKey, {
+            venue: shift.venueId,
+            startTime: shift.startTime,
+            endTime: shift.endTime,
+            daysOfWeek: new Set([dayOfWeek]),
+            staffCount: 1
+          });
+        } else {
+          const pattern = shiftPatterns.get(patternKey)!;
+          pattern.daysOfWeek.add(dayOfWeek);
+        }
+      });
+
+      // Create templates for each unique pattern
+      let templatesCreated = 0;
+      for (const [patternKey, pattern] of shiftPatterns) {
+        try {
+          // Use shiftService to create template
+          const venue = venues.find(v => v.id === pattern.venue);
+          if (!venue) continue;
+
+          const templateSuffix = shiftPatterns.size > 1 ? ` - ${venue.name}` : '';
+          
+          await shiftService.createShiftTemplate({
+            name: `${templateName}${templateSuffix}`,
+            description: templateDescription || `Template created from ${currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} schedule`,
+            venueId: pattern.venue,
+            startTime: pattern.startTime,
+            endTime: pattern.endTime,
+            dayOfWeek: pattern.daysOfWeek.size === 1 ? Array.from(pattern.daysOfWeek)[0] : null,
+            requiresFireSafetyChecks: false,
+            requiresCapacityMonitoring: false,
+            requiresToiletChecks: false
+          });
+          
+          templatesCreated++;
+        } catch (templateError) {
+          console.error('Error creating template:', templateError);
+        }
+      }
+
+      if (templatesCreated > 0) {
+        console.log(`Successfully created ${templatesCreated} template(s)`);
+        
+        // Reset form and close dialog
+        setTemplateName('');
+        setTemplateDescription('');
+        setIsTemplateDialogOpen(false);
+      } else {
+        setError('Failed to create any templates. Please try again.');
+      }
+
+    } catch (err) {
+      console.error('Error creating template:', err);
+      setError('An error occurred while creating the template.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Handle opening bulk shift dialog
@@ -976,60 +1214,144 @@ const ShiftScheduling: React.FC = () => {
   };
 
   // Handle copying shifts between months
-  const handleCopyShifts = () => {
+  const handleCopyShifts = async () => {
     if (!sourceMonth || !targetMonth) {
       setError('Please select both source and target months.');
       return;
     }
 
-    // Find all shifts in the source month
-    const sourceMonthShifts = shifts.filter(shift => {
-      const shiftDate = new Date(shift.date);
-      return shiftDate.getMonth() === sourceMonth.getMonth() &&
-             shiftDate.getFullYear() === sourceMonth.getFullYear();
-    });
+    try {
+      setIsLoading(true);
+      setError(null);
 
-    if (sourceMonthShifts.length === 0) {
-      setError('No shifts found in the source month to copy.');
-      return;
-    }
+      // Find all shifts in the source month
+      const sourceMonthShifts = shifts.filter(shift => {
+        const shiftDate = new Date(shift.date);
+        return shiftDate.getMonth() === sourceMonth.getMonth() &&
+               shiftDate.getFullYear() === sourceMonth.getFullYear();
+      });
 
-    // Create new shifts for the target month with the same pattern
-    const newShifts: ScheduleShift[] = [];
-    let nextShiftId = shifts.length + 1;
+      if (sourceMonthShifts.length === 0) {
+        setError('No shifts found in the source month to copy.');
+        return;
+      }
 
-    for (const shift of sourceMonthShifts) {
-      const sourceDate = new Date(shift.date);
-
-      // Create a new date in the target month with the same day
-      const targetDate = new Date(
-        targetMonth.getFullYear(),
-        targetMonth.getMonth(),
-        sourceDate.getDate()
+      // Confirm with user
+      const confirmed = window.confirm(
+        `Are you sure you want to copy ${sourceMonthShifts.length} shifts from ${sourceMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} to ${targetMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}?`
       );
 
-      // Skip if the day doesn't exist in the target month (e.g., Feb 30)
-      if (targetDate.getMonth() !== targetMonth.getMonth()) continue;
+      if (!confirmed) {
+        return;
+      }
 
-      newShifts.push({
-        ...shift,
-        id: nextShiftId++,
-        date: targetDate,
-        isPublished: false // Reset published status for the copied shifts
-      });
+      // Create shifts for the target month using the bulk create API
+      const shiftsToCreate = [];
+      
+      for (const shift of sourceMonthShifts) {
+        const sourceDate = new Date(shift.date);
+        const targetDate = new Date(
+          targetMonth.getFullYear(),
+          targetMonth.getMonth(),
+          sourceDate.getDate()
+        );
+
+        console.log(`Processing shift ${shift.id} at ${shift.venueName}:`);
+        console.log(`  Source date: ${sourceDate.toDateString()}`);
+        console.log(`  Target date: ${targetDate.toDateString()}`);
+        console.log(`  Target month validation: ${targetDate.getMonth()} === ${targetMonth.getMonth()}`);
+
+        // Skip if the day doesn't exist in the target month (e.g., Feb 30)
+        if (targetDate.getMonth() !== targetMonth.getMonth()) {
+          console.log(`  SKIPPED: Invalid date mapping`);
+          continue;
+        }
+
+        // Format for API first to check the full datetime
+        const targetDateStr = targetDate.toISOString().split('T')[0];
+        const startDateTime = new Date(`${targetDateStr}T${shift.startTime}:00`);
+        
+        // Skip shifts that would have start times in the past
+        const now = new Date();
+        if (startDateTime < now) {
+          console.log(`  SKIPPED: Target datetime ${startDateTime.toISOString()} is in the past`);
+          continue;
+        }
+
+        // Handle overnight shifts - if end time is before start time, it's the next day
+        let endDateStr = targetDateStr;
+        const startTimeOnly = shift.startTime;
+        const endTimeOnly = shift.endTime;
+        
+        // Check if this is an overnight shift (end time < start time)
+        if (endTimeOnly < startTimeOnly) {
+          // End time is next day
+          const endDate = new Date(targetDate);
+          endDate.setDate(endDate.getDate() + 1);
+          endDateStr = endDate.toISOString().split('T')[0];
+          console.log(`  OVERNIGHT SHIFT detected: End time moved to next day (${endDateStr})`);
+        }
+
+        const shiftToCreate: any = {
+          venueId: shift.venueId.toString(),
+          startTime: `${targetDateStr}T${shift.startTime}:00`,
+          endTime: `${endDateStr}T${shift.endTime}:00`,
+        };
+        
+        // Only add staffIds if there's actually a staff member assigned
+        if (shift.staffId) {
+          shiftToCreate.staffIds = [shift.staffId];
+        }
+        
+        console.log(`  ADDED to create queue:`, shiftToCreate);
+        console.log(`  Original shift data:`, {
+          id: shift.id,
+          venueId: shift.venueId,
+          staffId: shift.staffId,
+          date: shift.date,
+          startTime: shift.startTime,
+          endTime: shift.endTime
+        });
+        shiftsToCreate.push(shiftToCreate);
+      }
+
+      if (shiftsToCreate.length === 0) {
+        setError('No valid shifts could be created for the target month.');
+        return;
+      }
+
+      // Use the bulk create API to create the copied shifts
+      console.log(`Sending ${shiftsToCreate.length} shifts to bulk create API:`, shiftsToCreate);
+      const result = await bulkCreateShifts(shiftsToCreate, true); // Allow past dates for copy operation
+      console.log('Bulk create API result:', result);
+
+      if (result && result.length > 0) {
+        // Reload shifts to get the updated data
+        await loadShifts();
+
+        // Navigate to target month
+        setCurrentDate(new Date(targetMonth.getFullYear(), targetMonth.getMonth(), 1));
+
+        // Close dialog
+        setIsCopyShiftsDialogOpen(false);
+        setSourceMonth(null);
+        setTargetMonth(null);
+
+        console.log(`Successfully copied ${result.length} shifts to ${targetMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`);
+      } else {
+        setError('Failed to copy shifts. Please try again.');
+      }
+
+    } catch (err) {
+      console.error('Error copying shifts:', err);
+      setError('An error occurred while copying shifts.');
+    } finally {
+      setIsLoading(false);
     }
-
-    // Add new shifts to the existing ones
-    setShifts([...shifts, ...newShifts]);
-    setIsCopyShiftsDialogOpen(false);
-    setError(null);
-
-    // Navigate to the target month to show the copied shifts
-    setCurrentDate(targetMonth);
   };
 
-  // Command bar items
-  const commandBarItems: ICommandBarItemProps[] = [
+  // Base command bar items
+  const baseCommandBarItems: ICommandBarItemProps[] = [
     {
       key: 'newShift',
       text: 'New Shift',
@@ -1061,6 +1383,12 @@ const ShiftScheduling: React.FC = () => {
       onClick: () => setIsTemplateDialogOpen(true)
     },
     {
+      key: 'selectShifts',
+      text: isSelectionMode ? 'Exit Selection' : 'Select Shifts',
+      iconProps: { iconName: isSelectionMode ? 'Cancel' : 'MultiSelect' },
+      onClick: toggleSelectionMode
+    },
+    {
       key: 'filter',
       text: 'Filter',
       iconProps: { iconName: 'Filter' },
@@ -1088,6 +1416,44 @@ const ShiftScheduling: React.FC = () => {
       }
     }
   ];
+
+  // Selection mode command bar items
+  const selectionCommandBarItems: ICommandBarItemProps[] = [
+    {
+      key: 'selectAll',
+      text: 'Select All',
+      iconProps: { iconName: 'SelectAll' },
+      onClick: selectAllShifts,
+      disabled: shifts.length === 0
+    },
+    {
+      key: 'clearSelection',
+      text: 'Clear Selection',
+      iconProps: { iconName: 'ClearSelection' },
+      onClick: clearAllSelections,
+      disabled: selectedShifts.size === 0
+    },
+    {
+      key: 'bulkDelete',
+      text: `Delete (${selectedShifts.size})`,
+      iconProps: { iconName: 'Delete' },
+      onClick: handleBulkDelete,
+      disabled: selectedShifts.size === 0
+    }
+  ];
+
+  // Add the selection toggle button to selection mode items
+  const exitSelectionButton: ICommandBarItemProps = {
+    key: 'exitSelection',
+    text: 'Exit Selection',
+    iconProps: { iconName: 'Cancel' },
+    onClick: toggleSelectionMode
+  };
+
+  // Combine command bar items based on mode
+  const commandBarItems: ICommandBarItemProps[] = isSelectionMode ? 
+    [...selectionCommandBarItems, exitSelectionButton] : 
+    baseCommandBarItems;
 
   // Navigation controls for calendar
   const handlePrevMonth = () => {
@@ -1295,6 +1661,8 @@ const ShiftScheduling: React.FC = () => {
 
   return (
     <MainLayout>
+      {/* Inject hover styles */}
+      <div dangerouslySetInnerHTML={{ __html: hoverStyles }} />
       <Stack tokens={{ childrenGap: 20 }}>
         <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
           <Text variant="xxLarge">Shift Scheduling</Text>
@@ -1376,15 +1744,75 @@ const ShiftScheduling: React.FC = () => {
                 {getShiftsForDay(day).map(shift => (
                   <div
                     key={`shift-${shift.id}`}
-                    className={`${styles.shift} ${shift.staffId ? styles.staffShift : styles.openShift}`}
+                    className={`shift-container ${styles.shift} ${shift.staffId ? styles.staffShift : styles.openShift}`}
+                    style={{ 
+                      position: 'relative',
+                      border: isSelectionMode && selectedShifts.has(shift.id) ? '2px solid #0078d4' : undefined,
+                      backgroundColor: isSelectionMode && selectedShifts.has(shift.id) ? 
+                        (shift.staffId ? '#cce7f8' : '#e8f4e2') : undefined
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleEditShift(shift);
+                      if (isSelectionMode) {
+                        toggleShiftSelection(shift.id);
+                      } else {
+                        handleEditShift(shift);
+                      }
                     }}
                   >
+                    {/* Selection checkbox */}
+                    {isSelectionMode && (
+                      <Checkbox
+                        checked={selectedShifts.has(shift.id)}
+                        styles={{
+                          root: {
+                            position: 'absolute',
+                            top: '2px',
+                            left: '2px',
+                            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                            borderRadius: '3px',
+                            padding: '2px'
+                          }
+                        }}
+                        onChange={() => toggleShiftSelection(shift.id)}
+                      />
+                    )}
+                    
                     <div>{shift.venueName || 'Unknown Venue'}</div>
                     <div>{shift.startTime || '--:--'} - {shift.endTime || '--:--'}</div>
                     <div>{shift.staffName || 'Open Shift'}</div>
+                    
+                    {/* Quick delete button - hide in selection mode */}
+                    {!isSelectionMode && (
+                    <IconButton
+                      iconProps={{ iconName: 'Delete' }}
+                      title="Delete shift"
+                      styles={{
+                        root: {
+                          position: 'absolute',
+                          top: '2px',
+                          right: '2px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                          borderRadius: '50%',
+                          width: '20px',
+                          height: '20px',
+                          minWidth: '20px',
+                          opacity: 0,
+                          transition: 'opacity 0.2s'
+                        },
+                        icon: {
+                          fontSize: '10px',
+                          color: '#d32f2f'
+                        }
+                      }}
+                      className="shift-delete-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedShift(shift);
+                        setIsConfirmDialogOpen(true);
+                      }}
+                    />
+                    )}
                   </div>
                 ))}
               </div>
@@ -1676,7 +2104,11 @@ const ShiftScheduling: React.FC = () => {
         >
           <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }}>
             <DefaultButton text="Cancel" onClick={() => setIsConfirmDialogOpen(false)} />
-            <PrimaryButton text="Delete" onClick={handleDeleteShift} />
+            <PrimaryButton 
+              text={isLoading ? "Deleting..." : "Delete"} 
+              onClick={handleDeleteShift}
+              disabled={isLoading}
+            />
           </Stack>
         </Dialog>
 
@@ -1690,22 +2122,122 @@ const ShiftScheduling: React.FC = () => {
           }}
         >
           <Stack tokens={{ childrenGap: 15 }}>
+            <Text variant="medium">
+              Create a reusable template from the current month's shift schedule. This will analyze the patterns and create templates for each unique venue/time combination.
+            </Text>
+            
             <TextField
               label="Template Name"
               placeholder="Enter a name for this template"
+              value={templateName}
+              onChange={(_, newValue) => setTemplateName(newValue || '')}
               required
             />
             <TextField
               label="Description"
               placeholder="Enter a description (optional)"
+              value={templateDescription}
+              onChange={(_, newValue) => setTemplateDescription(newValue || '')}
               multiline
               rows={3}
             />
+            
+            {shifts.filter(shift => {
+              const shiftDate = new Date(shift.date);
+              return shiftDate.getMonth() === currentDate.getMonth() &&
+                     shiftDate.getFullYear() === currentDate.getFullYear();
+            }).length > 0 && (
+              <Text variant="small" styles={{ root: { color: '#666' } }}>
+                {shifts.filter(shift => {
+                  const shiftDate = new Date(shift.date);
+                  return shiftDate.getMonth() === currentDate.getMonth() &&
+                         shiftDate.getFullYear() === currentDate.getFullYear();
+                }).length} shifts found in {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </Text>
+            )}
           </Stack>
 
           <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }} styles={{ root: { marginTop: 20 } }}>
-            <DefaultButton text="Cancel" onClick={() => setIsTemplateDialogOpen(false)} />
-            <PrimaryButton text="Save Template" onClick={handleCreateTemplate} />
+            <DefaultButton text="Cancel" onClick={() => {
+              setIsTemplateDialogOpen(false);
+              setTemplateName('');
+              setTemplateDescription('');
+            }} />
+            <PrimaryButton 
+              text="Save Template" 
+              onClick={handleCreateTemplate}
+              disabled={!templateName.trim() || isLoading}
+            />
+          </Stack>
+        </Dialog>
+
+        {/* Copy Shifts Dialog */}
+        <Dialog
+          hidden={!isCopyShiftsDialogOpen}
+          onDismiss={() => setIsCopyShiftsDialogOpen(false)}
+          dialogContentProps={{
+            type: DialogType.normal,
+            title: 'Copy Shifts Between Months'
+          }}
+        >
+          <Stack tokens={{ childrenGap: 15 }}>
+            <Text variant="medium">
+              Select the source month to copy shifts from and the target month to copy shifts to.
+            </Text>
+            
+            <Stack horizontal tokens={{ childrenGap: 10 }}>
+              <Stack styles={{ root: { width: '50%' } }}>
+                <Label required>Source Month (Copy From)</Label>
+                <DatePicker
+                  value={sourceMonth || undefined}
+                  onSelectDate={(date) => date && setSourceMonth(date)}
+                  placeholder="Select source month"
+                  isRequired
+                  showMonthPickerAsOverlay
+                  highlightSelectedMonth
+                />
+                {sourceMonth && (
+                  <Text variant="small" styles={{ root: { color: '#666', marginTop: 5 } }}>
+                    {shifts.filter(shift => {
+                      const shiftDate = new Date(shift.date);
+                      return shiftDate.getMonth() === sourceMonth.getMonth() &&
+                             shiftDate.getFullYear() === sourceMonth.getFullYear();
+                    }).length} shifts found in this month
+                  </Text>
+                )}
+              </Stack>
+              
+              <Stack styles={{ root: { width: '50%' } }}>
+                <Label required>Target Month (Copy To)</Label>
+                <DatePicker
+                  value={targetMonth || undefined}
+                  onSelectDate={(date) => date && setTargetMonth(date)}
+                  placeholder="Select target month"
+                  isRequired
+                  showMonthPickerAsOverlay
+                  highlightSelectedMonth
+                />
+              </Stack>
+            </Stack>
+
+            {sourceMonth && targetMonth && sourceMonth.getTime() === targetMonth.getTime() && (
+              <MessageBar messageBarType={MessageBarType.warning}>
+                Source and target months are the same. Please select different months.
+              </MessageBar>
+            )}
+          </Stack>
+
+          <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }} styles={{ root: { marginTop: 20 } }}>
+            <DefaultButton text="Cancel" onClick={() => {
+              setIsCopyShiftsDialogOpen(false);
+              setSourceMonth(null);
+              setTargetMonth(null);
+            }} />
+            <PrimaryButton 
+              text="Copy Shifts" 
+              onClick={handleCopyShifts}
+              disabled={!sourceMonth || !targetMonth || sourceMonth.getTime() === targetMonth.getTime() || isLoading}
+            />
           </Stack>
         </Dialog>
 

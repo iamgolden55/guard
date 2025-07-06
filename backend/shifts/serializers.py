@@ -37,7 +37,9 @@ class ShiftSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Start time must be before end time")
         
         # Ensure start time is in the future when creating shifts
-        if self.instance is None and 'start_time' in data:
+        # Allow past dates for copying shifts functionality
+        if (self.instance is None and 'start_time' in data and 
+            not self.context.get('allow_past_dates', False)):
             if data['start_time'] <= timezone.now():
                 raise serializers.ValidationError("Start time must be in the future")
         
@@ -88,7 +90,9 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Start time must be before end time")
         
         # Ensure start time is in the future when creating shifts
-        if self.instance is None and 'start_time' in data:
+        # Allow past dates for copying shifts functionality
+        if (self.instance is None and 'start_time' in data and 
+            not self.context.get('allow_past_dates', False)):
             if data['start_time'] <= timezone.now():
                 raise serializers.ValidationError("Start time must be in the future")
         
@@ -159,8 +163,10 @@ class MultiStaffShiftSerializer(serializers.Serializer):
             raise serializers.ValidationError("Start time must be before end time")
         
         # Ensure start time is in the future
-        if data['start_time'] <= timezone.now():
-            raise serializers.ValidationError("Start time must be in the future")
+        # Allow past dates for copying shifts functionality
+        if not self.context.get('allow_past_dates', False):
+            if data['start_time'] <= timezone.now():
+                raise serializers.ValidationError("Start time must be in the future")
         
         # Validate venue exists
         from api.models import Venue

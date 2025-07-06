@@ -331,10 +331,24 @@ export const updateShift = async (id: string, shiftData: Partial<Shift>): Promis
 // Delete a shift
 export const deleteShift = async (id: string): Promise<boolean> => {
   try {
-    await api.delete(`/shifts/${id}`);
+    const shiftsApiUrl = 'http://localhost:8000/api/shifts';
+    await axios.delete(`${shiftsApiUrl}/${id}/`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    });
     return true;
   } catch (error) {
     console.error('Error deleting shift:', error);
+    
+    // Log detailed error information for debugging
+    if (error.response) {
+      console.error('Delete error details:');
+      console.error('  Status:', error.response.status);
+      console.error('  Status Text:', error.response.statusText);
+      console.error('  Data:', error.response.data);
+    }
+    
     return false;
   }
 };
@@ -346,12 +360,16 @@ export const bulkCreateShifts = async (shifts: Array<{
   endTime: string;
   staffIds?: number[];
   isSequential?: boolean;
-}>): Promise<Shift[] | null> => {
+}>, allowPastDates: boolean = false): Promise<Shift[] | null> => {
   try {
     const shiftsApiUrl = 'http://localhost:8000/api/shifts';
     const token = localStorage.getItem('token');
     
     const results = [];
+    let successCount = 0;
+    let errorCount = 0;
+    
+    console.log(`Starting bulk creation of ${shifts.length} shifts...`);
     
     for (const shift of shifts) {
       try {
@@ -361,8 +379,11 @@ export const bulkCreateShifts = async (shifts: Array<{
             venue: parseInt(shift.venueId),
             start_time: shift.startTime,
             end_time: shift.endTime,
-            status: 'draft',
-            required_security_role: 'sg'
+            status: 'open',
+            required_security_role: 'sg',
+            allow_past_dates: allowPastDates,
+            staff_user: null,
+            notes: ''
           }, {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -370,6 +391,7 @@ export const bulkCreateShifts = async (shifts: Array<{
             }
           });
           results.push(response.data);
+          successCount++;
         } else {
           // Create multi-staff shift using the multi-staff endpoint
           const response = await axios.post(`${shiftsApiUrl}/create_multi_staff/`, {
@@ -378,7 +400,8 @@ export const bulkCreateShifts = async (shifts: Array<{
             start_time: shift.startTime,
             end_time: shift.endTime,
             status: 'scheduled',
-            required_security_role: 'sg'
+            required_security_role: 'sg',
+            allow_past_dates: allowPastDates
           }, {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -389,15 +412,43 @@ export const bulkCreateShifts = async (shifts: Array<{
           // The multi-staff endpoint returns an array of shifts
           if (Array.isArray(response.data)) {
             results.push(...response.data);
+            successCount += response.data.length;
           } else {
             results.push(response.data);
+            successCount++;
           }
         }
       } catch (shiftError) {
         console.error('Error creating individual shift:', shiftError);
+        
+        // Log detailed error information for debugging
+        if (shiftError.response) {
+          console.error('Shift creation error details:');
+          console.error('  Status:', shiftError.response.status);
+          console.error('  Status Text:', shiftError.response.statusText);
+          console.error('  Data:', shiftError.response.data);
+          console.error('  Headers:', shiftError.response.headers);
+          console.error('  Failed shift data:', shift);
+          
+          // Try to extract specific validation errors
+          if (shiftError.response.data && typeof shiftError.response.data === 'object') {
+            console.error('  Validation errors:', JSON.stringify(shiftError.response.data, null, 2));
+          }
+        } else if (shiftError.request) {
+          console.error('No response received for shift creation:', shiftError.request);
+          console.error('  Failed shift data:', shift);
+        } else {
+          console.error('Error setting up shift creation request:', shiftError.message);
+          console.error('  Failed shift data:', shift);
+        }
+        
+        errorCount++;
         // Continue with other shifts even if one fails
       }
     }
+    
+    // Log summary of bulk creation operation
+    console.log(`Bulk creation completed: ${successCount} successful, ${errorCount} failed out of ${shifts.length} total shifts`);
     
     return results.length > 0 ? results : null;
   } catch (error) {
