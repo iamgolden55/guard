@@ -120,6 +120,18 @@ class StaffProfileSerializer(serializers.ModelSerializer):
     bank_details = BankDetailsSerializer(read_only=True)
     sia_licenses = SIALicenseSerializer(many=True, read_only=True)
     availability = StaffAvailabilitySerializer(many=True, read_only=True)
+    
+    # Add security roles from User model for frontend compatibility
+    security_roles = serializers.ReadOnlyField(source='user.security_roles')
+    
+    # Add camelCase aliases for frontend compatibility
+    securityRoles = serializers.ReadOnlyField(source='user.security_roles')
+    siaLicenses = serializers.SerializerMethodField()
+    isApproved = serializers.ReadOnlyField(source='is_approved')
+    
+    def get_siaLicenses(self, obj):
+        """Return SIA licenses in camelCase format for frontend compatibility"""
+        return SIALicenseSerializer(obj.sia_licenses.all(), many=True).data
 
     class Meta:
         model = StaffProfile
@@ -127,9 +139,10 @@ class StaffProfileSerializer(serializers.ModelSerializer):
             'id', 'user', 'phone_number', 'date_of_birth', 'national_insurance_number',
             'street', 'city', 'postal_code', 'country', 'profile_image_url', 'notes',
             'password_last_changed', 'is_approved', 'created_at', 'updated_at',
-            'emergency_contacts', 'bank_details', 'sia_licenses', 'availability'
+            'emergency_contacts', 'bank_details', 'sia_licenses', 'availability',
+            'security_roles', 'securityRoles', 'siaLicenses', 'isApproved'
         )
-        read_only_fields = ('created_at', 'updated_at', 'password_last_changed')
+        read_only_fields = ('created_at', 'updated_at', 'password_last_changed', 'security_roles', 'securityRoles', 'siaLicenses', 'isApproved')
 
 class VenueSerializer(serializers.ModelSerializer):
     class Meta:
@@ -142,7 +155,7 @@ class VenueSerializer(serializers.ModelSerializer):
             'requires_capacity_monitoring', 'requires_toilet_checks',
             'created_at', 'updated_at'
         )
-        read_only_fields = ('created_at', 'updated_at', 'latitude', 'longitude')
+        read_only_fields = ('created_at', 'updated_at')
         
     def validate_capacity(self, value):
         """
@@ -198,11 +211,13 @@ class ShiftSerializer(serializers.ModelSerializer):
     toilet_checks = ToiletCheckSerializer(many=True, read_only=True)
     venue_details = VenueSerializer(source='venue', read_only=True)
     staff_user_details = UserSerializer(source='staff_user', read_only=True)
+    calculated_payment = serializers.ReadOnlyField()
+    is_invoiced = serializers.SerializerMethodField()
 
     class Meta:
         model = Shift
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at')
+        read_only_fields = ('created_at', 'updated_at', 'calculated_payment', 'is_invoiced', 'auto_checkout')
 
     def validate(self, data):
         # Validate end time is after start time
@@ -211,6 +226,13 @@ class ShiftSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     "end_time": "End time must be after start time"
                 })
+        
+        # Validate hourly_rate is positive if provided
+        if data.get('hourly_rate') is not None and data['hourly_rate'] <= 0:
+            raise serializers.ValidationError({
+                "hourly_rate": "Hourly rate must be positive"
+            })
+        
         # Validate staff eligibility if staff_user is set
         staff_user = data.get('staff_user')
         if staff_user:
@@ -220,6 +242,10 @@ class ShiftSerializer(serializers.ModelSerializer):
                     "staff_user": "Staff must have a valid SIA license and be admin approved to be assigned shifts."
                 })
         return data
+    
+    def get_is_invoiced(self, obj):
+        """Check if shift has been invoiced"""
+        return obj.invoice_items.exists()
 
 class ShiftTemplateSerializer(serializers.ModelSerializer):
     venue_details = VenueSerializer(source='venue', read_only=True)
@@ -268,11 +294,12 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
 class InvoiceSerializer(serializers.ModelSerializer):
     items = InvoiceItemSerializer(many=True, read_only=True)
     staff_user_details = UserSerializer(source='staff_user', read_only=True)
+    payment_breakdown = serializers.ReadOnlyField()
 
     class Meta:
         model = Invoice
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at')
+        read_only_fields = ('created_at', 'updated_at', 'payment_breakdown')
 
     def validate(self, data):
         # Validate date range

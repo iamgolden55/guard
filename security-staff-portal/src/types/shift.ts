@@ -11,6 +11,7 @@ export interface Shift {
   managerSignature: string | null;
   managerNotes: string | null;
   managerUser: number | null;
+  autoCheckout: boolean; // Whether this shift was automatically checked out
   createdAt: string;
   updatedAt: string;
   termsAccepted: boolean; // Flag indicating if the staff has accepted the venue's terms and conditions

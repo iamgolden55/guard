@@ -4,7 +4,7 @@ import type { Invoice, InvoiceFilter, InvoiceItem, PayRate } from '../types';
 class InvoiceService {
   // Invoice-related methods
   async getInvoices(filters?: InvoiceFilter): Promise<Invoice[]> {
-    let url = '/api/invoices/';
+    let url = '/invoices/';
 
     if (filters) {
       const queryParams = new URLSearchParams();
@@ -48,7 +48,11 @@ class InvoiceService {
     startDate: string,
     endDate: string
   }): Promise<Invoice> {
-    const response = await api.post<Invoice>('/api/invoices/generate/', data);
+    const response = await api.post<Invoice>('/invoices/generate/', {
+      staff_user_id: data.staffUserId,
+      start_date: data.startDate,
+      end_date: data.endDate
+    });
     return response.data;
   }
 

@@ -39,6 +39,8 @@ export interface VenueRequest {
   requires_capacity_monitoring: boolean;
   requires_toilet_checks: boolean;
   terms_version?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface VenueResponse {

@@ -12,14 +12,17 @@
   },
   "dependencies": {
     "@fluentui/react": "^8.122.14",
+    "@googlemaps/js-api-loader": "^1.16.10",
+    "@types/google.maps": "^3.58.1",
     "@types/react-signature-canvas": "^1.0.7",
     "axios": "^1.8.4",
     "formik": "^2.4.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.5.0",
-    "react-signature-canvas": "^1.1.0-alpha.2",
+    "react-signature-canvas": "^1.0.7",
     "tailwindcss-animate": "^1.0.7",
+    "trim-canvas": "^0.1.2",
     "yup": "^1.6.1"
   },
   "devDependencies": {

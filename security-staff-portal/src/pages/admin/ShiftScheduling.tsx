@@ -480,7 +480,9 @@ const ShiftScheduling: React.FC = () => {
     staffUsers: number[],
     startTime: string,
     endTime: string,
-    notes?: string
+    notes?: string,
+    hourlyRate?: number | null,
+    isSpecialEvent?: boolean
   ): Promise<boolean> => {
     try {
       setIsLoading(true);
@@ -500,7 +502,9 @@ const ShiftScheduling: React.FC = () => {
           end_time: endTime,
           status: 'scheduled',
           required_security_role: 'sg',
-          notes: notes || ''
+          notes: notes || '',
+          hourly_rate: hourlyRate,
+          is_special_event: isSpecialEvent || false
         }),
       });
       
@@ -631,7 +635,9 @@ const ShiftScheduling: React.FC = () => {
       end_time: endDateTime,
       notes: newShiftNotes,
       status: 'scheduled', // Use valid status choice
-      required_security_role: 'sg' // Default to Security Guard
+      required_security_role: 'sg', // Default to Security Guard
+      hourly_rate: selectedPayRateValue ? parseFloat(selectedPayRateValue) : null,
+      is_special_event: isSpecialEvent
     };
     
     let success = false;
@@ -644,7 +650,9 @@ const ShiftScheduling: React.FC = () => {
           newShiftMultiStaff,
           startDateTime,
           endDateTime,
-          newShiftNotes
+          newShiftNotes,
+          selectedPayRateValue ? parseFloat(selectedPayRateValue) : null,
+          isSpecialEvent
         );
       } else {
         success = await createShift(baseShiftData);
@@ -1118,6 +1126,8 @@ const ShiftScheduling: React.FC = () => {
     endTime: string;
     staffIds?: number[];
     isSequential?: boolean;
+    hourlyRate?: number | null;
+    isSpecialEvent?: boolean;
   }>) => {
     setIsLoading(true);
     setError(null);

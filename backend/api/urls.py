@@ -14,7 +14,7 @@ from .views import (
     DeputyConfigViewSet, DeputyEmployeeViewSet, DeputyTimesheetViewSet,
     ShiftTemplateViewSet, DeputyConfigView, SystemSettingsView,
     my_profile, update_my_user,
-    FileUploadView
+    FileUploadView, payroll_preview, payroll_generate
 )
 
 router = DefaultRouter()
@@ -52,4 +52,6 @@ urlpatterns = [
     path('profiles/me', my_profile, name='my-profile'),
     path('users/me', update_my_user, name='update-my-user'),
     path('upload/', FileUploadView.as_view(), name='file-upload'),
+    path('admin/payroll/preview/', payroll_preview, name='payroll-preview'),
+    path('admin/payroll/generate/', payroll_generate, name='payroll-generate'),
 ] 

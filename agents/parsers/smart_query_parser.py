@@ -22,6 +22,7 @@ class SmartParseResult:
     venue_names: List[str]
     time_info: Dict[str, Any]
     date_info: Dict[str, Any]
+    update_info: Dict[str, Any]
     confidence: float
     reasoning: str
 
@@ -60,6 +61,7 @@ class SmartQueryParser:
             venue_names=parse_result.venue_names,
             time_info=parse_result.time_info,
             date_info=parse_result.date_info,
+            update_info=parse_result.update_info,
             confidence=parse_result.confidence,
             reasoning=parse_result.reasoning
         )
@@ -103,9 +105,9 @@ Rules for staff name resolution:
 - Use fuzzy matching for partial names
 - If multiple matches, prefer exact matches over partial
 
-Return a JSON response with this exact structure:
+IMPORTANT: Return ONLY valid JSON with this exact structure. Do not include any explanatory text before or after the JSON:
 {{
-    "intent": "shift_creation|analytics|payroll|schedule|unknown",
+    "intent": "shift_creation|shift_deletion|shift_update|shift_reschedule|shift_view|analytics|payroll|unknown",
     "staff_names": ["resolved full names"],
     "venue_names": ["venue names found"],
     "time_info": {{
@@ -119,9 +121,24 @@ Return a JSON response with this exact structure:
         "recurring": "daily|weekly|monthly if mentioned",
         "days_of_week": ["monday", "tuesday", etc if mentioned]
     }},
-    "confidence": 0.0-1.0,
+    "update_info": {{
+        "new_venue": "new venue if rescheduling/updating",
+        "new_start_time": "new start time if rescheduling", 
+        "new_end_time": "new end time if rescheduling",
+        "new_date": "new date if rescheduling"
+    }},
+    "confidence": 0.9,
     "reasoning": "explanation of your parsing decisions"
-}}"""
+}}
+
+Intent Guidelines:
+- shift_creation: "create", "schedule", "add", "book" a shift
+- shift_deletion: "delete", "remove", "cancel", "cancel out" a shift  
+- shift_update: "update", "change", "modify" shift details (venue, staff, etc.)
+- shift_reschedule: "reschedule", "move", "change time/date" of existing shift
+- shift_view: "show", "list", "view", "get", "what shifts", "check shifts"
+
+Make sure to use proper JSON syntax with double quotes around all property names and string values."""
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -138,7 +155,7 @@ Return a JSON response with this exact structure:
             try:
                 # First try parsing the full content
                 result_data = json.loads(content)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
                 # If that fails, try to extract JSON block
                 json_start = content.find('{')
                 json_end = content.rfind('}') + 1
@@ -146,17 +163,20 @@ Return a JSON response with this exact structure:
                     json_content = content[json_start:json_end]
                     try:
                         result_data = json.loads(json_content)
-                    except json.JSONDecodeError:
-                        # If JSON parsing fails, return fallback data
-                        logger.warning(f"Could not parse LLM JSON response: {content[:200]}...")
+                    except json.JSONDecodeError as e2:
+                        # If JSON parsing fails, try to extract info manually from the response
+                        logger.warning(f"Could not parse LLM JSON response (error: {e2}): {content[:200]}...")
+                        
+                        # Manual extraction as fallback
+                        extracted_data = self._manual_extract_from_response(content, query)
                         result_data = {
                             "intent": "shift_creation",
-                            "staff_names": ["Ninioritse"],  # Default extraction
-                            "venue_names": ["renatos pizza"],
-                            "time_info": {"start_time": "9 AM", "end_time": "5 PM"},
-                            "date_info": {"start_date": "tomorrow"},
-                            "confidence": 0.7,
-                            "reasoning": "Fallback parsing due to JSON error"
+                            "staff_names": extracted_data.get("staff_names", []),
+                            "venue_names": extracted_data.get("venue_names", []),
+                            "time_info": extracted_data.get("time_info", {}),
+                            "date_info": extracted_data.get("date_info", {}),
+                            "confidence": 0.5,  # Lower confidence for manual extraction
+                            "reasoning": f"Manual extraction due to JSON error: {extracted_data.get('reasoning', 'extracted from query')}"
                         }
                 else:
                     raise json.JSONDecodeError("No valid JSON found", content, 0)
@@ -168,6 +188,7 @@ Return a JSON response with this exact structure:
                 venue_names=result_data.get('venue_names', []),
                 time_info=result_data.get('time_info', {}),
                 date_info=result_data.get('date_info', {}),
+                update_info=result_data.get('update_info', {}),
                 confidence=result_data.get('confidence', 0.5),
                 reasoning=result_data.get('reasoning', 'Parsed with LLM')
             )
@@ -182,6 +203,7 @@ Return a JSON response with this exact structure:
                 venue_names=[],
                 time_info={},
                 date_info={},
+                update_info={},
                 confidence=0.0,
                 reasoning=f'LLM parsing failed: {str(e)}'
             )
@@ -206,6 +228,99 @@ Return a JSON response with this exact structure:
                 unique_resolved.append(staff)
         
         return unique_resolved
+    
+    def _manual_extract_from_response(self, content: str, original_query: str) -> Dict[str, Any]:
+        """Manual extraction when JSON parsing fails"""
+        import re
+        
+        query_lower = original_query.lower()
+        
+        # Determine intent from keywords
+        intent = "unknown"
+        if any(word in query_lower for word in ['create', 'schedule', 'add', 'book']):
+            intent = "shift_creation"
+        elif any(word in query_lower for word in ['delete', 'remove', 'cancel']):
+            intent = "shift_deletion"
+        elif any(word in query_lower for word in ['reschedule', 'move', 'change time', 'change date']):
+            intent = "shift_reschedule"
+        elif any(word in query_lower for word in ['update', 'change', 'modify']):
+            intent = "shift_update"
+        elif any(word in query_lower for word in ['show', 'list', 'view', 'get', 'what shifts', 'check shifts']):
+            intent = "shift_view"
+        
+        # Extract staff names from query (look for common names like Nini, Ninioritse, etc)
+        staff_names = []
+        
+        # Common staff name patterns
+        name_patterns = ['nini', 'ninioritse', 'azemi', 'fitame', 'admin']
+        for pattern in name_patterns:
+            if pattern in query_lower:
+                staff_names.append(pattern.title())
+        
+        # Extract venue names from query
+        venue_names = []
+        venue_patterns = ['bimm', 'renatos', 'left handed giant', 'rough trade', 'store1']
+        for pattern in venue_patterns:
+            if pattern in query_lower:
+                venue_names.append(pattern)
+        
+        # Extract time information from query
+        time_info = {}
+        time_match = re.search(r'(\d{1,2})[:\s]*([ap]m)?\s*to\s*(\d{1,2})[:\s]*([ap]m)', query_lower)
+        if time_match:
+            start_hour = time_match.group(1)
+            start_period = time_match.group(2) or 'am'
+            end_hour = time_match.group(3)
+            end_period = time_match.group(4) or 'pm'
+            
+            # Convert to 24-hour format
+            start_time = self._convert_to_24h(f"{start_hour} {start_period}")
+            end_time = self._convert_to_24h(f"{end_hour} {end_period}")
+            
+            time_info = {
+                "start_time": start_time,
+                "end_time": end_time
+            }
+        
+        # Extract date information
+        date_info = {}
+        if 'tomorrow' in query_lower:
+            date_info = {"start_date": "tomorrow"}
+        elif 'today' in query_lower:
+            date_info = {"start_date": "today"}
+        
+        # Extract update information for reschedule/update operations
+        update_info = {}
+        if intent in ["shift_reschedule", "shift_update"]:
+            # Look for "to" patterns indicating changes
+            if " to " in query_lower:
+                parts = query_lower.split(" to ")
+                if len(parts) >= 2:
+                    new_part = parts[-1].strip()
+                    # Try to extract new venue, time, or date from the "to" part
+                    for pattern in venue_patterns:
+                        if pattern in new_part:
+                            update_info["new_venue"] = pattern
+                            break
+        
+        return {
+            "intent": intent,
+            "staff_names": staff_names,
+            "venue_names": venue_names,
+            "time_info": time_info,
+            "date_info": date_info,
+            "update_info": update_info,
+            "reasoning": f"Manual extraction from query: {original_query[:50]}..."
+        }
+    
+    def _convert_to_24h(self, time_str: str) -> str:
+        """Convert 12-hour time to 24-hour format"""
+        try:
+            from datetime import datetime
+            time_obj = datetime.strptime(time_str.strip(), '%I %p')
+            return time_obj.strftime('%H:%M')
+        except:
+            return time_str
     
     def _find_staff_matches(self, name: str, staff_list: List[Dict]) -> List[Dict[str, Any]]:
         """Find staff members matching the given name"""

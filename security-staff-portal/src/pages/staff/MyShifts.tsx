@@ -16,14 +16,17 @@ import {
   Spinner,
   SpinnerSize,
   MessageBar,
-  MessageBarType
+  MessageBarType,
+  PrimaryButton,
+  DefaultButton
 } from '@fluentui/react';
 import { useNavigate } from 'react-router-dom';
 import { MainLayout } from '../../layouts';
 import { ShiftStatus } from '../../types';
 import { shiftService } from '../../services';
+import { fetchPendingEarnings, type PendingEarnings } from '../../services/api';
 
-interface Shift {
+interface MyShift {
   id: number;
   venue: {
     id: number;
@@ -33,10 +36,13 @@ interface Shift {
   endTime: string | null;
   status: ShiftStatus;
   managerApproved: boolean;
+  autoCheckout?: boolean;
+  calculated_payment?: number;
+  is_invoiced?: boolean;
 }
 
 // Status indicator pill component
-const StatusPill: React.FC<{status: ShiftStatus}> = ({ status }) => {
+const StatusPill: React.FC<{status: ShiftStatus, autoCheckout?: boolean}> = ({ status, autoCheckout }) => {
   let backgroundColor = '';
   let color = 'white';
 
@@ -59,31 +65,50 @@ const StatusPill: React.FC<{status: ShiftStatus}> = ({ status }) => {
   }
 
   return (
-    <div
-      style={{
-        backgroundColor,
-        color,
-        padding: '4px 8px',
-        borderRadius: '12px',
-        display: 'inline-block',
-        fontSize: '12px',
-        fontWeight: 'bold',
-        textTransform: 'uppercase'
-      }}
-    >
-      {status}
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <div
+        style={{
+          backgroundColor,
+          color,
+          padding: '4px 8px',
+          borderRadius: '12px',
+          display: 'inline-block',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          textTransform: 'uppercase'
+        }}
+      >
+        {status}
+      </div>
+      {autoCheckout && (
+        <div
+          style={{
+            backgroundColor: '#10B981',
+            color: 'white',
+            padding: '2px 6px',
+            borderRadius: '8px',
+            fontSize: '10px',
+            fontWeight: 'bold',
+            textTransform: 'uppercase'
+          }}
+          title="This shift was automatically checked out"
+        >
+          🤖 Auto
+        </div>
+      )}
     </div>
   );
 };
 
 const MyShifts: React.FC = () => {
   const navigate = useNavigate();
-  const [shifts, setShifts] = useState<Shift[]>([]);
-  const [filteredShifts, setFilteredShifts] = useState<Shift[]>([]);
+  const [shifts, setShifts] = useState<MyShift[]>([]);
+  const [filteredShifts, setFilteredShifts] = useState<MyShift[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [pendingEarnings, setPendingEarnings] = useState<PendingEarnings | null>(null);
 
   // Set up columns for the DetailsList
   const columns: IColumn[] = [
@@ -102,7 +127,7 @@ const MyShifts: React.FC = () => {
       minWidth: 100,
       maxWidth: 200,
       isResizable: true,
-      onRender: (item: Shift) => <Text>{item.venue.name}</Text>,
+      onRender: (item: MyShift) => <Text>{item.venue.name}</Text>,
     },
     {
       key: 'startTime',
@@ -111,7 +136,7 @@ const MyShifts: React.FC = () => {
       minWidth: 100,
       maxWidth: 150,
       isResizable: true,
-      onRender: (item: Shift) => <Text>{new Date(item.startTime).toLocaleString()}</Text>,
+      onRender: (item: MyShift) => <Text>{new Date(item.startTime).toLocaleString()}</Text>,
     },
     {
       key: 'endTime',
@@ -120,7 +145,7 @@ const MyShifts: React.FC = () => {
       minWidth: 100,
       maxWidth: 150,
       isResizable: true,
-      onRender: (item: Shift) => <Text>{item.endTime ? new Date(item.endTime).toLocaleString() : '-'}</Text>,
+      onRender: (item: MyShift) => <Text>{item.endTime ? new Date(item.endTime).toLocaleString() : '-'}</Text>,
     },
     {
       key: 'status',
@@ -129,7 +154,7 @@ const MyShifts: React.FC = () => {
       minWidth: 100,
       maxWidth: 150,
       isResizable: true,
-      onRender: (item: Shift) => <StatusPill status={item.status} />,
+      onRender: (item: MyShift) => <StatusPill status={item.status} autoCheckout={item.autoCheckout} />,
     },
     {
       key: 'approved',
@@ -138,13 +163,71 @@ const MyShifts: React.FC = () => {
       minWidth: 70,
       maxWidth: 100,
       isResizable: true,
-      onRender: (item: Shift) => (
+      onRender: (item: MyShift) => (
         <Text>
           {item.managerApproved ?
             <span style={{ color: '#10B981' }}>✓ Approved</span> :
             <span style={{ color: '#9CA3AF' }}>Pending</span>
           }
         </Text>
+      ),
+    },
+    {
+      key: 'earnings',
+      name: 'Earnings',
+      fieldName: 'calculated_payment',
+      minWidth: 80,
+      maxWidth: 120,
+      isResizable: true,
+      onRender: (item: MyShift) => (
+        <Stack>
+          {item.calculated_payment ? (
+            <Text>£{item.calculated_payment.toFixed(2)}</Text>
+          ) : (
+            <Text style={{ color: '#9CA3AF' }}>--</Text>
+          )}
+          {item.status === 'approved' && !item.is_invoiced && item.calculated_payment && (
+            <Text variant="small" style={{ color: '#F59E0B' }}>Pending</Text>
+          )}
+          {item.is_invoiced && (
+            <Text variant="small" style={{ color: '#10B981' }}>Invoiced</Text>
+          )}
+        </Stack>
+      ),
+    },
+    {
+      key: 'actions',
+      name: 'Actions',
+      minWidth: 120,
+      maxWidth: 150,
+      isResizable: false,
+      onRender: (item: MyShift) => (
+        <Stack horizontal tokens={{ childrenGap: 8 }}>
+          {item.status === 'scheduled' && (
+            <PrimaryButton
+              text="Check In"
+              onClick={() => handleCheckIn(item)}
+              iconProps={{ iconName: 'CheckMark' }}
+              styles={{ root: { minWidth: 'auto', padding: '4px 8px' } }}
+            />
+          )}
+          {item.status === 'in_progress' && (
+            <PrimaryButton
+              text="Check Out"
+              onClick={() => handleCheckOut(item)}
+              iconProps={{ iconName: 'SignOut' }}
+              styles={{ root: { minWidth: 'auto', padding: '4px 8px' } }}
+            />
+          )}
+          {item.status === 'active' && (
+            <DefaultButton
+              text="End Shift"
+              onClick={() => handleEndShift(item)}
+              iconProps={{ iconName: 'Stop' }}
+              styles={{ root: { minWidth: 'auto', padding: '4px 8px' } }}
+            />
+          )}
+        </Stack>
       ),
     }
   ];
@@ -163,48 +246,17 @@ const MyShifts: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // In a real application, this would use the actual API
-      // const response = await shiftService.getShifts();
-      // setShifts(response);
-
-      // For demo purposes, we'll use mock data
-      const mockShifts: Shift[] = [
-        {
-          id: 1,
-          venue: { id: 1, name: 'Venue A' },
-          startTime: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-          endTime: null,
-          status: ShiftStatus.ACTIVE,
-          managerApproved: false
-        },
-        {
-          id: 2,
-          venue: { id: 2, name: 'Venue B' },
-          startTime: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-          endTime: new Date(Date.now() - 50400000).toISOString(), // 14 hours ago
-          status: ShiftStatus.COMPLETED,
-          managerApproved: false
-        },
-        {
-          id: 3,
-          venue: { id: 3, name: 'Venue C' },
-          startTime: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-          endTime: new Date(Date.now() - 136800000).toISOString(), // 38 hours ago
-          status: ShiftStatus.APPROVED,
-          managerApproved: true
-        },
-        {
-          id: 4,
-          venue: { id: 1, name: 'Venue A' },
-          startTime: new Date(Date.now() - 259200000).toISOString(), // 3 days ago
-          endTime: new Date(Date.now() - 223200000).toISOString(), // 62 hours ago
-          status: ShiftStatus.REJECTED,
-          managerApproved: false
-        },
-      ];
-
-      setShifts(mockShifts);
-      setFilteredShifts(mockShifts);
+      const [shiftsResponse, earningsResponse] = await Promise.all([
+        shiftService.getMyShifts(),
+        fetchPendingEarnings().catch(err => {
+          console.warn('Failed to load pending earnings:', err);
+          return null;
+        })
+      ]);
+      
+      setShifts(shiftsResponse);
+      setFilteredShifts(shiftsResponse);
+      setPendingEarnings(earningsResponse);
     } catch (error) {
       console.error('Failed to load shifts:', error);
       setError('Failed to load shifts. Please try again later.');
@@ -266,7 +318,7 @@ const MyShifts: React.FC = () => {
     loadShifts();
   }, [loadShifts]);
 
-  const onRenderItemColumn = (item: Shift, index?: number, column?: IColumn) => {
+  const onRenderItemColumn = (item: MyShift, _?: number, column?: IColumn) => {
     if (!column) return null;
 
     switch (column.key) {
@@ -277,17 +329,32 @@ const MyShifts: React.FC = () => {
       case 'endTime':
         return <Text>{item.endTime ? new Date(item.endTime).toLocaleString() : '-'}</Text>;
       case 'status':
-        return <StatusPill status={item.status} />;
+        return <StatusPill status={item.status} autoCheckout={item.autoCheckout} />;
       default:
-        return <Text>{String(item[column.fieldName as keyof Shift])}</Text>;
+        return <Text>{String(item[column.fieldName as keyof MyShift])}</Text>;
     }
   };
 
-  const handleShiftClick = (item?: Shift) => {
+  const handleShiftClick = (item?: MyShift) => {
     if (item) {
       navigate(`/shifts/${item.id}`);
     }
   };
+
+  const handleCheckIn = useCallback((shift: MyShift) => {
+    // Navigate to a check-in page with the shift ID
+    navigate(`/shifts/${shift.id}/checkin`);
+  }, [navigate]);
+
+  const handleCheckOut = useCallback((shift: MyShift) => {
+    // Navigate to a check-out page with the shift ID
+    navigate(`/shifts/${shift.id}/checkout`);
+  }, [navigate]);
+
+  const handleEndShift = useCallback((shift: MyShift) => {
+    // Navigate to end shift page
+    navigate(`/shifts/${shift.id}/end`);
+  }, [navigate]);
 
   return (
     <MainLayout>
@@ -315,6 +382,27 @@ const MyShifts: React.FC = () => {
             />
           </StackItem>
         </Stack>
+
+        {/* Pending Earnings Display */}
+        {pendingEarnings && pendingEarnings.total_pending > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
+              <Stack>
+                <Text variant="large" className="text-blue-800 font-semibold">
+                  Pending Earnings: £{pendingEarnings.total_pending.toFixed(2)}
+                </Text>
+                <Text variant="small" className="text-blue-600">
+                  {pendingEarnings.shift_count} approved shift{pendingEarnings.shift_count !== 1 ? 's' : ''} awaiting invoice
+                </Text>
+              </Stack>
+              <DefaultButton
+                text="View Details"
+                iconProps={{ iconName: 'Money' }}
+                onClick={() => navigate('/invoices')}
+              />
+            </Stack>
+          </div>
+        )}
 
         {error && (
           <MessageBar

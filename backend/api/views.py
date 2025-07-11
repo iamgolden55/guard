@@ -1,4 +1,5 @@
 import datetime
+import logging
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -34,6 +35,8 @@ from .serializers import (
 )
 
 User = get_user_model()
+
+logger = logging.getLogger(__name__)
 
 # Authentication and permissions, consider adding TokenAuthentication as well.
 
@@ -188,6 +191,222 @@ class UserViewSet(viewsets.ModelViewSet):
         
         # Explicitly returning serializer.data for consistency with other methods
         return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'], url_path='me/pending-earnings')
+    def pending_earnings(self, request):
+        """Get pending earnings for the authenticated user"""
+        user = request.user
+        
+        if user.role != 'staff':
+            return Response({
+                'error': 'Only staff members can view pending earnings'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        try:
+            earnings_data = user.get_pending_earnings()
+            return Response({
+                'total_pending': earnings_data['total_pending'],
+                'shift_count': earnings_data['shift_count'],
+                'pending_shifts': [
+                    {
+                        'shift_id': item['shift'].id,
+                        'venue_name': item['shift'].venue.name,
+                        'start_time': item['shift'].start_time,
+                        'end_time': item['shift'].end_time,
+                        'hours_worked': item['shift'].actual_hours_worked,
+                        'estimated_payment': item['estimated_payment']
+                    }
+                    for item in earnings_data['pending_shifts']
+                ]
+            })
+        except Exception as e:
+            return Response({
+                'error': 'Failed to calculate pending earnings',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['get'], url_path='me/weekly-earnings')
+    def weekly_earnings(self, request):
+        """Get estimated weekly earnings for the authenticated user including unapproved shifts"""
+        user = request.user
+        
+        if user.role != 'staff':
+            return Response({
+                'error': 'Only staff members can view weekly earnings'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        try:
+            earnings_data = user.get_estimated_weekly_earnings()
+            return Response({
+                'week_period': {
+                    'start': earnings_data['week_period']['start'],
+                    'end': earnings_data['week_period']['end']
+                },
+                'approved_earnings': earnings_data['approved_earnings'],
+                'estimated_total': earnings_data['estimated_total'],
+                'next_payment_date': earnings_data['next_payment_date'],
+                'shift_count': earnings_data['shift_count'],
+                'shifts': [
+                    {
+                        'shift_id': item['shift'].id,
+                        'venue_name': item['shift'].venue.name,
+                        'start_time': item['shift'].start_time,
+                        'end_time': item['shift'].end_time,
+                        'status': item['shift'].status,
+                        'amount': item['amount'],
+                        'earning_status': item['status'],  # 'confirmed' or 'estimated'
+                        'is_invoiced': item['is_invoiced']
+                    }
+                    for item in earnings_data['shift_breakdown']
+                ]
+            })
+        except Exception as e:
+            return Response({
+                'error': 'Failed to calculate weekly earnings',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def payroll_preview(request):
+    """Preview payroll for a given date range"""
+    if request.user.role not in ['admin', 'manager']:
+        return Response({
+            'error': 'Permission denied'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        from datetime import datetime
+        from decimal import Decimal
+        
+        start_date = datetime.strptime(request.data['start_date'], '%Y-%m-%d').date()
+        end_date = datetime.strptime(request.data['end_date'], '%Y-%m-%d').date()
+        
+        # Get all staff with approved shifts in the date range
+        staff_with_shifts = User.objects.filter(
+            role='staff',
+            shifts__status='approved',
+            shifts__start_time__date__gte=start_date,
+            shifts__start_time__date__lte=end_date,
+            shifts__actual_hours_worked__isnull=False
+        ).distinct()
+        
+        staff_breakdown = []
+        total_amount = Decimal('0.00')
+        total_shifts = 0
+        
+        for staff_user in staff_with_shifts:
+            # Get approved shifts for this staff member in the date range
+            shifts = staff_user.shifts.filter(
+                status='approved',
+                start_time__date__gte=start_date,
+                start_time__date__lte=end_date,
+                actual_hours_worked__isnull=False
+            )
+            
+            staff_total = Decimal('0.00')
+            for shift in shifts:
+                payment = shift.calculate_payment()
+                if payment:
+                    staff_total += payment
+            
+            if staff_total > 0:
+                staff_breakdown.append({
+                    'staff_name': f"{staff_user.username} ({staff_user.first_name} {staff_user.last_name})",
+                    'shift_count': shifts.count(),
+                    'total_amount': float(staff_total)
+                })
+                total_amount += staff_total
+                total_shifts += shifts.count()
+        
+        return Response({
+            'total_staff': len(staff_breakdown),
+            'total_shifts': total_shifts,
+            'total_amount': float(total_amount),
+            'staff_breakdown': staff_breakdown
+        })
+        
+    except Exception as e:
+        return Response({
+            'error': 'Failed to preview payroll',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def payroll_generate(request):
+    """Generate invoices for all staff for a given date range"""
+    if request.user.role not in ['admin', 'manager']:
+        return Response({
+            'error': 'Permission denied'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        from datetime import datetime
+        from decimal import Decimal
+        
+        start_date = datetime.strptime(request.data['start_date'], '%Y-%m-%d').date()
+        end_date = datetime.strptime(request.data['end_date'], '%Y-%m-%d').date()
+        
+        # Get all staff with approved shifts in the date range
+        staff_with_shifts = User.objects.filter(
+            role='staff',
+            shifts__status='approved',
+            shifts__start_time__date__gte=start_date,
+            shifts__start_time__date__lte=end_date,
+            shifts__actual_hours_worked__isnull=False
+        ).distinct()
+        
+        invoices_created = 0
+        invoices_existing = 0
+        total_amount = Decimal('0.00')
+        
+        for staff_user in staff_with_shifts:
+            # Check if invoice already exists for this period
+            existing_invoice = Invoice.objects.filter(
+                staff_user=staff_user,
+                start_date=start_date,
+                end_date=end_date
+            ).first()
+            
+            if existing_invoice:
+                invoices_existing += 1
+                total_amount += existing_invoice.total_amount
+                continue
+            
+            # Generate new invoice for this staff member for the date range
+            invoice = Invoice.generate_for_staff_period(
+                staff_user=staff_user,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            if invoice:
+                invoices_created += 1
+                total_amount += invoice.total_amount
+        
+        # Create informative message
+        if invoices_created > 0 and invoices_existing > 0:
+            message = f'Generated {invoices_created} new invoices. {invoices_existing} invoices already existed for this period.'
+        elif invoices_created > 0:
+            message = f'Successfully generated {invoices_created} new invoices'
+        elif invoices_existing > 0:
+            message = f'All {invoices_existing} invoices already exist for this period. No new invoices created.'
+        else:
+            message = 'No invoices were created or found.'
+        
+        return Response({
+            'invoices_created': invoices_created,
+            'invoices_existing': invoices_existing,
+            'total_amount': float(total_amount),
+            'message': message
+        })
+        
+    except Exception as e:
+        return Response({
+            'error': 'Failed to generate payroll',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class StaffProfileViewSet(viewsets.ModelViewSet):
     """
@@ -376,6 +595,52 @@ class VenueViewSet(viewsets.ModelViewSet):
         return Response({
             'message': f'Venue {venue_name} deleted successfully'
         }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['get'])
+    def terms_acceptance(self, request, pk=None):
+        """Check if the current user has accepted terms for this venue"""
+        venue = self.get_object()
+        has_accepted = VenueTermsAcceptance.has_accepted_terms(request.user, venue)
+        
+        return Response({
+            'hasAccepted': has_accepted,
+            'venue': venue.name
+        })
+    
+    @action(detail=True, methods=['post'])
+    def accept_terms(self, request, pk=None):
+        """Accept terms for this venue"""
+        try:
+            venue = self.get_object()
+            
+            # Check if already accepted
+            if VenueTermsAcceptance.has_accepted_terms(request.user, venue):
+                return Response({
+                    'message': 'Terms already accepted for this venue',
+                    'hasAccepted': True
+                })
+            
+            # Create new acceptance record
+            acceptance = VenueTermsAcceptance.objects.create(
+                staff_user=request.user,
+                venue=venue,
+                terms_version=venue.terms_version or '1'
+            )
+            
+            serializer = VenueTermsAcceptanceSerializer(acceptance)
+            return Response({
+                'message': 'Terms accepted successfully',
+                'acceptance': serializer.data,
+                'hasAccepted': True
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            logger.error(f"Error accepting venue terms: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return Response({
+                'error': f'Failed to accept terms: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class VenueTermsAcceptanceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -997,6 +1262,84 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = Invoice.objects.all()
     serializer_class = InvoiceSerializer
+    
+    def get_queryset(self):
+        """Filter invoices to only show those belonging to the requesting user"""
+        if self.request.user.role == 'staff':
+            return Invoice.objects.filter(staff_user=self.request.user)
+        elif self.request.user.role in ['manager', 'admin']:
+            # Managers and admins can see all invoices
+            return Invoice.objects.all()
+        else:
+            # Default to only user's own invoices
+            return Invoice.objects.filter(staff_user=self.request.user)
+    
+    @action(detail=False, methods=['post'])
+    def generate(self, request):
+        """Generate an invoice for a staff member for a specific period"""
+        try:
+            staff_user_id = request.data.get('staff_user_id')
+            start_date = request.data.get('start_date')
+            end_date = request.data.get('end_date')
+            
+            if not all([staff_user_id, start_date, end_date]):
+                return Response(
+                    {'error': 'staff_user_id, start_date, and end_date are required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Parse dates
+            from datetime import datetime
+            try:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {'error': 'Invalid date format. Use YYYY-MM-DD'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get staff user
+            try:
+                from api.models import User
+                staff_user = User.objects.get(id=staff_user_id)
+            except User.DoesNotExist:
+                return Response(
+                    {'error': 'Staff user not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check if invoice already exists for this period
+            existing_invoice = Invoice.objects.filter(
+                staff_user=staff_user,
+                start_date=start_date,
+                end_date=end_date
+            ).first()
+            
+            if existing_invoice:
+                return Response(
+                    {'error': f'Invoice already exists for this period (ID: {existing_invoice.id})'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Generate the invoice
+            invoice = Invoice.generate_for_staff_period(staff_user, start_date, end_date)
+            
+            # Serialize and return
+            serializer = self.get_serializer(invoice)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error generating invoice: {str(e)}")
+            return Response(
+                {'error': 'Failed to generate invoice'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class InvoiceItemViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]

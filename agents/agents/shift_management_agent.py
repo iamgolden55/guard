@@ -27,6 +27,11 @@ class ShiftManagementAgent(BaseAgent):
         self.query_parser = QueryParser()
         self.intent_parser = IntentParser()
         self.smart_parser = SmartQueryParser()
+        self.vector_staff_resolver = None  # Will be injected by server on startup
+        self.vector_venue_resolver = None  # Will be injected by server on startup
+        
+        # Conversation context storage
+        self.conversation_contexts = {}  # session_id -> context
     
     def _initialize_capabilities(self) -> None:
         """Initialize the shift management agent's capabilities"""
@@ -104,8 +109,18 @@ class ShiftManagementAgent(BaseAgent):
             query_lower = query.lower()
             keyword_matches = sum(1 for keyword in shift_keywords if keyword in query_lower)
             
+            # Give highest priority to direct shift commands
+            if 'create' in query_lower and ('shift' in query_lower or 'nini' in query_lower or 'staff' in query_lower or any(time_word in query_lower for time_word in ['pm', 'am', ':'])):
+                return True, 0.99
+            
+            # High priority for CRUD operations with staff names (check before general keyword matching)
+            if any(crud_word in query_lower for crud_word in ['delete', 'remove', 'update', 'modify', 'reschedule', 'show', 'list', 'view']):
+                if 'shift' in query_lower or 'nini' in query_lower or any(staff_name in query_lower for staff_name in ['ninioritse', 'eruwa', 'azemi', 'fitame']):
+                    return True, 0.98  # Higher than conversational agent (0.9)
+            
+            # High priority for any shift-related command (but lower than specific CRUD)
             if keyword_matches >= 2:
-                return True, min(0.8, 0.4 + (keyword_matches * 0.1))
+                return True, min(0.85, 0.6 + (keyword_matches * 0.1))  # Lower than CRUD operations
             
             return False, 0.0
             
@@ -113,9 +128,86 @@ class ShiftManagementAgent(BaseAgent):
             logger.error(f"Error checking if shift management agent can handle query: {e}")
             return False, 0.0
     
+    def _get_conversation_context(self, session_id: str) -> Dict[str, Any]:
+        """Get conversation context for a session"""
+        return self.conversation_contexts.get(session_id, {})
+    
+    def _update_conversation_context(self, session_id: str, context: Dict[str, Any]):
+        """Update conversation context for a session"""
+        if session_id not in self.conversation_contexts:
+            self.conversation_contexts[session_id] = {}
+        self.conversation_contexts[session_id].update(context)
+        
+        # Clean up old contexts (keep only last 10 sessions)
+        if len(self.conversation_contexts) > 10:
+            oldest_session = list(self.conversation_contexts.keys())[0]
+            del self.conversation_contexts[oldest_session]
+    
+    def _check_for_follow_up(self, query: str, context: Dict[str, Any]) -> Tuple[bool, str]:
+        """Check if query is a follow-up and reconstruct full context"""
+        logger.info(f"Checking follow-up for query: '{query}', context: {context}")
+        
+        if not context.get('pending_action'):
+            logger.info("No pending action found in context")
+            return False, query
+            
+        # Check if query looks like a follow-up response
+        query_lower = query.lower().strip()
+        
+        # Time patterns (user providing missing time info)
+        time_patterns = [
+            'am', 'pm', ':', 'to', 'from', 'until', 'start', 'end',
+            'morning', 'afternoon', 'evening', 'night', 'noon', 'midnight',
+            '6:', '7:', '8:', '9:', '10:', '11:', '12:', '1:', '2:', '3:', '4:', '5:'
+        ]
+        
+        # Venue patterns (user providing missing venue info)
+        venue_patterns = ['store', 'shop', 'location', 'place', 'venue', 'site']
+        
+        # Date patterns (user providing missing date info)
+        date_patterns = ['today', 'tomorrow', 'monday', 'tuesday', 'wednesday', 
+                        'thursday', 'friday', 'saturday', 'sunday', 'next week']
+        
+        is_time_response = any(pattern in query_lower for pattern in time_patterns)
+        is_venue_response = any(pattern in query_lower for pattern in venue_patterns) 
+        is_date_response = any(pattern in query_lower for pattern in date_patterns)
+        
+        logger.info(f"Pattern checks - time: {is_time_response}, venue: {is_venue_response}, date: {is_date_response}")
+        logger.info(f"Missing info: {context.get('missing_info')}")
+        
+        if is_time_response or is_venue_response or is_date_response:
+            # Reconstruct the full query with context
+            original_request = context.get('original_request', '')
+            missing_info = context.get('missing_info', '')
+            
+            if missing_info == 'time' and is_time_response:
+                full_query = f"{original_request} {query}"
+                logger.info(f"Reconstructed query with time context: {full_query}")
+                return True, full_query
+            elif missing_info == 'venue' and is_venue_response:
+                full_query = f"{original_request} at {query}"
+                logger.info(f"Reconstructed query with venue context: {full_query}")
+                return True, full_query
+            elif missing_info == 'date' and is_date_response:
+                full_query = f"{original_request} on {query}"
+                logger.info(f"Reconstructed query with date context: {full_query}")
+                return True, full_query
+                
+        return False, query
+
     async def process_query(self, query: str, session_id: str, user_id: Optional[str] = None) -> AgentResponse:
-        """Process a shift management query with smart parsing"""
+        """Process a shift management query with smart parsing and conversation context"""
         try:
+            # Get conversation context
+            context = self._get_conversation_context(session_id)
+            
+            # Check if this is a follow-up to a previous incomplete query
+            is_follow_up, processed_query = self._check_for_follow_up(query, context)
+            
+            if is_follow_up:
+                # Clear the pending action since we're now processing it
+                self._update_conversation_context(session_id, {'pending_action': None, 'missing_info': None})
+                query = processed_query
             # Use smart parser for intelligent name resolution
             smart_result = await self.smart_parser.parse_with_context(query)
             
@@ -124,10 +216,14 @@ class ShiftManagementAgent(BaseAgent):
             # Route based on intent and keywords
             reasoning_lower = smart_result.reasoning.lower()
             
-            if 'delete' in reasoning_lower or smart_result.intent == 'shift_deletion':
+            if smart_result.intent == 'shift_deletion' or 'delete' in reasoning_lower:
                 return await self._handle_smart_shift_deletion(smart_result, session_id)
-            elif 'change' in reasoning_lower or 'modify' in reasoning_lower or 'update' in reasoning_lower or smart_result.intent == 'shift_modification':
+            elif smart_result.intent == 'shift_reschedule' or any(word in reasoning_lower for word in ['reschedule', 'move time', 'change time', 'change date']):
+                return await self._handle_smart_shift_reschedule(smart_result, session_id)
+            elif smart_result.intent == 'shift_update' or ('change' in reasoning_lower or 'modify' in reasoning_lower or 'update' in reasoning_lower):
                 return await self._handle_smart_shift_modification(smart_result, session_id)
+            elif smart_result.intent == 'shift_view' or any(word in reasoning_lower for word in ['show', 'list', 'view', 'get']):
+                return await self._handle_smart_shift_view(smart_result, session_id)
             elif smart_result.intent == 'shift_creation' or 'create' in reasoning_lower:
                 return await self._handle_smart_shift_creation(smart_result, session_id)
             else:
@@ -331,12 +427,29 @@ class ShiftManagementAgent(BaseAgent):
             
             if not smart_result.venue_names:
                 staff_names = [f"{s.get('first_name')} {s.get('last_name')}" for s in smart_result.resolved_staff]
+                # Store context for follow-up
+                self._update_conversation_context(session_id, {
+                    'pending_action': 'create_shift',
+                    'original_request': f"Create shifts for {', '.join(staff_names)}",
+                    'missing_info': 'venue',
+                    'staff_info': smart_result.resolved_staff,
+                    'date_info': smart_result.date_info
+                })
                 return AgentResponse(
                     content=f"I'll create shifts for {', '.join(staff_names)}. Which venue should I assign them to?"
                 )
             
             if not smart_result.time_info.get('start_time') or not smart_result.time_info.get('end_time'):
                 staff_names = [f"{s.get('first_name')} {s.get('last_name')}" for s in smart_result.resolved_staff]
+                # Store context for follow-up
+                self._update_conversation_context(session_id, {
+                    'pending_action': 'create_shift',
+                    'original_request': f"Create shifts for {', '.join(staff_names)} at {', '.join(smart_result.venue_names)}",
+                    'missing_info': 'time',
+                    'staff_info': smart_result.resolved_staff,
+                    'venue_names': smart_result.venue_names,
+                    'date_info': smart_result.date_info
+                })
                 return AgentResponse(
                     content=f"I'll create shifts for {', '.join(staff_names)} at {', '.join(smart_result.venue_names)}. What times should the shifts be?"
                 )
@@ -354,15 +467,62 @@ class ShiftManagementAgent(BaseAgent):
                     date_range['start_date'] = tomorrow
                     if not date_range.get('end_date'):
                         date_range['end_date'] = tomorrow
+                
+                # Fix: Update old years to current year (2025)
+                if date_range.get('start_date') and date_range['start_date'].startswith('2023'):
+                    date_range['start_date'] = date_range['start_date'].replace('2023', '2025')
+                    logger.info(f"🔧 Fixed year in start_date: {date_range['start_date']}")
+                
+                if date_range.get('end_date') and date_range['end_date'].startswith('2023'):
+                    date_range['end_date'] = date_range['end_date'].replace('2023', '2025')
+                    logger.info(f"🔧 Fixed year in end_date: {date_range['end_date']}")
 
-                result = await self.shift_tool.execute({
-                    'action': 'create_shifts',
-                    'staff_names': [f"{s.get('username')}" for s in smart_result.resolved_staff],  # Use usernames for API
-                    'venue_names': smart_result.venue_names,
-                    'time_range': smart_result.time_info,
-                    'date_range': date_range,
-                    'frequency': smart_result.date_info.get('recurring', 'once')
-                })
+                # Try to resolve venue names to IDs using vector resolver
+                resolved_venue_ids = []
+                use_id_based_creation = True
+                
+                if self.vector_venue_resolver:
+                    for venue_name in smart_result.venue_names:
+                        success, venue_data, message = await self.vector_venue_resolver.resolve_venue_with_fallback(venue_name)
+                        if success:
+                            resolved_venue_ids.append(venue_data['id'])
+                            logger.info(f"✅ Resolved venue '{venue_name}' to ID {venue_data['id']}")
+                        else:
+                            logger.error(f"❌ Failed to resolve venue '{venue_name}': {message}")
+                            # Don't fail completely, fall back to name-based creation
+                            use_id_based_creation = False
+                            break
+                else:
+                    logger.warning("⚠️ No venue resolver available, using name-based creation")
+                    use_id_based_creation = False
+
+                # Create shifts using the appropriate method
+                if use_id_based_creation and resolved_venue_ids:
+                    # Use ID-based creation (more reliable)
+                    staff_ids = [s.get('id') for s in smart_result.resolved_staff]
+                    logger.info(f"DEBUG: Creating shifts with staff IDs: {staff_ids}, venue IDs: {resolved_venue_ids}")
+
+                    result = await self.shift_tool.execute({
+                        'action': 'create_shifts_with_ids',
+                        'staff_ids': staff_ids,
+                        'venue_ids': resolved_venue_ids,
+                        'staff_names': [f"{s.get('first_name')} {s.get('last_name')}" for s in smart_result.resolved_staff],
+                        'venue_names': smart_result.venue_names,
+                        'time_range': smart_result.time_info,
+                        'date_range': date_range,
+                        'frequency': smart_result.date_info.get('recurring', 'once')
+                    })
+                else:
+                    # Fallback to name-based creation
+                    logger.info("DEBUG: Using name-based shift creation as fallback")
+                    result = await self.shift_tool.execute({
+                        'action': 'create_shifts',
+                        'staff_names': [f"{s.get('username')}" for s in smart_result.resolved_staff],
+                        'venue_names': smart_result.venue_names,
+                        'time_range': smart_result.time_info,
+                        'date_range': date_range,
+                        'frequency': smart_result.date_info.get('recurring', 'once')
+                    })
             except Exception as e:
                 logger.error(f"Error creating real shifts: {e}")
                 # Fallback to mock result if real creation fails
@@ -652,3 +812,190 @@ class ShiftManagementAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Error finding shifts by staff and date: {e}")
             return []
+    
+    async def _resolve_staff_ultra_fast(self, name: str) -> Tuple[bool, Dict[str, Any], str]:
+        """
+        Ultra-fast staff resolution using vector database if available,
+        with fallback to traditional search
+        """
+        try:
+            # Use vector resolver if available (10x faster)
+            if self.vector_staff_resolver:
+                return await self.vector_staff_resolver.resolve_staff_with_fallback(name)
+            
+            # Fallback to traditional staff tool
+            result = await self.staff_tool.find_staff_by_name(name)
+            
+            if result.get('found'):
+                staff = result['staff']
+                match_type = f"traditional_{result.get('match_type', 'unknown')}"
+                return True, staff, match_type
+            
+            return False, {}, "not_found"
+            
+        except Exception as e:
+            logger.error(f"Error in ultra-fast staff resolution: {e}")
+            return False, {}, f"error_{str(e)}"
+    
+    async def _handle_smart_shift_reschedule(self, smart_result, session_id: str) -> AgentResponse:
+        """Handle shift rescheduling with smart parsing results"""
+        try:
+            # Check if we have enough information
+            if not smart_result.resolved_staff:
+                if smart_result.staff_names:
+                    return AgentResponse(
+                        content=f"I couldn't find staff members named: {', '.join(smart_result.staff_names)}. Please check the names and try again."
+                    )
+                else:
+                    return AgentResponse(
+                        content="I need to know which staff member's shift to reschedule. Please specify the staff name."
+                    )
+            
+            # Check if we have update information
+            update_info = smart_result.update_info
+            if not update_info.get('new_date') and not update_info.get('new_start_time') and not update_info.get('new_end_time'):
+                staff_names = [f"{s.get('first_name')} {s.get('last_name')}" for s in smart_result.resolved_staff]
+                return AgentResponse(
+                    content=f"I need to know what to reschedule for {', '.join(staff_names)}. Please specify the new date, time, or both."
+                )
+            
+            # Build criteria for finding shifts to reschedule
+            staff_names = [f"{s.get('first_name')} {s.get('last_name')}" for s in smart_result.resolved_staff]
+            venue_names = smart_result.venue_names
+            
+            # Convert relative dates to proper format
+            date_range = smart_result.date_info.copy()
+            if date_range.get('start_date') == 'tomorrow':
+                from datetime import datetime, timedelta
+                tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+                date_range['start_date'] = tomorrow
+                if not date_range.get('end_date'):
+                    date_range['end_date'] = tomorrow
+            
+            # Default to today if no date specified
+            if not date_range.get('start_date'):
+                from datetime import datetime
+                today = datetime.now().strftime('%Y-%m-%d')
+                date_range['start_date'] = today
+                date_range['end_date'] = today
+            
+            # Reschedule shifts using the shift tool
+            result = await self.shift_tool.execute({
+                'action': 'reschedule_shifts',
+                'staff_names': staff_names,
+                'venue_names': venue_names,
+                'date_range': date_range,
+                'time_range': smart_result.time_info,
+                'update_info': update_info
+            })
+            
+            # Format the response
+            if result.get('success'):
+                rescheduled_count = result.get('shifts_rescheduled', 0)
+                message = f"✅ Successfully rescheduled {rescheduled_count} shift(s)!\n\n"
+                
+                if staff_names:
+                    message += f"👥 Staff: {', '.join(staff_names)}\n"
+                if venue_names:
+                    message += f"🏢 Venue: {', '.join(venue_names)}\n"
+                
+                if update_info.get('new_date'):
+                    message += f"📅 New date: {update_info['new_date']}\n"
+                if update_info.get('new_start_time'):
+                    message += f"⏰ New start time: {update_info['new_start_time']}\n"
+                if update_info.get('new_end_time'):
+                    message += f"⏰ New end time: {update_info['new_end_time']}\n"
+                
+                failed_count = result.get('failed_updates', 0)
+                if failed_count > 0:
+                    message += f"\n⚠️ {failed_count} shift(s) could not be rescheduled"
+            else:
+                message = f"❌ {result.get('message', 'Could not reschedule shifts')}"
+                
+            return AgentResponse(
+                content=message,
+                data=result
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling smart shift reschedule: {e}")
+            return AgentResponse(
+                content=f"I encountered an error rescheduling shifts: {str(e)}"
+            )
+    
+    async def _handle_smart_shift_view(self, smart_result, session_id: str) -> AgentResponse:
+        """Handle shift viewing/listing with smart parsing results"""
+        try:
+            # Build criteria for finding shifts to view
+            staff_names = [f"{s.get('first_name')} {s.get('last_name')}" for s in smart_result.resolved_staff]
+            venue_names = smart_result.venue_names
+            
+            # Convert relative dates to proper format
+            date_range = smart_result.date_info.copy()
+            if date_range.get('start_date') == 'tomorrow':
+                from datetime import datetime, timedelta
+                tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+                date_range['start_date'] = tomorrow
+                if not date_range.get('end_date'):
+                    date_range['end_date'] = tomorrow
+            
+            # Default to today if no date specified and no staff/venue specified
+            if not date_range.get('start_date') and not staff_names and not venue_names:
+                from datetime import datetime
+                today = datetime.now().strftime('%Y-%m-%d')
+                date_range['start_date'] = today
+                date_range['end_date'] = today
+            
+            # List shifts using the shift tool
+            result = await self.shift_tool.execute({
+                'action': 'list_shifts',
+                'staff_names': staff_names,
+                'venue_names': venue_names,
+                'date_range': date_range if date_range.get('start_date') else None
+            })
+            
+            # Format the response
+            if result.get('success'):
+                shifts_count = result.get('shifts_count', 0)
+                shifts = result.get('shifts', [])
+                
+                if shifts_count == 0:
+                    criteria_parts = []
+                    if staff_names:
+                        criteria_parts.append(f"staff: {', '.join(staff_names)}")
+                    if venue_names:
+                        criteria_parts.append(f"venue: {', '.join(venue_names)}")
+                    if date_range.get('start_date'):
+                        criteria_parts.append(f"date: {date_range['start_date']}")
+                    
+                    criteria_text = f" for {' | '.join(criteria_parts)}" if criteria_parts else ""
+                    message = f"No shifts found{criteria_text}."
+                else:
+                    message = f"📋 Found {shifts_count} shift(s):\n\n"
+                    
+                    for shift in shifts[:10]:  # Show first 10 shifts
+                        staff_name = shift.get('staff_name', 'Unknown')
+                        venue_name = shift.get('venue_name', 'Unknown')
+                        date = shift.get('date', 'Unknown')
+                        start_time = shift.get('start_time', '').split('T')[1][:5] if 'T' in shift.get('start_time', '') else 'Unknown'
+                        end_time = shift.get('end_time', '').split('T')[1][:5] if 'T' in shift.get('end_time', '') else 'Unknown'
+                        status = shift.get('status', 'unknown')
+                        
+                        message += f"• {staff_name} at {venue_name}\n"
+                        message += f"  📅 {date} | ⏰ {start_time} - {end_time} | 📊 {status}\n\n"
+                    
+                    if shifts_count > 10:
+                        message += f"... and {shifts_count - 10} more shifts\n"
+            else:
+                message = f"❌ {result.get('message', 'Could not retrieve shifts')}"
+                
+            return AgentResponse(
+                content=message,
+                data=result
+            )
+            
+        except Exception as e:
+            logger.error(f"Error handling smart shift view: {e}")
+            return AgentResponse(
+                content=f"I encountered an error viewing shifts: {str(e)}"
+            )

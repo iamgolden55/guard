@@ -1,4 +1,5 @@
 import api from './api';
+import axios from 'axios';
 import type {
   Shift,
   FireExitCheck,
@@ -15,6 +16,39 @@ import type {
 } from '../types';
 import { AcceptedVenueTerms } from '../types/profile';
 
+// Create a separate API instance for shift-related endpoints that use /api/shifts/
+const shiftApi = axios.create({
+  baseURL: 'http://localhost:8000/api/shifts',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: 15000,
+});
+
+// Add the same interceptors as the main api
+shiftApi.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token && config.headers) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+shiftApi.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      // Handle token refresh logic here if needed
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
 class ShiftService {
   // Venue-related methods
   async getVenues(): Promise<Venue[]> {
@@ -25,7 +59,7 @@ class ShiftService {
   // Terms and conditions acceptance
   async hasAcceptedVenueTerms(venueId: number): Promise<boolean> {
     try {
-      const response = await api.get<{ hasAccepted: boolean }>(`/venues/${venueId}/terms-acceptance`);
+      const response = await api.get<{ hasAccepted: boolean }>(`/venues/${venueId}/terms_acceptance/`);
       return response.data.hasAccepted;
     } catch (error) {
       console.error('Error checking terms acceptance:', error);
@@ -34,7 +68,7 @@ class ShiftService {
   }
 
   async acceptVenueTerms(venueId: number): Promise<AcceptedVenueTerms> {
-    const response = await api.post<AcceptedVenueTerms>(`/venues/${venueId}/accept-terms`, {});
+    const response = await api.post<AcceptedVenueTerms>(`/venues/${venueId}/accept_terms/`, {});
     return response.data;
   }
 
@@ -317,13 +351,72 @@ class ShiftService {
 
   // Shift-related methods
   async getShifts(staffId?: number): Promise<Shift[]> {
-    const url = staffId ? `/shifts/?staff=${staffId}` : '/shifts/';
-    const response = await api.get<Shift[]>(url);
+    const url = staffId ? `/?staff=${staffId}` : '/';
+    const response = await shiftApi.get<Shift[]>(url);
     return response.data;
   }
 
+  async getMyShifts(): Promise<any[]> {
+    try {
+      // Use the correct shifts endpoint from the Django backend
+      const response = await shiftApi.get<any>('/my_shifts/');
+      
+      // Handle different response structures
+      let shifts = response.data;
+      if (response.data.results) {
+        shifts = response.data.results; // Paginated response
+      }
+      
+      console.log(`Success! Found ${shifts.length} shifts`);
+      
+      // Transform the backend data to match frontend interface
+      return shifts.map((shift: any) => ({
+        id: shift.id,
+        venue: {
+          id: shift.venue_details?.id || shift.venue?.id || shift.venue,
+          name: shift.venue_details?.name || shift.venue?.name || 'Unknown Venue'
+        },
+        startTime: shift.start_time || shift.startTime,
+        endTime: shift.end_time || shift.endTime,
+        status: shift.status || 'scheduled',
+        managerApproved: shift.manager_approved || shift.managerApproved || false
+      }));
+    } catch (error: any) {
+      console.error('Failed to fetch shifts:', error);
+      throw error;
+    }
+  }
+
   async getShiftById(shiftId: number): Promise<Shift> {
-    const response = await api.get<Shift>(`/shifts/${shiftId}/`);
+    const response = await shiftApi.get<Shift>(`/${shiftId}/`);
+    return response.data;
+  }
+
+  async checkInShift(shiftId: number, data: {
+    location: { latitude: number; longitude: number; accuracy: number };
+    photo: string;
+    signature: string;
+  }): Promise<any> {
+    const response = await shiftApi.post(`/${shiftId}/check_in/`, {
+      latitude: data.location.latitude,
+      longitude: data.location.longitude,
+      photo: data.photo,
+      signature: data.signature
+    });
+    return response.data;
+  }
+
+  async checkOutShift(shiftId: number, data: {
+    location: { latitude: number; longitude: number; accuracy: number };
+    photo: string;
+    signature: string;
+  }): Promise<any> {
+    const response = await shiftApi.post(`/${shiftId}/check_out/`, {
+      latitude: data.location.latitude,
+      longitude: data.location.longitude,
+      photo: data.photo,
+      signature: data.signature
+    });
     return response.data;
   }
 
@@ -337,12 +430,12 @@ class ShiftService {
       await this.acceptVenueTerms(data.venueId);
     }
 
-    const response = await api.post<Shift>('/shifts/submit/', data);
+    const response = await shiftApi.post<Shift>('/submit/', data);
     return response.data;
   }
 
   async endShift(shiftId: number, endSignature: string): Promise<Shift> {
-    const response = await api.post<Shift>(`/shifts/${shiftId}/end/`, {
+    const response = await shiftApi.post<Shift>(`/${shiftId}/end/`, {
       endSignature
     });
     return response.data;
@@ -353,48 +446,48 @@ class ShiftService {
     managerSignature: string,
     managerNotes?: string
   }): Promise<Shift> {
-    const response = await api.post<Shift>(`/shifts/${shiftId}/approve/`, data);
+    const response = await shiftApi.post<Shift>(`/${shiftId}/approve/`, data);
     return response.data;
   }
 
   // Check-related methods
   async getFireExitChecks(shiftId: number): Promise<FireExitCheck[]> {
-    const response = await api.get<FireExitCheck[]>(`/shifts/${shiftId}/fire-exit-checks/`);
+    const response = await shiftApi.get<FireExitCheck[]>(`/${shiftId}/fire-exit-checks/`);
     return response.data;
   }
 
   async addFireExitCheck(shiftId: number, data: Omit<FireExitCheck, 'id' | 'shift' | 'timestamp'>): Promise<FireExitCheck> {
-    const response = await api.post<FireExitCheck>(`/shifts/${shiftId}/fire-exit-checks/`, data);
+    const response = await shiftApi.post<FireExitCheck>(`/${shiftId}/fire-exit-checks/`, data);
     return response.data;
   }
 
   async getCapacityChecks(shiftId: number): Promise<CapacityCheck[]> {
-    const response = await api.get<CapacityCheck[]>(`/shifts/${shiftId}/capacity-checks/`);
+    const response = await shiftApi.get<CapacityCheck[]>(`/${shiftId}/capacity-checks/`);
     return response.data;
   }
 
   async addCapacityCheck(shiftId: number, data: Omit<CapacityCheck, 'id' | 'shift' | 'timestamp'>): Promise<CapacityCheck> {
-    const response = await api.post<CapacityCheck>(`/shifts/${shiftId}/capacity-checks/`, data);
+    const response = await shiftApi.post<CapacityCheck>(`/${shiftId}/capacity-checks/`, data);
     return response.data;
   }
 
   async getToiletChecks(shiftId: number): Promise<ToiletCheck[]> {
-    const response = await api.get<ToiletCheck[]>(`/shifts/${shiftId}/toilet-checks/`);
+    const response = await shiftApi.get<ToiletCheck[]>(`/${shiftId}/toilet-checks/`);
     return response.data;
   }
 
   async addToiletCheck(shiftId: number, data: Omit<ToiletCheck, 'id' | 'shift' | 'timestamp'>): Promise<ToiletCheck> {
-    const response = await api.post<ToiletCheck>(`/shifts/${shiftId}/toilet-checks/`, data);
+    const response = await shiftApi.post<ToiletCheck>(`/${shiftId}/toilet-checks/`, data);
     return response.data;
   }
 
   async getEnforcementVisits(shiftId: number): Promise<EnforcementVisit[]> {
-    const response = await api.get<EnforcementVisit[]>(`/shifts/${shiftId}/enforcement-visits/`);
+    const response = await shiftApi.get<EnforcementVisit[]>(`/${shiftId}/enforcement-visits/`);
     return response.data;
   }
 
   async addEnforcementVisit(shiftId: number, data: Omit<EnforcementVisit, 'id' | 'shift' | 'timestamp'>): Promise<EnforcementVisit> {
-    const response = await api.post<EnforcementVisit>(`/shifts/${shiftId}/enforcement-visits/`, data);
+    const response = await shiftApi.post<EnforcementVisit>(`/${shiftId}/enforcement-visits/`, data);
     return response.data;
   }
 }

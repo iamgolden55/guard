@@ -29,7 +29,7 @@ import {
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { MainLayout } from '../../layouts';
-import { Card } from '../../components';
+import { Card, BulkPayrollGeneration } from '../../components';
 import { invoiceService, shiftService } from '../../services';
 import { type Invoice, InvoiceStatus } from '../../types';
 
@@ -438,6 +438,22 @@ const InvoiceGeneration: React.FC = () => {
                 )}
               </Stack>
             </Card>
+          </PivotItem>
+
+          <PivotItem headerText="Bulk Payroll">
+            <div className="mt-6">
+              <Stack tokens={{ childrenGap: 16 }}>
+                <Text variant="large" className="font-semibold">
+                  Weekly Payroll Generation
+                </Text>
+                <Text className="text-gray-600">
+                  Generate invoices for all staff members for a weekly payment period. 
+                  This will create individual invoices for each staff member with approved shifts.
+                </Text>
+                
+                <BulkPayrollGeneration />
+              </Stack>
+            </div>
           </PivotItem>
         </Pivot>
       </Stack>

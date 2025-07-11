@@ -77,7 +77,9 @@ class ShiftViewSet(viewsets.ModelViewSet):
         
     @action(detail=True, methods=['post'])
     def check_in(self, request, pk=None):
-        """Check in for a shift"""
+        """Check in for a shift with location verification, signature, and photo"""
+        from datetime import timedelta
+        
         shift = self.get_object()
         
         # Verify the user is assigned to this shift
@@ -94,24 +96,87 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        # Check if the shift is scheduled
-        if shift.status != 'scheduled':
+        # Time-based restrictions validation
+        now = timezone.now()
+        shift_date = shift.start_time.date()
+        current_date = now.date()
+        
+        # Restriction 1: Must be the same date
+        if shift_date != current_date:
+            if shift_date > current_date:
+                days_diff = (shift_date - current_date).days
+                return Response(
+                    {"detail": f"Cannot check in {days_diff} day{'s' if days_diff > 1 else ''} early. You can only check in on the day of your shift ({shift_date.strftime('%B %d, %Y')})."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            else:
+                return Response(
+                    {"detail": "Cannot check in to a shift from a previous date. Please contact your manager."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Restriction 2: Cannot check in more than 15 minutes early
+        early_checkin_window = timedelta(minutes=15)
+        earliest_checkin_time = shift.start_time - early_checkin_window
+        
+        if now < earliest_checkin_time:
+            time_diff = earliest_checkin_time - now
+            hours = int(time_diff.total_seconds() // 3600)
+            minutes = int((time_diff.total_seconds() % 3600) // 60)
+            
+            if hours > 0:
+                wait_time = f"{hours} hour{'s' if hours > 1 else ''} and {minutes} minute{'s' if minutes != 1 else ''}"
+            else:
+                wait_time = f"{minutes} minute{'s' if minutes != 1 else ''}"
+                
+            available_time = earliest_checkin_time.strftime('%I:%M %p')
             return Response(
-                {"detail": f"Cannot check in shift with status: {shift.status}"}, 
+                {"detail": f"Cannot check in {wait_time} early. Check-in becomes available at {available_time} (15 minutes before shift start)."}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        # Perform check in
-        shift.check_in_time = datetime.now()
-        shift.status = 'in_progress'
-        shift.save()
+        # Get location, signature, and photo from request
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        signature = request.data.get('signature')
+        photo = request.data.get('photo')
         
-        serializer = self.get_serializer(shift)
-        return Response(serializer.data)
+        # Validate required parameters
+        if not latitude or not longitude:
+            return Response(
+                {"detail": "Latitude and longitude are required for check-in"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # Use the advanced model method for check-in
+            shift.check_in(
+                latitude=float(latitude),
+                longitude=float(longitude),
+                signature=signature,
+                photo=photo
+            )
+            
+            serializer = self.get_serializer(shift)
+            return Response({
+                "detail": "Successfully checked in",
+                "shift": serializer.data
+            })
+            
+        except ValueError as e:
+            return Response(
+                {"detail": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {"detail": f"Check-in failed: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
     @action(detail=True, methods=['post'])
     def check_out(self, request, pk=None):
-        """Check out from a shift"""
+        """Check out from a shift with location verification, signature, and photo"""
         shift = self.get_object()
         
         # Verify the user is assigned to this shift
@@ -135,20 +200,44 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        # Check if the shift is in progress
-        if shift.status != 'in_progress':
+        # Get location, signature, and photo from request
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        signature = request.data.get('signature')
+        photo = request.data.get('photo')
+        
+        # Validate required parameters
+        if not latitude or not longitude:
             return Response(
-                {"detail": f"Cannot check out shift with status: {shift.status}"}, 
+                {"detail": "Latitude and longitude are required for check-out"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        # Perform check out
-        shift.check_out_time = datetime.now()
-        shift.status = 'completed'
-        shift.save()
-        
-        serializer = self.get_serializer(shift)
-        return Response(serializer.data)
+        try:
+            # Use the advanced model method for check-out
+            shift.check_out(
+                latitude=float(latitude),
+                longitude=float(longitude),
+                signature=signature,
+                photo=photo
+            )
+            
+            serializer = self.get_serializer(shift)
+            return Response({
+                "detail": "Successfully checked out",
+                "shift": serializer.data
+            })
+            
+        except ValueError as e:
+            return Response(
+                {"detail": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {"detail": f"Check-out failed: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
@@ -228,31 +317,126 @@ class FrontendShiftViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def checkIn(self, request, pk=None):
+        """Frontend-compatible check-in with location verification, signature, and photo"""
         shift = self.get_object()
+        
+        # Verify the user is assigned to this shift
+        if shift.staff_user != request.user:
+            return Response(
+                {"error": "You are not assigned to this shift"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # Check if the shift is already checked in
         if shift.check_in_time:
-            return Response({'error': 'Shift already checked in'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Shift already checked in"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Get location, signature, and photo from request
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        signature = request.data.get('signature')
+        photo = request.data.get('photo')
         
-        shift.check_in_time = timezone.now()
-        shift.status = 'active'
-        shift.save()
-        
-        serializer = self.get_serializer(shift)
-        return Response(serializer.data)
+        # Validate required parameters
+        if not latitude or not longitude:
+            return Response(
+                {"error": "Latitude and longitude are required for check-in"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # Use the advanced model method for check-in
+            shift.check_in(
+                latitude=float(latitude),
+                longitude=float(longitude),
+                signature=signature,
+                photo=photo
+            )
+            
+            serializer = self.get_serializer(shift)
+            return Response({
+                "message": "Successfully checked in",
+                "shift": serializer.data
+            })
+            
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Check-in failed: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=True, methods=['post'])
     def checkOut(self, request, pk=None):
+        """Frontend-compatible check-out with location verification, signature, and photo"""
         shift = self.get_object()
+        
+        # Verify the user is assigned to this shift
+        if shift.staff_user != request.user:
+            return Response(
+                {"error": "You are not assigned to this shift"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # Check if the shift is not checked in
         if not shift.check_in_time:
-            return Response({'error': 'Shift not checked in yet'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Shift not checked in yet"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Check if the shift is already checked out
         if shift.check_out_time:
-            return Response({'error': 'Shift already checked out'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Shift already checked out"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Get location, signature, and photo from request
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        signature = request.data.get('signature')
+        photo = request.data.get('photo')
         
-        shift.check_out_time = timezone.now()
-        shift.status = 'completed'
-        shift.save()
-        
-        serializer = self.get_serializer(shift)
-        return Response(serializer.data)
+        # Validate required parameters
+        if not latitude or not longitude:
+            return Response(
+                {"error": "Latitude and longitude are required for check-out"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # Use the advanced model method for check-out
+            shift.check_out(
+                latitude=float(latitude),
+                longitude=float(longitude),
+                signature=signature,
+                photo=photo
+            )
+            
+            serializer = self.get_serializer(shift)
+            return Response({
+                "message": "Successfully checked out",
+                "shift": serializer.data
+            })
+            
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Check-out failed: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):

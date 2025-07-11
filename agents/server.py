@@ -8,13 +8,20 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import asyncio
+from datetime import datetime
 
 from agents.analytics_agent import AnalyticsAgent
 from agents.payroll_agent import PayrollAgent
 from agents.shift_management_agent import ShiftManagementAgent
+from agents.conversational_agent import ConversationalAgent
+from agents.orchestrator_agent import OrchestratorAgent
 from agents.base_agent import AgentResponse
 from core.context_manager import ContextManager
 from config.settings import settings
+from auth.auto_auth import ensure_ai_authentication
+from vector.staff_resolver import init_vector_staff_resolver
+from vector.venue_resolver import init_vector_venue_resolver
+from vector.auto_updater import init_auto_updater, get_auto_updater
 
 # Configure logging
 logging.basicConfig(
@@ -64,26 +71,83 @@ class AgentCapabilitiesResponse(BaseModel):
 # Global variables
 agents = {}
 context_manager = None
+vector_resolver = None
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize agents and context manager on startup"""
-    global agents, context_manager
+    """Initialize agents, authentication, and vector database on startup"""
+    global agents, context_manager, vector_resolver
     
     try:
-        logger.info("Starting AI agents system...")
+        logger.info("🚀 Starting AI agents system...")
         
-        # Initialize context manager
+        # Step 1: Ensure AI authentication
+        logger.info("🔐 Setting up AI authentication...")
+        try:
+            token = await ensure_ai_authentication()
+            logger.info(f"✅ AI authentication successful (token: {token[:20]}...)")
+        except Exception as e:
+            logger.warning(f"⚠️ AI authentication failed: {e}")
+            logger.info("🔄 Continuing with existing configuration...")
+        
+        # Step 2: Initialize vector databases for fast resolution
+        logger.info("🧠 Initializing vector resolvers...")
+        try:
+            vector_staff_resolver = await init_vector_staff_resolver()
+            staff_count = vector_staff_resolver.get_staff_count() if vector_staff_resolver else 0
+        except Exception as e:
+            logger.warning(f"⚠️ Staff vector database setup failed: {e}")
+            vector_staff_resolver = None
+            staff_count = 0
+            
+        try:
+            vector_venue_resolver = await init_vector_venue_resolver()
+            venue_count = vector_venue_resolver.get_venue_count() if vector_venue_resolver else 0
+        except Exception as e:
+            logger.warning(f"⚠️ Venue vector database setup failed: {e}")
+            vector_venue_resolver = None
+            venue_count = 0
+            
+        logger.info(f"✅ Vector databases ready: {staff_count} staff, {venue_count} venues indexed")
+        
+        # Step 3: Initialize context manager
         context_manager = ContextManager()
         
-        # Initialize agents
-        agents = {
+        # Step 4: Initialize specialized agents
+        specialized_agents = {
+            "conversational": ConversationalAgent(),
             "analytics": AnalyticsAgent(),
-            "payroll": PayrollAgent(),
+            "payroll": PayrollAgent(), 
             "shift_management": ShiftManagementAgent(),
         }
         
-        logger.info(f"Initialized {len(agents)} agents: {list(agents.keys())}")
+        # Step 5: Initialize orchestrator with access to all specialized agents
+        orchestrator = OrchestratorAgent(specialized_agents)
+        
+        # Step 6: Main agents dict with orchestrator as primary
+        agents = {
+            "orchestrator": orchestrator,
+            **specialized_agents
+        }
+        
+        # Step 7: Inject vector resolvers into shift management agent
+        if "shift_management" in agents:
+            if vector_staff_resolver:
+                agents["shift_management"].vector_staff_resolver = vector_staff_resolver
+                logger.info("✅ Enhanced shift management agent with staff vector resolution")
+            if vector_venue_resolver:
+                agents["shift_management"].vector_venue_resolver = vector_venue_resolver
+                logger.info("✅ Enhanced shift management agent with venue vector resolution")
+        
+        # Step 8: Initialize auto-updater for vector databases
+        try:
+            await init_auto_updater(vector_staff_resolver, vector_venue_resolver)
+            logger.info("✅ Vector auto-updater started")
+        except Exception as e:
+            logger.warning(f"⚠️ Auto-updater initialization failed: {e}")
+        
+        logger.info(f"🎉 Initialized {len(agents)} agents: {list(agents.keys())}")
+        logger.info("🚀 AI agents system ready!")
         
     except Exception as e:
         logger.error(f"Error during startup: {e}")
@@ -135,14 +199,19 @@ async def process_query(request: QueryRequest):
         best_agent = None
         best_score = 0.0
         
+        all_scores = {}
         for agent_name, agent in agents.items():
             can_handle, score = await agent.can_handle(request.query, request.context)
+            all_scores[agent_name] = (can_handle, score)
             
             logger.info(f"Agent {agent_name} can handle: {can_handle}, score: {score}")
             
             if can_handle and score > best_score:
                 best_agent = agent
                 best_score = score
+        
+        logger.info(f"All agent scores: {all_scores}")
+        logger.info(f"Selected agent: {best_agent.name if best_agent else None} with score: {best_score}")
         
         if not best_agent:
             return QueryResponse(
@@ -173,6 +242,45 @@ async def process_query(request: QueryRequest):
             message=f"An error occurred while processing your query: {str(e)}",
             session_id=request.session_id
         )
+
+@app.post("/admin/vectors/refresh")
+async def refresh_vectors():
+    """Manually refresh all vector databases (admin endpoint)"""
+    try:
+        updater = get_auto_updater()
+        if not updater:
+            return {"error": "Auto-updater not initialized"}
+        
+        results = await updater.force_update_all()
+        
+        return {
+            "success": True,
+            "message": "Vector databases refreshed",
+            "results": results,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error refreshing vectors: {e}")
+        return {"error": f"Failed to refresh vectors: {str(e)}"}
+
+@app.get("/admin/vectors/status")
+async def get_vector_status():
+    """Get status of vector databases and auto-updater"""
+    try:
+        updater = get_auto_updater()
+        if not updater:
+            return {"error": "Auto-updater not initialized"}
+        
+        return {
+            "success": True,
+            "status": updater.get_status(),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting vector status: {e}")
+        return {"error": f"Failed to get status: {str(e)}"}
 
 @app.post("/agents/{agent_name}/query", response_model=QueryResponse)
 async def process_agent_query(agent_name: str, request: QueryRequest):

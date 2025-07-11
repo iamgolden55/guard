@@ -9,7 +9,7 @@ import { LoginPage, RegisterPage } from './pages/auth';
 import { NotFoundPage, UnauthorizedPage } from './pages/shared';
 
 // Dashboard Pages
-import { StaffDashboard, StartShift, EndShift, ShiftChecks, MyShifts, MyInvoices, ProfilePage, ShiftExchange } from './pages/staff';
+import { StaffDashboard, StartShift, EndShift, ShiftChecks, MyShifts, MyInvoices, ProfilePage, ShiftExchange, ShiftCheckIn, ShiftCheckOut } from './pages/staff';
 import { ManagerDashboard, ShiftApproval } from './pages/manager';
 import { AdminDashboard, InvoiceGeneration, ShiftScheduling, Settings } from './pages/admin';
 
@@ -38,6 +38,8 @@ const Router: React.FC = () => {
         <Route path="/shifts" element={<MyShifts />} />
         <Route path="/shifts/new" element={<StartShift />} />
         <Route path="/shifts/:id" element={<div>Shift Details</div>} />
+        <Route path="/shifts/:id/checkin" element={<ShiftCheckIn />} />
+        <Route path="/shifts/:id/checkout" element={<ShiftCheckOut />} />
         <Route path="/shifts/:id/end" element={<EndShift />} />
         <Route path="/shifts/:id/checks" element={<ShiftChecks />} />
         <Route path="/shifts/exchange" element={<ShiftExchange />} />

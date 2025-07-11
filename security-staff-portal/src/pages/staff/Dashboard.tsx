@@ -15,7 +15,7 @@ import {
   ShimmerElementType
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
-import { Card } from '../../components';
+import { Card, WeeklyEarnings, AutoCheckoutStatus } from '../../components';
 import { useAuth } from '../../contexts/AuthContext';
 import { shiftService, invoiceService, profileService } from '../../services';
 import { type Shift, type Invoice, ShiftStatus, StaffProfile } from '../../types';
@@ -146,6 +146,15 @@ const StaffDashboard: React.FC = () => {
               />
             )}
           </Stack>
+
+          {/* Weekly Earnings */}
+          <WeeklyEarnings />
+
+          {/* Auto-Checkout Status */}
+          <AutoCheckoutStatus 
+            currentShift={activeShift || undefined}
+            onCheckOutClick={() => activeShift && navigate(`/shifts/${activeShift.id}/end`)}
+          />
 
           {/* Active shift section */}
           <Stack tokens={{ childrenGap: 16 }}>

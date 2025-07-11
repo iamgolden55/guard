@@ -24,11 +24,13 @@ import {
   ContextualMenu,
   DialogFooter,
   DefaultButton,
-  Icon
+  Icon,
+  Separator
 } from '@fluentui/react';
 import { useNavigate } from 'react-router-dom';
 import { MainLayout } from '../../layouts';
 import { invoiceService } from '../../services';
+import type { Invoice, InvoiceItem, PaymentBreakdown } from '../../types';
 
 enum InvoiceStatus {
   PENDING = 'pending',
@@ -36,7 +38,7 @@ enum InvoiceStatus {
   OVERDUE = 'overdue'
 }
 
-interface Invoice {
+interface InvoiceDisplay {
   id: number;
   period: string;
   startDate: string;
@@ -45,6 +47,8 @@ interface Invoice {
   status: InvoiceStatus;
   paidDate: string | null;
   pdfUrl: string | null;
+  payment_breakdown?: PaymentBreakdown;
+  items?: InvoiceItem[];
 }
 
 // Status indicator pill component
@@ -87,13 +91,13 @@ const StatusPill: React.FC<{status: InvoiceStatus}> = ({ status }) => {
 
 const MyInvoices: React.FC = () => {
   const navigate = useNavigate();
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceDisplay[]>([]);
+  const [filteredInvoices, setFilteredInvoices] = useState<InvoiceDisplay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceDisplay | null>(null);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
 
   // Set up columns for the DetailsList
@@ -121,7 +125,7 @@ const MyInvoices: React.FC = () => {
       minWidth: 150,
       maxWidth: 200,
       isResizable: true,
-      onRender: (item: Invoice) => (
+      onRender: (item: InvoiceDisplay) => (
         <Text>
           {new Date(item.startDate).toLocaleDateString()} - {new Date(item.endDate).toLocaleDateString()}
         </Text>
@@ -134,7 +138,7 @@ const MyInvoices: React.FC = () => {
       minWidth: 80,
       maxWidth: 100,
       isResizable: true,
-      onRender: (item: Invoice) => <Text>£{item.amount.toFixed(2)}</Text>,
+      onRender: (item: InvoiceDisplay) => <Text>£{item.amount.toFixed(2)}</Text>,
     },
     {
       key: 'status',
@@ -143,7 +147,7 @@ const MyInvoices: React.FC = () => {
       minWidth: 100,
       maxWidth: 100,
       isResizable: true,
-      onRender: (item: Invoice) => <StatusPill status={item.status} />,
+      onRender: (item: InvoiceDisplay) => <StatusPill status={item.status} />,
     },
     {
       key: 'paidDate',
@@ -152,7 +156,7 @@ const MyInvoices: React.FC = () => {
       minWidth: 100,
       maxWidth: 120,
       isResizable: true,
-      onRender: (item: Invoice) => (
+      onRender: (item: InvoiceDisplay) => (
         <Text>{item.paidDate ? new Date(item.paidDate).toLocaleDateString() : '-'}</Text>
       ),
     },
@@ -162,7 +166,7 @@ const MyInvoices: React.FC = () => {
       minWidth: 100,
       maxWidth: 100,
       isResizable: true,
-      onRender: (item: Invoice) => (
+      onRender: (item: InvoiceDisplay) => (
         <Stack horizontal tokens={{ childrenGap: 8 }}>
           <Link onClick={() => handleViewInvoice(item)}>
             <Icon iconName="View" /> View
@@ -190,56 +194,52 @@ const MyInvoices: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // In a real application, this would use the actual API
-      // const response = await invoiceService.getMyInvoices();
-      // setInvoices(response);
+      // Fetch real invoices from API
+      const response = await invoiceService.getInvoices();
+      
+      // Handle paginated response from DRF
+      const invoiceData = Array.isArray(response) ? response : (response as any).results || [];
+      
+      
+      // Transform API response to match our display format
+      const displayInvoices: InvoiceDisplay[] = invoiceData.map((invoice: any) => ({
+        id: invoice.id,
+        period: formatPeriod(invoice.start_date, invoice.end_date),
+        startDate: invoice.start_date,
+        endDate: invoice.end_date,
+        amount: parseFloat(invoice.total_amount) || 0,
+        status: invoice.status as InvoiceStatus,
+        paidDate: invoice.status === 'paid' ? invoice.updated_at : null,
+        pdfUrl: invoice.pdf_url,
+        payment_breakdown: invoice.payment_breakdown ? {
+          regular_shifts: {
+            ...invoice.payment_breakdown.regular_shifts,
+            hours: parseFloat(invoice.payment_breakdown.regular_shifts.hours) || 0,
+            amount: parseFloat(invoice.payment_breakdown.regular_shifts.amount) || 0,
+            average_rate: parseFloat(invoice.payment_breakdown.regular_shifts.average_rate) || 0
+          },
+          special_event_shifts: {
+            ...invoice.payment_breakdown.special_event_shifts,
+            hours: parseFloat(invoice.payment_breakdown.special_event_shifts.hours) || 0,
+            amount: parseFloat(invoice.payment_breakdown.special_event_shifts.amount) || 0,
+            average_rate: parseFloat(invoice.payment_breakdown.special_event_shifts.average_rate) || 0
+          },
+          total: {
+            ...invoice.payment_breakdown.total,
+            hours: parseFloat(invoice.payment_breakdown.total.hours) || 0,
+            amount: parseFloat(invoice.payment_breakdown.total.amount) || 0
+          }
+        } : undefined,
+        items: invoice.items ? invoice.items.map((item: any) => ({
+          ...item,
+          hoursWorked: parseFloat(item.hours_worked) || 0,
+          rate: parseFloat(item.rate) || 0,
+          amount: parseFloat(item.amount) || 0
+        })) : []
+      }));
 
-      // For demo purposes, we'll use mock data
-      const mockInvoices: Invoice[] = [
-        {
-          id: 1,
-          period: 'March 2025',
-          startDate: '2025-03-01T00:00:00Z',
-          endDate: '2025-03-31T23:59:59Z',
-          amount: 1250.00,
-          status: InvoiceStatus.PAID,
-          paidDate: '2025-04-05T14:30:00Z',
-          pdfUrl: '/invoices/1.pdf'
-        },
-        {
-          id: 2,
-          period: 'February 2025',
-          startDate: '2025-02-01T00:00:00Z',
-          endDate: '2025-02-28T23:59:59Z',
-          amount: 1100.50,
-          status: InvoiceStatus.PAID,
-          paidDate: '2025-03-06T10:15:00Z',
-          pdfUrl: '/invoices/2.pdf'
-        },
-        {
-          id: 3,
-          period: 'January 2025',
-          startDate: '2025-01-01T00:00:00Z',
-          endDate: '2025-01-31T23:59:59Z',
-          amount: 1350.75,
-          status: InvoiceStatus.PAID,
-          paidDate: '2025-02-04T09:45:00Z',
-          pdfUrl: '/invoices/3.pdf'
-        },
-        {
-          id: 4,
-          period: 'April 2025',
-          startDate: '2025-04-01T00:00:00Z',
-          endDate: '2025-04-30T23:59:59Z',
-          amount: 875.25,
-          status: InvoiceStatus.PENDING,
-          paidDate: null,
-          pdfUrl: '/invoices/4.pdf'
-        },
-      ];
-
-      setInvoices(mockInvoices);
-      setFilteredInvoices(mockInvoices);
+      setInvoices(displayInvoices);
+      setFilteredInvoices(displayInvoices);
     } catch (error) {
       console.error('Failed to load invoices:', error);
       setError('Failed to load invoices. Please try again later.');
@@ -248,13 +248,25 @@ const MyInvoices: React.FC = () => {
     }
   }, []);
 
+  // Helper function to format period from dates
+  const formatPeriod = (startDate: string, endDate: string): string => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    if (start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()) {
+      return start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    }
+    
+    return `${start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
+  };
+
   // Handler functions
   const handleRefresh = useCallback(() => {
     loadInvoices();
     return false; // Return false to prevent default behavior
   }, [loadInvoices]);
 
-  const handleViewInvoice = useCallback((invoice: Invoice) => {
+  const handleViewInvoice = useCallback((invoice: InvoiceDisplay) => {
     setSelectedInvoice(invoice);
     setShowPreviewDialog(true);
   }, []);
@@ -397,6 +409,121 @@ const MyInvoices: React.FC = () => {
                 <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>Paid on</Text>
                 <Text>{new Date(selectedInvoice.paidDate).toLocaleDateString()}</Text>
               </Stack>
+            )}
+
+            {selectedInvoice.payment_breakdown && (
+              <>
+                <Separator />
+                <Stack>
+                  <Text variant="medium" styles={{ root: { fontWeight: 600, marginBottom: '10px' } }}>Payment Breakdown</Text>
+                  
+                  {/* Regular Shifts */}
+                  {selectedInvoice.payment_breakdown.regular_shifts.count > 0 && (
+                    <Stack horizontal horizontalAlign="space-between" styles={{ root: { padding: '8px 0', backgroundColor: '#f8f9fa', paddingLeft: '12px', paddingRight: '12px', borderRadius: '4px', marginBottom: '8px' } }}>
+                      <Stack>
+                        <Text variant="small" styles={{ root: { fontWeight: 600 } }}>Regular Shifts</Text>
+                        <Text variant="small">
+                          {selectedInvoice.payment_breakdown.regular_shifts.count} shifts • {selectedInvoice.payment_breakdown.regular_shifts.hours} hours
+                        </Text>
+                      </Stack>
+                      <Stack horizontalAlign="end">
+                        <Text variant="small" styles={{ root: { fontWeight: 600 } }}>£{selectedInvoice.payment_breakdown.regular_shifts.amount.toFixed(2)}</Text>
+                        <Text variant="small">@£{selectedInvoice.payment_breakdown.regular_shifts.average_rate.toFixed(2)}/hr</Text>
+                      </Stack>
+                    </Stack>
+                  )}
+
+                  {/* Special Event Shifts */}
+                  {selectedInvoice.payment_breakdown.special_event_shifts.count > 0 && (
+                    <Stack horizontal horizontalAlign="space-between" styles={{ root: { padding: '8px 0', backgroundColor: '#fff4e6', paddingLeft: '12px', paddingRight: '12px', borderRadius: '4px', marginBottom: '8px', border: '1px solid #ffa726' } }}>
+                      <Stack>
+                        <Text variant="small" styles={{ root: { fontWeight: 600, color: '#e65100' } }}>
+                          <Icon iconName="Event" style={{ marginRight: '4px' }} />
+                          Special Event Shifts
+                        </Text>
+                        <Text variant="small">
+                          {selectedInvoice.payment_breakdown.special_event_shifts.count} shifts • {selectedInvoice.payment_breakdown.special_event_shifts.hours} hours
+                        </Text>
+                      </Stack>
+                      <Stack horizontalAlign="end">
+                        <Text variant="small" styles={{ root: { fontWeight: 600, color: '#e65100' } }}>£{selectedInvoice.payment_breakdown.special_event_shifts.amount.toFixed(2)}</Text>
+                        <Text variant="small">@£{selectedInvoice.payment_breakdown.special_event_shifts.average_rate.toFixed(2)}/hr</Text>
+                      </Stack>
+                    </Stack>
+                  )}
+
+                  {/* Total */}
+                  <Stack horizontal horizontalAlign="space-between" styles={{ root: { padding: '12px 0', borderTop: '2px solid #ddd', marginTop: '8px' } }}>
+                    <Stack>
+                      <Text variant="medium" styles={{ root: { fontWeight: 700 } }}>Total</Text>
+                      <Text variant="small">
+                        {selectedInvoice.payment_breakdown.total.count} total shifts • {selectedInvoice.payment_breakdown.total.hours} total hours
+                      </Text>
+                    </Stack>
+                    <Stack horizontalAlign="end">
+                      <Text variant="medium" styles={{ root: { fontWeight: 700, fontSize: '1.2em' } }}>£{selectedInvoice.payment_breakdown.total.amount.toFixed(2)}</Text>
+                    </Stack>
+                  </Stack>
+                </Stack>
+              </>
+            )}
+
+            {selectedInvoice.items && selectedInvoice.items.length > 0 && (
+              <>
+                <Separator />
+                <Stack>
+                  <Text variant="medium" styles={{ root: { fontWeight: 600, marginBottom: '10px' } }}>Shift Details</Text>
+                  
+                  {/* Shift-by-shift table */}
+                  <div style={{ border: '1px solid #ddd', borderRadius: '4px', overflow: 'hidden' }}>
+                    {/* Table header */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 80px 100px', backgroundColor: '#f5f5f5', padding: '8px', borderBottom: '1px solid #ddd' }}>
+                      <Text variant="small" styles={{ root: { fontWeight: 600 } }}>Date</Text>
+                      <Text variant="small" styles={{ root: { fontWeight: 600 } }}>Venue</Text>
+                      <Text variant="small" styles={{ root: { fontWeight: 600, textAlign: 'center' } }}>Hours</Text>
+                      <Text variant="small" styles={{ root: { fontWeight: 600, textAlign: 'center' } }}>Rate</Text>
+                      <Text variant="small" styles={{ root: { fontWeight: 600, textAlign: 'right' } }}>Amount</Text>
+                    </div>
+                    
+                    {/* Table rows */}
+                    {selectedInvoice.items.map((item, index) => (
+                      <div 
+                        key={item.id} 
+                        style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: '1fr 1fr 80px 80px 100px', 
+                          padding: '8px', 
+                          borderBottom: index < selectedInvoice.items!.length - 1 ? '1px solid #eee' : 'none',
+                          backgroundColor: item.shift_details?.is_special_event ? '#fff4e6' : 'white'
+                        }}
+                      >
+                        <Text variant="small">
+                          {new Date(item.date).toLocaleDateString()}
+                          {item.shift_details?.is_special_event && (
+                            <Icon iconName="Event" style={{ marginLeft: '4px', color: '#e65100', fontSize: '12px' }} />
+                          )}
+                        </Text>
+                        <Text variant="small">{item.venue_details?.name || item.venue}</Text>
+                        <Text variant="small" style={{ textAlign: 'center' }}>{item.hoursWorked}</Text>
+                        <Text variant="small" style={{ textAlign: 'center' }}>£{item.rate.toFixed(2)}</Text>
+                        <Text variant="small" style={{ textAlign: 'right', fontWeight: '600' }}>£{item.amount.toFixed(2)}</Text>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* Legend */}
+                  <Stack horizontal tokens={{ childrenGap: 20 }} styles={{ root: { marginTop: '8px' } }}>
+                    <Stack horizontal tokens={{ childrenGap: 4 }}>
+                      <div style={{ width: '12px', height: '12px', backgroundColor: '#f8f9fa', border: '1px solid #ddd', borderRadius: '2px' }}></div>
+                      <Text variant="small">Regular Shifts</Text>
+                    </Stack>
+                    <Stack horizontal tokens={{ childrenGap: 4 }}>
+                      <div style={{ width: '12px', height: '12px', backgroundColor: '#fff4e6', border: '1px solid #ffa726', borderRadius: '2px' }}></div>
+                      <Text variant="small">Special Event Shifts</Text>
+                    </Stack>
+                  </Stack>
+                </Stack>
+              </>
             )}
 
             <Stack>

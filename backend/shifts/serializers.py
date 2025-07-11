@@ -27,7 +27,7 @@ class ShiftSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'venue', 'venue_details', 'staff_user', 'staff_details', 
             'start_time', 'end_time', 'status', 'required_security_role', 'check_in_time', 
-            'check_out_time', 'shift_group', 'created_at', 'updated_at'
+            'check_out_time', 'shift_group', 'hourly_rate', 'is_special_event', 'created_at', 'updated_at'
         ]
     
     def validate(self, data):
@@ -72,6 +72,8 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
     staffUser = serializers.PrimaryKeyRelatedField(source='staff_user', queryset=Shift.objects.all().values_list('staff_user', flat=True).distinct())
     checkInTime = serializers.DateTimeField(source='check_in_time', read_only=True)
     checkOutTime = serializers.DateTimeField(source='check_out_time', read_only=True)
+    hourlyRate = serializers.DecimalField(source='hourly_rate', max_digits=10, decimal_places=2, required=False, allow_null=True)
+    isSpecialEvent = serializers.BooleanField(source='is_special_event', default=False)
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
     
@@ -80,7 +82,7 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'venue', 'venueDetails', 'staffUser', 'staffDetails', 
             'startTime', 'endTime', 'status', 'required_security_role', 'checkInTime', 
-            'checkOutTime', 'shift_group', 'createdAt', 'updatedAt'
+            'checkOutTime', 'shift_group', 'hourlyRate', 'isSpecialEvent', 'createdAt', 'updatedAt'
         ]
     
     def validate(self, data):
@@ -123,6 +125,10 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
             data['end_time'] = data.pop('endTime')
         if 'staffUser' in data:
             data['staff_user'] = data.pop('staffUser')
+        if 'hourlyRate' in data:
+            data['hourly_rate'] = data.pop('hourlyRate')
+        if 'isSpecialEvent' in data:
+            data['is_special_event'] = data.pop('isSpecialEvent')
         return super().to_internal_value(data)
 
 class ShiftDetailSerializer(ShiftSerializer):
@@ -156,6 +162,8 @@ class MultiStaffShiftSerializer(serializers.Serializer):
     status = serializers.CharField(default='scheduled')
     required_security_role = serializers.CharField(default='sg')
     notes = serializers.CharField(required=False, allow_blank=True)
+    hourly_rate = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    is_special_event = serializers.BooleanField(default=False)
     
     def validate(self, data):
         # Ensure start time is before end time
@@ -214,7 +222,9 @@ class MultiStaffShiftSerializer(serializers.Serializer):
                 status=validated_data.get('status', 'scheduled'),
                 required_security_role=validated_data.get('required_security_role', 'sg'),
                 notes=validated_data.get('notes', ''),
-                shift_group=shift_group
+                shift_group=shift_group,
+                hourly_rate=validated_data.get('hourly_rate'),
+                is_special_event=validated_data.get('is_special_event', False)
             )
             created_shifts.append(shift)
         

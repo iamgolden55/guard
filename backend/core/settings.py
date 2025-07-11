@@ -225,3 +225,6 @@ SWAGGER_SETTINGS = {
 
 # Add custom user model setting
 AUTH_USER_MODEL = 'api.User'
+
+# Google Maps API Key
+GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')

@@ -1,0 +1,535 @@
+Watching for file changes with StatReloader
+[09/Jul/2025 12:08:38] "POST /api/v1/venues/7/accept_terms/ HTTP/1.1" 201 217
+/Users/new/Projects/mead-security/remix2/backend/api/views.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 12:05:33
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/api/views.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 12:09:12
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/api/views.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 12:09:23
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+[09/Jul/2025 12:10:19] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 12:10:19] "GET /api/shifts/218/ HTTP/1.1" 200 786
+[09/Jul/2025 12:10:20] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 12:10:20] "GET /api/v1/venues/7/terms_acceptance/ HTTP/1.1" 200 37
+Internal Server Error: /api/v1/venues/7/accept_terms
+Traceback (most recent call last):
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/handlers/exception.py", line 55, in inner
+    response = get_response(request)
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/utils/deprecation.py", line 122, in __call__
+    response = self.process_response(request, response)
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/middleware/common.py", line 108, in process_response
+    return self.response_redirect_class(self.get_full_path_with_slash(request))
+                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/middleware/common.py", line 87, in get_full_path_with_slash
+    raise RuntimeError(
+    ...<9 lines>...
+    )
+RuntimeError: You called this URL via POST, but the URL doesn't end in a slash and you have APPEND_SLASH set. Django can't redirect to the slash URL while maintaining POST data. Change your form to point to localhost:8000/api/v1/venues/7/accept_terms/ (note the trailing slash), or set APPEND_SLASH=False in your Django settings.
+[09/Jul/2025 12:10:22] "POST /api/v1/venues/7/accept_terms HTTP/1.1" 500 73673
+[09/Jul/2025 12:12:48] "GET /api/shifts/213/ HTTP/1.1" 200 726
+[09/Jul/2025 12:12:48] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 12:12:49] "GET /api/shifts/218/ HTTP/1.1" 200 786
+[09/Jul/2025 12:12:49] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 12:12:49] "GET /api/v1/venues/7/terms_acceptance/ HTTP/1.1" 200 37
+[09/Jul/2025 12:13:37] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 12:13:37] "GET /api/shifts/218/ HTTP/1.1" 200 786
+[09/Jul/2025 12:13:38] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 12:13:38] "GET /api/v1/venues/7/terms_acceptance/ HTTP/1.1" 200 37
+[09/Jul/2025 12:13:40] "OPTIONS /api/v1/venues/7/accept_terms/ HTTP/1.1" 200 0
+[09/Jul/2025 12:13:40] "POST /api/v1/venues/7/accept_terms/ HTTP/1.1" 201 217
+[09/Jul/2025 12:13:51] "POST /api/shifts/218/check_in/ HTTP/1.1" 200 635
+[09/Jul/2025 12:13:51] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1179
+[09/Jul/2025 12:13:56] "GET /api/shifts/218/ HTTP/1.1" 200 813
+[09/Jul/2025 12:13:56] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 12:14:09] "OPTIONS /api/shifts/218/check_out/ HTTP/1.1" 200 0
+[09/Jul/2025 12:14:10] "POST /api/shifts/218/check_out/ HTTP/1.1" 200 658
+[09/Jul/2025 12:14:10] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1201
+[09/Jul/2025 12:14:22] "OPTIONS /api/shifts/140/ HTTP/1.1" 200 0
+[09/Jul/2025 12:14:22] "GET /api/shifts/140/ HTTP/1.1" 200 832
+[09/Jul/2025 12:14:22] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 12:14:29] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1201
+[09/Jul/2025 12:14:37] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 12:14:37] "GET /api/shifts/213/ HTTP/1.1" 200 726
+[09/Jul/2025 12:14:37] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 13:39:56] "OPTIONS /api/shifts/my_shifts/ HTTP/1.1" 200 0
+[09/Jul/2025 13:39:56] "OPTIONS /api/v1/users/6/ HTTP/1.1" 200 0
+[09/Jul/2025 13:39:56] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 13:39:56] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 3927
+[09/Jul/2025 13:40:17] "OPTIONS /api/v1/users/ HTTP/1.1" 200 0
+[09/Jul/2025 13:40:17] "OPTIONS /api/v1/staff-profiles/?is_approved=false HTTP/1.1" 200 0
+[09/Jul/2025 13:40:17] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 13:40:17] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 13:40:17] "GET /api/v1/staff-profiles/?is_approved=false HTTP/1.1" 200 4467
+[09/Jul/2025 13:40:20] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 14:00:51] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 14:00:51] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 3927
+[09/Jul/2025 14:03:41] "OPTIONS /api/shifts?page_size=1000 HTTP/1.1" 200 0
+[09/Jul/2025 14:03:41] "OPTIONS /api/v1/settings/ HTTP/1.1" 200 0
+[09/Jul/2025 14:03:41] "OPTIONS /api/v1/venues/ HTTP/1.1" 200 0
+[09/Jul/2025 14:03:41] "OPTIONS /api/shifts/?page_size=1000 HTTP/1.1" 200 0
+[09/Jul/2025 14:03:41] "OPTIONS /api/shifts/?page_size=1000 HTTP/1.1" 200 0
+[09/Jul/2025 14:03:41] "GET /api/v1/settings/ HTTP/1.1" 200 614
+[09/Jul/2025 14:03:41] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 14:03:41] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 14:03:41] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 14:03:41] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 14071
+[09/Jul/2025 14:03:41] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 14071
+[09/Jul/2025 14:08:19] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 14:08:19] "GET /api/v1/settings/ HTTP/1.1" 200 614
+[09/Jul/2025 14:09:53] "GET /api/v1/settings/ HTTP/1.1" 200 614
+[09/Jul/2025 14:09:53] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 14:09:53] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 14:09:53] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 14:09:53] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 14071
+[09/Jul/2025 14:09:53] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 14071
+/Users/new/Projects/mead-security/remix2/backend/api/models.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 12:09:28
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/api/models.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 14:23:40
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/api/serializers.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 14:24:28
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/api/serializers.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 14:26:52
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/shifts/serializers.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 14:27:01
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/shifts/serializers.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 14:27:14
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/shifts/serializers.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 14:27:21
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/shifts/serializers.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 14:27:28
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/shifts/serializers.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 14:27:36
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/shifts/serializers.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 14:27:43
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+[09/Jul/2025 14:29:31] "GET /api/v1/settings/ HTTP/1.1" 200 614
+[09/Jul/2025 14:29:31] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 14:29:31] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 14:29:31] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:29:31] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:29:31] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:29:41] "GET /api/v1/settings/ HTTP/1.1" 200 614
+[09/Jul/2025 14:29:41] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 14:29:41] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 14:29:41] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:29:41] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:29:41] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:29:47] "GET /api/v1/settings/ HTTP/1.1" 200 614
+[09/Jul/2025 14:29:47] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 14:29:47] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 14:29:47] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:29:47] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:29:47] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:29:54] "GET /api/v1/settings/ HTTP/1.1" 200 614
+[09/Jul/2025 14:29:54] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 14:29:54] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 14:29:54] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:29:54] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:29:54] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:30:50] "OPTIONS /api/shifts/my_shifts/ HTTP/1.1" 200 0
+[09/Jul/2025 14:30:50] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 14:30:50] "GET /api/v1/settings/ HTTP/1.1" 200 614
+[09/Jul/2025 14:30:50] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1289
+[09/Jul/2025 14:30:50] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 14:30:50] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+/Users/new/Projects/mead-security/remix2/backend/api/models.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 14:27:52
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+Unauthorized: /api/shifts/
+[09/Jul/2025 14:33:55] "POST /api/shifts/ HTTP/1.1" 401 107
+[09/Jul/2025 14:38:13] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 14:38:13] "GET /api/v1/settings/ HTTP/1.1" 200 614
+[09/Jul/2025 14:38:13] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 14:38:13] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 14:38:13] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:38:13] "GET /api/shifts/?page_size=1000 HTTP/1.1" 200 15171
+[09/Jul/2025 14:39:27] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 14:39:27] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 4235
+[09/Jul/2025 14:41:42] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 14:41:42] "OPTIONS /api/v1/shifts/ HTTP/1.1" 200 0
+[09/Jul/2025 14:41:42] "OPTIONS /api/v1/api/invoices/ HTTP/1.1" 200 0
+[09/Jul/2025 14:41:42] "OPTIONS /api/v1/api/deputy/status/ HTTP/1.1" 200 0
+Not Found: /api/v1/shifts/
+Not Found: /api/v1/api/deputy/status/
+[09/Jul/2025 14:41:42] "GET /api/v1/shifts/ HTTP/1.1" 404 42224
+Not Found: /api/v1/api/invoices/
+[09/Jul/2025 14:41:42] "GET /api/v1/api/deputy/status/ HTTP/1.1" 404 42257
+[09/Jul/2025 14:41:42] "GET /api/v1/api/invoices/ HTTP/1.1" 404 42242
+[09/Jul/2025 14:41:42] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 14:41:42] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 14:41:51] "OPTIONS /api/v1/users/1/ HTTP/1.1" 200 0
+[09/Jul/2025 14:41:51] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 14:41:51] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1289
+[09/Jul/2025 14:42:09] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 14:42:10] "OPTIONS /api/v1/profiles/me HTTP/1.1" 200 0
+[09/Jul/2025 14:42:10] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+[09/Jul/2025 14:42:10] "OPTIONS /api/v1/shifts/ HTTP/1.1" 200 0
+Not Found: /api/v1/shifts/
+[09/Jul/2025 14:42:10] "GET /api/v1/shifts/ HTTP/1.1" 404 42224
+[09/Jul/2025 14:42:10] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+Not Found: /api/v1/shifts/
+[09/Jul/2025 14:42:10] "GET /api/v1/shifts/ HTTP/1.1" 404 42224
+[09/Jul/2025 14:42:15] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 14:42:15] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1289
+[09/Jul/2025 14:42:20] "OPTIONS /api/shifts/140/ HTTP/1.1" 200 0
+[09/Jul/2025 14:42:20] "GET /api/shifts/140/ HTTP/1.1" 200 876
+[09/Jul/2025 14:42:20] "OPTIONS /api/v1/venues/ HTTP/1.1" 200 0
+[09/Jul/2025 14:42:20] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 14:42:23] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1289
+[09/Jul/2025 14:43:45] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 14:43:45] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+[09/Jul/2025 14:43:45] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+Not Found: /api/v1/shifts/
+[09/Jul/2025 14:43:45] "GET /api/v1/shifts/ HTTP/1.1" 404 42224
+Not Found: /api/v1/shifts/
+[09/Jul/2025 14:43:45] "GET /api/v1/shifts/ HTTP/1.1" 404 42224
+[09/Jul/2025 14:43:54] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 14:44:44] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:02:35] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+/Users/new/Projects/mead-security/remix2/backend/api/models.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 14:32:53
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/api/serializers.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 15:15:27
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/api/models.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 15:15:35
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+/Users/new/Projects/mead-security/remix2/backend/api/views.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 15:15:42
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+[09/Jul/2025 15:22:04] "OPTIONS /api/v1/api/v1/invoices/ HTTP/1.1" 200 0
+Not Found: /api/v1/api/v1/invoices/
+[09/Jul/2025 15:22:04] "GET /api/v1/api/v1/invoices/ HTTP/1.1" 404 43031
+[09/Jul/2025 15:22:04] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+Not Found: /api/v1/api/v1/invoices/
+[09/Jul/2025 15:22:06] "GET /api/v1/api/v1/invoices/ HTTP/1.1" 404 43031
+[09/Jul/2025 15:22:06] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 15:22:43] "OPTIONS /api/v1/invoices/ HTTP/1.1" 200 0
+[09/Jul/2025 15:22:43] "GET /api/v1/invoices/ HTTP/1.1" 200 52
+[09/Jul/2025 15:23:16] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 15:23:16] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+Unauthorized: /api/v1/invoices/
+[09/Jul/2025 15:23:31] "GET /api/v1/invoices/ HTTP/1.1" 401 107
+[09/Jul/2025 15:23:50] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 15:23:50] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 15:24:13] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 15:25:11] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+Not Found: /api/v1/shifts/
+Not Found: /api/v1/api/deputy/status/
+[09/Jul/2025 15:25:11] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 15:25:11] "GET /api/v1/api/deputy/status/ HTTP/1.1" 404 43037
+[09/Jul/2025 15:25:11] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 15:25:11] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 15:25:11] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 15:26:27] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 15:26:27] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 15:26:47] "OPTIONS /api/v1/invoices/ HTTP/1.1" 200 0
+[09/Jul/2025 15:26:47] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:26:47] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 15:27:26] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:27:26] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 15:28:50] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 15:28:56] "OPTIONS /api/v1/users/1/ HTTP/1.1" 200 0
+[09/Jul/2025 15:28:56] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:28:56] "OPTIONS /api/v1/profiles/me HTTP/1.1" 200 0
+[09/Jul/2025 15:28:56] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+[09/Jul/2025 15:28:56] "OPTIONS /api/v1/shifts/ HTTP/1.1" 200 0
+Not Found: /api/v1/shifts/
+[09/Jul/2025 15:28:56] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 15:28:56] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+Not Found: /api/v1/shifts/
+[09/Jul/2025 15:28:56] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 15:29:33] "OPTIONS /api/v1/invoices/ HTTP/1.1" 200 0
+[09/Jul/2025 15:29:33] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:29:33] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+Unauthorized: /api/v1/invoices/
+[09/Jul/2025 15:36:00] "GET /api/v1/invoices/ HTTP/1.1" 401 107
+[09/Jul/2025 15:36:00] code 400, message Bad request syntax ('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzUyMTYxNzYwLCJpYXQiOjE3NTIwNzUzNjAsImp0aSI6IjYwY2ExMDdhOWRiMDQ2ZWZiYjY3NDY5YWI0MTMyNmUyIiwidXNlcl9pZCI6MX0.JzbFGTKCshFvQUz-zpu_79TDX4IDmBYDBs6ukQ8EqxE')
+[09/Jul/2025 15:36:00] "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzUyMTYxNzYwLCJpYXQiOjE3NTIwNzUzNjAsImp0aSI6IjYwY2ExMDdhOWRiMDQ2ZWZiYjY3NDY5YWI0MTMyNmUyIiwidXNlcl9pZCI6MX0.JzbFGTKCshFvQUz-zpu_79TDX4IDmBYDBs6ukQ8EqxE" 400 -
+[09/Jul/2025 15:38:17] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+Not Found: /api/v1/shifts/
+Not Found: /api/v1/api/deputy/status/
+[09/Jul/2025 15:38:18] "GET /api/v1/api/deputy/status/ HTTP/1.1" 404 43037
+[09/Jul/2025 15:38:18] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 15:38:18] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 15:38:18] "GET /api/v1/users/ HTTP/1.1" 200 1472
+[09/Jul/2025 15:38:18] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 15:38:41] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+[09/Jul/2025 15:38:47] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:38:47] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 15:38:51] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:38:51] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+Not Found: /api/v1/shifts/
+[09/Jul/2025 15:38:51] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 15:38:51] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+Not Found: /api/v1/shifts/
+[09/Jul/2025 15:38:51] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 15:39:19] "OPTIONS /api/v1/login/ HTTP/1.1" 200 0
+[09/Jul/2025 15:39:19] "POST /api/v1/login/ HTTP/1.1" 200 662
+[09/Jul/2025 15:39:19] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+Not Found: /api/v1/shifts/
+[09/Jul/2025 15:39:19] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 15:39:24] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:39:24] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1289
+[09/Jul/2025 15:39:28] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:39:28] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 15:40:38] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:40:38] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1289
+[09/Jul/2025 15:40:45] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:40:45] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+/Users/new/Projects/mead-security/remix2/backend/api/views.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+July 09, 2025 - 15:16:01
+Django version 5.2, using settings 'core.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/5.2/howto/deployment/
+Watching for file changes with StatReloader
+Unauthorized: /api/v1/invoices/
+[09/Jul/2025 15:43:22] "GET /api/v1/invoices/ HTTP/1.1" 401 107
+[09/Jul/2025 15:43:22] code 400, message Bad request syntax ('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzUyMTYyMjAyLCJpYXQiOjE3NTIwNzU4MDIsImp0aSI6ImU3NzUwZWIwN2Y2MjQ0MDk4NTQ1MjYyOGFlM2FmMjE3IiwidXNlcl9pZCI6MX0.yzCvHb4Iv402ud64w5_YbySwFrPBrLDf3KGsVHU_Uf4')
+[09/Jul/2025 15:43:22] "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzUyMTYyMjAyLCJpYXQiOjE3NTIwNzU4MDIsImp0aSI6ImU3NzUwZWIwN2Y2MjQ0MDk4NTQ1MjYyOGFlM2FmMjE3IiwidXNlcl9pZCI6MX0.yzCvHb4Iv402ud64w5_YbySwFrPBrLDf3KGsVHU_Uf4" 400 -
+[09/Jul/2025 15:43:50] "GET /api/v1/invoices/ HTTP/1.1" 200 52
+[09/Jul/2025 15:43:53] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:43:53] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1289
+[09/Jul/2025 15:43:56] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 15:43:56] "GET /api/v1/invoices/ HTTP/1.1" 200 52
+Unauthorized: /api/v1/login/
+[09/Jul/2025 15:44:52] "POST /api/v1/login/ HTTP/1.1" 401 30
+Unauthorized: /api/v1/login/
+[09/Jul/2025 15:45:01] "POST /api/v1/login/ HTTP/1.1" 401 30
+Unauthorized: /api/v1/login/
+[09/Jul/2025 15:45:05] "POST /api/v1/login/ HTTP/1.1" 401 30
+[09/Jul/2025 15:45:46] "OPTIONS /api/v1/users/6/ HTTP/1.1" 200 0
+[09/Jul/2025 15:45:46] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 15:45:46] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 15:45:59] "OPTIONS /api/v1/invoices/generate/ HTTP/1.1" 200 0
+Bad Request: /api/v1/invoices/generate/
+[09/Jul/2025 15:45:59] "POST /api/v1/invoices/generate/ HTTP/1.1" 400 83
+[09/Jul/2025 15:46:17] "POST /api/v1/login/ HTTP/1.1" 200 662
+[09/Jul/2025 15:46:17] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+Not Found: /api/v1/shifts/
+[09/Jul/2025 15:46:17] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 18:53:39] "OPTIONS /api/v1/users/6/ HTTP/1.1" 200 0
+[09/Jul/2025 18:53:39] "OPTIONS /api/v1/invoices/ HTTP/1.1" 200 0
+[09/Jul/2025 18:53:39] "GET /api/v1/users/6/ HTTP/1.1" 200 218
+[09/Jul/2025 18:53:39] "GET /api/v1/invoices/ HTTP/1.1" 200 11989
+[09/Jul/2025 18:53:39] "OPTIONS /api/v1/profiles/me HTTP/1.1" 200 0
+[09/Jul/2025 18:53:39] "OPTIONS /api/v1/users/1/ HTTP/1.1" 200 0
+[09/Jul/2025 18:53:39] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 18:53:39] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+[09/Jul/2025 18:53:39] "OPTIONS /api/v1/shifts/ HTTP/1.1" 200 0
+Not Found: /api/v1/shifts/
+[09/Jul/2025 18:53:39] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 18:53:39] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+Not Found: /api/v1/shifts/
+[09/Jul/2025 18:53:39] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 18:53:41] "OPTIONS /api/hospitals/departments/ HTTP/1.1" 200 0
+[09/Jul/2025 18:53:41] "OPTIONS /api/hospitals/departments/?hospital=2 HTTP/1.1" 200 0
+Not Found: /api/hospitals/departments/
+Not Found: /api/hospitals/departments/
+[09/Jul/2025 18:53:41] "GET /api/hospitals/departments/ HTTP/1.1" 404 3241
+[09/Jul/2025 18:53:41] "GET /api/hospitals/departments/?hospital=2 HTTP/1.1" 404 3252
+[09/Jul/2025 19:29:54] "OPTIONS /api/v1/invoices/ HTTP/1.1" 200 0
+[09/Jul/2025 19:29:54] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 19:29:54] "GET /api/v1/invoices/ HTTP/1.1" 200 52
+[09/Jul/2025 19:29:57] "GET /api/v1/invoices/ HTTP/1.1" 200 52
+[09/Jul/2025 19:30:00] "OPTIONS /api/shifts/my_shifts/ HTTP/1.1" 200 0
+[09/Jul/2025 19:30:00] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 19:30:00] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1289
+[09/Jul/2025 19:30:07] "OPTIONS /api/shifts/140/ HTTP/1.1" 200 0
+[09/Jul/2025 19:30:07] "GET /api/shifts/140/ HTTP/1.1" 200 876
+[09/Jul/2025 19:30:07] "OPTIONS /api/v1/venues/ HTTP/1.1" 200 0
+[09/Jul/2025 19:30:07] "GET /api/v1/venues/ HTTP/1.1" 200 4944
+[09/Jul/2025 19:30:10] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1289
+[09/Jul/2025 19:30:15] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 19:30:15] "GET /api/v1/invoices/ HTTP/1.1" 200 52
+[09/Jul/2025 19:30:18] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 19:30:18] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+Not Found: /api/v1/shifts/
+[09/Jul/2025 19:30:18] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 19:30:18] "GET /api/v1/profiles/me HTTP/1.1" 200 1497
+Not Found: /api/v1/shifts/
+[09/Jul/2025 19:30:18] "GET /api/v1/shifts/ HTTP/1.1" 404 43004
+[09/Jul/2025 19:30:19] "GET /api/v1/users/1/ HTTP/1.1" 200 257
+[09/Jul/2025 19:30:19] "GET /api/shifts/my_shifts/ HTTP/1.1" 200 1289
+[09/Jul/2025 19:53:41] "OPTIONS /api/v1/api/deputy/status/ HTTP/1.1" 200 0

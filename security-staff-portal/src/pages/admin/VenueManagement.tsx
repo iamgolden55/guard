@@ -31,6 +31,8 @@ import {
   type IIconProps
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
+import { VenueLocationPicker, VenueLocationDisplay } from '../../components';
+import type { VenueLocationData } from '../../components/VenueLocationPicker';
 
 // Icons
 const addIcon: IIconProps = { iconName: 'Add' };
@@ -43,6 +45,8 @@ interface Venue {
   address: string;
   city: string;
   postalCode: string;
+  latitude?: number;
+  longitude?: number;
   capacity: number;
   contactName: string;
   contactEmail: string;
@@ -62,6 +66,8 @@ const mapToUiVenue = (apiVenue: ApiVenue): Venue => ({
   address: apiVenue.address,
   city: apiVenue.city,
   postalCode: apiVenue.postal_code,
+  latitude: apiVenue.latitude,
+  longitude: apiVenue.longitude,
   capacity: apiVenue.capacity,
   contactName: apiVenue.contact_name,
   contactEmail: apiVenue.contact_email,
@@ -80,6 +86,8 @@ const mapToApiVenue = (uiVenue: Venue): ApiVenue => ({
   address: uiVenue.address,
   city: uiVenue.city,
   postal_code: uiVenue.postalCode,
+  latitude: uiVenue.latitude,
+  longitude: uiVenue.longitude,
   country: 'United Kingdom', // Default to UK
   is_active: uiVenue.isActive,
   capacity: uiVenue.capacity,
@@ -103,6 +111,14 @@ const VenueManagement: React.FC = () => {
   const [showEditVenuePanel, setShowEditVenuePanel] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
+  
+  // Google Maps API key from environment variables
+  const [googleMapsApiKey] = useState(() => {
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'YOUR_GOOGLE_MAPS_API_KEY';
+    console.log('Google Maps API Key loaded:', apiKey ? `${apiKey.substring(0, 10)}...` : 'NOT_FOUND');
+    return apiKey;
+  });
+  const [selectedLocation, setSelectedLocation] = useState<VenueLocationData | null>(null);
 
   // Form state for new/edit venue
   const [formData, setFormData] = useState({
@@ -217,6 +233,40 @@ const VenueManagement: React.FC = () => {
           {item.hasFireSafetyRequirements && <div>• Fire safety</div>}
           {item.requiresCapacityMonitoring && <div>• Capacity</div>}
           {item.requiresToiletChecks && <div>• Toilets</div>}
+        </div>
+      ),
+    },
+    {
+      key: 'location',
+      name: 'Location',
+      minWidth: 200,
+      maxWidth: 300,
+      isResizable: true,
+      onRender: (item: Venue) => (
+        <div style={{ height: '120px', width: '200px' }}>
+          {item.latitude && item.longitude && googleMapsApiKey !== 'YOUR_GOOGLE_MAPS_API_KEY' ? (
+            <VenueLocationDisplay
+              apiKey={googleMapsApiKey}
+              venue={{
+                id: item.id,
+                name: item.name,
+                address: `${item.address}, ${item.city}, ${item.postalCode}`,
+                latitude: item.latitude,
+                longitude: item.longitude
+              }}
+              height="120px"
+              width="200px"
+              showAddress={false}
+              showDirections={false}
+              className="border rounded"
+            />
+          ) : (
+            <div className="h-full w-full flex items-center justify-center bg-gray-100 rounded border text-xs text-gray-500">
+              {googleMapsApiKey === 'YOUR_GOOGLE_MAPS_API_KEY' 
+                ? '🔑 Map API key needed' 
+                : '📍 No coordinates set'}
+            </div>
+          )}
         </div>
       ),
     },
@@ -346,6 +396,21 @@ const VenueManagement: React.FC = () => {
       description: venue.description,
       termsAndConditions: venue.termsAndConditions
     });
+    
+    // Set location data if available
+    if (venue.latitude && venue.longitude) {
+      setSelectedLocation({
+        address: `${venue.address}, ${venue.city}, ${venue.postalCode}`,
+        latitude: venue.latitude,
+        longitude: venue.longitude,
+        formattedAddress: `${venue.address}, ${venue.city}, ${venue.postalCode}`,
+        city: venue.city,
+        postalCode: venue.postalCode
+      });
+    } else {
+      setSelectedLocation(null);
+    }
+    
     setShowEditVenuePanel(true);
   }, []);
 
@@ -408,6 +473,7 @@ const VenueManagement: React.FC = () => {
       description: '',
       termsAndConditions: ''
     });
+    setSelectedLocation(null);
     setShowAddVenuePanel(true);
   }, []);
 
@@ -426,6 +492,8 @@ const VenueManagement: React.FC = () => {
         address: formData.address,
         city: formData.city,
         postal_code: formData.postalCode,
+        latitude: selectedLocation?.latitude,
+        longitude: selectedLocation?.longitude,
         country: 'United Kingdom', // Default to UK
         is_active: formData.isActive,
         capacity: capacity,
@@ -471,6 +539,8 @@ const VenueManagement: React.FC = () => {
         address: formData.address,
         city: formData.city,
         postal_code: formData.postalCode,
+        latitude: selectedLocation?.latitude,
+        longitude: selectedLocation?.longitude,
         country: 'United Kingdom', // Default to UK
         is_active: formData.isActive,
         capacity: capacity,
@@ -484,6 +554,12 @@ const VenueManagement: React.FC = () => {
         requires_toilet_checks: formData.requiresToiletChecks
       };
 
+      console.log('VenueManagement: Updating venue with coordinates:', {
+        selectedLocation: selectedLocation,
+        latitude: selectedLocation?.latitude,
+        longitude: selectedLocation?.longitude
+      });
+
       // Call API to update venue
       await venueService.updateVenue(selectedVenue.id, updatedApiVenue);
       
@@ -494,6 +570,8 @@ const VenueManagement: React.FC = () => {
         address: formData.address,
         city: formData.city,
         postalCode: formData.postalCode,
+        latitude: selectedLocation?.latitude,
+        longitude: selectedLocation?.longitude,
         capacity: capacity,
         contactName: formData.contactName,
         contactEmail: formData.contactEmail,
@@ -530,6 +608,44 @@ const VenueManagement: React.FC = () => {
       ...prev,
       [field]: value
     }));
+  }, []);
+
+  // Handler for location selection
+  const handleLocationSelect = useCallback((location: VenueLocationData) => {
+    console.log('VenueManagement: handleLocationSelect called with:', location);
+    setSelectedLocation(location);
+    
+    // Always update address fields when location is confirmed
+    if (location.address) {
+      // Use the dedicated city and postalCode fields from location data if available
+      // Otherwise fall back to parsing the formatted address
+      let city = location.city || '';
+      let postalCode = location.postalCode || '';
+      
+      // Fallback to parsing formattedAddress if city/postalCode not provided
+      if (!city || !postalCode) {
+        const addressParts = location.formattedAddress.split(', ');
+        if (!postalCode) {
+          postalCode = addressParts[addressParts.length - 1] || '';
+        }
+        if (!city) {
+          city = addressParts[addressParts.length - 2] || '';
+        }
+      }
+      
+      console.log('VenueManagement: Updating form data with:', {
+        address: location.address,
+        city: city,
+        postalCode: postalCode
+      });
+      
+      setFormData(prev => ({
+        ...prev,
+        address: location.address,
+        city: city,
+        postalCode: postalCode
+      }));
+    }
   }, []);
 
   // Command bar items
@@ -651,7 +767,10 @@ const VenueManagement: React.FC = () => {
       {/* Add Venue Panel */}
       <Panel
         isOpen={showAddVenuePanel}
-        onDismiss={() => setShowAddVenuePanel(false)}
+        onDismiss={() => {
+          setShowAddVenuePanel(false);
+          setSelectedLocation(null);
+        }}
         headerText="Add New Venue"
         closeButtonAriaLabel="Close"
         type={PanelType.medium}
@@ -707,6 +826,25 @@ const VenueManagement: React.FC = () => {
             placeholder="Enter the terms and conditions staff must agree to when accepting shifts at this venue"
           />
 
+          {/* Location Picker */}
+          <Label style={{ marginTop: 20 }}>Venue Location</Label>
+          {googleMapsApiKey !== 'YOUR_GOOGLE_MAPS_API_KEY' ? (
+            <VenueLocationPicker
+              key={`add-venue-${showAddVenuePanel}`} // Force re-render when panel opens
+              apiKey={googleMapsApiKey}
+              onLocationSelect={handleLocationSelect}
+              initialLocation={selectedLocation}
+              label="Set venue location on map"
+              placeholder="Search for venue address..."
+            />
+          ) : (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <Text variant="small">🔑 Google Maps API key required for location features</Text>
+              <br />
+              <Text variant="small">Configure your API key to enable location selection and verification.</Text>
+            </div>
+          )}
+
           <Label style={{ marginTop: 20 }}>Contact Information</Label>
           <TextField
             label="Contact Name"
@@ -761,7 +899,10 @@ const VenueManagement: React.FC = () => {
           <Stack horizontal tokens={{ childrenGap: 10 }} horizontalAlign="end" style={{ marginTop: 20 }}>
             <DefaultButton
               text="Cancel"
-              onClick={() => setShowAddVenuePanel(false)}
+              onClick={() => {
+                setShowAddVenuePanel(false);
+                setSelectedLocation(null);
+              }}
             />
             <PrimaryButton
               text="Add Venue"
@@ -778,6 +919,7 @@ const VenueManagement: React.FC = () => {
         onDismiss={() => {
           setShowEditVenuePanel(false);
           setSelectedVenue(null);
+          setSelectedLocation(null);
         }}
         headerText="Edit Venue"
         closeButtonAriaLabel="Close"
@@ -833,6 +975,25 @@ const VenueManagement: React.FC = () => {
             onChange={(_, newValue) => handleFormInputChange('termsAndConditions', newValue || '')}
             placeholder="Enter the terms and conditions staff must agree to when accepting shifts at this venue"
           />
+
+          {/* Location Picker */}
+          <Label style={{ marginTop: 20 }}>Venue Location</Label>
+          {googleMapsApiKey !== 'YOUR_GOOGLE_MAPS_API_KEY' ? (
+            <VenueLocationPicker
+              key={`edit-venue-${showEditVenuePanel}-${selectedVenue?.id}`} // Force re-render when panel opens
+              apiKey={googleMapsApiKey}
+              onLocationSelect={handleLocationSelect}
+              initialLocation={selectedLocation}
+              label="Update venue location on map"
+              placeholder="Search for venue address..."
+            />
+          ) : (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <Text variant="small">🔑 Google Maps API key required for location features</Text>
+              <br />
+              <Text variant="small">Configure your API key to enable location selection and verification.</Text>
+            </div>
+          )}
 
           <Label style={{ marginTop: 20 }}>Contact Information</Label>
           <TextField
@@ -891,6 +1052,7 @@ const VenueManagement: React.FC = () => {
               onClick={() => {
                 setShowEditVenuePanel(false);
                 setSelectedVenue(null);
+                setSelectedLocation(null);
               }}
             />
             <PrimaryButton

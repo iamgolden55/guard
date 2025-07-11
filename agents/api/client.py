@@ -63,6 +63,19 @@ class ShiftManagementAPI:
             # Fallback to test data when backend is not available
             return await self._get_test_staff_data(search_query, filters)
     
+    async def get_staff_by_id(self, staff_id: int) -> Optional[Dict[str, Any]]:
+        """Get a specific staff member by ID"""
+        try:
+            response = await self.client.get(f"/api/v1/users/{staff_id}/")
+            response.raise_for_status()
+            return response.json()
+            
+        except Exception as e:
+            logger.warning(f"Backend API not available for staff ID {staff_id}: {e}, using test data")
+            # Fallback to test data
+            test_staff = await self._get_test_staff_data()
+            return next((s for s in test_staff if s['id'] == staff_id), None)
+    
     async def get_venues(self, search_query: str = None) -> List[Dict[str, Any]]:
         """Get venues with optional search"""
         try:
@@ -87,6 +100,19 @@ class ShiftManagementAPI:
             logger.warning(f"Backend API not available: {e}, using test data")
             # Fallback to test data when backend is not available
             return await self._get_test_venues_data(search_query)
+    
+    async def get_venue_by_id(self, venue_id: int) -> Optional[Dict[str, Any]]:
+        """Get a specific venue by ID"""
+        try:
+            response = await self.client.get(f"/api/v1/venues/{venue_id}/")
+            response.raise_for_status()
+            return response.json()
+            
+        except Exception as e:
+            logger.warning(f"Backend API not available for venue ID {venue_id}: {e}, using test data")
+            # Fallback to test data
+            test_venues = await self._get_test_venues_data()
+            return next((v for v in test_venues if v['id'] == venue_id), None)
     
     async def get_shifts(self, filters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """Get shifts with optional filters"""

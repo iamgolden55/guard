@@ -20,8 +20,8 @@ const mapToFrontendVenue = (backendVenue: any): Venue => ({
   requires_capacity_monitoring: backendVenue.requires_capacity_monitoring,
   requires_toilet_checks: backendVenue.requires_toilet_checks,
   terms_version: backendVenue.terms_version,
-  latitude: backendVenue.latitude,
-  longitude: backendVenue.longitude,
+  latitude: backendVenue.latitude ? Number(backendVenue.latitude) : undefined,
+  longitude: backendVenue.longitude ? Number(backendVenue.longitude) : undefined,
   created_at: backendVenue.created_at,
   updated_at: backendVenue.updated_at
 });
@@ -43,7 +43,9 @@ const mapToBackendVenue = (frontendVenue: any): VenueRequest => ({
   requires_fire_safety_checks: frontendVenue.requires_fire_safety_checks,
   requires_capacity_monitoring: frontendVenue.requires_capacity_monitoring,
   requires_toilet_checks: frontendVenue.requires_toilet_checks,
-  terms_version: frontendVenue.terms_version
+  terms_version: frontendVenue.terms_version,
+  latitude: frontendVenue.latitude,
+  longitude: frontendVenue.longitude
 });
 
 class VenueService {

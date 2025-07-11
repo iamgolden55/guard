@@ -146,6 +146,9 @@ const StaffManagement: React.FC = () => {
   const [reviewingStaff, setReviewingStaff] = useState<StaffProfileDetail | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [showDetailsPanel, setShowDetailsPanel] = useState(false);
+  const [detailedStaff, setDetailedStaff] = useState<any>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
   // Form state for new/edit staff
   const [formData, setFormData] = useState({
@@ -228,6 +231,90 @@ const StaffManagement: React.FC = () => {
       ),
     },
     {
+      key: 'securityRoles',
+      name: 'Security Roles',
+      minWidth: 150,
+      maxWidth: 200,
+      isResizable: true,
+      onRender: (item: any) => {
+        const roles = item.securityRoles || item.security_roles || [];
+        const roleLabels: { [key: string]: string } = {
+          'ds': 'Door Supervisor',
+          'sg': 'Security Guard',
+          'cctv': 'CCTV Operator',
+          'cp': 'Close Protection',
+          'steward': 'Steward',
+          'k9': 'Dog Handler',
+          'retail': 'Retail Security',
+          'static': 'Static Guard',
+          'mobile': 'Mobile Patrol',
+          'event': 'Event Security'
+        };
+        return (
+          <Stack>
+            {roles.length > 0 ? (
+              roles.map((role: string, index: number) => (
+                <Text key={index} variant="small">
+                  {roleLabels[role] || role}
+                </Text>
+              ))
+            ) : (
+              <Text variant="small" style={{ color: '#9CA3AF' }}>No roles</Text>
+            )}
+          </Stack>
+        );
+      },
+    },
+    {
+      key: 'siaLicenses',
+      name: 'SIA Licenses',
+      minWidth: 120,
+      maxWidth: 150,
+      isResizable: true,
+      onRender: (item: any) => {
+        const licenses = item.siaLicenses || item.sia_licenses || [];
+        return (
+          <Stack>
+            <Text variant="small">
+              {licenses.length > 0 ? `${licenses.length} license${licenses.length !== 1 ? 's' : ''}` : 'No licenses'}
+            </Text>
+            {licenses.length > 0 && (
+              <Text variant="small" style={{ color: '#10B981' }}>
+                ✓ Submitted
+              </Text>
+            )}
+          </Stack>
+        );
+      },
+    },
+    {
+      key: 'approvalStatus',
+      name: 'Approval',
+      minWidth: 100,
+      maxWidth: 120,
+      isResizable: true,
+      onRender: (item: any) => {
+        const isApproved = item.isApproved ?? item.is_approved ?? false;
+        return (
+          <div
+            style={{
+              backgroundColor: isApproved ? '#10B981' : '#F59E0B',
+              color: 'white',
+              padding: '4px 8px',
+              borderRadius: '12px',
+              display: 'inline-block',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              textTransform: 'uppercase',
+              textAlign: 'center'
+            }}
+          >
+            {isApproved ? 'Approved' : 'Pending'}
+          </div>
+        );
+      },
+    },
+    {
       key: 'dateJoined',
       name: 'Date Joined',
       fieldName: 'dateJoined',
@@ -253,6 +340,9 @@ const StaffManagement: React.FC = () => {
       isResizable: true,
       onRender: (item: Staff) => (
         <Stack horizontal tokens={{ childrenGap: 8 }}>
+          <Link onClick={() => handleViewStaffDetails(item)}>
+            View Details
+          </Link>
           <Link onClick={() => handleEditStaff(item)}>
             Edit
           </Link>
@@ -448,6 +538,94 @@ const StaffManagement: React.FC = () => {
     setSelectedStaff(staff);
     setShowDeleteDialog(true);
   }, []);
+
+  const handleViewStaffDetails = useCallback(async (staff: Staff) => {
+    setDetailsLoading(true);
+    setShowDetailsPanel(true);
+    
+    try {
+      // Fetch detailed staff profile information
+      const response = await api.get(`/staff-profiles/?user=${staff.id}`);
+      const profileData = response.data.results?.[0] || response.data[0];
+      
+      if (profileData) {
+        setDetailedStaff(profileData);
+      } else {
+        setDetailedStaff({
+          user: {
+            first_name: staff.firstName,
+            last_name: staff.lastName,
+            email: staff.email,
+            role: staff.role,
+            is_active: staff.isActive
+          },
+          phone_number: staff.phone || 'Not provided',
+          is_approved: false,
+          sia_licenses: [],
+          security_roles: []
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching staff details:', error);
+      setDetailedStaff(null);
+    } finally {
+      setDetailsLoading(false);
+    }
+  }, []);
+
+  const handleApproveLicense = useCallback(async (licenseId: number) => {
+    try {
+      await api.patch(`/sia-licenses/${licenseId}/`, {
+        status: 'valid'
+      });
+      
+      // Refresh the detailed staff data
+      if (detailedStaff) {
+        const updatedLicenses = detailedStaff.sia_licenses.map((license: any) =>
+          license.id === licenseId ? { ...license, status: 'valid' } : license
+        );
+        setDetailedStaff({
+          ...detailedStaff,
+          sia_licenses: updatedLicenses
+        });
+      }
+      
+      // Show success message
+      alert('SIA License approved successfully!');
+    } catch (error) {
+      console.error('Error approving license:', error);
+      alert('Failed to approve license. Please try again.');
+    }
+  }, [detailedStaff]);
+
+  const handleRejectLicense = useCallback(async (licenseId: number) => {
+    const confirmed = window.confirm('Are you sure you want to mark this license as expired? This will prevent the staff member from working until they provide a valid license.');
+    
+    if (!confirmed) return;
+    
+    try {
+      await api.patch(`/sia-licenses/${licenseId}/`, {
+        status: 'expired'
+      });
+      
+      // Refresh the detailed staff data
+      if (detailedStaff) {
+        const updatedLicenses = detailedStaff.sia_licenses.map((license: any) =>
+          license.id === licenseId ? { ...license, status: 'expired' } : license
+        );
+        setDetailedStaff({
+          ...detailedStaff,
+          sia_licenses: updatedLicenses
+        });
+      }
+      
+      // Show success message
+      alert('SIA License marked as expired.');
+    } catch (error) {
+      console.error('Error updating license status:', error);
+      alert('Failed to update license status. Please try again.');
+    }
+  }, [detailedStaff]);
 
   const confirmDeleteStaff = useCallback(async () => {
     if (!selectedStaff) return;
@@ -801,6 +979,17 @@ const StaffManagement: React.FC = () => {
               compact={true}
             />
           )}
+        </Stack>
+
+        {/* Pending SIA Licenses Section */}
+        <Stack tokens={{ childrenGap: 12 }} style={{ background: '#fff3cd', border: '1px solid #ffeaa7', borderRadius: 8, padding: 16 }}>
+          <Text variant="xLarge">Pending SIA License Approvals</Text>
+          <Text variant="medium">
+            Review and approve submitted SIA licenses by clicking "View Details" on staff members with licenses requiring approval.
+          </Text>
+          <MessageBar messageBarType={MessageBarType.info}>
+            SIA licenses with status "pending" require admin verification. Use the "View Details" action to approve or reject individual licenses.
+          </MessageBar>
         </Stack>
 
         <CommandBar items={commandBarItems} />
@@ -1182,6 +1371,242 @@ const StaffManagement: React.FC = () => {
           </Stack>
         ) : (
           <Text style={{ padding: '20px' }}>No staff selected or failed to load details.</Text>
+        )}
+      </Panel>
+
+      {/* Staff Details Panel */}
+      <Panel
+        isOpen={showDetailsPanel}
+        onDismiss={() => setShowDetailsPanel(false)}
+        headerText="Staff Details"
+        closeButtonAriaLabel="Close"
+        type={PanelType.medium}
+      >
+        {detailsLoading ? (
+          <Spinner size={SpinnerSize.medium} label="Loading staff details..." />
+        ) : detailedStaff ? (
+          <Stack tokens={{ childrenGap: 20 }} style={{ padding: '20px 0' }}>
+            {/* Basic Information */}
+            <Stack tokens={{ childrenGap: 10 }}>
+              <Text variant="large" style={{ fontWeight: 'bold', color: '#0078d4' }}>
+                Basic Information
+              </Text>
+              <Stack tokens={{ childrenGap: 8 }}>
+                <Stack horizontal>
+                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Name:</Text>
+                  <Text>{detailedStaff.user?.first_name} {detailedStaff.user?.last_name}</Text>
+                </Stack>
+                <Stack horizontal>
+                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Email:</Text>
+                  <Text>{detailedStaff.user?.email}</Text>
+                </Stack>
+                <Stack horizontal>
+                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Phone:</Text>
+                  <Text>{detailedStaff.phone_number || 'Not provided'}</Text>
+                </Stack>
+                <Stack horizontal>
+                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Role:</Text>
+                  <Text>{detailedStaff.user?.role}</Text>
+                </Stack>
+                <Stack horizontal>
+                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Status:</Text>
+                  <div
+                    style={{
+                      backgroundColor: detailedStaff.user?.is_active ? '#10B981' : '#9CA3AF',
+                      color: 'white',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      display: 'inline-block',
+                      fontSize: '12px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    {detailedStaff.user?.is_active ? 'Active' : 'Inactive'}
+                  </div>
+                </Stack>
+                <Stack horizontal>
+                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Approval:</Text>
+                  <div
+                    style={{
+                      backgroundColor: detailedStaff.is_approved ? '#10B981' : '#F59E0B',
+                      color: 'white',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      display: 'inline-block',
+                      fontSize: '12px',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    {detailedStaff.is_approved ? 'Approved' : 'Pending'}
+                  </div>
+                </Stack>
+              </Stack>
+            </Stack>
+
+            {/* Security Roles */}
+            <Stack tokens={{ childrenGap: 10 }}>
+              <Text variant="large" style={{ fontWeight: 'bold', color: '#0078d4' }}>
+                Security Roles
+              </Text>
+              {detailedStaff.security_roles?.length > 0 ? (
+                <Stack tokens={{ childrenGap: 4 }}>
+                  {detailedStaff.security_roles.map((role: string, index: number) => {
+                    const roleLabels: { [key: string]: string } = {
+                      'ds': 'Door Supervisor',
+                      'sg': 'Security Guard',
+                      'cctv': 'CCTV Operator',
+                      'cp': 'Close Protection',
+                      'steward': 'Steward/Marshal',
+                      'k9': 'Dog Handler',
+                      'retail': 'Retail Security',
+                      'static': 'Static Guard',
+                      'mobile': 'Mobile Patrol',
+                      'event': 'Event Security'
+                    };
+                    return (
+                      <div
+                        key={index}
+                        style={{
+                          backgroundColor: '#e3f2fd',
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          display: 'inline-block',
+                          marginRight: '8px',
+                          marginBottom: '4px'
+                        }}
+                      >
+                        <Text variant="small">{roleLabels[role] || role}</Text>
+                      </div>
+                    );
+                  })}
+                </Stack>
+              ) : (
+                <Text style={{ color: '#9CA3AF' }}>No security roles assigned</Text>
+              )}
+            </Stack>
+
+            {/* SIA Licenses */}
+            <Stack tokens={{ childrenGap: 10 }}>
+              <Text variant="large" style={{ fontWeight: 'bold', color: '#0078d4' }}>
+                SIA Licenses ({detailedStaff.sia_licenses?.length || 0})
+              </Text>
+              {detailedStaff.sia_licenses?.length > 0 ? (
+                <Stack tokens={{ childrenGap: 15 }}>
+                  {detailedStaff.sia_licenses.map((license: any, index: number) => (
+                    <Stack
+                      key={index}
+                      style={{
+                        border: '1px solid #e0e0e0',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        backgroundColor: '#f9f9f9'
+                      }}
+                      tokens={{ childrenGap: 8 }}
+                    >
+                      <Stack horizontal>
+                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>License #{index + 1}:</Text>
+                        <Text>{license.license_number}</Text>
+                      </Stack>
+                      <Stack horizontal>
+                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Type:</Text>
+                        <Text>{SIA_LICENSE_TYPE_DISPLAY[license.license_type] || license.license_type}</Text>
+                      </Stack>
+                      <Stack horizontal>
+                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Status:</Text>
+                        <div
+                          style={{
+                            backgroundColor: license.status === 'valid' ? '#10B981' : 
+                                           license.status === 'expired' ? '#EF4444' : '#F59E0B',
+                            color: 'white',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            display: 'inline-block',
+                            fontSize: '12px',
+                            fontWeight: 'bold'
+                          }}
+                        >
+                          {license.status}
+                        </div>
+                      </Stack>
+                      <Stack horizontal>
+                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Issue Date:</Text>
+                        <Text>{license.issue_date}</Text>
+                      </Stack>
+                      <Stack horizontal>
+                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Expiry Date:</Text>
+                        <Text>{license.expiry_date}</Text>
+                      </Stack>
+                      {license.document_url && (
+                        <Stack horizontal>
+                          <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Document:</Text>
+                          <Link href={license.document_url} target="_blank">
+                            View Document
+                          </Link>
+                        </Stack>
+                      )}
+                      {license.status === 'pending' && (
+                        <Stack horizontal tokens={{ childrenGap: 10 }}>
+                          <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Actions:</Text>
+                          <Stack horizontal tokens={{ childrenGap: 8 }}>
+                            <PrimaryButton
+                              text="Approve License"
+                              onClick={() => handleApproveLicense(license.id)}
+                              iconProps={{ iconName: 'CheckMark' }}
+                              styles={{ root: { minWidth: 'auto', padding: '4px 12px' } }}
+                            />
+                            <DefaultButton
+                              text="Mark Expired"
+                              onClick={() => handleRejectLicense(license.id)}
+                              iconProps={{ iconName: 'Cancel' }}
+                              styles={{ root: { minWidth: 'auto', padding: '4px 12px' } }}
+                            />
+                          </Stack>
+                        </Stack>
+                      )}
+                    </Stack>
+                  ))}
+                </Stack>
+              ) : (
+                <Text style={{ color: '#9CA3AF' }}>No SIA licenses on file</Text>
+              )}
+            </Stack>
+
+            {/* Personal Details */}
+            {(detailedStaff.date_of_birth || detailedStaff.national_insurance_number || 
+              detailedStaff.street || detailedStaff.city) && (
+              <Stack tokens={{ childrenGap: 10 }}>
+                <Text variant="large" style={{ fontWeight: 'bold', color: '#0078d4' }}>
+                  Personal Details
+                </Text>
+                <Stack tokens={{ childrenGap: 8 }}>
+                  {detailedStaff.date_of_birth && (
+                    <Stack horizontal>
+                      <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Date of Birth:</Text>
+                      <Text>{detailedStaff.date_of_birth}</Text>
+                    </Stack>
+                  )}
+                  {detailedStaff.national_insurance_number && (
+                    <Stack horizontal>
+                      <Text style={{ minWidth: 120, fontWeight: 'bold' }}>NI Number:</Text>
+                      <Text>{detailedStaff.national_insurance_number}</Text>
+                    </Stack>
+                  )}
+                  {(detailedStaff.street || detailedStaff.city) && (
+                    <Stack horizontal>
+                      <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Address:</Text>
+                      <Text>
+                        {[detailedStaff.street, detailedStaff.city, detailedStaff.postal_code, detailedStaff.country]
+                          .filter(Boolean)
+                          .join(', ')}
+                      </Text>
+                    </Stack>
+                  )}
+                </Stack>
+              </Stack>
+            )}
+          </Stack>
+        ) : (
+          <Text>Unable to load staff details</Text>
         )}
       </Panel>
     </MainLayout>

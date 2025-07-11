@@ -52,7 +52,14 @@ const SignatureCanvas: React.FC<SignatureCanvasProps> = ({
         return;
       }
 
-      const dataUrl = signaturePadRef.current.getTrimmedCanvas().toDataURL('image/png');
+      // Try to get trimmed canvas, fallback to regular canvas if trim fails
+      let dataUrl;
+      try {
+        dataUrl = signaturePadRef.current.getTrimmedCanvas().toDataURL('image/png');
+      } catch (error) {
+        console.warn('getTrimmedCanvas failed, using regular canvas:', error);
+        dataUrl = signaturePadRef.current.getCanvas().toDataURL('image/png');
+      }
       onSave(dataUrl);
       setShowError(false);
     }

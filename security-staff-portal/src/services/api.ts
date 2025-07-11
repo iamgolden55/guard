@@ -360,6 +360,8 @@ export const bulkCreateShifts = async (shifts: Array<{
   endTime: string;
   staffIds?: number[];
   isSequential?: boolean;
+  hourlyRate?: number | null;
+  isSpecialEvent?: boolean;
 }>, allowPastDates: boolean = false): Promise<Shift[] | null> => {
   try {
     const shiftsApiUrl = 'http://localhost:8000/api/shifts';
@@ -383,7 +385,9 @@ export const bulkCreateShifts = async (shifts: Array<{
             required_security_role: 'sg',
             allow_past_dates: allowPastDates,
             staff_user: null,
-            notes: ''
+            notes: '',
+            hourly_rate: shift.hourlyRate,
+            is_special_event: shift.isSpecialEvent || false
           }, {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -401,7 +405,9 @@ export const bulkCreateShifts = async (shifts: Array<{
             end_time: shift.endTime,
             status: 'scheduled',
             required_security_role: 'sg',
-            allow_past_dates: allowPastDates
+            allow_past_dates: allowPastDates,
+            hourly_rate: shift.hourlyRate,
+            is_special_event: shift.isSpecialEvent || false
           }, {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -476,6 +482,64 @@ export const assignStaffToShift = async (shiftId: string, staffId: string): Prom
   } catch (error) {
     console.error('Error assigning staff to shift:', error);
     return null;
+  }
+};
+
+// Pending earnings types
+export interface PendingEarnings {
+  total_pending: number;
+  shift_count: number;
+  pending_shifts: Array<{
+    shift_id: number;
+    venue_name: string;
+    start_time: string;
+    end_time: string;
+    hours_worked: number;
+    estimated_payment: number;
+  }>;
+}
+
+// Fetch pending earnings for staff
+export const fetchPendingEarnings = async (): Promise<PendingEarnings> => {
+  try {
+    const response = await api.get('/users/me/pending-earnings/');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching pending earnings:', error);
+    throw error;
+  }
+};
+
+// Weekly earnings types
+export interface WeeklyEarnings {
+  week_period: {
+    start: string;
+    end: string;
+  };
+  approved_earnings: number;
+  estimated_total: number;
+  next_payment_date: string;
+  shift_count: number;
+  shifts: Array<{
+    shift_id: number;
+    venue_name: string;
+    start_time: string;
+    end_time: string;
+    status: string;
+    amount: number;
+    earning_status: 'confirmed' | 'estimated';
+    is_invoiced: boolean;
+  }>;
+}
+
+// Fetch weekly earnings for staff (includes estimated earnings from scheduled shifts)
+export const fetchWeeklyEarnings = async (): Promise<WeeklyEarnings> => {
+  try {
+    const response = await api.get('/users/me/weekly-earnings/');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching weekly earnings:', error);
+    throw error;
   }
 };
 

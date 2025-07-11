@@ -68,6 +68,106 @@ class User(AbstractUser):
         """Check if staff member has a specific security role"""
         return self.role == 'staff' and role in self.security_roles
 
+    def get_pending_earnings(self):
+        """Calculate total pending earnings from approved shifts not yet invoiced"""
+        from decimal import Decimal
+        
+        # Get all approved shifts that have actual hours worked
+        approved_shifts = self.shifts.filter(
+            status='approved',
+            actual_hours_worked__isnull=False
+        )
+        
+        # Calculate total pending earnings
+        total_pending = Decimal('0.00')
+        pending_shifts = []
+        
+        for shift in approved_shifts:
+            # Check if this shift is already in an invoice
+            is_invoiced = shift.invoice_items.exists()
+            
+            if not is_invoiced:
+                payment = shift.calculate_payment()
+                if payment:
+                    total_pending += payment
+                    pending_shifts.append({
+                        'shift': shift,
+                        'estimated_payment': payment
+                    })
+        
+        return {
+            'total_pending': total_pending,
+            'pending_shifts': pending_shifts,
+            'shift_count': len(pending_shifts)
+        }
+    
+    def get_estimated_weekly_earnings(self):
+        """Calculate estimated earnings for current week including unapproved shifts"""
+        from decimal import Decimal
+        from datetime import timedelta
+        from django.utils import timezone
+        
+        # Get current Monday-Sunday period
+        today = timezone.now().date()
+        monday = today - timedelta(days=today.weekday())
+        sunday = monday + timedelta(days=6)
+        
+        # Get all shifts for this week
+        week_shifts = self.shifts.filter(
+            start_time__date__gte=monday,
+            start_time__date__lte=sunday
+        )
+        
+        approved_total = Decimal('0.00')
+        estimated_total = Decimal('0.00')
+        shift_breakdown = []
+        
+        for shift in week_shifts:
+            if shift.status == 'approved' and shift.actual_hours_worked:
+                # Confirmed earnings
+                payment = shift.calculate_payment() or Decimal('0.00')
+                approved_total += payment
+                estimated_total += payment
+                
+                shift_breakdown.append({
+                    'shift': shift,
+                    'amount': payment,
+                    'status': 'confirmed',
+                    'is_invoiced': shift.invoice_items.exists()
+                })
+            
+            elif shift.status in ['scheduled', 'in_progress', 'pending_approval']:
+                # Estimated earnings based on scheduled hours
+                if shift.start_time and shift.end_time:
+                    # Calculate scheduled hours
+                    duration = shift.end_time - shift.start_time
+                    scheduled_hours = Decimal(str(duration.total_seconds() / 3600))
+                    
+                    # Use effective hourly rate
+                    hourly_rate = Decimal(str(shift.get_effective_hourly_rate()))
+                    estimated_payment = scheduled_hours * hourly_rate
+                    
+                    estimated_total += estimated_payment
+                    
+                    shift_breakdown.append({
+                        'shift': shift,
+                        'amount': estimated_payment,
+                        'status': 'estimated',
+                        'is_invoiced': False
+                    })
+        
+        # Calculate next Monday payment date
+        next_monday = monday + timedelta(days=7)
+        
+        return {
+            'week_period': {'start': monday, 'end': sunday},
+            'approved_earnings': approved_total,
+            'estimated_total': estimated_total,
+            'next_payment_date': next_monday,
+            'shift_breakdown': shift_breakdown,
+            'shift_count': len(shift_breakdown)
+        }
+
 class StaffProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     phone_number = models.CharField(max_length=20)
@@ -236,8 +336,8 @@ class Venue(models.Model):
     country = models.CharField(max_length=100)
     is_active = models.BooleanField(default=True)
     capacity = models.IntegerField()
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    latitude = models.DecimalField(max_digits=18, decimal_places=15, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=18, decimal_places=15, null=True, blank=True)
     check_radius = models.IntegerField(default=50, help_text="Radius in meters for location verification")
     contact_name = models.CharField(max_length=255)
     contact_phone = models.CharField(max_length=20)
@@ -667,6 +767,8 @@ class Shift(models.Model):
     check_out_location = models.JSONField(null=True, blank=True, help_text="Latitude and longitude of check-out location")
     start_signature = models.TextField(help_text="base64", null=True, blank=True)
     end_signature = models.TextField(null=True, blank=True, help_text="base64")
+    check_in_photo = models.TextField(help_text="base64", null=True, blank=True)
+    check_out_photo = models.TextField(help_text="base64", null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open')
     manager_approved = models.BooleanField(default=False)
     manager_signature = models.TextField(null=True, blank=True, help_text="base64")
@@ -675,6 +777,9 @@ class Shift(models.Model):
     terms_accepted = models.BooleanField(default=False, help_text="whether venue terms were accepted for this shift")
     actual_hours_worked = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     break_duration = models.IntegerField(default=0, help_text="Break duration in minutes")
+    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Hourly pay rate for this shift")
+    is_special_event = models.BooleanField(default=False, help_text="Whether this shift is for a special event")
+    auto_checkout = models.BooleanField(default=False, help_text="Whether this shift was automatically checked out")
     notes = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -689,6 +794,11 @@ class Shift(models.Model):
         ]
         # Note: Unique constraint for shift groups is handled in serializer validation
         # to allow NULL values for single shifts
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Track original status to detect changes
+        self._original_status = self.status
 
     def __str__(self):
         staff_name = self.staff_user.username if self.staff_user else "Unassigned"
@@ -726,6 +836,7 @@ class Shift(models.Model):
             self.status = 'pending_approval'
             
         # Auto-approve if conditions are met
+        old_status = self._original_status
         if self.status == 'pending_approval' and self.end_signature and self.check_out_time:
             if self.venue.verify_location(
                 self.check_out_location.get('latitude'),
@@ -735,6 +846,36 @@ class Shift(models.Model):
                 self.manager_approved = True
 
         super().save(*args, **kwargs)
+        
+        # Auto-generate invoice when shift is approved
+        if self.status == 'approved' and old_status != 'approved' and self.staff_user:
+            self.auto_generate_invoice()
+
+    def auto_generate_invoice(self):
+        """Auto-generate invoice for staff when shift is approved"""
+        try:
+            # Get the shift date for invoice period
+            shift_date = self.start_time.date()
+            
+            # Check if invoice already exists for this period
+            existing_invoice = Invoice.objects.filter(
+                staff_user=self.staff_user,
+                start_date__lte=shift_date,
+                end_date__gte=shift_date
+            ).first()
+            
+            if not existing_invoice:
+                # Generate invoice for the shift date
+                Invoice.generate_for_staff_period(
+                    staff_user=self.staff_user,
+                    start_date=shift_date,
+                    end_date=shift_date
+                )
+        except Exception as e:
+            # Log error but don't fail the save operation
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to auto-generate invoice for shift {self.id}: {str(e)}")
 
     def can_start_shift(self):
         """Check if staff can start this shift"""
@@ -747,15 +888,47 @@ class Shift(models.Model):
             
         return True, "OK"
 
-    def check_in(self, latitude, longitude, signature=None):
-        """Staff checks in for their shift with location verification"""
+    def check_in(self, latitude, longitude, signature=None, photo=None):
+        """Staff checks in for their shift with location verification and time restrictions"""
+        from datetime import timedelta
+        
+        # Time-based restrictions
+        now = timezone.now()
+        shift_date = self.start_time.date()
+        current_date = now.date()
+        
+        # Restriction 1: Must be the same date
+        if shift_date != current_date:
+            if shift_date > current_date:
+                days_diff = (shift_date - current_date).days
+                raise ValueError(f"Cannot check in {days_diff} day{'s' if days_diff > 1 else ''} early. You can only check in on the day of your shift ({shift_date.strftime('%B %d, %Y')}).")
+            else:
+                raise ValueError("Cannot check in to a shift from a previous date. Please contact your manager.")
+        
+        # Restriction 2: Cannot check in more than 15 minutes early
+        early_checkin_window = timedelta(minutes=15)
+        earliest_checkin_time = self.start_time - early_checkin_window
+        
+        if now < earliest_checkin_time:
+            time_diff = earliest_checkin_time - now
+            hours = int(time_diff.total_seconds() // 3600)
+            minutes = int((time_diff.total_seconds() % 3600) // 60)
+            
+            if hours > 0:
+                wait_time = f"{hours} hour{'s' if hours > 1 else ''} and {minutes} minute{'s' if minutes != 1 else ''}"
+            else:
+                wait_time = f"{minutes} minute{'s' if minutes != 1 else ''}"
+                
+            available_time = earliest_checkin_time.strftime('%I:%M %p')
+            raise ValueError(f"Cannot check in {wait_time} early. Check-in becomes available at {available_time} (15 minutes before shift start).")
+        
         # First verify they can start the shift
         can_start, message = self.can_start_shift()
         if not can_start:
             raise ValueError(message)
             
-        if self.status != 'active':
-            raise ValueError("Shift must be active to check in")
+        if self.status not in ['active', 'scheduled']:
+            raise ValueError("Shift must be active or scheduled to check in")
         
         if not self.venue.verify_location(latitude, longitude):
             raise ValueError("Location verification failed")
@@ -764,10 +937,12 @@ class Shift(models.Model):
         self.check_in_location = {'latitude': latitude, 'longitude': longitude}
         if signature:
             self.start_signature = signature
+        if photo:
+            self.check_in_photo = photo
         self.status = 'in_progress'
         self.save()
 
-    def check_out(self, latitude, longitude, signature=None):
+    def check_out(self, latitude, longitude, signature=None, photo=None):
         """Staff checks out from their shift with location verification"""
         if self.status != 'in_progress':
             raise ValueError("Shift must be in progress to check out")
@@ -779,6 +954,8 @@ class Shift(models.Model):
         self.check_out_location = {'latitude': latitude, 'longitude': longitude}
         if signature:
             self.end_signature = signature
+        if photo:
+            self.check_out_photo = photo
         self.status = 'pending_approval'
         self.save()
 
@@ -881,6 +1058,124 @@ class Shift(models.Model):
             requesting_user=self.staff_user,
             request_reason=reason
         )
+
+    def calculate_payment(self):
+        """Calculate the payment for this shift based on actual hours worked and hourly rate"""
+        if not self.actual_hours_worked or not self.hourly_rate:
+            return None
+        
+        from decimal import Decimal
+        # Ensure both values are Decimal for proper calculation
+        hours = Decimal(str(self.actual_hours_worked))
+        rate = Decimal(str(self.hourly_rate))
+        return hours * rate
+    
+    @property
+    def calculated_payment(self):
+        """Property to expose payment calculation through the API"""
+        return self.calculate_payment()
+
+    def get_effective_hourly_rate(self):
+        """Get the effective hourly rate for this shift, falling back to system defaults if not set"""
+        if self.hourly_rate:
+            return self.hourly_rate
+            
+        # Fallback to system settings if no shift-specific rate is set
+        try:
+            from .models import SystemSettings
+            settings = SystemSettings.objects.first()
+            if settings:
+                return settings.special_event_pay_rate if self.is_special_event else settings.default_hourly_rate
+        except:
+            pass
+            
+        # Final fallback to hardcoded defaults
+        return 14.00 if self.is_special_event else 12.50
+
+    def get_completed_venue_checks(self):
+        """Check if all venue-required checks are completed for this shift"""
+        completed_requirements = []
+        
+        # Only check if shift is saved to database
+        if not self.pk:
+            return completed_requirements
+        
+        # Check fire safety requirements
+        if self.venue.requires_fire_safety_checks:
+            has_fire_check = FireExitCheck.objects.filter(shift=self).exists()
+            completed_requirements.append(('fire_safety', has_fire_check))
+        
+        # Check capacity monitoring requirements  
+        if self.venue.requires_capacity_monitoring:
+            has_capacity_check = CapacityCheck.objects.filter(shift=self).exists()
+            completed_requirements.append(('capacity', has_capacity_check))
+            
+        # Check toilet requirements
+        if self.venue.requires_toilet_checks:
+            has_toilet_check = ToiletCheck.objects.filter(shift=self).exists()
+            completed_requirements.append(('toilet', has_toilet_check))
+            
+        return completed_requirements
+
+    def can_auto_checkout(self):
+        """Determine if this shift is eligible for automatic checkout"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # Must be in progress and not already checked out
+        if self.status != 'in_progress' or self.check_out_time is not None:
+            return False
+            
+        # Must be past scheduled end time + grace period (30 minutes)
+        if not self.end_time:
+            return False
+            
+        grace_period = timedelta(minutes=30)
+        cutoff_time = self.end_time + grace_period
+        
+        if timezone.now() < cutoff_time:
+            return False
+            
+        # Must have completed all venue-required checks
+        check_results = self.get_completed_venue_checks()
+        
+        # If venue has no check requirements, allow auto-checkout
+        if not check_results:
+            return True
+            
+        # All required checks must be completed
+        return all(completed for check_type, completed in check_results)
+
+    def perform_auto_checkout(self):
+        """Execute automatic checkout for this shift"""
+        if not self.can_auto_checkout():
+            return False
+            
+        from django.utils import timezone
+        
+        # Set checkout time to scheduled end time (not current time)
+        self.check_out_time = self.end_time
+        
+        # Use venue's main location for checkout location
+        self.check_out_location = {
+            'latitude': float(self.venue.latitude) if self.venue.latitude else 0,
+            'longitude': float(self.venue.longitude) if self.venue.longitude else 0
+        }
+        
+        # Mark as auto-checkout and set signature
+        self.auto_checkout = True
+        self.end_signature = "AUTO_CHECKOUT_VENUE_REQUIREMENTS_COMPLETED"
+        self.status = 'pending_approval'
+        
+        # Save the shift
+        self.save()
+        
+        # Log the auto-checkout for audit trail
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Auto-checkout performed for shift {self.id} - Staff: {self.staff_user.username}, Venue: {self.venue.name}")
+        
+        return True
 
 class ShiftCheck(models.Model):
     """Abstract base class for all types of checks during a shift"""
@@ -1072,6 +1367,130 @@ class Invoice(models.Model):
 
     def __str__(self):
         return f"Invoice for {self.staff_user.username} ({self.start_date} to {self.end_date})"
+    
+    @classmethod
+    def generate_for_staff_period(cls, staff_user, start_date, end_date):
+        """Generate an invoice for a staff member for a specific period using shift-specific payments"""
+        from decimal import Decimal
+        
+        # Check if an invoice already exists for this staff member and period
+        existing_invoice = cls.objects.filter(
+            staff_user=staff_user,
+            start_date=start_date,
+            end_date=end_date
+        ).first()
+        
+        if existing_invoice:
+            print(f"Invoice already exists for {staff_user.username} for period {start_date} to {end_date}")
+            return existing_invoice
+        
+        # Get all approved shifts for the staff member in the date range
+        shifts = Shift.objects.filter(
+            staff_user=staff_user,
+            start_time__date__gte=start_date,
+            start_time__date__lte=end_date,
+            status='approved',
+            actual_hours_worked__isnull=False
+        ).order_by('start_time')
+        
+        if not shifts:
+            raise ValueError(f"No approved shifts found for {staff_user.username} between {start_date} and {end_date}")
+        
+        # Calculate totals from individual shifts
+        total_hours = Decimal('0.00')
+        total_amount = Decimal('0.00')
+        regular_hours = Decimal('0.00')
+        special_event_hours = Decimal('0.00')
+        
+        for shift in shifts:
+            if shift.actual_hours_worked:
+                total_hours += shift.actual_hours_worked
+                if shift.is_special_event:
+                    special_event_hours += shift.actual_hours_worked
+                else:
+                    regular_hours += shift.actual_hours_worked
+                    
+                # Use shift-specific payment calculation
+                shift_payment = shift.calculate_payment()
+                if shift_payment:
+                    total_amount += shift_payment
+        
+        # Calculate average hourly rate for the invoice (for display purposes)
+        average_rate = total_amount / total_hours if total_hours > 0 else Decimal('0.00')
+        
+        # Create the invoice
+        invoice = cls.objects.create(
+            staff_user=staff_user,
+            start_date=start_date,
+            end_date=end_date,
+            total_hours=total_hours,
+            hourly_rate=average_rate,  # This is now an average of all shift rates
+            total_amount=total_amount,
+            status='pending'
+        )
+        
+        # Create invoice items for each shift
+        for shift in shifts:
+            if shift.actual_hours_worked and shift.calculate_payment():
+                InvoiceItem.objects.create(
+                    invoice=invoice,
+                    shift=shift,
+                    date=shift.start_time.date(),
+                    venue=shift.venue,
+                    hours_worked=shift.actual_hours_worked,
+                    rate=shift.get_effective_hourly_rate(),
+                    amount=shift.calculate_payment()
+                )
+        
+        return invoice
+    
+    @property
+    def payment_breakdown(self):
+        """Get detailed payment breakdown by rate type"""
+        return self.get_payment_breakdown()
+    
+    def get_payment_breakdown(self):
+        """Get detailed payment breakdown by rate type"""
+        from decimal import Decimal
+        
+        regular_shifts = self.items.filter(shift__is_special_event=False)
+        special_event_shifts = self.items.filter(shift__is_special_event=True)
+        
+        regular_hours = regular_shifts.aggregate(
+            total_hours=models.Sum('hours_worked')
+        )['total_hours'] or Decimal('0.00')
+        
+        regular_amount = regular_shifts.aggregate(
+            total_amount=models.Sum('amount')
+        )['total_amount'] or Decimal('0.00')
+        
+        special_hours = special_event_shifts.aggregate(
+            total_hours=models.Sum('hours_worked')
+        )['total_hours'] or Decimal('0.00')
+        
+        special_amount = special_event_shifts.aggregate(
+            total_amount=models.Sum('amount')
+        )['total_amount'] or Decimal('0.00')
+        
+        return {
+            'regular_shifts': {
+                'count': regular_shifts.count(),
+                'hours': regular_hours,
+                'amount': regular_amount,
+                'average_rate': regular_amount / regular_hours if regular_hours > 0 else Decimal('0.00')
+            },
+            'special_event_shifts': {
+                'count': special_event_shifts.count(),
+                'hours': special_hours,
+                'amount': special_amount,
+                'average_rate': special_amount / special_hours if special_hours > 0 else Decimal('0.00')
+            },
+            'total': {
+                'count': self.items.count(),
+                'hours': self.total_hours,
+                'amount': self.total_amount
+            }
+        }
 
 class InvoiceItem(models.Model):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='items')

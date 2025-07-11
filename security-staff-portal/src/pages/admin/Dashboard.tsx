@@ -11,7 +11,7 @@ import {
   PivotItem
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
-import { Card } from '../../components';
+import { Card, BulkPayrollGeneration } from '../../components';
 import { useAuth } from '../../contexts/AuthContext';
 import { shiftService, invoiceService, deputyService, venueService } from '../../services';
 import api from '../../services/api';
@@ -363,6 +363,22 @@ const AdminDashboard: React.FC = () => {
                       />
                     </Card>
                   </div>
+                </Stack>
+              </div>
+            </PivotItem>
+
+            <PivotItem headerText="Payroll" key="payroll">
+              <div className="mt-6">
+                <Stack tokens={{ childrenGap: 20 }}>
+                  <Text variant="large" className="font-semibold">
+                    Weekly Payroll Management
+                  </Text>
+                  <Text className="text-gray-600">
+                    Generate invoices for all staff members for weekly payment periods (Monday-Sunday). 
+                    Staff will receive their payments on Mondays.
+                  </Text>
+                  
+                  <BulkPayrollGeneration />
                 </Stack>
               </div>
             </PivotItem>

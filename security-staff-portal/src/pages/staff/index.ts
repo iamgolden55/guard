@@ -6,6 +6,8 @@ import MyShifts from './MyShifts';
 import MyInvoices from './MyInvoices';
 import ProfilePage from './ProfilePage';
 import ShiftExchange from './ShiftExchange';
+import ShiftCheckIn from './ShiftCheckIn';
+import ShiftCheckOut from './ShiftCheckOut';
 
 export {
   Dashboard as StaffDashboard,
@@ -15,5 +17,7 @@ export {
   MyShifts,
   MyInvoices,
   ProfilePage,
-  ShiftExchange
+  ShiftExchange,
+  ShiftCheckIn,
+  ShiftCheckOut
 };
