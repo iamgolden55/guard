@@ -475,32 +475,57 @@ class ShiftService {
 
   // Check-related methods
   async getFireExitChecks(shiftId: number): Promise<FireExitCheck[]> {
-    const response = await shiftApi.get<FireExitCheck[]>(`/${shiftId}/fire-exit-checks/`);
+    const response = await api.get<FireExitCheck[]>(`/fire-exit-checks/?shift=${shiftId}`);
     return response.data;
   }
 
   async addFireExitCheck(shiftId: number, data: Omit<FireExitCheck, 'id' | 'shift' | 'timestamp'>): Promise<FireExitCheck> {
-    const response = await shiftApi.post<FireExitCheck>(`/${shiftId}/fire-exit-checks/`, data);
+    const requestData = {
+      shift: shiftId,
+      timestamp: new Date().toISOString(),
+      exit_name: data.exitName,
+      is_clear: data.isPassed,
+      is_properly_marked: true, // Default to true
+      is_accessible: true, // Default to true
+      comments: data.comments || ''
+    };
+    const response = await api.post<FireExitCheck>('/fire-exit-checks/', requestData);
     return response.data;
   }
 
   async getCapacityChecks(shiftId: number): Promise<CapacityCheck[]> {
-    const response = await shiftApi.get<CapacityCheck[]>(`/${shiftId}/capacity-checks/`);
+    const response = await api.get<CapacityCheck[]>(`/capacity-checks/?shift=${shiftId}`);
     return response.data;
   }
 
   async addCapacityCheck(shiftId: number, data: Omit<CapacityCheck, 'id' | 'shift' | 'timestamp'>): Promise<CapacityCheck> {
-    const response = await shiftApi.post<CapacityCheck>(`/${shiftId}/capacity-checks/`, data);
+    const requestData = {
+      shift: shiftId,
+      timestamp: new Date().toISOString(),
+      current_count: data.count,
+      venue_capacity: 100, // Default venue capacity, should be fetched from venue
+      is_at_capacity: false, // Will be calculated by backend
+      action_taken: data.comments || '',
+      comments: data.comments || ''
+    };
+    const response = await api.post<CapacityCheck>('/capacity-checks/', requestData);
     return response.data;
   }
 
   async getToiletChecks(shiftId: number): Promise<ToiletCheck[]> {
-    const response = await shiftApi.get<ToiletCheck[]>(`/${shiftId}/toilet-checks/`);
+    const response = await api.get<ToiletCheck[]>(`/toilet-checks/?shift=${shiftId}`);
     return response.data;
   }
 
   async addToiletCheck(shiftId: number, data: Omit<ToiletCheck, 'id' | 'shift' | 'timestamp'>): Promise<ToiletCheck> {
-    const response = await shiftApi.post<ToiletCheck>(`/${shiftId}/toilet-checks/`, data);
+    const requestData = {
+      shift: shiftId,
+      timestamp: new Date().toISOString(),
+      location_name: data.location,
+      condition: data.condition,
+      comments: data.comments || ''
+    };
+    const response = await api.post<ToiletCheck>('/toilet-checks/', requestData);
     return response.data;
   }
 

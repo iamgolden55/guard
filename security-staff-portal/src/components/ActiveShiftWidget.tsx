@@ -514,6 +514,7 @@ const ActiveShiftWidget: React.FC = React.memo(() => {
         isOpen={showChecksModal}
         onClose={handleCloseModal}
         checkType={checkType}
+        onCheckTypeChange={setCheckType}
         shiftId={activeShift?.id}
         venue={activeShift?.venue}
         isMobile={isMobile}
@@ -535,6 +536,7 @@ interface VenueCheckModalProps {
   isOpen: boolean;
   onClose: () => void;
   checkType: 'fire' | 'capacity' | 'toilet' | null;
+  onCheckTypeChange: (checkType: 'fire' | 'capacity' | 'toilet') => void;
   shiftId?: number;
   venue?: ActiveShift['venue'];
   isMobile: boolean;
@@ -544,6 +546,7 @@ const VenueCheckModal: React.FC<VenueCheckModalProps> = ({
   isOpen, 
   onClose, 
   checkType, 
+  onCheckTypeChange,
   shiftId, 
   venue, 
   isMobile 
@@ -720,9 +723,17 @@ const VenueCheckModal: React.FC<VenueCheckModalProps> = ({
             ]}
             selectedKey={checkType}
             onChange={(_, option) => {
-              setCheckType(option?.key as 'fire' | 'capacity' | 'toilet');
-              // Reset form when changing check type
-              resetForm();
+              const newCheckType = option?.key as 'fire' | 'capacity' | 'toilet';
+              onCheckTypeChange(newCheckType);
+              // Reset form fields when changing check type
+              setExitName('');
+              setIsPassed(true);
+              setCount('');
+              setLocation('');
+              setCondition(ConditionRating.GOOD);
+              setComments('');
+              setError(null);
+              setSuccess(false);
             }}
           />
 
