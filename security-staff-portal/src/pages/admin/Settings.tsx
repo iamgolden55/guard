@@ -20,6 +20,7 @@ import {
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
 import { settingsService, type SystemSettings } from '../../services/settingsService';
+import EmploymentTypesManagement from '../../components/EmploymentTypesManagement';
 
 interface SettingsState {
   generalSettings: {
@@ -415,6 +416,12 @@ const Settings: React.FC = () => {
                     offText="Disallowed"
                   />
                 </Stack>
+              </PivotItem>
+
+              <PivotItem headerText="Employment Types">
+                <div style={{ padding: '20px 0' }}>
+                  <EmploymentTypesManagement key="employment-types" />
+                </div>
               </PivotItem>
             </Pivot>
 

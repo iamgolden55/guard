@@ -19,6 +19,8 @@ import Approvals from './pages/manager/Approvals';
 import StaffManagement from './pages/admin/StaffManagement';
 import VenueManagement from './pages/admin/VenueManagement';
 import DeputyIntegration from './pages/admin/DeputyIntegration';
+import RecruitmentManagement from './pages/admin/RecruitmentManagement';
+import RecruitmentApplication from './pages/public/RecruitmentApplication';
 
 // Main Router component
 const Router: React.FC = () => {
@@ -28,6 +30,7 @@ const Router: React.FC = () => {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/unauthorized" element={<UnauthorizedPage />} />
+      <Route path="/recruitment" element={<RecruitmentApplication />} />
 
       {/* Dashboard redirect */}
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -64,6 +67,7 @@ const Router: React.FC = () => {
         <Route path="/admin/payrates" element={<div>Pay Rates</div>} />
         <Route path="/admin/deputy" element={<DeputyIntegration />} />
         <Route path="/admin/deputy/sync" element={<div>Deputy Sync</div>} />
+        <Route path="/admin/recruitment" element={<RecruitmentManagement />} />
         <Route path="/admin/settings" element={<Settings />} />
       </Route>
 

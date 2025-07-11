@@ -5,7 +5,8 @@ from .models import (
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
     Shift, FireExitCheck, CapacityCheck, ToiletCheck,
     ShiftExchange, Invoice, InvoiceItem, PayRate, DeputyConfig,
-    DeputyEmployee, DeputyTimesheet, ShiftTemplate, SystemSettings
+    DeputyEmployee, DeputyTimesheet, ShiftTemplate, SystemSettings,
+    EmploymentType, RecruitmentApplication
 )
 
 User = get_user_model() # Ensure User model is fetched
@@ -116,6 +117,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 class StaffProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
+    employment_type_details = serializers.SerializerMethodField()
     emergency_contacts = EmergencyContactSerializer(many=True, read_only=True)
     bank_details = BankDetailsSerializer(read_only=True)
     sia_licenses = SIALicenseSerializer(many=True, read_only=True)
@@ -128,19 +130,31 @@ class StaffProfileSerializer(serializers.ModelSerializer):
     securityRoles = serializers.ReadOnlyField(source='user.security_roles')
     siaLicenses = serializers.SerializerMethodField()
     isApproved = serializers.ReadOnlyField(source='is_approved')
+    employmentType = serializers.IntegerField(source='employment_type_id', required=False, allow_null=True)
     
     def get_siaLicenses(self, obj):
         """Return SIA licenses in camelCase format for frontend compatibility"""
         return SIALicenseSerializer(obj.sia_licenses.all(), many=True).data
+    
+    def get_employment_type_details(self, obj):
+        """Return employment type details"""
+        if obj.employment_type:
+            return {
+                'id': obj.employment_type.id,
+                'name': obj.employment_type.name,
+                'description': obj.employment_type.description,
+                'is_active': obj.employment_type.is_active
+            }
+        return None
 
     class Meta:
         model = StaffProfile
         fields = (
-            'id', 'user', 'phone_number', 'date_of_birth', 'national_insurance_number',
+            'id', 'user', 'employment_type', 'employment_type_details', 'phone_number', 'date_of_birth', 'national_insurance_number',
             'street', 'city', 'postal_code', 'country', 'profile_image_url', 'notes',
             'password_last_changed', 'is_approved', 'created_at', 'updated_at',
             'emergency_contacts', 'bank_details', 'sia_licenses', 'availability',
-            'security_roles', 'securityRoles', 'siaLicenses', 'isApproved'
+            'security_roles', 'securityRoles', 'siaLicenses', 'isApproved', 'employmentType'
         )
         read_only_fields = ('created_at', 'updated_at', 'password_last_changed', 'security_roles', 'securityRoles', 'siaLicenses', 'isApproved')
 
@@ -373,4 +387,218 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = SystemSettings
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at') 
+        read_only_fields = ('created_at', 'updated_at')
+
+
+class EmploymentTypeSerializer(serializers.ModelSerializer):
+    application_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = EmploymentType
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at')
+    
+    def get_application_count(self, obj):
+        """Return count of applications for this employment type"""
+        return obj.applications.count()
+    
+    def validate_name(self, value):
+        """Validate employment type name is not empty and unique"""
+        if not value.strip():
+            raise serializers.ValidationError("Employment type name cannot be empty")
+        
+        # Check uniqueness during update
+        if self.instance:
+            existing = EmploymentType.objects.filter(name=value).exclude(pk=self.instance.pk)
+        else:
+            existing = EmploymentType.objects.filter(name=value)
+        
+        if existing.exists():
+            raise serializers.ValidationError("Employment type with this name already exists")
+        
+        return value.strip()
+
+
+class RecruitmentApplicationSerializer(serializers.ModelSerializer):
+    employment_type_details = EmploymentTypeSerializer(source='employment_type', read_only=True)
+    reviewed_by_details = UserSerializer(source='reviewed_by', read_only=True)
+    converted_user_details = UserSerializer(source='converted_to_user', read_only=True)
+    
+    class Meta:
+        model = RecruitmentApplication
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at', 'reviewed_by', 'reviewed_at', 'converted_to_user')
+    
+    def validate_email(self, value):
+        """Validate email is unique"""
+        if self.instance:
+            existing = RecruitmentApplication.objects.filter(email=value).exclude(pk=self.instance.pk)
+        else:
+            existing = RecruitmentApplication.objects.filter(email=value)
+        
+        if existing.exists():
+            raise serializers.ValidationError("An application with this email already exists")
+        
+        return value
+    
+    def validate_date_of_birth(self, value):
+        """Validate applicant is at least 18 years old"""
+        from datetime import date
+        today = date.today()
+        age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+        
+        if age < 18:
+            raise serializers.ValidationError("Applicant must be at least 18 years old")
+        
+        return value
+    
+    def validate_hours_per_week(self, value):
+        """Validate hours per week is reasonable"""
+        if value < 0:
+            raise serializers.ValidationError("Hours per week cannot be negative")
+        if value > 168:  # 7 days * 24 hours
+            raise serializers.ValidationError("Hours per week cannot exceed 168")
+        
+        return value
+    
+    def validate(self, data):
+        """Custom validation for the entire application"""
+        # If they have SIA licence, licence number and types are required
+        if data.get('has_sia_licence', False):
+            if not data.get('sia_licence_number'):
+                raise serializers.ValidationError({
+                    "sia_licence_number": "SIA licence number is required when you have a licence"
+                })
+            if not data.get('licence_types'):
+                raise serializers.ValidationError({
+                    "licence_types": "At least one licence type must be selected"
+                })
+            if not data.get('licence_expiry_date'):
+                raise serializers.ValidationError({
+                    "licence_expiry_date": "Licence expiry date is required"
+                })
+        
+        # If licence is suspended/revoked, details are required
+        if data.get('licence_suspended_revoked', False):
+            if not data.get('licence_suspension_details'):
+                raise serializers.ValidationError({
+                    "licence_suspension_details": "Please provide details about licence suspension/revocation"
+                })
+        
+        # If they have commitments, details are required
+        if data.get('has_commitments', False):
+            if not data.get('commitments_details'):
+                raise serializers.ValidationError({
+                    "commitments_details": "Please provide details about your current commitments"
+                })
+        
+        # If they have security experience, details are required
+        if data.get('has_security_experience', False):
+            if not data.get('security_experience_details'):
+                raise serializers.ValidationError({
+                    "security_experience_details": "Please provide details about your security experience"
+                })
+        
+        # If they have criminal convictions, details are required
+        if data.get('has_criminal_convictions', False):
+            if not data.get('criminal_convictions_details'):
+                raise serializers.ValidationError({
+                    "criminal_convictions_details": "Please provide details about your criminal convictions"
+                })
+        
+        # If they have 'other' certifications, details are required
+        if 'other' in data.get('certifications', []):
+            if not data.get('other_certification_details'):
+                raise serializers.ValidationError({
+                    "other_certification_details": "Please provide details about your other certifications"
+                })
+        
+        return data
+
+
+class RecruitmentApplicationPublicSerializer(serializers.ModelSerializer):
+    """Serializer for public recruitment application submission (no admin fields)"""
+    
+    class Meta:
+        model = RecruitmentApplication
+        fields = (
+            'full_name', 'date_of_birth', 'email', 'phone_number', 'home_address', 'postcode',
+            'has_sia_licence', 'sia_licence_number', 'licence_types', 'licence_expiry_date',
+            'licence_suspended_revoked', 'licence_suspension_details', 'employment_type',
+            'hours_per_week', 'availability_days', 'availability_nights', 'availability_weekends',
+            'availability_holidays', 'willing_to_travel', 'has_transport', 'has_commitments',
+            'commitments_details', 'has_security_experience', 'security_experience_details',
+            'certifications', 'other_certification_details', 'eligible_to_work_uk',
+            'has_criminal_convictions', 'criminal_convictions_details', 'digital_signature'
+        )
+    
+    def validate_email(self, value):
+        """Validate email is unique"""
+        if RecruitmentApplication.objects.filter(email=value).exists():
+            raise serializers.ValidationError("An application with this email already exists")
+        return value
+    
+    def validate_date_of_birth(self, value):
+        """Validate applicant is at least 18 years old"""
+        from datetime import date
+        today = date.today()
+        age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+        
+        if age < 18:
+            raise serializers.ValidationError("Applicant must be at least 18 years old")
+        
+        return value
+    
+    def validate(self, data):
+        """Same validation as main serializer"""
+        # If they have SIA licence, licence number and types are required
+        if data.get('has_sia_licence', False):
+            if not data.get('sia_licence_number'):
+                raise serializers.ValidationError({
+                    "sia_licence_number": "SIA licence number is required when you have a licence"
+                })
+            if not data.get('licence_types'):
+                raise serializers.ValidationError({
+                    "licence_types": "At least one licence type must be selected"
+                })
+            if not data.get('licence_expiry_date'):
+                raise serializers.ValidationError({
+                    "licence_expiry_date": "Licence expiry date is required"
+                })
+        
+        # If licence is suspended/revoked, details are required
+        if data.get('licence_suspended_revoked', False):
+            if not data.get('licence_suspension_details'):
+                raise serializers.ValidationError({
+                    "licence_suspension_details": "Please provide details about licence suspension/revocation"
+                })
+        
+        # If they have commitments, details are required
+        if data.get('has_commitments', False):
+            if not data.get('commitments_details'):
+                raise serializers.ValidationError({
+                    "commitments_details": "Please provide details about your current commitments"
+                })
+        
+        # If they have security experience, details are required
+        if data.get('has_security_experience', False):
+            if not data.get('security_experience_details'):
+                raise serializers.ValidationError({
+                    "security_experience_details": "Please provide details about your security experience"
+                })
+        
+        # If they have criminal convictions, details are required
+        if data.get('has_criminal_convictions', False):
+            if not data.get('criminal_convictions_details'):
+                raise serializers.ValidationError({
+                    "criminal_convictions_details": "Please provide details about your criminal convictions"
+                })
+        
+        # If they have 'other' certifications, details are required
+        if 'other' in data.get('certifications', []):
+            if not data.get('other_certification_details'):
+                raise serializers.ValidationError({
+                    "other_certification_details": "Please provide details about your other certifications"
+                })
+        
+        return data 

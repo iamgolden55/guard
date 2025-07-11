@@ -14,7 +14,8 @@ from .views import (
     DeputyConfigViewSet, DeputyEmployeeViewSet, DeputyTimesheetViewSet,
     ShiftTemplateViewSet, DeputyConfigView, SystemSettingsView,
     my_profile, update_my_user,
-    FileUploadView, payroll_preview, payroll_generate
+    FileUploadView, payroll_preview, payroll_generate,
+    EmploymentTypeViewSet, RecruitmentApplicationViewSet, RecruitmentApplicationPublicViewSet
 )
 
 router = DefaultRouter()
@@ -40,6 +41,9 @@ router.register('deputy-config', DeputyConfigViewSet)
 router.register('deputy-employees', DeputyEmployeeViewSet)
 router.register('deputy-timesheets', DeputyTimesheetViewSet)
 router.register('shift-templates', ShiftTemplateViewSet)
+router.register('employment-types', EmploymentTypeViewSet)
+router.register('recruitment-applications', RecruitmentApplicationViewSet)
+router.register('recruitment-apply', RecruitmentApplicationPublicViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

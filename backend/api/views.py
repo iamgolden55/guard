@@ -22,7 +22,7 @@ from .models import (
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
     Shift, FireExitCheck, CapacityCheck, ToiletCheck, ShiftExchange,
     Invoice, InvoiceItem, PayRate, DeputyConfig, DeputyEmployee,
-    DeputyTimesheet, SystemSettings
+    DeputyTimesheet, SystemSettings, EmploymentType, RecruitmentApplication
 )
 from .serializers import (
     UserSerializer, StaffProfileSerializer, EmergencyContactSerializer,
@@ -31,7 +31,8 @@ from .serializers import (
     FireExitCheckSerializer, CapacityCheckSerializer, ToiletCheckSerializer,
     ShiftSerializer, ShiftExchangeSerializer, InvoiceSerializer, InvoiceItemSerializer,
     PayRateSerializer, DeputyConfigSerializer, DeputyEmployeeSerializer,
-    DeputyTimesheetSerializer, ShiftTemplateSerializer, SystemSettingsSerializer
+    DeputyTimesheetSerializer, ShiftTemplateSerializer, SystemSettingsSerializer,
+    EmploymentTypeSerializer, RecruitmentApplicationSerializer, RecruitmentApplicationPublicSerializer
 )
 
 User = get_user_model()
@@ -1463,3 +1464,183 @@ class FileUploadView(APIView):
             host = request.get_host()
             file_url = f"{scheme}://{host}{settings.MEDIA_URL}{path}"
         return Response({'url': file_url}, status=201)
+
+
+class EmploymentTypeViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing employment types.
+    Only admins can create, update, or delete employment types.
+    """
+    queryset = EmploymentType.objects.all()
+    serializer_class = EmploymentTypeSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_permissions(self):
+        """
+        Admin-only access for CUD operations, authenticated users can read.
+        Public access for 'active' endpoint to support recruitment form.
+        """
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [IsAdminUser]
+        elif self.action == 'active':
+            permission_classes = [AllowAny]  # Public access for recruitment form
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+    
+    def get_queryset(self):
+        """
+        Return active employment types by default.
+        Admins can see all employment types.
+        """
+        if self.request.user.role == 'admin':
+            return EmploymentType.objects.all()
+        return EmploymentType.objects.filter(is_active=True)
+    
+    @action(detail=False, methods=['get'], url_path='active')
+    def active(self, request):
+        """Get only active employment types"""
+        active_types = EmploymentType.objects.filter(is_active=True)
+        serializer = self.get_serializer(active_types, many=True)
+        return Response(serializer.data)
+
+
+class RecruitmentApplicationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing recruitment applications.
+    Admins can view and manage all applications.
+    Regular users cannot access this endpoint.
+    """
+    queryset = RecruitmentApplication.objects.all()
+    serializer_class = RecruitmentApplicationSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_permissions(self):
+        """
+        Only users with admin role can access recruitment applications.
+        """
+        if self.request.user.is_authenticated and self.request.user.role == 'admin':
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+    
+    def get_queryset(self):
+        """
+        Filter applications based on query parameters.
+        """
+        queryset = RecruitmentApplication.objects.all()
+        
+        # Filter by status
+        status_filter = self.request.query_params.get('status', None)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        # Filter by employment type
+        employment_type = self.request.query_params.get('employment_type', None)
+        if employment_type:
+            queryset = queryset.filter(employment_type=employment_type)
+        
+        # Filter by date range
+        start_date = self.request.query_params.get('start_date', None)
+        end_date = self.request.query_params.get('end_date', None)
+        if start_date:
+            queryset = queryset.filter(created_at__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__lte=end_date)
+        
+        return queryset.order_by('-created_at')
+    
+    @action(detail=True, methods=['post'], url_path='approve')
+    def approve(self, request, pk=None):
+        """Approve a recruitment application"""
+        application = self.get_object()
+        notes = request.data.get('notes', '')
+        
+        try:
+            application.approve(request.user, notes)
+            return Response({
+                'message': 'Application approved successfully',
+                'application': RecruitmentApplicationSerializer(application).data
+            })
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'], url_path='reject')
+    def reject(self, request, pk=None):
+        """Reject a recruitment application"""
+        application = self.get_object()
+        notes = request.data.get('notes', '')
+        
+        if not notes:
+            return Response({'error': 'Rejection notes are required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            application.reject(request.user, notes)
+            return Response({
+                'message': 'Application rejected successfully',
+                'application': RecruitmentApplicationSerializer(application).data
+            })
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'], url_path='convert-to-user')
+    def convert_to_user(self, request, pk=None):
+        """Convert approved application to user account"""
+        application = self.get_object()
+        
+        try:
+            user = application.convert_to_user(request.user)
+            return Response({
+                'message': 'Application converted to user account successfully',
+                'user': UserSerializer(user).data,
+                'application': RecruitmentApplicationSerializer(application).data
+            })
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False, methods=['get'], url_path='stats')
+    def stats(self, request):
+        """Get recruitment application statistics"""
+        stats = {
+            'total': RecruitmentApplication.objects.count(),
+            'pending': RecruitmentApplication.objects.filter(status='pending').count(),
+            'approved': RecruitmentApplication.objects.filter(status='approved').count(),
+            'rejected': RecruitmentApplication.objects.filter(status='rejected').count(),
+            'converted': RecruitmentApplication.objects.filter(converted_to_user__isnull=False).count(),
+        }
+        
+        # Stats by employment type
+        employment_type_stats = {}
+        for et in EmploymentType.objects.all():
+            employment_type_stats[et.name] = et.applications.count()
+        
+        stats['by_employment_type'] = employment_type_stats
+        
+        return Response(stats)
+
+
+class RecruitmentApplicationPublicViewSet(viewsets.ModelViewSet):
+    """
+    Public ViewSet for recruitment application submissions.
+    Anyone can submit an application, but only create operations are allowed.
+    """
+    queryset = RecruitmentApplication.objects.all()
+    serializer_class = RecruitmentApplicationPublicSerializer
+    permission_classes = [AllowAny]
+    http_method_names = ['post']  # Only allow POST (create)
+    
+    def create(self, request, *args, **kwargs):
+        """Create a new recruitment application"""
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            application = serializer.save()
+            
+            # Send confirmation email (optional - implement as needed)
+            # send_application_confirmation_email(application)
+            
+            return Response({
+                'message': 'Application submitted successfully',
+                'application_id': application.id,
+                'email': application.email
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

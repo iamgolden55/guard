@@ -42,6 +42,7 @@ import { MainLayout } from '../../layouts';
 import { UserRole } from '../../types';
 import api from '../../services/api';
 import profileService from '../../services/profileService';
+import { employmentTypeService, EmploymentType } from '../../services/employmentTypeService';
 
 // Icons
 const addIcon: IIconProps = { iconName: 'PersonAdd' };
@@ -73,6 +74,7 @@ interface Staff {
   isActive: boolean;
   dateJoined: string;
   lastLogin?: string | null;
+  employmentType?: EmploymentType | null;
   address?: {
     street: string;
     city: string;
@@ -130,6 +132,7 @@ const StaffManagement: React.FC = () => {
   const navigate = useNavigate();
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [filteredStaff, setFilteredStaff] = useState<Staff[]>([]);
+  const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
@@ -149,6 +152,10 @@ const StaffManagement: React.FC = () => {
   const [showDetailsPanel, setShowDetailsPanel] = useState(false);
   const [detailedStaff, setDetailedStaff] = useState<any>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  // Employment type assignment state
+  const [showAssignEmploymentTypePanel, setShowAssignEmploymentTypePanel] = useState(false);
+  const [selectedEmploymentType, setSelectedEmploymentType] = useState<number | null>(null);
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
 
   // Form state for new/edit staff
   const [formData, setFormData] = useState({
@@ -205,6 +212,25 @@ const StaffManagement: React.FC = () => {
         };
         return <Text>{roleLabels[item.role]}</Text>;
       }
+    },
+    {
+      key: 'employmentType',
+      name: 'Employment Type',
+      minWidth: 150,
+      maxWidth: 200,
+      isResizable: true,
+      onRender: (item: Staff) => (
+        <Stack>
+          <Text variant="medium">
+            {item.employmentType?.name || 'Not Set'}
+          </Text>
+          {!item.employmentType && (
+            <Text variant="small" style={{ color: '#F59E0B' }}>
+              ⚠ Needs Assignment
+            </Text>
+          )}
+        </Stack>
+      ),
     },
     {
       key: 'status',
@@ -346,6 +372,9 @@ const StaffManagement: React.FC = () => {
           <Link onClick={() => handleEditStaff(item)}>
             Edit
           </Link>
+          <Link onClick={() => handleAssignEmploymentType(item)}>
+            {item.employmentType ? 'Change Type' : 'Assign Type'}
+          </Link>
           <Link onClick={() => handleToggleStatus(item)}>
             {item.isActive ? 'Deactivate' : 'Activate'}
           </Link>
@@ -376,25 +405,62 @@ const StaffManagement: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Fetch users from the API
-      const response = await api.get<User[]>('/users/');
-      console.log('API Response:', response.data);
+      // Fetch users and employment types in parallel
+      const [usersResponse, employmentTypesResponse] = await Promise.all([
+        api.get<User[]>('/users/'),
+        employmentTypeService.getEmploymentTypes().catch(err => {
+          console.error('Employment types fetch error:', err);
+          return [];
+        })
+      ]);
       
-      // Map API response to Staff interface
-      const mappedStaff: Staff[] = response.data.map(user => ({
-        id: user.id,
-        firstName: user.first_name || '',
-        lastName: user.last_name || '',
-        email: user.email,
-        phone: '', // Phone might be in user.profile if available
-        role: user.role as UserRole,
-        isActive: user.is_active,
-        dateJoined: user.created_at || new Date().toISOString(),
-        lastLogin: null,
-        // Address would be extracted from profile if available
-      }));
+      console.log('API Response:', usersResponse.data);
       
-      setStaffList(mappedStaff);
+      // Handle paginated response - extract results array
+      const employmentTypesArray = Array.isArray(employmentTypesResponse) ? employmentTypesResponse : (employmentTypesResponse?.results || []);
+      
+      setEmploymentTypes(employmentTypesArray);
+      
+      // For each user, fetch their profile to get employment type
+      const staffWithProfiles = await Promise.all(
+        usersResponse.data.map(async (user) => {
+          let employmentType: EmploymentType | null = null;
+          let phone = '';
+          
+          try {
+            // Try to get staff profile if it exists
+            const profileResponse = await api.get(`/staff-profiles/?user=${user.id}`);
+            const profileData = profileResponse.data.results || profileResponse.data;
+            if (profileData && profileData.length > 0) {
+              const profile = profileData[0];
+              phone = profile.phone_number || '';
+              
+              // Find employment type if it exists
+              if (profile.employment_type_details) {
+                employmentType = profile.employment_type_details;
+              }
+            }
+          } catch (profileError) {
+            // Profile doesn't exist or error fetching it, that's OK
+            console.warn(`No profile found for user ${user.id}:`, profileError);
+          }
+          
+          return {
+            id: user.id,
+            firstName: user.first_name || '',
+            lastName: user.last_name || '',
+            email: user.email,
+            phone: phone,
+            role: user.role as UserRole,
+            isActive: user.is_active,
+            dateJoined: user.created_at || new Date().toISOString(),
+            lastLogin: null,
+            employmentType: employmentType,
+          };
+        })
+      );
+      
+      setStaffList(staffWithProfiles);
     } catch (err) {
       console.error('API Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to load staff data.');
@@ -843,6 +909,57 @@ const StaffManagement: React.FC = () => {
       // setReviewLoading(false); // Remove this if approval is quick
     }
   }, [reviewingStaff]);
+
+  const handleAssignEmploymentType = useCallback((staff: Staff) => {
+    setSelectedStaff(staff);
+    setSelectedEmploymentType(staff.employmentType?.id || null);
+    setShowAssignEmploymentTypePanel(true);
+  }, []);
+
+  const handleSubmitEmploymentTypeAssignment = useCallback(async () => {
+    if (!selectedStaff || selectedEmploymentType === null) return;
+    
+    setAssignmentLoading(true);
+    try {
+      // First, get the staff profile ID for this user
+      const profileResponse = await api.get(`/staff-profiles/?user=${selectedStaff.id}`);
+      const staffProfile = profileResponse.data.results?.[0] || profileResponse.data[0];
+      
+      if (!staffProfile) {
+        throw new Error('Staff profile not found');
+      }
+      
+      // Update the staff profile with the selected employment type
+      await api.patch(`/staff-profiles/${staffProfile.id}/`, {
+        employment_type: selectedEmploymentType
+      });
+      
+      // Update the local state
+      const updatedStaff = staffList.map(staff =>
+        staff.id === selectedStaff.id
+          ? {
+              ...staff,
+              employmentType: employmentTypes.find(et => et.id === selectedEmploymentType) || null
+            }
+          : staff
+      );
+      setStaffList(updatedStaff);
+      setFilteredStaff(updatedStaff);
+      
+      // Close the panel
+      setShowAssignEmploymentTypePanel(false);
+      setSelectedStaff(null);
+      setSelectedEmploymentType(null);
+      
+      // Clear any errors
+      setError(null);
+    } catch (err) {
+      console.error('Failed to assign employment type:', err);
+      setError('Failed to assign employment type. Please try again.');
+    } finally {
+      setAssignmentLoading(false);
+    }
+  }, [selectedStaff, selectedEmploymentType, staffList, employmentTypes]);
 
   // Command bar items
   const commandBarItems: ICommandBarItemProps[] = [
@@ -1608,6 +1725,75 @@ const StaffManagement: React.FC = () => {
         ) : (
           <Text>Unable to load staff details</Text>
         )}
+      </Panel>
+
+      {/* Employment Type Assignment Panel */}
+      <Panel
+        isOpen={showAssignEmploymentTypePanel}
+        onDismiss={() => {
+          setShowAssignEmploymentTypePanel(false);
+          setSelectedStaff(null);
+          setSelectedEmploymentType(null);
+        }}
+        headerText={selectedStaff ? `Assign Employment Type - ${selectedStaff.firstName} ${selectedStaff.lastName}` : 'Assign Employment Type'}
+        closeButtonAriaLabel="Close"
+        type={PanelType.medium}
+        isLightDismiss
+      >
+        <Stack tokens={{ childrenGap: 20 }} style={{ padding: '20px' }}>
+          {selectedStaff && (
+            <Stack tokens={{ childrenGap: 10 }}>
+              <Text variant="mediumPlus">Staff Member:</Text>
+              <Persona
+                text={`${selectedStaff.firstName} ${selectedStaff.lastName}`}
+                secondaryText={selectedStaff.email}
+                tertiaryText={`Current: ${selectedStaff.employmentType?.name || 'Not Set'}`}
+                size={PersonaSize.size48}
+              />
+            </Stack>
+          )}
+          
+          <Stack tokens={{ childrenGap: 10 }}>
+            <Label required>Employment Type</Label>
+            <Dropdown
+              placeholder="Select employment type"
+              options={Array.isArray(employmentTypes) ? employmentTypes.map(et => ({
+                key: et.id,
+                text: et.name,
+                data: et
+              })) : []}
+              selectedKey={selectedEmploymentType}
+              onChange={(event, option) => {
+                setSelectedEmploymentType(option?.key as number);
+              }}
+            />
+            {employmentTypes.length === 0 && (
+              <Text variant="small" style={{ color: '#d13438' }}>
+                No employment types available. Please create some in Settings first.
+              </Text>
+            )}
+          </Stack>
+          
+          <Stack horizontal tokens={{ childrenGap: 10 }} horizontalAlign="end" style={{ marginTop: 20 }}>
+            <DefaultButton
+              text="Cancel"
+              onClick={() => {
+                setShowAssignEmploymentTypePanel(false);
+                setSelectedStaff(null);
+                setSelectedEmploymentType(null);
+              }}
+            />
+            <PrimaryButton
+              text="Assign Employment Type"
+              onClick={handleSubmitEmploymentTypeAssignment}
+              disabled={!selectedEmploymentType || assignmentLoading}
+            />
+          </Stack>
+          
+          {assignmentLoading && (
+            <Spinner label="Assigning employment type..." />
+          )}
+        </Stack>
       </Panel>
     </MainLayout>
   );

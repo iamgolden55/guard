@@ -170,9 +170,10 @@ class User(AbstractUser):
 
 class StaffProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    employment_type = models.ForeignKey('EmploymentType', on_delete=models.SET_NULL, null=True, blank=True, related_name='staff_profiles', help_text="Employment type for this staff member")
     phone_number = models.CharField(max_length=20)
     date_of_birth = models.DateField()
-    national_insurance_number = models.CharField(max_length=20, unique=True)
+    national_insurance_number = models.CharField(max_length=20, unique=True, null=True, blank=True)
     street = models.CharField(max_length=255)
     city = models.CharField(max_length=100)
     postal_code = models.CharField(max_length=20)
@@ -1776,3 +1777,206 @@ class SystemSettings(models.Model):
              settings.save()
              
         return settings
+
+
+class EmploymentType(models.Model):
+    name = models.CharField(max_length=100, unique=True, help_text="Employment type name (e.g., 'Contract Workers', 'Temporary Staff')")
+    description = models.TextField(help_text="Description of this employment type")
+    is_active = models.BooleanField(default=True, help_text="Whether this employment type is currently available")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'employment_types'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class RecruitmentApplication(models.Model):
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    )
+    
+    LICENCE_TYPE_CHOICES = (
+        ('door_supervisor', 'Door Supervisor'),
+        ('security_guard', 'Security Guard'),
+        ('cctv', 'CCTV'),
+        ('close_protection', 'Close Protection'),
+    )
+    
+    CERTIFICATION_CHOICES = (
+        ('first_aid', 'First Aid'),
+        ('fire_marshal', 'Fire Marshal'),
+        ('conflict_management', 'Conflict Management'),
+        ('customer_service', 'Customer Service Training'),
+        ('other', 'Other'),
+    )
+    
+    # Personal Details
+    full_name = models.CharField(max_length=255)
+    date_of_birth = models.DateField()
+    email = models.EmailField(unique=True)
+    phone_number = models.CharField(max_length=20)
+    home_address = models.TextField()
+    postcode = models.CharField(max_length=20)
+    
+    # SIA Licence Details
+    has_sia_licence = models.BooleanField(default=False)
+    sia_licence_number = models.CharField(max_length=50, null=True, blank=True)
+    licence_types = models.JSONField(default=list, help_text="List of licence types held")
+    licence_expiry_date = models.DateField(null=True, blank=True)
+    licence_suspended_revoked = models.BooleanField(default=False)
+    licence_suspension_details = models.TextField(null=True, blank=True)
+    
+    # Employment Preferences
+    employment_type = models.ForeignKey(EmploymentType, on_delete=models.CASCADE, related_name='applications')
+    hours_per_week = models.IntegerField(validators=[MinValueValidator(0)])
+    availability_days = models.BooleanField(default=False)
+    availability_nights = models.BooleanField(default=False)
+    availability_weekends = models.BooleanField(default=False)
+    availability_holidays = models.BooleanField(default=False)
+    willing_to_travel = models.BooleanField(default=False)
+    has_transport = models.BooleanField(default=False)
+    has_commitments = models.BooleanField(default=False)
+    commitments_details = models.TextField(null=True, blank=True)
+    
+    # Experience and Skills
+    has_security_experience = models.BooleanField(default=False)
+    security_experience_details = models.TextField(null=True, blank=True)
+    certifications = models.JSONField(default=list, help_text="List of certifications held")
+    other_certification_details = models.TextField(null=True, blank=True)
+    
+    # Additional Information
+    eligible_to_work_uk = models.BooleanField(default=False)
+    has_criminal_convictions = models.BooleanField(default=False)
+    criminal_convictions_details = models.TextField(null=True, blank=True)
+    
+    # Application Details
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    digital_signature = models.TextField(help_text="base64 encoded signature")
+    application_date = models.DateTimeField(auto_now_add=True)
+    
+    # Admin fields
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_applications')
+    admin_notes = models.TextField(null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    
+    # Conversion to user (if approved)
+    converted_to_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='recruitment_application')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'recruitment_applications'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.full_name} - {self.get_status_display()}"
+    
+    def approve(self, admin_user, notes=None):
+        """Approve the application and optionally convert to user"""
+        self.status = 'approved'
+        self.reviewed_by = admin_user
+        self.reviewed_at = timezone.now()
+        if notes:
+            self.admin_notes = notes
+        self.save()
+    
+    def reject(self, admin_user, notes=None):
+        """Reject the application"""
+        self.status = 'rejected'
+        self.reviewed_by = admin_user
+        self.reviewed_at = timezone.now()
+        if notes:
+            self.admin_notes = notes
+        self.save()
+    
+    def convert_to_user(self, admin_user):
+        """Convert approved application to a User and StaffProfile"""
+        if self.status != 'approved':
+            raise ValueError("Can only convert approved applications")
+        
+        if self.converted_to_user:
+            raise ValueError("Application has already been converted")
+        
+        # Create user account
+        username = self.email.split('@')[0]
+        counter = 1
+        original_username = username
+        
+        # Ensure unique username
+        while User.objects.filter(username=username).exists():
+            username = f"{original_username}{counter}"
+            counter += 1
+        
+        # Create user
+        user = User.objects.create_user(
+            username=username,
+            email=self.email,
+            first_name=self.full_name.split()[0],
+            last_name=' '.join(self.full_name.split()[1:]) if len(self.full_name.split()) > 1 else '',
+            role='staff'
+        )
+        
+        # Create staff profile
+        staff_profile = StaffProfile.objects.create(
+            user=user,
+            phone_number=self.phone_number,
+            date_of_birth=self.date_of_birth,
+            national_insurance_number=None,  # Will be filled during onboarding
+            street=self.home_address,
+            city='',  # Will need to be filled later
+            postal_code=self.postcode,
+            country='UK',
+            is_approved=True  # Pre-approved since application was approved
+        )
+        
+        # Create SIA License if applicable
+        if self.has_sia_licence and self.sia_licence_number:
+            # Map recruitment form license types to SIA license types
+            licence_type_mapping = {
+                'door_supervisor': 'ds',
+                'security_guard': 'sg',
+                'cctv': 'cctv',
+                'close_protection': 'cp',
+                'dog_handler': 'k9',
+                'vehicle_security': 'vs',
+                'key_holding': 'key'
+            }
+            
+            for licence_type in self.licence_types:
+                # Convert long format to short format
+                short_licence_type = licence_type_mapping.get(licence_type, licence_type)
+                
+                SIALicense.objects.create(
+                    staff_profile=staff_profile,
+                    license_number=self.sia_licence_number,
+                    license_type=short_licence_type,
+                    issue_date=timezone.now().date(),  # Will need to be updated
+                    expiry_date=self.licence_expiry_date,
+                    status='valid',
+                    document_url=''  # Will need to be uploaded later
+                )
+        
+        # Create qualifications
+        for cert in self.certifications:
+            if cert != 'other':
+                SecurityQualification.objects.create(
+                    staff_profile=staff_profile,
+                    qualification_type=cert,
+                    provider='Unknown',  # Will need to be updated
+                    certificate_number='',  # Will need to be updated
+                    issue_date=timezone.now().date(),
+                    document_url=''  # Will need to be uploaded later
+                )
+        
+        # Link the converted user
+        self.converted_to_user = user
+        self.save()
+        
+        return user

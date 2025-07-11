@@ -122,6 +122,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         isExpanded: location.pathname.startsWith('/admin/venues')
       },
       {
+        name: 'Recruitment',
+        url: '/admin/recruitment',
+        key: 'recruitment',
+        icon: 'AddFriend',
+        isExpanded: location.pathname.startsWith('/admin/recruitment')
+      },
+      {
         name: 'Invoices',
         url: '/admin/invoices',
         key: 'admin-invoices',
