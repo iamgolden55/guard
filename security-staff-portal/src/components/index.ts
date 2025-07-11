@@ -7,6 +7,9 @@ import VenueLocationDisplay from './VenueLocationDisplay';
 import WeeklyEarnings from './WeeklyEarnings';
 import BulkPayrollGeneration from './BulkPayrollGeneration';
 import AutoCheckoutStatus from './AutoCheckoutStatus';
+import SwipeableTabs from './SwipeableTabs';
+import ApplicationCard from './ApplicationCard';
+import ActiveShiftWidget from './ActiveShiftWidget';
 
 export {
   Card,
@@ -17,5 +20,8 @@ export {
   VenueLocationDisplay,
   WeeklyEarnings,
   BulkPayrollGeneration,
-  AutoCheckoutStatus
+  AutoCheckoutStatus,
+  SwipeableTabs,
+  ApplicationCard,
+  ActiveShiftWidget
 };

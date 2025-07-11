@@ -107,6 +107,10 @@ export interface Venue {
   isActive: boolean;
   description?: string; // Venue description
   termsAndConditions?: string; // Terms and conditions for staff working at this venue
+  requiresFireSafetyChecks?: boolean;
+  requiresCapacityMonitoring?: boolean;
+  requiresToiletChecks?: boolean;
+  maxCapacity?: number;
 }
 
 export interface FireExitCheck {

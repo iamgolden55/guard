@@ -39,18 +39,32 @@ interface Staff {
   email: string;
 }
 
+interface VenueCheckSummary {
+  fireExitChecks: number;
+  capacityChecks: number;
+  toiletChecks: number;
+  totalChecks: number;
+  criticalIssues: number;
+}
+
 interface Shift {
   id: number;
   staff: Staff;
   venue: {
     id: number;
     name: string;
+    requiresFireSafetyChecks?: boolean;
+    requiresCapacityMonitoring?: boolean;
+    requiresToiletChecks?: boolean;
   };
   startTime: string;
   endTime: string | null;
   duration: number | null; // in hours
   status: ShiftStatus;
   managerApproved: boolean;
+  venueChecks?: VenueCheckSummary;
+  checkInTime?: string;
+  checkOutTime?: string;
 }
 
 // Status indicator pill component
@@ -107,9 +121,35 @@ const StaffShifts: React.FC = () => {
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [venueOptions, setVenueOptions] = useState<IDropdownOption[]>([{ key: '', text: 'All Venues' }]);
   const [showFiltersDialog, setShowFiltersDialog] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportFormat, setExportFormat] = useState<string>('excel');
+  const [expandedShifts, setExpandedShifts] = useState<Set<number>>(new Set());
 
   // Set up columns for the DetailsList
   const columns: IColumn[] = [
+    {
+      key: 'expand',
+      name: '',
+      minWidth: 30,
+      maxWidth: 30,
+      isResizable: false,
+      onRender: (item: Shift) => (
+        <DefaultButton
+          iconProps={{ 
+            iconName: expandedShifts.has(item.id) ? 'ChevronUp' : 'ChevronDown' 
+          }}
+          onClick={() => toggleShiftExpansion(item.id)}
+          styles={{
+            root: { 
+              minWidth: 'auto', 
+              padding: '4px',
+              backgroundColor: 'transparent',
+              border: 'none'
+            }
+          }}
+        />
+      ),
+    },
     {
       key: 'id',
       name: 'ID',
@@ -189,6 +229,38 @@ const StaffShifts: React.FC = () => {
       ),
     },
     {
+      key: 'venueChecks',
+      name: 'Venue Checks',
+      minWidth: 100,
+      maxWidth: 130,
+      isResizable: true,
+      onRender: (item: Shift) => (
+        <Stack tokens={{ childrenGap: 4 }}>
+          {item.venueChecks ? (
+            <>
+              <Text variant="small" style={{ fontWeight: '600' }}>
+                {item.venueChecks.totalChecks} Total
+              </Text>
+              {item.venueChecks.criticalIssues > 0 && (
+                <Text variant="small" style={{ color: '#EF4444', fontWeight: '600' }}>
+                  ⚠️ {item.venueChecks.criticalIssues} Issues
+                </Text>
+              )}
+              {item.venueChecks.totalChecks === 0 && (
+                <Text variant="small" style={{ color: '#F59E0B' }}>
+                  No checks
+                </Text>
+              )}
+            </>
+          ) : (
+            <Text variant="small" style={{ color: '#9CA3AF' }}>
+              -
+            </Text>
+          )}
+        </Stack>
+      ),
+    },
+    {
       key: 'actions',
       name: 'Actions',
       minWidth: 100,
@@ -199,6 +271,11 @@ const StaffShifts: React.FC = () => {
           <Link onClick={() => handleViewShift(item.id)}>
             View
           </Link>
+          {(item.venueChecks?.totalChecks || 0) > 0 && (
+            <Link onClick={() => handleViewChecks(item.id)}>
+              Checks
+            </Link>
+          )}
           {item.status === ShiftStatus.COMPLETED && !item.managerApproved && (
             <Link onClick={() => handleApproveShift(item.id)}>
               Approve
@@ -218,81 +295,62 @@ const StaffShifts: React.FC = () => {
     { key: ShiftStatus.REJECTED, text: 'Rejected' },
   ];
 
-  // Load shifts from API - using useCallback to avoid dependency issues in useEffect
+  // Load shifts from API with venue check summaries
   const loadShifts = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      // In a real application, this would use the actual API
-      // const response = await shiftService.getAllShifts();
-      // setShifts(response);
-
-      // For demo purposes, we'll use mock data
-      const mockShifts: Shift[] = [
-        {
-          id: 1,
-          staff: { id: 1, firstName: 'John', lastName: 'Doe', email: 'john.doe@example.com' },
-          venue: { id: 1, name: 'Venue A' },
-          startTime: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-          endTime: null,
-          duration: null,
-          status: ShiftStatus.ACTIVE,
-          managerApproved: false
+      // Fetch all shifts for manager view
+      const shiftsData = await shiftService.getAllShiftsForManager();
+      
+      // Transform the data to include venue check summaries
+      const transformedShifts: Shift[] = shiftsData.map((shift: any) => ({
+        id: shift.id,
+        staff: {
+          id: shift.staff_details?.id || shift.staff_user,
+          firstName: shift.staff_details?.first_name || 'Unknown',
+          lastName: shift.staff_details?.last_name || 'User',
+          email: shift.staff_details?.email || ''
         },
-        {
-          id: 2,
-          staff: { id: 2, firstName: 'Jane', lastName: 'Smith', email: 'jane.smith@example.com' },
-          venue: { id: 2, name: 'Venue B' },
-          startTime: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-          endTime: new Date(Date.now() - 50400000).toISOString(), // 14 hours ago
-          duration: 10,
-          status: ShiftStatus.COMPLETED,
-          managerApproved: false
+        venue: {
+          id: shift.venue_details?.id || shift.venue,
+          name: shift.venue_details?.name || 'Unknown Venue',
+          requiresFireSafetyChecks: shift.venue_details?.requires_fire_safety_checks,
+          requiresCapacityMonitoring: shift.venue_details?.requires_capacity_monitoring,
+          requiresToiletChecks: shift.venue_details?.requires_toilet_checks
         },
-        {
-          id: 3,
-          staff: { id: 3, firstName: 'Mike', lastName: 'Johnson', email: 'mike.johnson@example.com' },
-          venue: { id: 3, name: 'Venue C' },
-          startTime: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-          endTime: new Date(Date.now() - 136800000).toISOString(), // 38 hours ago
-          duration: 10,
-          status: ShiftStatus.APPROVED,
-          managerApproved: true
-        },
-        {
-          id: 4,
-          staff: { id: 1, firstName: 'John', lastName: 'Doe', email: 'john.doe@example.com' },
-          venue: { id: 1, name: 'Venue A' },
-          startTime: new Date(Date.now() - 259200000).toISOString(), // 3 days ago
-          endTime: new Date(Date.now() - 223200000).toISOString(), // 62 hours ago
-          duration: 10,
-          status: ShiftStatus.REJECTED,
-          managerApproved: false
-        },
-        {
-          id: 5,
-          staff: { id: 4, firstName: 'Sarah', lastName: 'Williams', email: 'sarah.williams@example.com' },
-          venue: { id: 2, name: 'Venue B' },
-          startTime: new Date(Date.now() - 432000000).toISOString(), // 5 days ago
-          endTime: new Date(Date.now() - 396000000).toISOString(), // 4.5 days ago
-          duration: 10,
-          status: ShiftStatus.APPROVED,
-          managerApproved: true
-        },
-      ];
+        startTime: shift.start_time,
+        endTime: shift.end_time,
+        duration: shift.duration_hours,
+        status: shift.status,
+        managerApproved: shift.manager_approved || false,
+        checkInTime: shift.check_in_time,
+        checkOutTime: shift.check_out_time,
+        venueChecks: shift.venue_checks_summary || {
+          fireExitChecks: 0,
+          capacityChecks: 0,
+          toiletChecks: 0,
+          totalChecks: 0,
+          criticalIssues: 0
+        }
+      }));
 
       // Extract unique venues for the filter dropdown
-      const venues = Array.from(new Set(mockShifts.map(shift => shift.venue.id))).map(venueId => {
-        const venue = mockShifts.find(shift => shift.venue.id === venueId)?.venue;
+      const venues = Array.from(new Set(transformedShifts.map(shift => shift.venue.id))).map(venueId => {
+        const venue = transformedShifts.find(shift => shift.venue.id === venueId)?.venue;
         return { key: venueId.toString(), text: venue?.name || '' };
       });
 
       setVenueOptions([{ key: '', text: 'All Venues' }, ...venues]);
-      setShifts(mockShifts);
-      setFilteredShifts(mockShifts);
+      setShifts(transformedShifts);
+      setFilteredShifts(transformedShifts);
     } catch (error) {
       console.error('Failed to load shifts:', error);
       setError('Failed to load shifts. Please try again later.');
+      
+      // Fallback to empty array instead of showing mock data
+      setShifts([]);
+      setFilteredShifts([]);
     } finally {
       setIsLoading(false);
     }
@@ -305,6 +363,10 @@ const StaffShifts: React.FC = () => {
 
   const handleApproveShift = useCallback((shiftId: number) => {
     navigate(`/approvals/${shiftId}`);
+  }, [navigate]);
+
+  const handleViewChecks = useCallback((shiftId: number) => {
+    navigate(`/shifts/${shiftId}/checks`);
   }, [navigate]);
 
   const handleRefresh = useCallback(() => {
@@ -330,6 +392,82 @@ const StaffShifts: React.FC = () => {
     setShowFiltersDialog(false);
   }, []);
 
+  const handleExport = useCallback(() => {
+    try {
+      if (exportFormat === 'excel') {
+        exportToExcel(filteredShifts);
+      } else if (exportFormat === 'csv') {
+        exportToCSV(filteredShifts);
+      }
+      setShowExportDialog(false);
+    } catch (error) {
+      console.error('Export failed:', error);
+      setError('Export failed. Please try again.');
+    }
+  }, [exportFormat, filteredShifts]);
+
+  const exportToExcel = (data: Shift[]) => {
+    // Create Excel-compatible data
+    const excelData = data.map(shift => ({
+      'Shift ID': shift.id,
+      'Staff Name': `${shift.staff.firstName} ${shift.staff.lastName}`,
+      'Staff Email': shift.staff.email,
+      'Venue': shift.venue.name,
+      'Start Time': new Date(shift.startTime).toLocaleString(),
+      'End Time': shift.endTime ? new Date(shift.endTime).toLocaleString() : '-',
+      'Check In': shift.checkInTime ? new Date(shift.checkInTime).toLocaleString() : '-',
+      'Check Out': shift.checkOutTime ? new Date(shift.checkOutTime).toLocaleString() : '-',
+      'Duration (Hours)': shift.duration || '-',
+      'Status': shift.status.toUpperCase(),
+      'Manager Approved': shift.managerApproved ? 'Yes' : 'No',
+      'Fire Exit Checks': shift.venueChecks?.fireExitChecks || 0,
+      'Capacity Checks': shift.venueChecks?.capacityChecks || 0,
+      'Toilet Checks': shift.venueChecks?.toiletChecks || 0,
+      'Total Checks': shift.venueChecks?.totalChecks || 0,
+      'Critical Issues': shift.venueChecks?.criticalIssues || 0
+    }));
+
+    // Create CSV content
+    const headers = Object.keys(excelData[0] || {});
+    const csvContent = [
+      headers.join(','),
+      ...excelData.map(row => 
+        headers.map(header => {
+          const value = row[header as keyof typeof row];
+          // Escape commas and quotes in CSV
+          if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        }).join(',')
+      )
+    ].join('\n');
+
+    // Download as Excel file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `staff-shifts-report-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  const exportToCSV = (data: Shift[]) => {
+    // Use the same logic as Excel export for now
+    exportToExcel(data);
+  };
+
+  const toggleShiftExpansion = useCallback((shiftId: number) => {
+    setExpandedShifts(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(shiftId)) {
+        newSet.delete(shiftId);
+      } else {
+        newSet.add(shiftId);
+      }
+      return newSet;
+    });
+  }, []);
+
   // Command bar items
   const commandBarItems: ICommandBarItemProps[] = [
     {
@@ -349,7 +487,7 @@ const StaffShifts: React.FC = () => {
       text: 'Export',
       iconProps: { iconName: 'ExcelDocument' },
       onClick: () => {
-        alert('Export functionality would be implemented here');
+        setShowExportDialog(true);
         return false;
       },
     },
@@ -475,12 +613,117 @@ const StaffShifts: React.FC = () => {
             <Text>Try adjusting your search criteria.</Text>
           </div>
         ) : (
-          <DetailsList
-            items={filteredShifts}
-            columns={columns}
-            layoutMode={DetailsListLayoutMode.justified}
-            selectionMode={SelectionMode.none}
-          />
+          <Stack tokens={{ childrenGap: 0 }}>
+            {/* Table Header */}
+            <div style={{ 
+              display: 'flex', 
+              backgroundColor: '#f8f9fa', 
+              borderBottom: '1px solid #dee2e6', 
+              padding: '8px 12px',
+              fontWeight: '600'
+            }}>
+              <div style={{ width: '30px' }}></div>
+              <div style={{ width: '50px', marginRight: '12px' }}>ID</div>
+              <div style={{ width: '150px', marginRight: '12px' }}>Staff Member</div>
+              <div style={{ width: '120px', marginRight: '12px' }}>Venue</div>
+              <div style={{ width: '120px', marginRight: '12px' }}>Start Time</div>
+              <div style={{ width: '120px', marginRight: '12px' }}>End Time</div>
+              <div style={{ width: '70px', marginRight: '12px' }}>Duration</div>
+              <div style={{ width: '100px', marginRight: '12px' }}>Status</div>
+              <div style={{ width: '90px', marginRight: '12px' }}>Approval</div>
+              <div style={{ width: '130px', marginRight: '12px' }}>Venue Checks</div>
+              <div style={{ width: '120px' }}>Actions</div>
+            </div>
+
+            {/* Table Rows */}
+            {filteredShifts.map((shift, index) => (
+              <div key={shift.id}>
+                {/* Main Row */}
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center',
+                  backgroundColor: index % 2 === 0 ? '#ffffff' : '#f8f9fa', 
+                  borderBottom: '1px solid #dee2e6', 
+                  padding: '8px 12px',
+                  minHeight: '40px'
+                }}>
+                  <div style={{ width: '30px' }}>
+                    <DefaultButton
+                      iconProps={{ 
+                        iconName: expandedShifts.has(shift.id) ? 'ChevronUp' : 'ChevronDown' 
+                      }}
+                      onClick={() => toggleShiftExpansion(shift.id)}
+                      styles={{
+                        root: { 
+                          minWidth: 'auto', 
+                          padding: '4px',
+                          backgroundColor: 'transparent',
+                          border: 'none'
+                        }
+                      }}
+                    />
+                  </div>
+                  <div style={{ width: '50px', marginRight: '12px' }}>{shift.id}</div>
+                  <div style={{ width: '150px', marginRight: '12px' }}>
+                    {`${shift.staff.firstName} ${shift.staff.lastName}`}
+                  </div>
+                  <div style={{ width: '120px', marginRight: '12px' }}>{shift.venue.name}</div>
+                  <div style={{ width: '120px', marginRight: '12px' }}>
+                    {new Date(shift.startTime).toLocaleString()}
+                  </div>
+                  <div style={{ width: '120px', marginRight: '12px' }}>
+                    {shift.endTime ? new Date(shift.endTime).toLocaleString() : '-'}
+                  </div>
+                  <div style={{ width: '70px', marginRight: '12px' }}>
+                    {shift.duration ? `${shift.duration.toFixed(2)} hrs` : '-'}
+                  </div>
+                  <div style={{ width: '100px', marginRight: '12px' }}>
+                    <StatusPill status={shift.status} />
+                  </div>
+                  <div style={{ width: '90px', marginRight: '12px' }}>
+                    {shift.managerApproved ?
+                      <span style={{ color: '#10B981' }}>✓ Approved</span> :
+                      <span style={{ color: '#9CA3AF' }}>Pending</span>
+                    }
+                  </div>
+                  <div style={{ width: '130px', marginRight: '12px' }}>
+                    <Stack tokens={{ childrenGap: 4 }}>
+                      {shift.venueChecks ? (
+                        <>
+                          <Text variant="small" style={{ fontWeight: '600' }}>
+                            {shift.venueChecks.totalChecks} Total
+                          </Text>
+                          {shift.venueChecks.criticalIssues > 0 && (
+                            <Text variant="small" style={{ color: '#EF4444', fontWeight: '600' }}>
+                              ⚠️ {shift.venueChecks.criticalIssues} Issues
+                            </Text>
+                          )}
+                        </>
+                      ) : (
+                        <Text variant="small" style={{ color: '#9CA3AF' }}>-</Text>
+                      )}
+                    </Stack>
+                  </div>
+                  <div style={{ width: '120px' }}>
+                    <Stack horizontal tokens={{ childrenGap: 8 }}>
+                      <Link onClick={() => handleViewShift(shift.id)}>View</Link>
+                      {(shift.venueChecks?.totalChecks || 0) > 0 && (
+                        <Link onClick={() => handleViewChecks(shift.id)}>Checks</Link>
+                      )}
+                      {shift.status === ShiftStatus.COMPLETED && !shift.managerApproved && (
+                        <Link onClick={() => handleApproveShift(shift.id)}>Approve</Link>
+                      )}
+                    </Stack>
+                  </div>
+                </div>
+
+                {/* Expanded Content */}
+                {expandedShifts.has(shift.id) && (
+                  <ShiftDetailsExpanded shift={shift} />
+                )}
+              </div>
+            ))}
+          </Stack>
         )}
       </Stack>
 
@@ -541,7 +784,268 @@ const StaffShifts: React.FC = () => {
           <DefaultButton text="Cancel" onClick={() => setShowFiltersDialog(false)} />
         </DialogFooter>
       </Dialog>
+
+      {/* Export Dialog */}
+      <Dialog
+        hidden={!showExportDialog}
+        dialogContentProps={{
+          type: DialogType.normal,
+          title: 'Export Shift Data',
+        }}
+        onDismiss={() => setShowExportDialog(false)}
+        minWidth={400}
+      >
+        <Stack tokens={{ childrenGap: 15 }}>
+          <Text>
+            Export {filteredShifts.length} shift{filteredShifts.length !== 1 ? 's' : ''} with venue check data
+          </Text>
+
+          <Dropdown
+            label="Export Format"
+            options={[
+              { key: 'excel', text: 'Excel/CSV (.csv)' },
+              { key: 'csv', text: 'CSV (.csv)' }
+            ]}
+            selectedKey={exportFormat}
+            onChange={(_, option) => setExportFormat(option?.key as string)}
+          />
+
+          <Text variant="small" style={{ fontStyle: 'italic' }}>
+            Export includes: Shift details, staff information, venue data, check summaries, and compliance status
+          </Text>
+        </Stack>
+        <DialogFooter>
+          <PrimaryButton text="Export" onClick={handleExport} />
+          <DefaultButton text="Cancel" onClick={() => setShowExportDialog(false)} />
+        </DialogFooter>
+      </Dialog>
     </MainLayout>
+  );
+};
+
+// Expanded Shift Details Component
+interface ShiftDetailsExpandedProps {
+  shift: Shift;
+}
+
+const ShiftDetailsExpanded: React.FC<ShiftDetailsExpandedProps> = ({ shift }) => {
+  const [checkDetails, setCheckDetails] = useState<{
+    fireChecks: any[];
+    capacityChecks: any[];
+    toiletChecks: any[];
+    loading: boolean;
+  }>({
+    fireChecks: [],
+    capacityChecks: [],
+    toiletChecks: [],
+    loading: true
+  });
+
+  useEffect(() => {
+    const loadCheckDetails = async () => {
+      try {
+        setCheckDetails(prev => ({ ...prev, loading: true }));
+        
+        const [fireChecks, capacityChecks, toiletChecks] = await Promise.all([
+          shiftService.getFireExitChecks(shift.id).catch(() => []),
+          shiftService.getCapacityChecks(shift.id).catch(() => []),
+          shiftService.getToiletChecks(shift.id).catch(() => [])
+        ]);
+
+        setCheckDetails({
+          fireChecks,
+          capacityChecks,
+          toiletChecks,
+          loading: false
+        });
+      } catch (error) {
+        console.error('Failed to load check details:', error);
+        setCheckDetails(prev => ({ ...prev, loading: false }));
+      }
+    };
+
+    loadCheckDetails();
+  }, [shift.id]);
+
+  const formatTime = (timestamp: string) => {
+    return new Date(timestamp).toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatDate = (timestamp: string) => {
+    return new Date(timestamp).toLocaleDateString('en-GB');
+  };
+
+  return (
+    <div style={{
+      backgroundColor: '#f8f9fa',
+      border: '1px solid #dee2e6',
+      borderTop: 'none',
+      padding: '20px',
+      marginLeft: '30px'
+    }}>
+      <Stack tokens={{ childrenGap: 20 }}>
+        <Text variant="mediumPlus" style={{ fontWeight: '600' }}>
+          📋 Shift Details & Venue Check History
+        </Text>
+
+        {/* Shift Overview */}
+        <Stack horizontal tokens={{ childrenGap: 40 }}>
+          <Stack tokens={{ childrenGap: 8 }}>
+            <Text variant="small" style={{ fontWeight: '600' }}>Shift Information</Text>
+            <Text variant="small">Staff: {`${shift.staff.firstName} ${shift.staff.lastName}`}</Text>
+            <Text variant="small">Email: {shift.staff.email}</Text>
+            <Text variant="small">Venue: {shift.venue.name}</Text>
+            <Text variant="small">Status: {shift.status.toUpperCase()}</Text>
+          </Stack>
+          
+          <Stack tokens={{ childrenGap: 8 }}>
+            <Text variant="small" style={{ fontWeight: '600' }}>Timing</Text>
+            <Text variant="small">Scheduled: {new Date(shift.startTime).toLocaleString()}</Text>
+            {shift.checkInTime && (
+              <Text variant="small">Checked In: {new Date(shift.checkInTime).toLocaleString()}</Text>
+            )}
+            {shift.checkOutTime && (
+              <Text variant="small">Checked Out: {new Date(shift.checkOutTime).toLocaleString()}</Text>
+            )}
+            {shift.duration && (
+              <Text variant="small">Duration: {shift.duration.toFixed(2)} hours</Text>
+            )}
+          </Stack>
+
+          <Stack tokens={{ childrenGap: 8 }}>
+            <Text variant="small" style={{ fontWeight: '600' }}>Venue Requirements</Text>
+            <Text variant="small">
+              Fire Safety: {shift.venue.requiresFireSafetyChecks ? '✓ Required' : '✗ Not Required'}
+            </Text>
+            <Text variant="small">
+              Capacity: {shift.venue.requiresCapacityMonitoring ? '✓ Required' : '✗ Not Required'}
+            </Text>
+            <Text variant="small">
+              Toilets: {shift.venue.requiresToiletChecks ? '✓ Required' : '✗ Not Required'}
+            </Text>
+          </Stack>
+        </Stack>
+
+        {/* Check Details */}
+        {checkDetails.loading ? (
+          <Stack horizontalAlign="center">
+            <Spinner size={SpinnerSize.medium} label="Loading check details..." />
+          </Stack>
+        ) : (
+          <Stack tokens={{ childrenGap: 16 }}>
+            {/* Fire Exit Checks */}
+            {checkDetails.fireChecks.length > 0 && (
+              <Stack tokens={{ childrenGap: 8 }}>
+                <Text variant="medium" style={{ fontWeight: '600', color: '#ff6b6b' }}>
+                  🔥 Fire Exit Checks ({checkDetails.fireChecks.length})
+                </Text>
+                <Stack tokens={{ childrenGap: 4 }}>
+                  {checkDetails.fireChecks.map((check, index) => (
+                    <div key={check.id} style={{
+                      padding: '8px 12px',
+                      backgroundColor: 'white',
+                      borderRadius: '4px',
+                      border: '1px solid #e1e5e9'
+                    }}>
+                      <Stack horizontal horizontalAlign="space-between">
+                        <Stack>
+                          <Text variant="small" style={{ fontWeight: '600' }}>{check.exitName}</Text>
+                          <Text variant="small">{formatDate(check.timestamp)} at {formatTime(check.timestamp)}</Text>
+                          {check.comments && <Text variant="small">{check.comments}</Text>}
+                        </Stack>
+                        <Text variant="small" style={{
+                          color: check.isPassed ? '#155724' : '#721c24',
+                          fontWeight: '600'
+                        }}>
+                          {check.isPassed ? '✅ Clear' : '❌ Blocked'}
+                        </Text>
+                      </Stack>
+                    </div>
+                  ))}
+                </Stack>
+              </Stack>
+            )}
+
+            {/* Capacity Checks */}
+            {checkDetails.capacityChecks.length > 0 && (
+              <Stack tokens={{ childrenGap: 8 }}>
+                <Text variant="medium" style={{ fontWeight: '600', color: '#4ecdc4' }}>
+                  👥 Capacity Checks ({checkDetails.capacityChecks.length})
+                </Text>
+                <Stack tokens={{ childrenGap: 4 }}>
+                  {checkDetails.capacityChecks.map((check, index) => (
+                    <div key={check.id} style={{
+                      padding: '8px 12px',
+                      backgroundColor: 'white',
+                      borderRadius: '4px',
+                      border: '1px solid #e1e5e9'
+                    }}>
+                      <Stack horizontal horizontalAlign="space-between">
+                        <Stack>
+                          <Text variant="small" style={{ fontWeight: '600' }}>Count: {check.count} people</Text>
+                          <Text variant="small">{formatDate(check.timestamp)} at {formatTime(check.timestamp)}</Text>
+                          {check.comments && <Text variant="small">{check.comments}</Text>}
+                        </Stack>
+                        <Text variant="small" style={{ fontWeight: '600' }}>#{index + 1}</Text>
+                      </Stack>
+                    </div>
+                  ))}
+                </Stack>
+              </Stack>
+            )}
+
+            {/* Toilet Checks */}
+            {checkDetails.toiletChecks.length > 0 && (
+              <Stack tokens={{ childrenGap: 8 }}>
+                <Text variant="medium" style={{ fontWeight: '600', color: '#95e1d3' }}>
+                  🚻 Toilet Checks ({checkDetails.toiletChecks.length})
+                </Text>
+                <Stack tokens={{ childrenGap: 4 }}>
+                  {checkDetails.toiletChecks.map((check, index) => (
+                    <div key={check.id} style={{
+                      padding: '8px 12px',
+                      backgroundColor: 'white',
+                      borderRadius: '4px',
+                      border: '1px solid #e1e5e9'
+                    }}>
+                      <Stack horizontal horizontalAlign="space-between">
+                        <Stack>
+                          <Text variant="small" style={{ fontWeight: '600' }}>{check.location}</Text>
+                          <Text variant="small">{formatDate(check.timestamp)} at {formatTime(check.timestamp)}</Text>
+                          {check.comments && <Text variant="small">{check.comments}</Text>}
+                        </Stack>
+                        <Text variant="small" style={{
+                          fontWeight: '600',
+                          textTransform: 'capitalize',
+                          color: check.condition === 'excellent' ? '#155724' :
+                                check.condition === 'good' ? '#0c5460' :
+                                check.condition === 'fair' ? '#856404' :
+                                '#721c24'
+                        }}>
+                          {check.condition}
+                        </Text>
+                      </Stack>
+                    </div>
+                  ))}
+                </Stack>
+              </Stack>
+            )}
+
+            {/* No Checks Message */}
+            {checkDetails.fireChecks.length === 0 && 
+             checkDetails.capacityChecks.length === 0 && 
+             checkDetails.toiletChecks.length === 0 && (
+              <Text variant="medium" style={{ color: '#6c757d', textAlign: 'center', fontStyle: 'italic' }}>
+                No venue checks logged for this shift
+              </Text>
+            )}
+          </Stack>
+        )}
+      </Stack>
+    </div>
   );
 };
 

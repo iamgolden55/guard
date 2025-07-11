@@ -6,10 +6,14 @@ class FrontendVenueSerializer(serializers.ModelSerializer):
     """Frontend-compatible venue serializer with camelCase fields"""
     venueId = serializers.IntegerField(source='id', read_only=True)
     venueName = serializers.CharField(source='name')
+    isActive = serializers.BooleanField(source='is_active', read_only=True)
+    requiresFireSafetyChecks = serializers.BooleanField(source='requires_fire_safety_checks', read_only=True)
+    requiresCapacityMonitoring = serializers.BooleanField(source='requires_capacity_monitoring', read_only=True)
+    requiresToiletChecks = serializers.BooleanField(source='requires_toilet_checks', read_only=True)
     
     class Meta:
         model = Venue
-        fields = ('venueId', 'venueName', 'address', 'isActive')
+        fields = ('venueId', 'venueName', 'address', 'isActive', 'requiresFireSafetyChecks', 'requiresCapacityMonitoring', 'requiresToiletChecks')
 
 class FrontendUserSerializer(serializers.ModelSerializer):
     """Frontend-compatible user serializer with camelCase fields"""
@@ -47,9 +51,9 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
     
     # New fields
     isSpecialEvent = serializers.BooleanField(required=False, default=False)
-    requiresFireSafetyChecks = serializers.BooleanField(required=False, default=False)
-    requiresCapacityMonitoring = serializers.BooleanField(required=False, default=False)
-    requiresToiletChecks = serializers.BooleanField(required=False, default=False)
+    requiresFireSafetyChecks = serializers.SerializerMethodField()
+    requiresCapacityMonitoring = serializers.SerializerMethodField()
+    requiresToiletChecks = serializers.SerializerMethodField()
     payRate = serializers.DecimalField(max_digits=6, decimal_places=2, required=False, allow_null=True)
     
     # Nested objects (read-only)
@@ -77,6 +81,21 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
         if obj.venue:
             return obj.venue.name
         return None
+    
+    def get_requiresFireSafetyChecks(self, obj):
+        if obj.venue:
+            return obj.venue.requires_fire_safety_checks
+        return False
+    
+    def get_requiresCapacityMonitoring(self, obj):
+        if obj.venue:
+            return obj.venue.requires_capacity_monitoring
+        return False
+    
+    def get_requiresToiletChecks(self, obj):
+        if obj.venue:
+            return obj.venue.requires_toilet_checks
+        return False
     
     def validate(self, data):
         # Validate end time is after start time
@@ -172,9 +191,9 @@ class FrontendShiftTemplateSerializer(serializers.ModelSerializer):
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
     
     # New fields
-    requiresFireSafetyChecks = serializers.BooleanField(required=False, default=False)
-    requiresCapacityMonitoring = serializers.BooleanField(required=False, default=False)
-    requiresToiletChecks = serializers.BooleanField(required=False, default=False)
+    requiresFireSafetyChecks = serializers.SerializerMethodField()
+    requiresCapacityMonitoring = serializers.SerializerMethodField()
+    requiresToiletChecks = serializers.SerializerMethodField()
     
     class Meta:
         model = ShiftTemplate
@@ -195,6 +214,21 @@ class FrontendShiftTemplateSerializer(serializers.ModelSerializer):
         if len(obj.days_of_week) == 1:
             return obj.days_of_week[0]
         return None
+    
+    def get_requiresFireSafetyChecks(self, obj):
+        if obj.venue:
+            return obj.venue.requires_fire_safety_checks
+        return False
+    
+    def get_requiresCapacityMonitoring(self, obj):
+        if obj.venue:
+            return obj.venue.requires_capacity_monitoring
+        return False
+    
+    def get_requiresToiletChecks(self, obj):
+        if obj.venue:
+            return obj.venue.requires_toilet_checks
+        return False
     
     def validate(self, data):
         # Validate end time is not equal to start time

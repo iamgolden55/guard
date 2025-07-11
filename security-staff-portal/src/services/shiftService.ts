@@ -374,7 +374,11 @@ class ShiftService {
         id: shift.id,
         venue: {
           id: shift.venue_details?.id || shift.venue?.id || shift.venue,
-          name: shift.venue_details?.name || shift.venue?.name || 'Unknown Venue'
+          name: shift.venue_details?.name || shift.venue?.name || 'Unknown Venue',
+          requiresFireSafetyChecks: shift.venue_details?.requires_fire_safety_checks || false,
+          requiresCapacityMonitoring: shift.venue_details?.requires_capacity_monitoring || false,
+          requiresToiletChecks: shift.venue_details?.requires_toilet_checks || false,
+          maxCapacity: shift.venue_details?.capacity || null
         },
         startTime: shift.start_time || shift.startTime,
         endTime: shift.end_time || shift.endTime,
@@ -383,6 +387,25 @@ class ShiftService {
       }));
     } catch (error: any) {
       console.error('Failed to fetch shifts:', error);
+      throw error;
+    }
+  }
+
+  async getAllShiftsForManager(): Promise<any[]> {
+    try {
+      // Fetch all shifts for manager/admin view with venue check summaries
+      const response = await shiftApi.get<any>('/manager/all/');
+      
+      // Handle different response structures
+      let shifts = response.data;
+      if (response.data.results) {
+        shifts = response.data.results; // Paginated response
+      }
+      
+      console.log(`Manager view: Found ${shifts.length} shifts`);
+      return shifts;
+    } catch (error: any) {
+      console.error('Failed to fetch manager shifts:', error);
       throw error;
     }
   }
@@ -488,6 +511,55 @@ class ShiftService {
 
   async addEnforcementVisit(shiftId: number, data: Omit<EnforcementVisit, 'id' | 'shift' | 'timestamp'>): Promise<EnforcementVisit> {
     const response = await shiftApi.post<EnforcementVisit>(`/${shiftId}/enforcement-visits/`, data);
+    return response.data;
+  }
+
+  // Reports API methods
+  async getComplianceReports(params: {
+    startDate?: string;
+    endDate?: string;
+    venueId?: number;
+  }): Promise<any[]> {
+    const queryParams = new URLSearchParams();
+    
+    if (params.startDate) queryParams.append('startDate', params.startDate);
+    if (params.endDate) queryParams.append('endDate', params.endDate);
+    if (params.venueId) queryParams.append('venueId', params.venueId.toString());
+    
+    const url = `/reports/compliance/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await shiftApi.get<any[]>(url);
+    return response.data;
+  }
+
+  async getSafetyReports(params: {
+    startDate?: string;
+    endDate?: string;
+    venueId?: number;
+  }): Promise<any[]> {
+    const queryParams = new URLSearchParams();
+    
+    if (params.startDate) queryParams.append('startDate', params.startDate);
+    if (params.endDate) queryParams.append('endDate', params.endDate);
+    if (params.venueId) queryParams.append('venueId', params.venueId.toString());
+    
+    const url = `/reports/safety/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await shiftApi.get<any[]>(url);
+    return response.data;
+  }
+
+  async getPerformanceReports(params: {
+    startDate?: string;
+    endDate?: string;
+    venueId?: number;
+  }): Promise<any[]> {
+    const queryParams = new URLSearchParams();
+    
+    if (params.startDate) queryParams.append('startDate', params.startDate);
+    if (params.endDate) queryParams.append('endDate', params.endDate);
+    if (params.venueId) queryParams.append('venueId', params.venueId.toString());
+    
+    const url = `/reports/performance/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const response = await shiftApi.get<any[]>(url);
     return response.data;
   }
 }

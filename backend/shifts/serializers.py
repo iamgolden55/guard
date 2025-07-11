@@ -7,7 +7,11 @@ from django.contrib.auth import get_user_model
 class SimpleVenueSerializer(serializers.ModelSerializer):
     class Meta:
         model = Venue
-        fields = ['id', 'name', 'address', 'latitude', 'longitude']
+        fields = [
+            'id', 'name', 'address', 'latitude', 'longitude',
+            'requires_fire_safety_checks', 'requires_capacity_monitoring', 
+            'requires_toilet_checks', 'capacity'
+        ]
 
 class SimpleUserSerializer(serializers.ModelSerializer):
     class Meta:

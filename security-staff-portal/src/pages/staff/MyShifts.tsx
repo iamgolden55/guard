@@ -25,6 +25,7 @@ import { MainLayout } from '../../layouts';
 import { ShiftStatus } from '../../types';
 import { shiftService } from '../../services';
 import { fetchPendingEarnings, type PendingEarnings } from '../../services/api';
+import { ActiveShiftWidget } from '../../components';
 
 interface MyShift {
   id: number;
@@ -364,6 +365,9 @@ const MyShifts: React.FC = () => {
         </Stack>
 
         <CommandBar items={commandBarItems} />
+
+        {/* Active Shift Widget */}
+        <ActiveShiftWidget />
 
         <Stack horizontal tokens={{ childrenGap: 10 }}>
           <StackItem grow={3}>

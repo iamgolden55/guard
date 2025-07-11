@@ -21,6 +21,7 @@ import VenueManagement from './pages/admin/VenueManagement';
 import DeputyIntegration from './pages/admin/DeputyIntegration';
 import RecruitmentManagement from './pages/admin/RecruitmentManagement';
 import RecruitmentApplication from './pages/public/RecruitmentApplication';
+import Reports from './pages/admin/Reports';
 
 // Main Router component
 const Router: React.FC = () => {
@@ -68,6 +69,7 @@ const Router: React.FC = () => {
         <Route path="/admin/deputy" element={<DeputyIntegration />} />
         <Route path="/admin/deputy/sync" element={<div>Deputy Sync</div>} />
         <Route path="/admin/recruitment" element={<RecruitmentManagement />} />
+        <Route path="/admin/reports" element={<Reports />} />
         <Route path="/admin/settings" element={<Settings />} />
       </Route>
 

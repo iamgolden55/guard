@@ -11,11 +11,12 @@ import {
   PivotItem
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
-import { Card, BulkPayrollGeneration } from '../../components';
+import { Card, BulkPayrollGeneration, SwipeableTabs } from '../../components';
 import { useAuth } from '../../contexts/AuthContext';
 import { shiftService, invoiceService, deputyService, venueService } from '../../services';
 import api from '../../services/api';
 import type { DeputyStatus, User, Venue, Shift, Invoice } from '../../types';
+import useIsMobile from '../../hooks/useIsMobile';
 
 // Placeholder component for statistics card
 interface StatCardProps {
@@ -49,9 +50,16 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color, isLoadin
   );
 };
 
+// Helper function to format dates
+const formatDate = (dateString: string | null) => {
+  if (!dateString) return 'Never';
+  return new Date(dateString).toLocaleDateString();
+};
+
 const AdminDashboard: React.FC = () => {
   const { authState } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState({
     activeShifts: 0,
@@ -236,7 +244,154 @@ const AdminDashboard: React.FC = () => {
 
         {/* Main dashboard content */}
         <Stack tokens={{ childrenGap: 16 }}>
-          <Pivot>
+          {isMobile ? (
+            <SwipeableTabs
+              tabs={[
+                {
+                  key: 'quickActions',
+                  headerText: 'Quick Actions',
+                  content: (
+                    <div className="p-4">
+                      <Stack tokens={{ childrenGap: 16 }}>
+                        <Text variant="large">Common Tasks</Text>
+
+                        <div className="grid grid-cols-1 gap-4">
+                          <Card className="flex flex-col">
+                            <Text variant="medium" className="font-semibold mb-2">Staff Management</Text>
+                            <Text className="mb-4">Add, edit, or deactivate staff members.</Text>
+                            <PrimaryButton
+                              text="Manage Staff"
+                              onClick={() => navigate('/admin/staff')}
+                            />
+                          </Card>
+
+                          <Card className="flex flex-col">
+                            <Text variant="medium" className="font-semibold mb-2">Venue Management</Text>
+                            <Text className="mb-4">Manage venues and locations.</Text>
+                            <PrimaryButton
+                              text="Manage Venues"
+                              onClick={() => navigate('/admin/venues')}
+                            />
+                          </Card>
+
+                          <Card className="flex flex-col">
+                            <Text variant="medium" className="font-semibold mb-2">Approve Shifts</Text>
+                            <Text className="mb-4">Review and approve pending shifts.</Text>
+                            <PrimaryButton
+                              text="Shift Approvals"
+                              onClick={() => navigate('/approvals')}
+                            />
+                          </Card>
+
+                          <Card className="flex flex-col">
+                            <Text variant="medium" className="font-semibold mb-2">Generate Invoices</Text>
+                            <Text className="mb-4">Create and manage staff invoices.</Text>
+                            <PrimaryButton
+                              text="Invoice Management"
+                              onClick={() => navigate('/admin/invoices')}
+                            />
+                          </Card>
+                        </div>
+                      </Stack>
+                    </div>
+                  )
+                },
+                {
+                  key: 'deputyIntegration',
+                  headerText: 'Deputy Integration',
+                  content: (
+                    <div className="p-4">
+                      <Stack tokens={{ childrenGap: 16 }}>
+                        <Text variant="large">Deputy Integration Status</Text>
+
+                        <Card>
+                          {isLoading ? (
+                            <div className="flex justify-center p-4">
+                              <Spinner size={SpinnerSize.large} label="Loading Deputy status..." />
+                            </div>
+                          ) : (
+                            <Stack tokens={{ childrenGap: 12 }}>
+                              <Stack horizontal horizontalAlign="space-between">
+                                <Text variant="medium" className="font-semibold">Connection Status:</Text>
+                                <Text className={deputyStatus?.isConnected ? 'text-green-600' : 'text-red-600'}>
+                                  {deputyStatus?.isConnected ? 'Connected' : 'Disconnected'}
+                                </Text>
+                              </Stack>
+
+                              <Stack horizontal horizontalAlign="space-between">
+                                <Text variant="medium" className="font-semibold">Last Sync:</Text>
+                                <Text>{deputyStatus?.lastSyncDate ? formatDate(deputyStatus.lastSyncDate) : 'Never'}</Text>
+                              </Stack>
+
+                              <Stack horizontal horizontalAlign="space-between">
+                                <Text variant="medium" className="font-semibold">Employees Synced:</Text>
+                                <Text>{deputyStatus?.employeeCount || 0}</Text>
+                              </Stack>
+
+                              <Stack horizontal horizontalAlign="space-between">
+                                <Text variant="medium" className="font-semibold">Timesheets Synced:</Text>
+                                <Text>{deputyStatus?.timesheetCount || 0}</Text>
+                              </Stack>
+
+                              {deputyStatus?.errorMessage && (
+                                <Text className="text-red-600">Error: {deputyStatus.errorMessage}</Text>
+                              )}
+
+                              <Stack tokens={{ childrenGap: 10 }}>
+                                <PrimaryButton
+                                  text="Configure Deputy"
+                                  onClick={() => navigate('/admin/deputy')}
+                                />
+                                <PrimaryButton
+                                  text="Sync Now"
+                                  disabled={!deputyStatus?.isConnected}
+                                  onClick={() => navigate('/admin/deputy/sync')}
+                                />
+                              </Stack>
+                            </Stack>
+                          )}
+                        </Card>
+                      </Stack>
+                    </div>
+                  )
+                },
+                {
+                  key: 'systemSettings',
+                  headerText: 'System Settings',
+                  content: (
+                    <div className="p-4">
+                      <Stack tokens={{ childrenGap: 16 }}>
+                        <Text variant="large">Global Settings</Text>
+
+                        <div className="grid grid-cols-1 gap-4">
+                          <Card className="flex flex-col">
+                            <Text variant="medium" className="font-semibold mb-2">System Configuration</Text>
+                            <Text className="mb-4">Manage global system settings.</Text>
+                            <PrimaryButton
+                              text="System Settings"
+                              onClick={() => navigate('/admin/settings')}
+                            />
+                          </Card>
+
+                          <Card className="flex flex-col">
+                            <Text variant="medium" className="font-semibold mb-2">Pay Rates</Text>
+                            <Text className="mb-4">Configure staff pay rates and bonuses.</Text>
+                            <PrimaryButton
+                              text="Manage Pay Rates"
+                              onClick={() => navigate('/admin/payrates')}
+                            />
+                          </Card>
+                        </div>
+                      </Stack>
+                    </div>
+                  )
+                }
+              ]}
+              defaultSelectedKey="quickActions"
+              isMobile={true}
+            />
+          ) : (
+            <Pivot>
             <PivotItem headerText="Quick Actions">
               <div className="p-4">
                 <Stack tokens={{ childrenGap: 16 }}>
@@ -383,6 +538,7 @@ const AdminDashboard: React.FC = () => {
               </div>
             </PivotItem>
           </Pivot>
+          )}
         </Stack>
       </Stack>
     </MainLayout>
