@@ -95,54 +95,201 @@ const hoverStyles = `
 `;
 
 const styles = mergeStyleSets({
+  calendarContainer: {
+    backgroundColor: '#fafafa',
+    borderRadius: '12px',
+    padding: '20px',
+    boxShadow: '0 2px 12px rgba(0, 0, 0, 0.08)',
+    marginTop: '20px',
+    '@media (max-width: 768px)': {
+      padding: '12px',
+      borderRadius: '8px'
+    }
+  },
   calendarGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(7, 1fr)',
-    gap: '1px',
-    backgroundColor: '#f0f0f0',
-    padding: '1px',
-    marginTop: '10px'
+    gap: '2px',
+    backgroundColor: '#e5e7eb',
+    padding: '2px',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    '@media (max-width: 768px)': {
+      gap: '1px',
+      padding: '1px'
+    }
   },
   dayHeader: {
-    padding: '8px',
+    padding: '16px 8px',
     textAlign: 'center',
     fontWeight: 600,
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#f8fafc',
+    color: '#374151',
+    fontSize: '14px',
+    letterSpacing: '0.5px',
+    textTransform: 'uppercase',
+    borderBottom: '1px solid #e5e7eb',
+    '@media (max-width: 768px)': {
+      padding: '12px 4px',
+      fontSize: '12px'
+    }
   },
   dayCell: {
     padding: '8px',
     backgroundColor: 'white',
-    minHeight: '100px',
+    minHeight: '140px',
     position: 'relative',
     cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      backgroundColor: '#f8fafc',
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
+    },
+    '@media (max-width: 768px)': {
+      padding: '4px',
+      minHeight: '100px'
+    }
+  },
+  dayCellOtherMonth: {
+    opacity: 0.4,
+    backgroundColor: '#f9fafb'
+  },
+  dayCellToday: {
+    backgroundColor: '#fef3c7',
+    border: '2px solid #f59e0b'
   },
   dateLabel: {
     position: 'absolute',
-    top: '5px',
+    top: '8px',
     right: '8px',
-    fontSize: '14px',
-    color: '#666',
+    fontSize: '16px',
+    fontWeight: 600,
+    color: '#374151',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    padding: '4px 8px',
+    borderRadius: '6px',
+    minWidth: '24px',
+    textAlign: 'center'
+  },
+  dateLabelToday: {
+    backgroundColor: '#f59e0b',
+    color: 'white'
   },
   shift: {
     margin: '2px 0',
-    padding: '4px 8px',
-    borderRadius: '3px',
-    fontSize: '12px',
+    padding: '8px 10px',
+    borderRadius: '8px',
+    fontSize: '11px',
     cursor: 'pointer',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
+    position: 'relative',
+    transition: 'all 0.2s ease',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+    ':hover': {
+      transform: 'translateY(-1px)',
+      boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)'
+    },
+    '@media (max-width: 768px)': {
+      padding: '6px 8px',
+      fontSize: '10px',
+      margin: '1px 0'
+    }
   },
   staffShift: {
-    backgroundColor: '#e1f5fe',
-    border: '1px solid #b3e5fc',
+    backgroundColor: '#dbeafe',
+    border: '1px solid #3b82f6',
+    color: '#1e40af'
   },
   openShift: {
-    backgroundColor: '#f1f8e9',
-    border: '1px solid #dcedc8',
+    backgroundColor: '#dcfce7',
+    border: '1px solid #16a34a',
+    color: '#166534'
+  },
+  publishedShift: {
+    backgroundColor: '#f3e8ff',
+    border: '1px solid #8b5cf6',
+    color: '#6d28d9'
+  },
+  shiftTime: {
+    fontSize: '10px',
+    fontWeight: 600,
+    opacity: 0.8,
+    marginBottom: '2px'
+  },
+  shiftVenue: {
+    fontSize: '11px',
+    fontWeight: 600,
+    marginBottom: '2px'
+  },
+  shiftStaff: {
+    fontSize: '10px',
+    opacity: 0.9
   },
   filterBar: {
-    padding: '10px 0',
+    padding: '20px 0',
+    display: 'flex',
+    gap: '16px',
+    alignItems: 'end',
+    flexWrap: 'wrap',
+    '@media (max-width: 768px)': {
+      gap: '12px',
+      padding: '16px 0'
+    }
+  },
+  headerSection: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px',
+    padding: '0 4px',
+    '@media (max-width: 768px)': {
+      flexDirection: 'column',
+      gap: '16px',
+      alignItems: 'flex-start',
+      marginBottom: '16px'
+    }
+  },
+  monthTitle: {
+    fontSize: '28px',
+    fontWeight: 700,
+    color: '#1f2937',
+    margin: 0
+  },
+  navigationButtons: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    '@media (max-width: 768px)': {
+      gap: '4px',
+      flexWrap: 'wrap'
+    }
+  },
+  navButton: {
+    padding: '8px 16px',
+    borderRadius: '8px',
+    border: '1px solid #d1d5db',
+    backgroundColor: 'white',
+    color: '#374151',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    fontSize: '14px',
+    fontWeight: 500,
+    ':hover': {
+      backgroundColor: '#f9fafb',
+      borderColor: '#9ca3af'
+    }
+  },
+  todayButton: {
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: '1px solid #3b82f6',
+    ':hover': {
+      backgroundColor: '#2563eb',
+      borderColor: '#2563eb'
+    }
   }
 });
 
@@ -1674,11 +1821,21 @@ const ShiftScheduling: React.FC = () => {
       {/* Inject hover styles */}
       <div dangerouslySetInnerHTML={{ __html: hoverStyles }} />
       <Stack tokens={{ childrenGap: 20 }}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">Shift Scheduling</Text>
-          <Stack horizontal tokens={{ childrenGap: 10 }}>
-            <DefaultButton text="Previous" onClick={handlePrevMonth} iconProps={{ iconName: 'ChevronLeft' }} />
-            <DefaultButton text="Today" onClick={handleToday} />
+        <div className={styles.headerSection}>
+          <div>
+            <Text variant="xxLarge" styles={{ root: { marginBottom: '8px' } }}>Shift Scheduling</Text>
+            <h2 className={styles.monthTitle}>
+              {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+            </h2>
+          </div>
+          <div className={styles.navigationButtons}>
+            <button className={styles.navButton} onClick={handlePrevMonth}>
+              <i className="ms-Icon ms-Icon--ChevronLeft" style={{ marginRight: '4px' }} />
+              Previous
+            </button>
+            <button className={`${styles.navButton} ${styles.todayButton}`} onClick={handleToday}>
+              Today
+            </button>
             <DefaultButton
               text="Select Month"
               onClick={handleOpenMonthPicker}
@@ -1691,12 +1848,24 @@ const ShiftScheduling: React.FC = () => {
                   onClick: () => handleMonthSelection(option)
                 }))
               }}
+              styles={{
+                root: {
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid #d1d5db',
+                  backgroundColor: 'white',
+                  color: '#374151',
+                  fontSize: '14px',
+                  fontWeight: 500
+                }
+              }}
             />
-            <DefaultButton text="Next" onClick={handleNextMonth} iconProps={{ iconName: 'ChevronRight' }} />
-          </Stack>
-        </Stack>
-
-        <Text variant="xLarge">{currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</Text>
+            <button className={styles.navButton} onClick={handleNextMonth}>
+              Next
+              <i className="ms-Icon ms-Icon--ChevronRight" style={{ marginLeft: '4px' }} />
+            </button>
+          </div>
+        </div>
 
         {error && (
           <MessageBar messageBarType={MessageBarType.error} onDismiss={() => setError(null)}>
@@ -1704,24 +1873,94 @@ const ShiftScheduling: React.FC = () => {
           </MessageBar>
         )}
 
-        <CommandBar items={commandBarItems} />
+        <CommandBar 
+          items={commandBarItems}
+          styles={{
+            root: {
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+              padding: '8px 16px',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+              marginBottom: '8px'
+            }
+          }}
+        />
 
-        <Stack horizontal className={styles.filterBar} tokens={{ childrenGap: 10 }}>
+        <div className={styles.filterBar}>
           <ComboBox
             label="Venue Filter"
-            placeholder="Select Venue"
-            options={venues.map(venue => ({ key: venue.id, text: venue.name }))}
-            selectedKey={venueFilter}
-            onChange={(event, option) => setVenueFilter(option ? String(option.key) : null)}
+            placeholder="All Venues"
+            options={[
+              { key: 'all', text: 'All Venues' },
+              ...venues.map(venue => ({ key: venue.id, text: venue.name }))
+            ]}
+            selectedKey={venueFilter || 'all'}
+            onChange={(event, option) => setVenueFilter(option && option.key !== 'all' ? String(option.key) : null)}
+            styles={{
+              root: { minWidth: '200px' },
+              callout: { borderRadius: '8px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }
+            }}
           />
           <ComboBox
             label="Staff Filter"
-            placeholder="Select Staff"
-            options={Array.isArray(staff) ? staff.map(s => ({ key: s.id, text: `${s.firstName} ${s.lastName}` })) : []}
-            selectedKey={staffFilter}
-            onChange={(event, option) => setStaffFilter(option ? String(option.key) : null)}
+            placeholder="All Staff"
+            options={[
+              { key: 'all', text: 'All Staff' },
+              { key: 'open', text: 'Open Shifts Only' },
+              ...(Array.isArray(staff) ? staff.map(s => ({ key: s.id, text: `${s.firstName} ${s.lastName}` })) : [])
+            ]}
+            selectedKey={staffFilter || 'all'}
+            onChange={(event, option) => setStaffFilter(option && option.key !== 'all' ? String(option.key) : null)}
+            styles={{
+              root: { minWidth: '200px' },
+              callout: { borderRadius: '8px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }
+            }}
           />
-        </Stack>
+          {(venueFilter || staffFilter) && (
+            <DefaultButton
+              text="Clear Filters"
+              iconProps={{ iconName: 'ClearFilter' }}
+              onClick={() => {
+                setVenueFilter(null);
+                setStaffFilter(null);
+              }}
+              styles={{
+                root: {
+                  backgroundColor: '#fef3c7',
+                  border: '1px solid #f59e0b',
+                  color: '#92400e',
+                  borderRadius: '8px',
+                  padding: '8px 16px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  transition: 'all 0.2s ease',
+                  ':hover': {
+                    backgroundColor: '#fbbf24',
+                    borderColor: '#d97706'
+                  }
+                }
+              }}
+            />
+          )}
+          
+          {/* Legend */}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '16px', alignItems: 'center' }}>
+            <Text variant="small" style={{ fontWeight: 600, color: '#6b7280' }}>Legend:</Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div style={{ width: '12px', height: '12px', backgroundColor: '#dbeafe', border: '1px solid #3b82f6', borderRadius: '4px' }}></div>
+              <Text variant="small" style={{ color: '#6b7280' }}>Assigned</Text>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div style={{ width: '12px', height: '12px', backgroundColor: '#dcfce7', border: '1px solid #16a34a', borderRadius: '4px' }}></div>
+              <Text variant="small" style={{ color: '#6b7280' }}>Open</Text>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div style={{ width: '12px', height: '12px', backgroundColor: '#f3e8ff', border: '1px solid #8b5cf6', borderRadius: '4px' }}></div>
+              <Text variant="small" style={{ color: '#6b7280' }}>Published</Text>
+            </div>
+          </div>
+        </div>
 
         {isLoading ? (
           <Spinner size={SpinnerSize.large} label="Loading schedule..." />
@@ -1732,101 +1971,137 @@ const ShiftScheduling: React.FC = () => {
             No calendar data available. Please try refreshing the page.
           </MessageBar>
         ) : (
-          <div className={styles.calendarGrid}>
-            {daysOfWeek.map((day) => (
-              <div key={`header-${day}`} className={styles.dayHeader}>
-                {day}
-              </div>
-            ))}
+          <div className={styles.calendarContainer}>
+            <div className={styles.calendarGrid}>
+              {daysOfWeek.map((day) => (
+                <div key={`header-${day}`} className={styles.dayHeader}>
+                  {day}
+                </div>
+              ))}
 
-            {calendarDays.map((day) => (
-              <div
-                key={`day-${day.toISOString()}`}
-                className={styles.dayCell}
-                style={{
-                  opacity: day.getMonth() !== currentDate.getMonth() ? 0.5 : 1,
-                  backgroundColor: day.toDateString() === new Date().toDateString() ? '#e6f7ff' : 'white'
-                }}
-                onClick={() => handleNewShift(day)}
-              >
-                <div className={styles.dateLabel}>{day.getDate()}</div>
-
-                {getShiftsForDay(day).map(shift => (
+              {calendarDays.map((day) => {
+                const isOtherMonth = day.getMonth() !== currentDate.getMonth();
+                const isToday = day.toDateString() === new Date().toDateString();
+                const dayShifts = getShiftsForDay(day);
+                
+                return (
                   <div
-                    key={`shift-${shift.id}`}
-                    className={`shift-container ${styles.shift} ${shift.staffId ? styles.staffShift : styles.openShift}`}
-                    style={{ 
-                      position: 'relative',
-                      border: isSelectionMode && selectedShifts.has(shift.id) ? '2px solid #0078d4' : undefined,
-                      backgroundColor: isSelectionMode && selectedShifts.has(shift.id) ? 
-                        (shift.staffId ? '#cce7f8' : '#e8f4e2') : undefined
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (isSelectionMode) {
-                        toggleShiftSelection(shift.id);
-                      } else {
-                        handleEditShift(shift);
-                      }
-                    }}
+                    key={`day-${day.toISOString()}`}
+                    className={`${styles.dayCell} ${isOtherMonth ? styles.dayCellOtherMonth : ''} ${isToday ? styles.dayCellToday : ''}`}
+                    onClick={() => handleNewShift(day)}
                   >
-                    {/* Selection checkbox */}
-                    {isSelectionMode && (
-                      <Checkbox
-                        checked={selectedShifts.has(shift.id)}
-                        styles={{
-                          root: {
-                            position: 'absolute',
-                            top: '2px',
-                            left: '2px',
-                            backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                            borderRadius: '3px',
-                            padding: '2px'
-                          }
-                        }}
-                        onChange={() => toggleShiftSelection(shift.id)}
-                      />
-                    )}
-                    
-                    <div>{shift.venueName || 'Unknown Venue'}</div>
-                    <div>{shift.startTime || '--:--'} - {shift.endTime || '--:--'}</div>
-                    <div>{shift.staffName || 'Open Shift'}</div>
-                    
-                    {/* Quick delete button - hide in selection mode */}
-                    {!isSelectionMode && (
-                    <IconButton
-                      iconProps={{ iconName: 'Delete' }}
-                      title="Delete shift"
-                      styles={{
-                        root: {
-                          position: 'absolute',
-                          top: '2px',
-                          right: '2px',
-                          backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                          borderRadius: '50%',
-                          width: '20px',
-                          height: '20px',
-                          minWidth: '20px',
-                          opacity: 0,
-                          transition: 'opacity 0.2s'
-                        },
-                        icon: {
-                          fontSize: '10px',
-                          color: '#d32f2f'
-                        }
-                      }}
-                      className="shift-delete-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedShift(shift);
-                        setIsConfirmDialogOpen(true);
-                      }}
-                    />
-                    )}
+                    <div className={`${styles.dateLabel} ${isToday ? styles.dateLabelToday : ''}`}>
+                      {day.getDate()}
+                    </div>
+
+                    {dayShifts.map(shift => {
+                      const isStaffShift = shift.staffId !== null;
+                      const isPublished = shift.status === 'published';
+                      
+                      return (
+                        <div
+                          key={`shift-${shift.id}`}
+                          className={`shift-container ${styles.shift} ${
+                            isPublished ? styles.publishedShift : 
+                            isStaffShift ? styles.staffShift : styles.openShift
+                          }`}
+                          style={{ 
+                            position: 'relative',
+                            border: isSelectionMode && selectedShifts.has(shift.id) ? '2px solid #0078d4' : undefined,
+                            backgroundColor: isSelectionMode && selectedShifts.has(shift.id) ? 
+                              (isStaffShift ? '#cce7f8' : '#e8f4e2') : undefined
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isSelectionMode) {
+                              toggleShiftSelection(shift.id);
+                            } else {
+                              handleEditShift(shift);
+                            }
+                          }}
+                        >
+                          {/* Selection checkbox */}
+                          {isSelectionMode && (
+                            <Checkbox
+                              checked={selectedShifts.has(shift.id)}
+                              styles={{
+                                root: {
+                                  position: 'absolute',
+                                  top: '2px',
+                                  left: '2px',
+                                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                                  borderRadius: '3px',
+                                  padding: '2px',
+                                  zIndex: 10
+                                }
+                              }}
+                              onChange={() => toggleShiftSelection(shift.id)}
+                            />
+                          )}
+                          
+                          <div className={styles.shiftTime}>
+                            {shift.startTime || '--:--'} - {shift.endTime || '--:--'}
+                          </div>
+                          <div className={styles.shiftVenue}>
+                            {shift.venueName || 'Unknown Venue'}
+                          </div>
+                          <div className={styles.shiftStaff}>
+                            {shift.staffName || 'Open Shift'}
+                          </div>
+                          
+                          {/* Status indicator */}
+                          {isPublished && (
+                            <div style={{
+                              position: 'absolute',
+                              top: '4px',
+                              left: '4px',
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              backgroundColor: '#8b5cf6',
+                              boxShadow: '0 0 0 2px white'
+                            }} />
+                          )}
+                          
+                          {/* Quick delete button - hide in selection mode */}
+                          {!isSelectionMode && (
+                            <IconButton
+                              iconProps={{ iconName: 'Delete' }}
+                              title="Delete shift"
+                              styles={{
+                                root: {
+                                  position: 'absolute',
+                                  top: '2px',
+                                  right: '2px',
+                                  backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                  borderRadius: '50%',
+                                  width: '20px',
+                                  height: '20px',
+                                  minWidth: '20px',
+                                  opacity: 0,
+                                  transition: 'opacity 0.2s ease',
+                                  zIndex: 10
+                                },
+                                icon: {
+                                  fontSize: '10px',
+                                  color: '#ef4444'
+                                }
+                              }}
+                              className="shift-delete-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedShift(shift);
+                                setIsConfirmDialogOpen(true);
+                              }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-            ))}
+                );
+              })}
+            </div>
           </div>
         )}
 
