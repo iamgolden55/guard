@@ -10,7 +10,7 @@ from .views import (
     BankDetailsViewSet, SIALicenseViewSet, StaffAvailabilityViewSet,
     VenueViewSet, VenueTermsAcceptanceViewSet, PreferredVenueViewSet,
     FireExitCheckViewSet, CapacityCheckViewSet, ToiletCheckViewSet,
-    ShiftExchangeViewSet, InvoiceViewSet, InvoiceItemViewSet, PayRateViewSet,
+    ShiftExchangeViewSet, OpenShiftRequestViewSet, InvoiceViewSet, InvoiceItemViewSet, PayRateViewSet,
     DeputyConfigViewSet, DeputyEmployeeViewSet, DeputyTimesheetViewSet,
     ShiftTemplateViewSet, DeputyConfigView, SystemSettingsView,
     my_profile, update_my_user,
@@ -34,6 +34,7 @@ router.register('fire-exit-checks', FireExitCheckViewSet)
 router.register('capacity-checks', CapacityCheckViewSet)
 router.register('toilet-checks', ToiletCheckViewSet)
 router.register('shift-exchanges', ShiftExchangeViewSet)
+router.register('open-shift-requests', OpenShiftRequestViewSet)
 router.register('invoices', InvoiceViewSet)
 router.register('invoice-items', InvoiceItemViewSet)
 router.register('pay-rates', PayRateViewSet)

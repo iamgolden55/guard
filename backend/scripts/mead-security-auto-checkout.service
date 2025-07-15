@@ -1,0 +1,15 @@
+[Unit]
+Description=Mead Security Auto-Checkout Processor
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/your/project/backend
+ExecStart=/path/to/your/project/backend/scripts/auto_checkout_processor.sh
+StandardOutput=append:/path/to/your/project/backend/logs/auto_checkout.log
+StandardError=append:/path/to/your/project/backend/logs/auto_checkout.log
+
+[Install]
+WantedBy=multi-user.target

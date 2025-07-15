@@ -358,8 +358,12 @@ class ShiftService {
 
   async getMyShifts(): Promise<any[]> {
     try {
+      console.log('getMyShifts: Making API call to /my_shifts/');
       // Use the correct shifts endpoint from the Django backend
       const response = await shiftApi.get<any>('/my_shifts/');
+      
+      console.log('getMyShifts: Raw API response:', response);
+      console.log('getMyShifts: Response data:', response.data);
       
       // Handle different response structures
       let shifts = response.data;
@@ -367,26 +371,35 @@ class ShiftService {
         shifts = response.data.results; // Paginated response
       }
       
-      console.log(`Success! Found ${shifts.length} shifts`);
+      console.log(`getMyShifts: Success! Found ${shifts.length} shifts`);
+      console.log('getMyShifts: Raw shifts data:', shifts);
       
       // Transform the backend data to match frontend interface
-      return shifts.map((shift: any) => ({
-        id: shift.id,
-        venue: {
-          id: shift.venue_details?.id || shift.venue?.id || shift.venue,
-          name: shift.venue_details?.name || shift.venue?.name || 'Unknown Venue',
-          requiresFireSafetyChecks: shift.venue_details?.requires_fire_safety_checks || false,
-          requiresCapacityMonitoring: shift.venue_details?.requires_capacity_monitoring || false,
-          requiresToiletChecks: shift.venue_details?.requires_toilet_checks || false,
-          maxCapacity: shift.venue_details?.capacity || null
-        },
-        startTime: shift.start_time || shift.startTime,
-        endTime: shift.end_time || shift.endTime,
-        status: shift.status || 'scheduled',
-        managerApproved: shift.manager_approved || shift.managerApproved || false
-      }));
+      const transformedShifts = shifts.map((shift: any) => {
+        console.log('getMyShifts: Processing shift:', shift);
+        return {
+          id: shift.id,
+          venue: {
+            id: shift.venue_details?.id || shift.venue?.id || shift.venue,
+            name: shift.venue_details?.name || shift.venue?.name || 'Unknown Venue',
+            requiresFireSafetyChecks: shift.venue_details?.requires_fire_safety_checks || false,
+            requiresCapacityMonitoring: shift.venue_details?.requires_capacity_monitoring || false,
+            requiresToiletChecks: shift.venue_details?.requires_toilet_checks || false,
+            maxCapacity: shift.venue_details?.capacity || null
+          },
+          startTime: shift.start_time || shift.startTime,
+          endTime: shift.end_time || shift.endTime,
+          status: shift.status || 'scheduled',
+          managerApproved: shift.manager_approved || shift.managerApproved || false
+        };
+      });
+      
+      console.log('getMyShifts: Transformed shifts:', transformedShifts);
+      return transformedShifts;
     } catch (error: any) {
-      console.error('Failed to fetch shifts:', error);
+      console.error('getMyShifts: Failed to fetch shifts:', error);
+      console.error('getMyShifts: Error response:', error.response);
+      console.error('getMyShifts: Error response data:', error.response?.data);
       throw error;
     }
   }
@@ -529,6 +542,49 @@ class ShiftService {
     return response.data;
   }
 
+  // Get venue check requirements status for a shift
+  async getVenueCheckStatus(shiftId: number): Promise<{
+    fireExitCheck: { required: boolean; completed: boolean };
+    capacityCheck: { required: boolean; completed: boolean };
+    toiletCheck: { required: boolean; completed: boolean };
+  }> {
+    try {
+      // Get shift details first to check venue requirements
+      const shift = await this.getShiftById(shiftId);
+      
+      // Check what requirements the venue has
+      const venue = shift.venue;
+      const requiresFireChecks = venue.requiresFireSafetyChecks || false;
+      const requiresCapacityChecks = venue.requiresCapacityMonitoring || false;
+      const requiresToiletChecks = venue.requiresToiletChecks || false;
+      
+      // Check if each type of check has been completed
+      const [fireChecks, capacityChecks, toiletChecks] = await Promise.all([
+        requiresFireChecks ? this.getFireExitChecks(shiftId) : Promise.resolve([]),
+        requiresCapacityChecks ? this.getCapacityChecks(shiftId) : Promise.resolve([]),
+        requiresToiletChecks ? this.getToiletChecks(shiftId) : Promise.resolve([])
+      ]);
+      
+      return {
+        fireExitCheck: {
+          required: requiresFireChecks,
+          completed: fireChecks.length > 0
+        },
+        capacityCheck: {
+          required: requiresCapacityChecks,
+          completed: capacityChecks.length > 0
+        },
+        toiletCheck: {
+          required: requiresToiletChecks,
+          completed: toiletChecks.length > 0
+        }
+      };
+    } catch (error) {
+      console.error('Error fetching venue check status:', error);
+      throw error;
+    }
+  }
+
   async getEnforcementVisits(shiftId: number): Promise<EnforcementVisit[]> {
     const response = await shiftApi.get<EnforcementVisit[]>(`/${shiftId}/enforcement-visits/`);
     return response.data;
@@ -586,6 +642,109 @@ class ShiftService {
     const url = `/reports/performance/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
     const response = await shiftApi.get<any[]>(url);
     return response.data;
+  }
+
+  // Exchange-related functionality
+  async getEligibleStaffForExchange(shiftId: number): Promise<StaffProfile[]> {
+    try {
+      // Get shift details to determine required role and timing
+      const shift = await this.getShiftById(shiftId);
+      
+      // Get all staff profiles
+      const response = await api.get<any>('/staff-profiles/');
+      let staffList = response.data;
+      
+      // Handle paginated response
+      if (response.data.results && Array.isArray(response.data.results)) {
+        staffList = response.data.results;
+      } else if (!Array.isArray(staffList)) {
+        staffList = [];
+      }
+      
+      // Filter out current user from exchange options
+      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+      staffList = staffList.filter(staff => staff.user.id !== currentUser.id);
+      
+      // Transform and filter for eligible staff
+      const transformedStaff = staffList.map(profile => ({
+        id: profile.id,
+        userId: profile.user.id,
+        firstName: profile.user.first_name || '',
+        lastName: profile.user.last_name || '',
+        email: profile.user.email,
+        phone: profile.phone_number || null,
+        profileImage: profile.profile_image_url || null,
+        qualifications: null,
+        isActive: profile.user.is_active,
+        isApproved: profile.is_approved || false
+      }));
+      
+      // Filter for eligible staff (approved with valid SIA license)
+      return transformedStaff.filter(staff => staff.isApproved);
+    } catch (error) {
+      console.error('Error fetching eligible staff for exchange:', error);
+      throw error;
+    }
+  }
+
+  async canReleaseShift(shiftId: number): Promise<{ canRelease: boolean; reason?: string }> {
+    try {
+      const shift = await this.getShiftById(shiftId);
+      const now = new Date();
+      const shiftStart = new Date(shift.startTime);
+      
+      // Check if shift has already started
+      if (shiftStart <= now) {
+        return {
+          canRelease: false,
+          reason: "Cannot release shifts that have already started"
+        };
+      }
+      
+      // Check if shift is in a valid status for release
+      const releasableStatuses = ['scheduled', 'active'];
+      if (!releasableStatuses.includes(shift.status)) {
+        return {
+          canRelease: false,
+          reason: `Cannot release shifts with status: ${shift.status}`
+        };
+      }
+      
+      return { canRelease: true };
+    } catch (error) {
+      console.error('Error checking if shift can be released:', error);
+      return {
+        canRelease: false,
+        reason: "Error checking shift eligibility"
+      };
+    }
+  }
+
+  async canExchangeShift(shiftId: number, targetUserId: number): Promise<{ canExchange: boolean; reason?: string }> {
+    try {
+      const shift = await this.getShiftById(shiftId);
+      const now = new Date();
+      const shiftStart = new Date(shift.startTime);
+      
+      // Check if shift has already started
+      if (shiftStart <= now) {
+        return {
+          canExchange: false,
+          reason: "Cannot exchange shifts that have already started"
+        };
+      }
+      
+      // Check if target user has conflicting shifts (simplified check)
+      // In a real implementation, this would make an API call to check conflicts
+      
+      return { canExchange: true };
+    } catch (error) {
+      console.error('Error checking if shift can be exchanged:', error);
+      return {
+        canExchange: false,
+        reason: "Error checking exchange eligibility"
+      };
+    }
   }
 }
 

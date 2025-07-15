@@ -7,7 +7,8 @@ import {
   ProgressIndicator,
   MessageBar,
   MessageBarType,
-  Link
+  Link,
+  DefaultButton
 } from '@fluentui/react';
 import { Card } from '.';
 import { shiftService } from '../services';
@@ -33,6 +34,7 @@ const AutoCheckoutStatus: React.FC<AutoCheckoutStatusProps> = ({
   const [timeUntilAutoCheckout, setTimeUntilAutoCheckout] = useState<string | null>(null);
   const [isEligible, setIsEligible] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isForceTimeoutEligible, setIsForceTimeoutEligible] = useState(false);
 
   useEffect(() => {
     if (!currentShift || currentShift.status !== 'in_progress') {
@@ -53,25 +55,27 @@ const AutoCheckoutStatus: React.FC<AutoCheckoutStatusProps> = ({
 
     setLoading(true);
     try {
-      // Mock check requirements based on venue - in real app, fetch from API
+      // Fetch real check requirements and completion status from API
+      const checkStatus = await shiftService.getVenueCheckStatus(currentShift.id);
+      
       const requirements: VenueCheckRequirement[] = [
         {
           type: 'fire_safety',
           name: 'Fire Exit Checks',
-          required: currentShift.venue.requiresFireSafetyChecks || false,
-          completed: false // Would fetch from API
+          required: checkStatus.fireExitCheck.required,
+          completed: checkStatus.fireExitCheck.completed
         },
         {
           type: 'capacity',
           name: 'Capacity Monitoring',
-          required: currentShift.venue.requiresCapacityMonitoring || false,
-          completed: false // Would fetch from API
+          required: checkStatus.capacityCheck.required,
+          completed: checkStatus.capacityCheck.completed
         },
         {
           type: 'toilet',
           name: 'Toilet Checks',
-          required: currentShift.venue.requiresToiletChecks || false,
-          completed: false // Would fetch from API
+          required: checkStatus.toiletCheck.required,
+          completed: checkStatus.toiletCheck.completed
         }
       ].filter(req => req.required);
 
@@ -79,6 +83,30 @@ const AutoCheckoutStatus: React.FC<AutoCheckoutStatusProps> = ({
       updateEligibilityStatus(requirements);
     } catch (error) {
       console.error('Failed to load check requirements:', error);
+      // Fallback to venue-based requirements if API fails
+      const fallbackRequirements: VenueCheckRequirement[] = [
+        {
+          type: 'fire_safety',
+          name: 'Fire Exit Checks',
+          required: currentShift.venue.requiresFireSafetyChecks || false,
+          completed: false
+        },
+        {
+          type: 'capacity',
+          name: 'Capacity Monitoring',
+          required: currentShift.venue.requiresCapacityMonitoring || false,
+          completed: false
+        },
+        {
+          type: 'toilet',
+          name: 'Toilet Checks',
+          required: currentShift.venue.requiresToiletChecks || false,
+          completed: false
+        }
+      ].filter(req => req.required);
+      
+      setCheckRequirements(fallbackRequirements);
+      updateEligibilityStatus(fallbackRequirements);
     } finally {
       setLoading(false);
     }
@@ -95,9 +123,16 @@ const AutoCheckoutStatus: React.FC<AutoCheckoutStatusProps> = ({
     const now = new Date();
     const shiftEnd = new Date(currentShift.endTime);
     const autoCheckoutTime = new Date(shiftEnd.getTime() + 30 * 60 * 1000); // +30 minutes
+    const forceTimeoutTime = new Date(shiftEnd.getTime() + 12 * 60 * 60 * 1000); // +12 hours
 
-    if (now >= autoCheckoutTime) {
-      setTimeUntilAutoCheckout('Auto-checkout available now');
+    // Check if force timeout is eligible
+    setIsForceTimeoutEligible(now >= forceTimeoutTime);
+
+    if (now >= forceTimeoutTime) {
+      setTimeUntilAutoCheckout('Force timeout active - Auto-checkout available regardless of checks');
+    } else if (now >= autoCheckoutTime) {
+      const hoursUntilForceTimeout = Math.ceil((forceTimeoutTime.getTime() - now.getTime()) / (1000 * 60 * 60));
+      setTimeUntilAutoCheckout(`Auto-checkout available now (Force timeout in ${hoursUntilForceTimeout}h)`);
     } else if (now >= shiftEnd) {
       const minutesLeft = Math.ceil((autoCheckoutTime.getTime() - now.getTime()) / (1000 * 60));
       setTimeUntilAutoCheckout(`Auto-checkout in ${minutesLeft} minutes`);
@@ -128,15 +163,29 @@ const AutoCheckoutStatus: React.FC<AutoCheckoutStatusProps> = ({
               Smart Checkout Protection
             </Text>
           </Stack>
-          {currentShift.autoCheckout && (
-            <div className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
-              Auto-checked out
-            </div>
-          )}
+          <Stack horizontal tokens={{ childrenGap: 8 }}>
+            <DefaultButton
+              iconProps={{ iconName: "Refresh" }}
+              onClick={loadCheckRequirements}
+              disabled={loading}
+              title="Refresh check status"
+            />
+            {currentShift.autoCheckout && (
+              <div className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-medium">
+                Auto-checked out
+              </div>
+            )}
+          </Stack>
         </Stack>
 
         {/* Status Messages */}
-        {isEligible && timeUntilAutoCheckout === 'Auto-checkout available now' ? (
+        {isForceTimeoutEligible ? (
+          <MessageBar messageBarType={MessageBarType.error}>
+            <Text className="font-medium">
+              🚨 Force timeout active! Auto-checkout will occur soon due to excessive overtime. Please check out manually if still on duty.
+            </Text>
+          </MessageBar>
+        ) : isEligible && timeUntilAutoCheckout?.includes('Auto-checkout available now') ? (
           <MessageBar messageBarType={MessageBarType.success}>
             <Text className="font-medium">
               ✅ You're protected! Auto-checkout will occur if you forget to check out manually.
@@ -152,6 +201,7 @@ const AutoCheckoutStatus: React.FC<AutoCheckoutStatusProps> = ({
           <MessageBar messageBarType={MessageBarType.warning}>
             <Text>
               ⚠️ Complete all venue requirements to be eligible for auto-checkout protection.
+              {timeUntilAutoCheckout && <><br />{timeUntilAutoCheckout}</>}
             </Text>
           </MessageBar>
         )}

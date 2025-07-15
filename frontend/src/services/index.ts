@@ -5,6 +5,7 @@ import invoiceService from './invoiceService';
 import deputyService from './deputyService';
 import profileService from './profileService';
 import venueService from './venueService';
+import exchangeService from './exchangeService';
 
 export {
   api,
@@ -13,5 +14,6 @@ export {
   invoiceService,
   deputyService,
   profileService,
-  venueService
+  venueService,
+  exchangeService
 };

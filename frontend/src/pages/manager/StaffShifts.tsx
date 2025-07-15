@@ -546,24 +546,25 @@ const StaffShifts: React.FC = () => {
 
         <CommandBar items={commandBarItems} />
 
-        <Stack horizontal tokens={{ childrenGap: 10 }}>
-          <StackItem grow={3}>
+        {/* Search and Filter - Responsive */}
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex-1 md:flex-grow-3">
             <SearchBox
               placeholder="Search by staff name or venue"
               onChange={(_, newValue) => setSearchText(newValue || '')}
               onClear={() => setSearchText('')}
               value={searchText}
             />
-          </StackItem>
-          <StackItem grow={1}>
+          </div>
+          <div className="flex-1 md:flex-grow-1 md:max-w-xs">
             <Dropdown
               placeholder="Filter by status"
               options={statusOptions}
               selectedKey={statusFilter}
               onChange={(_, option) => setStatusFilter(option?.key as string)}
             />
-          </StackItem>
-        </Stack>
+          </div>
+        </div>
 
         {/* Active filters display */}
         {(statusFilter || venueFilter || startDate || endDate) && (
@@ -613,117 +614,271 @@ const StaffShifts: React.FC = () => {
             <Text>Try adjusting your search criteria.</Text>
           </div>
         ) : (
-          <Stack tokens={{ childrenGap: 0 }}>
-            {/* Table Header */}
-            <div style={{ 
-              display: 'flex', 
-              backgroundColor: '#f8f9fa', 
-              borderBottom: '1px solid #dee2e6', 
-              padding: '8px 12px',
-              fontWeight: '600'
-            }}>
-              <div style={{ width: '30px' }}></div>
-              <div style={{ width: '50px', marginRight: '12px' }}>ID</div>
-              <div style={{ width: '150px', marginRight: '12px' }}>Staff Member</div>
-              <div style={{ width: '120px', marginRight: '12px' }}>Venue</div>
-              <div style={{ width: '120px', marginRight: '12px' }}>Start Time</div>
-              <div style={{ width: '120px', marginRight: '12px' }}>End Time</div>
-              <div style={{ width: '70px', marginRight: '12px' }}>Duration</div>
-              <div style={{ width: '100px', marginRight: '12px' }}>Status</div>
-              <div style={{ width: '90px', marginRight: '12px' }}>Approval</div>
-              <div style={{ width: '130px', marginRight: '12px' }}>Venue Checks</div>
-              <div style={{ width: '120px' }}>Actions</div>
-            </div>
-
-            {/* Table Rows */}
-            {filteredShifts.map((shift, index) => (
-              <div key={shift.id}>
-                {/* Main Row */}
+          <div>
+            {/* Desktop Table View - Hidden on mobile */}
+            <div className="hidden md:block">
+              <Stack tokens={{ childrenGap: 0 }}>
+                {/* Table Header */}
                 <div style={{ 
                   display: 'flex', 
-                  alignItems: 'center',
-                  backgroundColor: index % 2 === 0 ? '#ffffff' : '#f8f9fa', 
+                  backgroundColor: '#f8f9fa', 
                   borderBottom: '1px solid #dee2e6', 
                   padding: '8px 12px',
-                  minHeight: '40px'
+                  fontWeight: '600'
                 }}>
-                  <div style={{ width: '30px' }}>
-                    <DefaultButton
-                      iconProps={{ 
-                        iconName: expandedShifts.has(shift.id) ? 'ChevronUp' : 'ChevronDown' 
-                      }}
-                      onClick={() => toggleShiftExpansion(shift.id)}
-                      styles={{
-                        root: { 
-                          minWidth: 'auto', 
-                          padding: '4px',
-                          backgroundColor: 'transparent',
-                          border: 'none'
+                  <div style={{ width: '30px' }}></div>
+                  <div style={{ width: '50px', marginRight: '12px' }}>ID</div>
+                  <div style={{ width: '150px', marginRight: '12px' }}>Staff Member</div>
+                  <div style={{ width: '120px', marginRight: '12px' }}>Venue</div>
+                  <div style={{ width: '120px', marginRight: '12px' }}>Start Time</div>
+                  <div style={{ width: '120px', marginRight: '12px' }}>End Time</div>
+                  <div style={{ width: '70px', marginRight: '12px' }}>Duration</div>
+                  <div style={{ width: '100px', marginRight: '12px' }}>Status</div>
+                  <div style={{ width: '90px', marginRight: '12px' }}>Approval</div>
+                  <div style={{ width: '130px', marginRight: '12px' }}>Venue Checks</div>
+                  <div style={{ width: '120px' }}>Actions</div>
+                </div>
+
+                {/* Table Rows */}
+                {filteredShifts.map((shift, index) => (
+                  <div key={shift.id}>
+                    {/* Main Row */}
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center',
+                      backgroundColor: index % 2 === 0 ? '#ffffff' : '#f8f9fa', 
+                      borderBottom: '1px solid #dee2e6', 
+                      padding: '8px 12px',
+                      minHeight: '40px'
+                    }}>
+                      <div style={{ width: '30px' }}>
+                        <DefaultButton
+                          iconProps={{ 
+                            iconName: expandedShifts.has(shift.id) ? 'ChevronUp' : 'ChevronDown' 
+                          }}
+                          onClick={() => toggleShiftExpansion(shift.id)}
+                          styles={{
+                            root: { 
+                              minWidth: 'auto', 
+                              padding: '4px',
+                              backgroundColor: 'transparent',
+                              border: 'none'
+                            }
+                          }}
+                        />
+                      </div>
+                      <div style={{ width: '50px', marginRight: '12px' }}>{shift.id}</div>
+                      <div style={{ width: '150px', marginRight: '12px' }}>
+                        {`${shift.staff.firstName} ${shift.staff.lastName}`}
+                      </div>
+                      <div style={{ width: '120px', marginRight: '12px' }}>{shift.venue.name}</div>
+                      <div style={{ width: '120px', marginRight: '12px' }}>
+                        {new Date(shift.startTime).toLocaleString()}
+                      </div>
+                      <div style={{ width: '120px', marginRight: '12px' }}>
+                        {shift.endTime ? new Date(shift.endTime).toLocaleString() : '-'}
+                      </div>
+                      <div style={{ width: '70px', marginRight: '12px' }}>
+                        {shift.duration ? `${shift.duration.toFixed(2)} hrs` : '-'}
+                      </div>
+                      <div style={{ width: '100px', marginRight: '12px' }}>
+                        <StatusPill status={shift.status} />
+                      </div>
+                      <div style={{ width: '90px', marginRight: '12px' }}>
+                        {shift.managerApproved ?
+                          <span style={{ color: '#10B981' }}>✓ Approved</span> :
+                          <span style={{ color: '#9CA3AF' }}>Pending</span>
                         }
-                      }}
-                    />
+                      </div>
+                      <div style={{ width: '130px', marginRight: '12px' }}>
+                        <Stack tokens={{ childrenGap: 4 }}>
+                          {shift.venueChecks ? (
+                            <>
+                              <Text variant="small" style={{ fontWeight: '600' }}>
+                                {shift.venueChecks.totalChecks} Total
+                              </Text>
+                              {shift.venueChecks.criticalIssues > 0 && (
+                                <Text variant="small" style={{ color: '#EF4444', fontWeight: '600' }}>
+                                  ⚠️ {shift.venueChecks.criticalIssues} Issues
+                                </Text>
+                              )}
+                            </>
+                          ) : (
+                            <Text variant="small" style={{ color: '#9CA3AF' }}>-</Text>
+                          )}
+                        </Stack>
+                      </div>
+                      <div style={{ width: '120px' }}>
+                        <Stack horizontal tokens={{ childrenGap: 8 }}>
+                          <Link onClick={() => handleViewShift(shift.id)}>View</Link>
+                          {(shift.venueChecks?.totalChecks || 0) > 0 && (
+                            <Link onClick={() => handleViewChecks(shift.id)}>Checks</Link>
+                          )}
+                          {shift.status === ShiftStatus.COMPLETED && !shift.managerApproved && (
+                            <Link onClick={() => handleApproveShift(shift.id)}>Approve</Link>
+                          )}
+                        </Stack>
+                      </div>
+                    </div>
+
+                    {/* Expanded Content */}
+                    {expandedShifts.has(shift.id) && (
+                      <ShiftDetailsExpanded shift={shift} />
+                    )}
                   </div>
-                  <div style={{ width: '50px', marginRight: '12px' }}>{shift.id}</div>
-                  <div style={{ width: '150px', marginRight: '12px' }}>
-                    {`${shift.staff.firstName} ${shift.staff.lastName}`}
-                  </div>
-                  <div style={{ width: '120px', marginRight: '12px' }}>{shift.venue.name}</div>
-                  <div style={{ width: '120px', marginRight: '12px' }}>
-                    {new Date(shift.startTime).toLocaleString()}
-                  </div>
-                  <div style={{ width: '120px', marginRight: '12px' }}>
-                    {shift.endTime ? new Date(shift.endTime).toLocaleString() : '-'}
-                  </div>
-                  <div style={{ width: '70px', marginRight: '12px' }}>
-                    {shift.duration ? `${shift.duration.toFixed(2)} hrs` : '-'}
-                  </div>
-                  <div style={{ width: '100px', marginRight: '12px' }}>
-                    <StatusPill status={shift.status} />
-                  </div>
-                  <div style={{ width: '90px', marginRight: '12px' }}>
-                    {shift.managerApproved ?
-                      <span style={{ color: '#10B981' }}>✓ Approved</span> :
-                      <span style={{ color: '#9CA3AF' }}>Pending</span>
-                    }
-                  </div>
-                  <div style={{ width: '130px', marginRight: '12px' }}>
-                    <Stack tokens={{ childrenGap: 4 }}>
-                      {shift.venueChecks ? (
-                        <>
+                ))}
+              </Stack>
+            </div>
+
+            {/* Mobile Card View - Visible only on mobile */}
+            <div className="block md:hidden">
+              <Stack tokens={{ childrenGap: 12 }}>
+                {filteredShifts.map((shift, index) => (
+                  <div key={shift.id} style={{
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #dee2e6',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                  }}>
+                    {/* Card Header */}
+                    <Stack horizontal horizontalAlign="space-between" verticalAlign="center" style={{ marginBottom: '12px' }}>
+                      <Stack horizontal tokens={{ childrenGap: 8 }} verticalAlign="center">
+                        <Text variant="medium" style={{ fontWeight: '600' }}>#{shift.id}</Text>
+                        <StatusPill status={shift.status} />
+                      </Stack>
+                      <DefaultButton
+                        iconProps={{ 
+                          iconName: expandedShifts.has(shift.id) ? 'ChevronUp' : 'ChevronDown' 
+                        }}
+                        onClick={() => toggleShiftExpansion(shift.id)}
+                        styles={{
+                          root: { 
+                            minWidth: 'auto', 
+                            padding: '8px',
+                            backgroundColor: 'transparent',
+                            border: '1px solid #dee2e6',
+                            borderRadius: '4px'
+                          }
+                        }}
+                      />
+                    </Stack>
+
+                    {/* Staff and Venue Info */}
+                    <Stack tokens={{ childrenGap: 8 }} style={{ marginBottom: '12px' }}>
+                      <Stack horizontal horizontalAlign="space-between">
+                        <Text variant="small" style={{ color: '#6c757d', fontWeight: '600' }}>Staff</Text>
+                        <Text variant="small" style={{ fontWeight: '600' }}>
+                          {`${shift.staff.firstName} ${shift.staff.lastName}`}
+                        </Text>
+                      </Stack>
+                      <Stack horizontal horizontalAlign="space-between">
+                        <Text variant="small" style={{ color: '#6c757d', fontWeight: '600' }}>Venue</Text>
+                        <Text variant="small">{shift.venue.name}</Text>
+                      </Stack>
+                    </Stack>
+
+                    {/* Time Information */}
+                    <Stack tokens={{ childrenGap: 8 }} style={{ marginBottom: '12px' }}>
+                      <Stack horizontal horizontalAlign="space-between">
+                        <Text variant="small" style={{ color: '#6c757d', fontWeight: '600' }}>Start</Text>
+                        <Text variant="small">{new Date(shift.startTime).toLocaleDateString()}</Text>
+                      </Stack>
+                      <Stack horizontal horizontalAlign="space-between">
+                        <Text variant="small" style={{ color: '#6c757d', fontWeight: '600' }}>Time</Text>
+                        <Text variant="small">{new Date(shift.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</Text>
+                      </Stack>
+                      {shift.duration && (
+                        <Stack horizontal horizontalAlign="space-between">
+                          <Text variant="small" style={{ color: '#6c757d', fontWeight: '600' }}>Duration</Text>
+                          <Text variant="small">{shift.duration.toFixed(1)}h</Text>
+                        </Stack>
+                      )}
+                    </Stack>
+
+                    {/* Status Information */}
+                    <Stack horizontal horizontalAlign="space-between" style={{ marginBottom: '12px' }}>
+                      <Text variant="small" style={{ color: '#6c757d', fontWeight: '600' }}>Approval</Text>
+                      <Text variant="small" style={{ 
+                        color: shift.managerApproved ? '#10B981' : '#9CA3AF',
+                        fontWeight: '600'
+                      }}>
+                        {shift.managerApproved ? '✓ Approved' : 'Pending'}
+                      </Text>
+                    </Stack>
+
+                    {/* Venue Checks Summary */}
+                    {shift.venueChecks && shift.venueChecks.totalChecks > 0 && (
+                      <Stack horizontal horizontalAlign="space-between" style={{ marginBottom: '12px' }}>
+                        <Text variant="small" style={{ color: '#6c757d', fontWeight: '600' }}>Checks</Text>
+                        <Stack horizontal tokens={{ childrenGap: 8 }}>
                           <Text variant="small" style={{ fontWeight: '600' }}>
                             {shift.venueChecks.totalChecks} Total
                           </Text>
                           {shift.venueChecks.criticalIssues > 0 && (
                             <Text variant="small" style={{ color: '#EF4444', fontWeight: '600' }}>
-                              ⚠️ {shift.venueChecks.criticalIssues} Issues
+                              ⚠️ {shift.venueChecks.criticalIssues}
                             </Text>
                           )}
-                        </>
-                      ) : (
-                        <Text variant="small" style={{ color: '#9CA3AF' }}>-</Text>
-                      )}
-                    </Stack>
-                  </div>
-                  <div style={{ width: '120px' }}>
-                    <Stack horizontal tokens={{ childrenGap: 8 }}>
-                      <Link onClick={() => handleViewShift(shift.id)}>View</Link>
+                        </Stack>
+                      </Stack>
+                    )}
+
+                    {/* Actions */}
+                    <Stack horizontal tokens={{ childrenGap: 12 }} style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #f8f9fa' }}>
+                      <DefaultButton
+                        text="View"
+                        onClick={() => handleViewShift(shift.id)}
+                        styles={{
+                          root: { 
+                            flex: 1,
+                            backgroundColor: '#B91C1C',
+                            color: 'white',
+                            border: 'none'
+                          }
+                        }}
+                      />
                       {(shift.venueChecks?.totalChecks || 0) > 0 && (
-                        <Link onClick={() => handleViewChecks(shift.id)}>Checks</Link>
+                        <DefaultButton
+                          text="Checks"
+                          onClick={() => handleViewChecks(shift.id)}
+                          styles={{
+                            root: { 
+                              flex: 1,
+                              backgroundColor: '#f8f9fa',
+                              color: '#B91C1C',
+                              border: '1px solid #dee2e6'
+                            }
+                          }}
+                        />
                       )}
                       {shift.status === ShiftStatus.COMPLETED && !shift.managerApproved && (
-                        <Link onClick={() => handleApproveShift(shift.id)}>Approve</Link>
+                        <DefaultButton
+                          text="Approve"
+                          onClick={() => handleApproveShift(shift.id)}
+                          styles={{
+                            root: { 
+                              flex: 1,
+                              backgroundColor: '#10B981',
+                              color: 'white',
+                              border: 'none'
+                            }
+                          }}
+                        />
                       )}
                     </Stack>
-                  </div>
-                </div>
 
-                {/* Expanded Content */}
-                {expandedShifts.has(shift.id) && (
-                  <ShiftDetailsExpanded shift={shift} />
-                )}
-              </div>
-            ))}
-          </Stack>
+                    {/* Expanded Content */}
+                    {expandedShifts.has(shift.id) && (
+                      <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #f8f9fa' }}>
+                        <ShiftDetailsExpanded shift={shift} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </Stack>
+            </div>
+          </div>
         )}
       </Stack>
 
@@ -883,26 +1038,26 @@ const ShiftDetailsExpanded: React.FC<ShiftDetailsExpandedProps> = ({ shift }) =>
       backgroundColor: '#f8f9fa',
       border: '1px solid #dee2e6',
       borderTop: 'none',
-      padding: '20px',
-      marginLeft: '30px'
+      padding: '16px',
+      marginLeft: window.innerWidth < 768 ? '0' : '30px'
     }}>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Text variant="mediumPlus" style={{ fontWeight: '600' }}>
+      <Stack tokens={{ childrenGap: 16 }}>
+        <Text variant="medium" style={{ fontWeight: '600' }}>
           📋 Shift Details & Venue Check History
         </Text>
 
-        {/* Shift Overview */}
-        <Stack horizontal tokens={{ childrenGap: 40 }}>
-          <Stack tokens={{ childrenGap: 8 }}>
-            <Text variant="small" style={{ fontWeight: '600' }}>Shift Information</Text>
+        {/* Shift Overview - Responsive Layout */}
+        <div className="flex flex-col md:flex-row md:gap-10 gap-4">
+          <Stack tokens={{ childrenGap: 6 }} className="flex-1">
+            <Text variant="small" style={{ fontWeight: '600', color: '#B91C1C' }}>Shift Information</Text>
             <Text variant="small">Staff: {`${shift.staff.firstName} ${shift.staff.lastName}`}</Text>
             <Text variant="small">Email: {shift.staff.email}</Text>
             <Text variant="small">Venue: {shift.venue.name}</Text>
             <Text variant="small">Status: {shift.status.toUpperCase()}</Text>
           </Stack>
           
-          <Stack tokens={{ childrenGap: 8 }}>
-            <Text variant="small" style={{ fontWeight: '600' }}>Timing</Text>
+          <Stack tokens={{ childrenGap: 6 }} className="flex-1">
+            <Text variant="small" style={{ fontWeight: '600', color: '#B91C1C' }}>Timing</Text>
             <Text variant="small">Scheduled: {new Date(shift.startTime).toLocaleString()}</Text>
             {shift.checkInTime && (
               <Text variant="small">Checked In: {new Date(shift.checkInTime).toLocaleString()}</Text>
@@ -915,8 +1070,8 @@ const ShiftDetailsExpanded: React.FC<ShiftDetailsExpandedProps> = ({ shift }) =>
             )}
           </Stack>
 
-          <Stack tokens={{ childrenGap: 8 }}>
-            <Text variant="small" style={{ fontWeight: '600' }}>Venue Requirements</Text>
+          <Stack tokens={{ childrenGap: 6 }} className="flex-1">
+            <Text variant="small" style={{ fontWeight: '600', color: '#B91C1C' }}>Venue Requirements</Text>
             <Text variant="small">
               Fire Safety: {shift.venue.requiresFireSafetyChecks ? '✓ Required' : '✗ Not Required'}
             </Text>
@@ -927,7 +1082,7 @@ const ShiftDetailsExpanded: React.FC<ShiftDetailsExpandedProps> = ({ shift }) =>
               Toilets: {shift.venue.requiresToiletChecks ? '✓ Required' : '✗ Not Required'}
             </Text>
           </Stack>
-        </Stack>
+        </div>
 
         {/* Check Details */}
         {checkDetails.loading ? (

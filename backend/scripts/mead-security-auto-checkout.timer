@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Mead Security Auto-Checkout Processor every 15 minutes
+Requires=mead-security-auto-checkout.service
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+
+[Install]
+WantedBy=timers.target

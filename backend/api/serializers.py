@@ -4,7 +4,7 @@ from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
     Shift, FireExitCheck, CapacityCheck, ToiletCheck,
-    ShiftExchange, Invoice, InvoiceItem, PayRate, DeputyConfig,
+    ShiftExchange, OpenShiftRequest, Invoice, InvoiceItem, PayRate, DeputyConfig,
     DeputyEmployee, DeputyTimesheet, ShiftTemplate, SystemSettings,
     EmploymentType, RecruitmentApplication
 )
@@ -288,13 +288,25 @@ class ShiftTemplateSerializer(serializers.ModelSerializer):
 
 class ShiftExchangeSerializer(serializers.ModelSerializer):
     original_shift_details = ShiftSerializer(source='original_shift', read_only=True)
+    target_shift_details = ShiftSerializer(source='target_shift', read_only=True)
     requesting_user_details = UserSerializer(source='requesting_user', read_only=True)
     target_user_details = UserSerializer(source='target_user', read_only=True)
 
     class Meta:
         model = ShiftExchange
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at')
+        read_only_fields = ('created_at', 'updated_at', 'requesting_user')
+
+class OpenShiftRequestSerializer(serializers.ModelSerializer):
+    original_shift_details = ShiftSerializer(source='original_shift', read_only=True)
+    requesting_user_details = UserSerializer(source='requesting_user', read_only=True)
+    claimed_by_details = UserSerializer(source='claimed_by', read_only=True)
+    manager_user_details = UserSerializer(source='manager_user', read_only=True)
+
+    class Meta:
+        model = OpenShiftRequest
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at', 'claim_time')
 
 class InvoiceItemSerializer(serializers.ModelSerializer):
     venue_details = VenueSerializer(source='venue', read_only=True)

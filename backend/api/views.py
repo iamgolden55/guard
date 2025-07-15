@@ -4,7 +4,7 @@ import logging
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 # Create your views here.
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, serializers
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
@@ -15,12 +15,13 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
+from django.db import models
 import os
 
 from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
-    Shift, FireExitCheck, CapacityCheck, ToiletCheck, ShiftExchange,
+    Shift, FireExitCheck, CapacityCheck, ToiletCheck, ShiftExchange, OpenShiftRequest,
     Invoice, InvoiceItem, PayRate, DeputyConfig, DeputyEmployee,
     DeputyTimesheet, SystemSettings, EmploymentType, RecruitmentApplication
 )
@@ -29,7 +30,7 @@ from .serializers import (
     BankDetailsSerializer, SIALicenseSerializer, StaffAvailabilitySerializer,
     VenueSerializer, VenueTermsAcceptanceSerializer, PreferredVenueSerializer,
     FireExitCheckSerializer, CapacityCheckSerializer, ToiletCheckSerializer,
-    ShiftSerializer, ShiftExchangeSerializer, InvoiceSerializer, InvoiceItemSerializer,
+    ShiftSerializer, ShiftExchangeSerializer, OpenShiftRequestSerializer, InvoiceSerializer, InvoiceItemSerializer,
     PayRateSerializer, DeputyConfigSerializer, DeputyEmployeeSerializer,
     DeputyTimesheetSerializer, ShiftTemplateSerializer, SystemSettingsSerializer,
     EmploymentTypeSerializer, RecruitmentApplicationSerializer, RecruitmentApplicationPublicSerializer
@@ -1258,6 +1259,265 @@ class ShiftExchangeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = ShiftExchange.objects.all()
     serializer_class = ShiftExchangeSerializer
+    
+    def get_queryset(self):
+        """Filter exchanges to show only relevant ones for the user"""
+        user = self.request.user
+        if user.role in ['manager', 'admin']:
+            return ShiftExchange.objects.all()
+        else:
+            # Staff can only see exchanges they're involved in
+            return ShiftExchange.objects.filter(
+                models.Q(requesting_user=user) | models.Q(target_user=user)
+            )
+    
+    def perform_create(self, serializer):
+        """Set the requesting user to the current user"""
+        serializer.save(requesting_user=self.request.user)
+    
+    @action(detail=True, methods=['post'])
+    def accept(self, request, pk=None):
+        """Target user accepts the exchange request"""
+        exchange = self.get_object()
+        
+        # Verify the user is the target user
+        if exchange.target_user != request.user:
+            return Response(
+                {"error": "You are not the target user for this exchange"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        response_text = request.data.get('response', '')
+        
+        try:
+            exchange.accept_by_target(response_text)
+            serializer = self.get_serializer(exchange)
+            return Response({
+                "message": "Exchange request accepted successfully",
+                "exchange": serializer.data
+            })
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """Manager approves the exchange request"""
+        if request.user.role not in ['manager', 'admin']:
+            return Response(
+                {"error": "Manager or admin permissions required"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        exchange = self.get_object()
+        notes = request.data.get('notes', '')
+        
+        try:
+            exchange.approve(request.user, notes)
+            serializer = self.get_serializer(exchange)
+            return Response({
+                "message": "Exchange approved successfully",
+                "exchange": serializer.data
+            })
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """Manager rejects the exchange request"""
+        if request.user.role not in ['manager', 'admin']:
+            return Response(
+                {"error": "Manager or admin permissions required"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        exchange = self.get_object()
+        notes = request.data.get('notes', '')
+        
+        if not notes:
+            return Response(
+                {"error": "Rejection notes are required"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            exchange.reject(request.user, notes)
+            serializer = self.get_serializer(exchange)
+            return Response({
+                "message": "Exchange rejected successfully",
+                "exchange": serializer.data
+            })
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=True, methods=['delete'])
+    def cancel(self, request, pk=None):
+        """Cancel the exchange request"""
+        exchange = self.get_object()
+        
+        # Only requesting or target user can cancel
+        if request.user not in [exchange.requesting_user, exchange.target_user]:
+            return Response(
+                {"error": "You can only cancel exchanges you're involved in"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            exchange.cancel(request.user)
+            return Response({"message": "Exchange cancelled successfully"})
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+class OpenShiftRequestViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    queryset = OpenShiftRequest.objects.all()
+    serializer_class = OpenShiftRequestSerializer
+    
+    def get_queryset(self):
+        """Filter requests to show only relevant ones for the user"""
+        user = self.request.user
+        if user.role in ['manager', 'admin']:
+            return OpenShiftRequest.objects.all()
+        else:
+            # Staff can see requests they created or claimed
+            return OpenShiftRequest.objects.filter(
+                models.Q(requesting_user=user) | models.Q(claimed_by=user)
+            )
+    
+    def perform_create(self, serializer):
+        """Create an open shift request by releasing a shift"""
+        # The shift ID should be passed in the request data
+        shift_id = self.request.data.get('shift_id')
+        reason = self.request.data.get('request_reason')
+        
+        if not shift_id:
+            raise serializers.ValidationError("shift_id is required")
+        
+        try:
+            shift = Shift.objects.get(id=shift_id, staff_user=self.request.user)
+            open_request = shift.release_to_pool(reason)
+            return open_request
+        except Shift.DoesNotExist:
+            raise serializers.ValidationError("Shift not found or not assigned to you")
+    
+    @action(detail=False, methods=['get'])
+    def available(self, request):
+        """Get all open shifts available for the current user to claim"""
+        try:
+            available_shifts = OpenShiftRequest.get_available_shifts(request.user)
+            serializer = self.get_serializer(available_shifts, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to get available shifts: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['post'])
+    def claim(self, request, pk=None):
+        """Claim an open shift"""
+        open_request = self.get_object()
+        
+        try:
+            open_request.claim_shift(request.user)
+            serializer = self.get_serializer(open_request)
+            return Response({
+                "message": "Shift claimed successfully",
+                "request": serializer.data
+            })
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """Manager approves the shift claim"""
+        if request.user.role not in ['manager', 'admin']:
+            return Response(
+                {"error": "Manager or admin permissions required"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        open_request = self.get_object()
+        notes = request.data.get('notes', '')
+        
+        try:
+            open_request.approve_claim(request.user, notes)
+            serializer = self.get_serializer(open_request)
+            return Response({
+                "message": "Claim approved successfully",
+                "request": serializer.data
+            })
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """Manager rejects the shift claim"""
+        if request.user.role not in ['manager', 'admin']:
+            return Response(
+                {"error": "Manager or admin permissions required"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        open_request = self.get_object()
+        notes = request.data.get('notes', '')
+        
+        if not notes:
+            return Response(
+                {"error": "Rejection notes are required"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            open_request.reject_claim(request.user, notes)
+            serializer = self.get_serializer(open_request)
+            return Response({
+                "message": "Claim rejected successfully",
+                "request": serializer.data
+            })
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    @action(detail=True, methods=['delete'])
+    def cancel(self, request, pk=None):
+        """Cancel the open shift request"""
+        open_request = self.get_object()
+        
+        # Only the requesting user can cancel their own request
+        if open_request.requesting_user != request.user:
+            return Response(
+                {"error": "You can only cancel your own requests"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            open_request.cancel()
+            return Response({"message": "Request cancelled successfully"})
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class InvoiceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]

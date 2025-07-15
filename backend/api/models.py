@@ -1118,8 +1118,8 @@ class Shift(models.Model):
             
         return completed_requirements
 
-    def can_auto_checkout(self):
-        """Determine if this shift is eligible for automatic checkout"""
+    def can_force_timeout(self):
+        """Determine if this shift is eligible for force timeout (bypassing venue checks)"""
         from django.utils import timezone
         from datetime import timedelta
         
@@ -1127,15 +1127,58 @@ class Shift(models.Model):
         if self.status != 'in_progress' or self.check_out_time is not None:
             return False
             
-        # Must be past scheduled end time + grace period (30 minutes)
+        # Must be past scheduled end time
         if not self.end_time:
             return False
             
-        grace_period = timedelta(minutes=30)
+        # Get force timeout threshold from system settings
+        try:
+            settings = SystemSettings.get_settings()
+            force_timeout_minutes = settings.auto_checkout_force_timeout
+        except:
+            # Fallback to default if settings unavailable
+            force_timeout_minutes = 720  # 12 hours
+            
+        force_timeout_threshold = timedelta(minutes=force_timeout_minutes)
+        force_timeout_cutoff = self.end_time + force_timeout_threshold
+        
+        if timezone.now() >= force_timeout_cutoff:
+            return True
+            
+        return False
+
+    def can_auto_checkout(self):
+        """Determine if this shift is eligible for automatic checkout"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # Check if auto-checkout is enabled in system settings
+        try:
+            settings = SystemSettings.get_settings()
+            if not settings.auto_checkout_enabled:
+                return False
+            grace_period_minutes = settings.auto_checkout_grace_period
+        except:
+            # Fallback to defaults if settings unavailable
+            grace_period_minutes = 30
+        
+        # Must be in progress and not already checked out
+        if self.status != 'in_progress' or self.check_out_time is not None:
+            return False
+            
+        # Must be past scheduled end time + grace period
+        if not self.end_time:
+            return False
+            
+        grace_period = timedelta(minutes=grace_period_minutes)
         cutoff_time = self.end_time + grace_period
         
         if timezone.now() < cutoff_time:
             return False
+            
+        # Force timeout condition - bypasses all other checks for excessive overtime
+        if self.can_force_timeout():
+            return True
             
         # Must have completed all venue-required checks
         check_results = self.get_completed_venue_checks()
@@ -1153,6 +1196,11 @@ class Shift(models.Model):
             return False
             
         from django.utils import timezone
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Determine if this is a force timeout scenario
+        is_force_timeout = self.can_force_timeout()
         
         # Set checkout time to scheduled end time (not current time)
         self.check_out_time = self.end_time
@@ -1163,18 +1211,21 @@ class Shift(models.Model):
             'longitude': float(self.venue.longitude) if self.venue.longitude else 0
         }
         
-        # Mark as auto-checkout and set signature
+        # Mark as auto-checkout and set appropriate signature
         self.auto_checkout = True
-        self.end_signature = "AUTO_CHECKOUT_VENUE_REQUIREMENTS_COMPLETED"
+        if is_force_timeout:
+            self.end_signature = "AUTO_CHECKOUT_FORCE_TIMEOUT_EXCESSIVE_OVERTIME"
+            # Log force timeout with warning level
+            logger.warning(f"FORCE TIMEOUT auto-checkout performed for shift {self.id} - Staff: {self.staff_user.username}, Venue: {self.venue.name}, Excessive overtime detected")
+        else:
+            self.end_signature = "AUTO_CHECKOUT_VENUE_REQUIREMENTS_COMPLETED"
+            # Log normal auto-checkout
+            logger.info(f"Auto-checkout performed for shift {self.id} - Staff: {self.staff_user.username}, Venue: {self.venue.name}")
+        
         self.status = 'pending_approval'
         
         # Save the shift
         self.save()
-        
-        # Log the auto-checkout for audit trail
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"Auto-checkout performed for shift {self.id} - Staff: {self.staff_user.username}, Venue: {self.venue.name}")
         
         return True
 
@@ -1256,6 +1307,7 @@ class ShiftExchange(models.Model):
     )
 
     original_shift = models.ForeignKey(Shift, on_delete=models.CASCADE, related_name='exchange_requests')
+    target_shift = models.ForeignKey(Shift, on_delete=models.CASCADE, related_name='target_exchange_requests', null=True, blank=True, help_text="Shift offered by target user in exchange")
     requesting_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='requested_exchanges')
     target_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_exchanges')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
@@ -1275,6 +1327,10 @@ class ShiftExchange(models.Model):
 
     def clean(self):
         """Validate the shift exchange"""
+        # Skip validation for approved, rejected, or cancelled exchanges
+        if self.status in ['approved', 'rejected', 'cancelled']:
+            return
+            
         if self.requesting_user == self.target_user:
             raise ValueError("Cannot exchange shift with yourself")
             
@@ -1284,12 +1340,12 @@ class ShiftExchange(models.Model):
         if not self.target_user.has_security_role(self.original_shift.required_security_role):
             raise ValueError("Target user does not have the required security role for this shift")
             
-        # Check if target user already has a shift at this time
+        # Check if target user already has a shift at this time (excluding the original shift)
         conflicting_shifts = Shift.objects.filter(
             staff_user=self.target_user,
             start_time__lt=self.original_shift.end_time,
             end_time__gt=self.original_shift.start_time
-        ).exclude(status__in=['cancelled', 'rejected'])
+        ).exclude(status__in=['cancelled', 'rejected']).exclude(id=self.original_shift.id)
         
         if conflicting_shifts.exists():
             raise ValueError("Target user already has a shift during this time")
@@ -1312,11 +1368,28 @@ class ShiftExchange(models.Model):
         if self.status != 'accepted_by_target':
             raise ValueError("Can only approve requests accepted by target user")
             
-        # Create a new shift for the target user
-        new_shift = self.original_shift
-        new_shift.staff_user = self.target_user
-        new_shift.status = 'scheduled'
-        new_shift.save()
+        if self.target_shift:
+            # True bilateral exchange - swap both shifts
+            original_user = self.original_shift.staff_user  # Current owner of original shift
+            target_user = self.target_shift.staff_user      # Current owner of target shift
+            
+            # Swap the shifts
+            self.original_shift.staff_user = target_user    # Target user gets original shift
+            self.target_shift.staff_user = original_user    # Original user gets target shift
+            
+            # Ensure both shifts are active
+            self.original_shift.status = 'scheduled'
+            self.target_shift.status = 'scheduled'
+            
+            # Save both shifts
+            self.original_shift.save()
+            self.target_shift.save()
+        else:
+            # Simple transfer - target user takes over the original shift
+            # This is for backward compatibility with existing exchange requests
+            self.original_shift.staff_user = self.target_user
+            self.original_shift.status = 'scheduled'
+            self.original_shift.save()
         
         self.status = 'approved'
         self.manager_user = manager_user
@@ -1749,6 +1822,11 @@ class SystemSettings(models.Model):
     require_shift_photos = models.BooleanField(default=False)
     session_timeout = models.IntegerField(default=30) # In minutes
     allow_shift_exchange = models.BooleanField(default=True)
+    
+    # Auto-checkout settings
+    auto_checkout_grace_period = models.IntegerField(default=30, help_text="Minutes after scheduled end time before auto-checkout is allowed")
+    auto_checkout_force_timeout = models.IntegerField(default=720, help_text="Minutes after scheduled end time for force timeout (bypassing venue checks)")
+    auto_checkout_enabled = models.BooleanField(default=True, help_text="Enable automatic checkout system")
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
