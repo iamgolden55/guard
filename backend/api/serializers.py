@@ -6,7 +6,7 @@ from .models import (
     Shift, FireExitCheck, CapacityCheck, ToiletCheck,
     ShiftExchange, OpenShiftRequest, Invoice, InvoiceItem, PayRate, DeputyConfig,
     DeputyEmployee, DeputyTimesheet, ShiftTemplate, SystemSettings,
-    EmploymentType, RecruitmentApplication
+    EmploymentType, RecruitmentApplication, EnforcementVisit
 )
 
 User = get_user_model() # Ensure User model is fetched
@@ -614,3 +614,25 @@ class RecruitmentApplicationPublicSerializer(serializers.ModelSerializer):
                 })
         
         return data 
+
+
+class EnforcementVisitSerializer(serializers.ModelSerializer):
+    """Serializer for EnforcementVisit model"""
+    
+    class Meta:
+        model = EnforcementVisit
+        fields = [
+            'id', 'shift', 'timestamp', 'officer_name', 
+            'officer_badge', 'reason_for_visit', 'action_taken', 'outcome'
+        ]
+        read_only_fields = ['id', 'timestamp']
+        
+    def validate(self, data):
+        """Validate enforcement visit data"""
+        # Ensure all required fields are provided
+        required_fields = ['officer_name', 'officer_badge', 'reason_for_visit', 'action_taken', 'outcome']
+        for field in required_fields:
+            if not data.get(field):
+                raise serializers.ValidationError({field: f"{field.replace('_', ' ').title()} is required"})
+        
+        return data

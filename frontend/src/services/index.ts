@@ -6,6 +6,7 @@ import deputyService from './deputyService';
 import profileService from './profileService';
 import venueService from './venueService';
 import exchangeService from './exchangeService';
+import userService from './userService';
 
 export {
   api,
@@ -15,5 +16,6 @@ export {
   deputyService,
   profileService,
   venueService,
-  exchangeService
+  exchangeService,
+  userService
 };

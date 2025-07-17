@@ -185,6 +185,37 @@ class UserViewSet(viewsets.ModelViewSet):
             'details': "The requested resource was not found.",
             'code': status.HTTP_404_NOT_FOUND
         }, status=status.HTTP_404_NOT_FOUND)
+    
+    @action(detail=False, methods=['get'], url_path='staff')
+    def staff_users(self, request):
+        """Get all staff users for dropdown selections"""
+        if request.user.role not in ['admin', 'manager']:
+            return Response({
+                'error': 'Permission denied'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        try:
+            staff_users = User.objects.filter(role='staff').select_related('profile')
+            staff_data = []
+            
+            for user in staff_users:
+                staff_data.append({
+                    'id': user.id,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'email': user.email,
+                    'full_name': f"{user.first_name} {user.last_name}".strip() or user.username,
+                    'is_approved': getattr(user.profile, 'is_approved', False) if hasattr(user, 'profile') else False,
+                    'employment_type': getattr(user.profile, 'employment_type', None).name if hasattr(user, 'profile') and hasattr(user.profile, 'employment_type') and user.profile.employment_type else None
+                })
+            
+            return Response(staff_data)
+        except Exception as e:
+            return Response({
+                'error': 'Failed to fetch staff users',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def list(self, request):
         # Use the filtered queryset from get_queryset()
@@ -1599,6 +1630,240 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             logger.error(f"Error generating invoice: {str(e)}")
             return Response(
                 {'error': 'Failed to generate invoice'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['get'], url_path='preview')
+    def preview_generation(self, request):
+        """Preview what shifts are available for invoice generation"""
+        staff_user_id = request.query_params.get('staff_user_id')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        if not all([staff_user_id, start_date, end_date]):
+            return Response({
+                'error': 'staff_user_id, start_date, and end_date are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            from datetime import datetime
+            from api.models import User, Shift
+            
+            # Parse dates
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            
+            # Get staff user
+            staff_user = User.objects.get(id=staff_user_id)
+            
+            # Get all shifts for this staff member in the date range
+            all_shifts = Shift.objects.filter(
+                staff_user=staff_user,
+                start_time__date__gte=start_date,
+                start_time__date__lte=end_date
+            ).order_by('start_time')
+            
+            # Get eligible shifts (approved with actual hours)
+            eligible_shifts = all_shifts.filter(
+                status='approved',
+                actual_hours_worked__isnull=False
+            )
+            
+            shift_data = []
+            for shift in all_shifts:
+                shift_data.append({
+                    'id': shift.id,
+                    'start_time': shift.start_time,
+                    'end_time': shift.end_time,
+                    'venue': shift.venue.name,
+                    'status': shift.status,
+                    'actual_hours_worked': shift.actual_hours_worked,
+                    'is_eligible': shift.status == 'approved' and shift.actual_hours_worked is not None
+                })
+            
+            return Response({
+                'staff_user': staff_user.username,
+                'date_range': f"{start_date} to {end_date}",
+                'total_shifts': all_shifts.count(),
+                'eligible_shifts': eligible_shifts.count(),
+                'can_generate_invoice': eligible_shifts.count() > 0,
+                'shifts': shift_data
+            })
+            
+        except Exception as e:
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=True, methods=['post'], url_path='generate-pdf')
+    def generate_pdf(self, request, pk=None):
+        """Generate PDF for an invoice"""
+        invoice = self.get_object()
+        
+        try:
+            from django.template.loader import render_to_string
+            from weasyprint import HTML, CSS
+            from api.models import StaffProfile
+            import os
+            from django.conf import settings
+            
+            # Create PDF directory if it doesn't exist
+            pdf_dir = os.path.join(settings.MEDIA_ROOT, 'invoices')
+            os.makedirs(pdf_dir, exist_ok=True)
+            
+            # Create PDF filename
+            pdf_filename = f"invoice_{invoice.id}.pdf"
+            pdf_path = os.path.join(pdf_dir, pdf_filename)
+            
+            # Get staff profile for additional details
+            staff_profile = None
+            try:
+                staff_profile = StaffProfile.objects.get(user=invoice.staff_user)
+            except StaffProfile.DoesNotExist:
+                pass
+            
+            # Get staff name
+            staff_name = f"{invoice.staff_user.first_name} {invoice.staff_user.last_name}".strip()
+            if not staff_name:
+                staff_name = invoice.staff_user.username
+            
+            # Prepare context for template
+            context = {
+                'invoice': invoice,
+                'invoice_items': invoice.items.all(),
+                'staff_name': staff_name,
+                'staff_profile': staff_profile,
+            }
+            
+            # Render HTML template
+            html_content = render_to_string('invoice_pdf.html', context)
+            
+            # Generate PDF from HTML
+            HTML(string=html_content).write_pdf(pdf_path)
+            
+            # Update the invoice with the PDF URL
+            pdf_url = f"/api/v1/invoices/{invoice.id}/pdf/"
+            invoice.pdf_url = pdf_url
+            invoice.save()
+            
+            # Return the PDF file directly instead of just the URL
+            from django.http import FileResponse
+            response = FileResponse(
+                open(pdf_path, 'rb'),
+                content_type='application/pdf',
+                filename=f"invoice_{invoice.id}.pdf"
+            )
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error generating PDF for invoice {invoice.id}: {str(e)}")
+            return Response(
+                {'error': 'Failed to generate PDF'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def serve_pdf(self, request, pk=None):
+        """Serve the PDF file for an invoice"""
+        invoice = self.get_object()
+        
+        try:
+            import os
+            from django.conf import settings
+            from django.http import FileResponse, Http404
+            
+            # Check if PDF exists
+            pdf_filename = f"invoice_{invoice.id}.pdf"
+            pdf_path = os.path.join(settings.MEDIA_ROOT, 'invoices', pdf_filename)
+            
+            if not os.path.exists(pdf_path):
+                # Try to generate PDF if it doesn't exist
+                try:
+                    from django.template.loader import render_to_string
+                    from weasyprint import HTML, CSS
+                    from api.models import StaffProfile
+                    
+                    # Create invoices directory if it doesn't exist
+                    invoices_dir = os.path.join(settings.MEDIA_ROOT, 'invoices')
+                    os.makedirs(invoices_dir, exist_ok=True)
+                    
+                    # Get staff profile for additional details
+                    staff_profile = None
+                    try:
+                        staff_profile = StaffProfile.objects.get(user=invoice.staff_user)
+                    except StaffProfile.DoesNotExist:
+                        pass
+                    
+                    # Get staff name
+                    staff_name = f"{invoice.staff_user.first_name} {invoice.staff_user.last_name}".strip()
+                    if not staff_name:
+                        staff_name = invoice.staff_user.username
+                    
+                    # Prepare context for template
+                    context = {
+                        'invoice': invoice,
+                        'invoice_items': invoice.items.all(),
+                        'staff_name': staff_name,
+                        'staff_profile': staff_profile,
+                    }
+                    
+                    # Render HTML template
+                    html_content = render_to_string('invoice_pdf.html', context)
+                    
+                    # Generate PDF from HTML
+                    HTML(string=html_content).write_pdf(pdf_path)
+                    
+                    # Update the invoice with the PDF URL
+                    pdf_url = f"/api/v1/invoices/{invoice.id}/pdf/"
+                    invoice.pdf_url = pdf_url
+                    invoice.save()
+                    
+                except Exception as e:
+                    logger.error(f"Error generating PDF on-demand for invoice {invoice.id}: {str(e)}")
+                    raise Http404("Failed to generate PDF")
+                
+                # Check again if PDF exists after generation
+                if not os.path.exists(pdf_path):
+                    raise Http404("PDF not found")
+            
+            # Serve the PDF file
+            response = FileResponse(
+                open(pdf_path, 'rb'),
+                content_type='application/pdf',
+                filename=f"invoice_{invoice.id}.pdf"
+            )
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error serving PDF for invoice {invoice.id}: {str(e)}")
+            return Response(
+                {'error': 'Failed to serve PDF'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['patch'], url_path='update-status')
+    def update_status(self, request, pk=None):
+        """Update invoice status"""
+        invoice = self.get_object()
+        
+        try:
+            new_status = request.data.get('status')
+            
+            if new_status not in ['pending', 'paid', 'rejected']:
+                return Response(
+                    {'error': 'Invalid status. Must be pending, paid, or rejected'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            invoice.status = new_status
+            invoice.save()
+            
+            serializer = self.get_serializer(invoice)
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Error updating invoice status: {str(e)}")
+            return Response(
+                {'error': 'Failed to update invoice status'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

@@ -30,7 +30,7 @@ import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { MainLayout } from '../../layouts';
 import { Card, BulkPayrollGeneration } from '../../components';
-import { invoiceService, shiftService } from '../../services';
+import { invoiceService, shiftService, userService } from '../../services';
 import { type Invoice, InvoiceStatus } from '../../types';
 
 const InvoiceGeneration: React.FC = () => {
@@ -43,6 +43,7 @@ const InvoiceGeneration: React.FC = () => {
   const [staffOptions, setStaffOptions] = useState<IComboBoxOption[]>([]);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
+  const [previewData, setPreviewData] = useState<any>(null);
 
   // Load initial data
   useEffect(() => {
@@ -54,14 +55,14 @@ const InvoiceGeneration: React.FC = () => {
         const invoiceData = await invoiceService.getInvoices();
         setInvoices(invoiceData);
 
-        // TODO: Replace with actual staff data from an API endpoint
-        // This is a placeholder for staff options
-        setStaffOptions([
-          { key: 1, text: 'John Smith' },
-          { key: 2, text: 'Jane Doe' },
-          { key: 3, text: 'Mike Johnson' },
-          { key: 4, text: 'Sarah Williams' }
-        ]);
+        // Get staff users for dropdown
+        const staffUsers = await userService.getStaffUsers();
+        const staffOptions = staffUsers.map(user => ({
+          key: user.id,
+          text: user.full_name || user.username,
+          data: user
+        }));
+        setStaffOptions(staffOptions);
 
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -98,9 +99,35 @@ const InvoiceGeneration: React.FC = () => {
     },
     validationSchema: generateSchema,
     onSubmit: async (values) => {
-      setShowGenerateDialog(true);
+      await showPreview(values);
     }
   });
+
+  // Show preview of invoice generation
+  const showPreview = async (values: typeof formik.values) => {
+    try {
+      setIsSaving(true);
+      setError(null);
+      
+      const formattedStartDate = values.startDate.toISOString().split('T')[0];
+      const formattedEndDate = values.endDate.toISOString().split('T')[0];
+      
+      const preview = await invoiceService.previewInvoiceGeneration({
+        staffUserId: values.staffUserId,
+        startDate: formattedStartDate,
+        endDate: formattedEndDate
+      });
+      
+      setPreviewData(preview);
+      setShowGenerateDialog(true);
+      
+    } catch (error: any) {
+      console.error('Failed to preview invoice:', error);
+      setError(error.response?.data?.error || 'Failed to preview invoice generation');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Handle generating an invoice
   const handleGenerateInvoice = async () => {
@@ -128,11 +155,22 @@ const InvoiceGeneration: React.FC = () => {
 
       // Close dialog
       setShowGenerateDialog(false);
+      setPreviewData(null);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to generate invoice:', error);
-      setError('Failed to generate invoice. Please try again.');
+      
+      // Get specific error message from backend
+      let errorMessage = 'Failed to generate invoice. Please try again.';
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+      
+      setError(errorMessage);
       setShowGenerateDialog(false);
+      setPreviewData(null);
     } finally {
       setIsSaving(false);
     }
@@ -144,12 +182,15 @@ const InvoiceGeneration: React.FC = () => {
       setSelectedInvoiceId(invoiceId);
       setIsSaving(true);
 
-      const pdfUrl = await invoiceService.generateInvoicePdf(invoiceId);
+      const pdfBlob = await invoiceService.generateInvoicePdf(invoiceId);
 
-      // Update invoice in list
+      // Create a URL for the PDF blob
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+
+      // Update invoice in list with the blob URL
       setInvoices(prev =>
         prev.map(invoice =>
-          invoice.id === invoiceId ? { ...invoice, pdfUrl } : invoice
+          invoice.id === invoiceId ? { ...invoice, pdf_url: `/api/v1/invoices/${invoiceId}/pdf/`, pdfUrl } : invoice
         )
       );
 
@@ -159,6 +200,39 @@ const InvoiceGeneration: React.FC = () => {
     } catch (error) {
       console.error('Failed to generate PDF:', error);
       setError('Failed to generate PDF. Please try again.');
+    } finally {
+      setSelectedInvoiceId(null);
+      setIsSaving(false);
+    }
+  };
+
+  // Handle viewing existing PDF
+  const handleViewPdf = async (invoice: Invoice) => {
+    try {
+      setSelectedInvoiceId(invoice.id);
+      setIsSaving(true);
+
+      // Use the invoice service which has proper authentication and token refresh
+      const blob = await invoiceService.getInvoicePdf(invoice.id);
+      
+      // Create blob and object URL
+      const blobUrl = URL.createObjectURL(blob);
+      
+      // Open in new tab
+      window.open(blobUrl, '_blank');
+      
+      // Clean up the object URL after a delay
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+
+    } catch (error: any) {
+      console.error('Failed to view PDF:', error);
+      
+      // Provide specific error message for authentication issues
+      if (error.response?.status === 401 || error.message?.includes('token')) {
+        setError('Your session has expired. Please log in again.');
+      } else {
+        setError('Failed to view PDF. Please try again.');
+      }
     } finally {
       setSelectedInvoiceId(null);
       setIsSaving(false);
@@ -205,7 +279,13 @@ const InvoiceGeneration: React.FC = () => {
       name: 'Staff Name',
       fieldName: 'staffName',
       minWidth: 150,
-      isResizable: true
+      isResizable: true,
+      onRender: (item: Invoice) => {
+        if (item.staff_user_details) {
+          return `${item.staff_user_details.first_name} ${item.staff_user_details.last_name}`.trim() || item.staff_user_details.username;
+        }
+        return item.staffName || 'Unknown';
+      }
     },
     {
       key: 'dateRange',
@@ -213,8 +293,8 @@ const InvoiceGeneration: React.FC = () => {
       minWidth: 200,
       isResizable: true,
       onRender: (item: Invoice) => {
-        const startDate = new Date(item.startDate).toLocaleDateString();
-        const endDate = new Date(item.endDate).toLocaleDateString();
+        const startDate = new Date(item.start_date || item.startDate).toLocaleDateString();
+        const endDate = new Date(item.end_date || item.endDate).toLocaleDateString();
         return `${startDate} - ${endDate}`;
       }
     },
@@ -223,7 +303,11 @@ const InvoiceGeneration: React.FC = () => {
       name: 'Hours',
       fieldName: 'totalHours',
       minWidth: 70,
-      isResizable: true
+      isResizable: true,
+      onRender: (item: Invoice) => {
+        const hours = item.total_hours || item.totalHours || 0;
+        return typeof hours === 'number' ? hours.toFixed(2) : parseFloat(hours || '0').toFixed(2);
+      }
     },
     {
       key: 'hourlyRate',
@@ -231,7 +315,10 @@ const InvoiceGeneration: React.FC = () => {
       fieldName: 'hourlyRate',
       minWidth: 70,
       isResizable: true,
-      onRender: (item: Invoice) => `£${item.hourlyRate.toFixed(2)}`
+      onRender: (item: Invoice) => {
+        const rate = item.hourly_rate || item.hourlyRate || 0;
+        return `£${typeof rate === 'number' ? rate.toFixed(2) : parseFloat(rate || '0').toFixed(2)}`;
+      }
     },
     {
       key: 'totalAmount',
@@ -239,7 +326,10 @@ const InvoiceGeneration: React.FC = () => {
       fieldName: 'totalAmount',
       minWidth: 90,
       isResizable: true,
-      onRender: (item: Invoice) => `£${item.totalAmount.toFixed(2)}`
+      onRender: (item: Invoice) => {
+        const amount = item.total_amount || item.totalAmount || 0;
+        return `£${typeof amount === 'number' ? amount.toFixed(2) : parseFloat(amount || '0').toFixed(2)}`;
+      }
     },
     {
       key: 'status',
@@ -272,16 +362,28 @@ const InvoiceGeneration: React.FC = () => {
       isResizable: true,
       onRender: (item: Invoice) => (
         <Stack horizontal tokens={{ childrenGap: 8 }}>
-          {/* Generate PDF */}
-          <Link
-            onClick={() => handleGeneratePdf(item.id)}
-            disabled={isSaving && selectedInvoiceId === item.id}
-          >
-            {item.pdfUrl ? 'View PDF' : 'Generate PDF'}
-            {isSaving && selectedInvoiceId === item.id && (
-              <Spinner size={SpinnerSize.xSmall} className="ml-2" />
-            )}
-          </Link>
+          {/* Generate/View PDF */}
+          {(item.pdf_url || item.pdfUrl) ? (
+            <Link 
+              onClick={() => handleViewPdf(item)}
+              disabled={isSaving && selectedInvoiceId === item.id}
+            >
+              View PDF
+              {isSaving && selectedInvoiceId === item.id && (
+                <Spinner size={SpinnerSize.xSmall} className="ml-2" />
+              )}
+            </Link>
+          ) : (
+            <Link
+              onClick={() => handleGeneratePdf(item.id)}
+              disabled={isSaving && selectedInvoiceId === item.id}
+            >
+              Generate PDF
+              {isSaving && selectedInvoiceId === item.id && (
+                <Spinner size={SpinnerSize.xSmall} className="ml-2" />
+              )}
+            </Link>
+          )}
 
           {/* Status actions */}
           {item.status === InvoiceStatus.PENDING && (
@@ -343,6 +445,9 @@ const InvoiceGeneration: React.FC = () => {
               <form onSubmit={formik.handleSubmit}>
                 <Stack tokens={{ childrenGap: 16 }}>
                   <Text variant="large" className="mb-4">Generate a new invoice for a staff member</Text>
+                  <Text className="text-gray-600 mb-4">
+                    Note: Only staff members with approved shifts that have actual hours worked will be able to generate invoices.
+                  </Text>
 
                   {/* Staff selection */}
                   <Stack>
@@ -461,21 +566,58 @@ const InvoiceGeneration: React.FC = () => {
       {/* Confirmation Dialog */}
       <Dialog
         hidden={!showGenerateDialog}
-        onDismiss={() => setShowGenerateDialog(false)}
+        onDismiss={() => {
+          setShowGenerateDialog(false);
+          setPreviewData(null);
+        }}
         dialogContentProps={{
           type: DialogType.normal,
-          title: 'Confirm Invoice Generation',
-          subText: 'Are you sure you want to generate an invoice for this period? This will include all approved shifts within the date range.'
+          title: 'Invoice Generation Preview',
+          subText: previewData ? `Preview for ${previewData.staff_user} (${previewData.date_range})` : 'Loading preview...'
         }}
       >
+        {previewData && (
+          <Stack tokens={{ childrenGap: 16 }}>
+            <Stack horizontal tokens={{ childrenGap: 20 }}>
+              <Text><strong>Total Shifts:</strong> {previewData.total_shifts}</Text>
+              <Text><strong>Eligible Shifts:</strong> {previewData.eligible_shifts}</Text>
+            </Stack>
+            
+            {previewData.can_generate_invoice ? (
+              <Text className="text-green-600">
+                ✓ This staff member has {previewData.eligible_shifts} approved shifts with actual hours worked. Invoice can be generated.
+              </Text>
+            ) : (
+              <Text className="text-red-600">
+                ✗ This staff member has no approved shifts with actual hours worked for this period. Invoice cannot be generated.
+              </Text>
+            )}
+            
+            {previewData.shifts && previewData.shifts.length > 0 && (
+              <Stack>
+                <Text variant="mediumPlus">Shifts in this period:</Text>
+                {previewData.shifts.map((shift: any, index: number) => (
+                  <Text key={index} className={shift.is_eligible ? 'text-green-600' : 'text-gray-600'}>
+                    {shift.is_eligible ? '✓' : '✗'} {new Date(shift.start_time).toLocaleDateString()} - {shift.venue} ({shift.status})
+                    {shift.actual_hours_worked ? ` - ${shift.actual_hours_worked} hours` : ' - No hours recorded'}
+                  </Text>
+                ))}
+              </Stack>
+            )}
+          </Stack>
+        )}
+        
         <DialogFooter>
           <PrimaryButton
             onClick={handleGenerateInvoice}
-            text="Generate"
-            disabled={isSaving}
+            text="Generate Invoice"
+            disabled={isSaving || !previewData?.can_generate_invoice}
           />
           <DefaultButton
-            onClick={() => setShowGenerateDialog(false)}
+            onClick={() => {
+              setShowGenerateDialog(false);
+              setPreviewData(null);
+            }}
             text="Cancel"
             disabled={isSaving}
           />

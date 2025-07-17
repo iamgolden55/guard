@@ -973,6 +973,69 @@ class ShiftViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=['get', 'post'], url_path='enforcement-visits')
+    def enforcement_visits(self, request, pk=None):
+        """Get or add enforcement visits for a shift"""
+        shift = self.get_object()
+        from api.models import EnforcementVisit
+        from api.serializers import EnforcementVisitSerializer
+        
+        if request.method == 'GET':
+            visits = EnforcementVisit.objects.filter(shift=shift).order_by('-timestamp')
+            serializer = EnforcementVisitSerializer(visits, many=True)
+            return Response(serializer.data)
+        
+        elif request.method == 'POST':
+            # Add the shift to the request data
+            data = request.data.copy()
+            data['shift'] = shift.id
+            
+            serializer = EnforcementVisitSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """Manager approval of a shift"""
+        shift = self.get_object()
+        
+        # Check permissions - only managers and admins can approve
+        if not (request.user.role in ['manager', 'admin'] or request.user.is_staff):
+            return Response(
+                {"error": "Only managers and admins can approve shifts"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get approval data
+        approved = request.data.get('approved', False)
+        manager_signature = request.data.get('managerSignature', '')
+        manager_notes = request.data.get('managerNotes', '')
+        
+        # Validate required fields
+        if approved and not manager_signature:
+            return Response(
+                {"error": "Manager signature is required for approval"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update shift
+        if approved:
+            shift.status = 'approved'
+            shift.manager_approved = True
+        else:
+            shift.status = 'rejected'
+            shift.manager_approved = False
+        
+        shift.manager_signature = manager_signature
+        shift.manager_notes = manager_notes
+        shift.manager_user = request.user
+        shift.save()
+        
+        serializer = self.get_serializer(shift)
+        return Response(serializer.data)
+
 class FrontendShiftViewSet(viewsets.ModelViewSet):
     """
     ViewSet for viewing and editing Shifts with camelCase fields
@@ -1127,4 +1190,6 @@ class FrontendShiftViewSet(viewsets.ModelViewSet):
         shift.save()
         
         serializer = self.get_serializer(shift)
-        return Response(serializer.data) 
+        return Response(serializer.data)
+
+ 

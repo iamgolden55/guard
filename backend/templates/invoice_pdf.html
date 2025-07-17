@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice #{{ invoice.id }}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        body {
+            margin: 40px 20px;
+            background: #fff;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .invoice {
+            background: #fff;
+            padding: 40px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .invoice-company {
+            font-size: 28px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 40px;
+            text-align: center;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 20px;
+        }
+
+        .invoice-header {
+            margin: 40px 0;
+            background: #f8f9fa;
+            padding: 30px;
+            display: table;
+            width: 100%;
+            border-radius: 8px;
+        }
+
+        .invoice-date,
+        .invoice-from,
+        .invoice-to {
+            display: table-cell;
+            width: 33%;
+            vertical-align: top;
+        }
+
+        .invoice-from,
+        .invoice-to {
+            padding-right: 30px;
+        }
+
+        .invoice-date .date,
+        .invoice-from strong,
+        .invoice-to strong {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .invoice-date {
+            text-align: right;
+            padding-left: 30px;
+        }
+
+        .invoice-from small,
+        .invoice-to small,
+        .invoice-date small {
+            color: #6c757d;
+            font-size: 12px;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .invoice-price {
+            background: #f8f9fa;
+            display: table;
+            width: 100%;
+            margin-top: 40px;
+            border-radius: 8px;
+        }
+
+        .invoice-price .invoice-price-left,
+        .invoice-price .invoice-price-right {
+            display: table-cell;
+            padding: 30px;
+            font-size: 18px;
+            font-weight: 600;
+            width: 70%;
+            position: relative;
+            vertical-align: middle;
+        }
+
+        .invoice-price .invoice-price-left .sub-price {
+            display: table-cell;
+            vertical-align: middle;
+            padding: 0 30px;
+        }
+
+        .invoice-price small {
+            font-size: 14px;
+            font-weight: 400;
+            display: block;
+            color: #6c757d;
+        }
+
+        .invoice-price .invoice-price-row {
+            display: table;
+            float: left;
+        }
+
+        .invoice-price .invoice-price-right {
+            width: 30%;
+            background: #2c3e50;
+            color: #fff;
+            font-size: 32px;
+            text-align: center;
+            vertical-align: middle;
+            font-weight: 600;
+            border-radius: 8px;
+        }
+
+        .invoice-price .invoice-price-right small {
+            display: block;
+            opacity: 0.8;
+            font-size: 14px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .invoice-footer {
+            border-top: 2px solid #e9ecef;
+            padding-top: 30px;
+            margin-top: 50px;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        .invoice-note {
+            color: #6c757d;
+            margin: 60px 0 40px 0;
+            font-size: 14px;
+            line-height: 1.8;
+            background: #f8f9fa;
+            padding: 25px;
+            border-left: 4px solid #3498db;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .invoice>div:not(.invoice-footer) {
+            margin-bottom: 30px;
+        }
+
+        .text-inverse {
+            color: #2d353c;
+            font-weight: 600;
+        }
+
+        .table, .table-invoice {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 40px 0;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .table th, .table td, .table-invoice th, .table-invoice td {
+            padding: 20px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .table th, .table-invoice th {
+            background-color: #2c3e50;
+            color: #fff;
+            font-weight: 600;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .table tbody tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .table tbody tr:hover {
+            background-color: #e9ecef;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .f-w-600 {
+            font-weight: 600;
+        }
+
+        .m-b-5 {
+            margin-bottom: 15px;
+        }
+
+        .fa {
+            margin-right: 8px;
+            color: #3498db;
+        }
+
+        address {
+            font-style: normal;
+            line-height: 1.8;
+            color: #495057;
+            font-size: 14px;
+        }
+
+        small {
+            font-size: 85%;
+        }
+
+        .invoice-detail {
+            color: #6c757d;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-top: 8px;
+        }
+
+        .table-invoice .text-inverse {
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 16px;
+        }
+
+        .table-invoice small {
+            color: #6c757d;
+            font-size: 13px;
+            line-height: 1.5;
+            margin-top: 5px;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="invoice">
+            <!-- Invoice Company -->
+            <div class="invoice-company">
+                Mead Security Services Ltd
+            </div>
+            
+            <!-- Invoice Header -->
+            <div class="invoice-header">
+                <div class="invoice-from">
+                    <small>from</small>
+                    <address>
+                        <strong class="text-inverse">Mead Security Services Ltd</strong><br>
+                        123 Security Boulevard<br>
+                        London, SW1A 1AA<br>
+                        Phone: (020) 7123-4567<br>
+                        Email: accounts@meadsecurity.co.uk
+                    </address>
+                </div>
+                <div class="invoice-to">
+                    <small>to</small>
+                    <address>
+                        <strong class="text-inverse">{{ staff_name }}</strong><br>
+                        {% if staff_profile.address %}{{ staff_profile.address }}<br>{% endif %}
+                        {% if staff_profile.phone %}Phone: {{ staff_profile.phone }}<br>{% endif %}
+                        Email: {{ invoice.staff_user.email }}
+                    </address>
+                </div>
+                <div class="invoice-date">
+                    <small>Invoice / {{ invoice.start_date|date:"F Y" }} period</small>
+                    <div class="date">{{ invoice.created_at|date:"F j, Y" }}</div>
+                    <div class="invoice-detail">
+                        #{{ invoice.id|stringformat:"07d" }}<br>
+                        Security Services
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Invoice Content -->
+            <div class="invoice-content">
+                <div class="table-responsive">
+                    <table class="table-invoice">
+                        <thead>
+                            <tr>
+                                <th>VENUE & SERVICE DESCRIPTION</th>
+                                <th class="text-center" width="12%">RATE</th>
+                                <th class="text-center" width="10%">HOURS</th>
+                                <th class="text-right" width="15%">LINE TOTAL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in invoice_items %}
+                            <tr>
+                                <td>
+                                    <span class="text-inverse">{{ item.venue.name }}</span><br>
+                                    <small>Security services provided at {{ item.venue.name }} for the period {{ invoice.start_date|date:"M j" }} - {{ invoice.end_date|date:"M j, Y" }}</small>
+                                </td>
+                                <td class="text-center">£{{ item.rate|floatformat:2 }}</td>
+                                <td class="text-center">{{ item.hours_worked|floatformat:2 }}</td>
+                                <td class="text-right">£{{ item.amount|floatformat:2 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Invoice Price -->
+                <div class="invoice-price">
+                    <div class="invoice-price-left">
+                        <div class="invoice-price-row">
+                            <div class="sub-price">
+                                <small>SUBTOTAL</small>
+                                <span class="text-inverse">£{{ invoice.total_amount|floatformat:2 }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="invoice-price-right">
+                        <small>TOTAL</small> 
+                        <span class="f-w-600">£{{ invoice.total_amount|floatformat:2 }}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Invoice Note -->
+            <div class="invoice-note">
+                * Payment will be processed according to your employment terms and conditions<br>
+                * Total hours worked: {{ invoice.total_hours|floatformat:2 }} hours<br>
+                * If you have any questions concerning this invoice, contact accounts@meadsecurity.co.uk
+            </div>
+            
+            <!-- Invoice Footer -->
+            <div class="invoice-footer">
+                <p class="f-w-600">
+                    THANK YOU FOR YOUR DEDICATED SERVICE
+                </p>
+                <p class="contact-info">
+                    <span><i class="fa fa-globe"></i> www.meadsecurity.co.uk</span>
+                    <span><i class="fa fa-phone"></i> (020) 7123-4567</span>
+                    <span><i class="fa fa-envelope"></i> accounts@meadsecurity.co.uk</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -819,7 +819,32 @@ class Shift(models.Model):
             return Shift.objects.filter(id=self.id)
         return Shift.objects.filter(shift_group=self.shift_group)
 
+    def clean(self):
+        """Validate shift data"""
+        from django.core.exceptions import ValidationError
+        
+        # Validate check-in/check-out times
+        if self.check_in_time and self.check_out_time:
+            if self.check_out_time <= self.check_in_time:
+                raise ValidationError("Check-out time must be after check-in time")
+            
+            # Validate realistic hours (max 24 hours)
+            duration = self.check_out_time - self.check_in_time
+            hours_worked = duration.total_seconds() / 3600
+            if hours_worked > 24:
+                raise ValidationError(f"Shift duration cannot exceed 24 hours. Current duration: {hours_worked:.2f} hours")
+            
+            # Validate check-out is within reasonable time of scheduled end
+            if self.end_time:
+                # Allow check-out up to 12 hours after scheduled end time
+                max_checkout = self.end_time + timezone.timedelta(hours=12)
+                if self.check_out_time > max_checkout:
+                    raise ValidationError(f"Check-out time is too far from scheduled end time. Check-out: {self.check_out_time}, Scheduled end: {self.end_time}")
+
     def save(self, *args, **kwargs):
+        # Validate before saving
+        self.clean()
+        
         # Calculate actual hours worked
         if self.check_in_time and self.check_out_time:
             duration = self.check_out_time - self.check_in_time
@@ -1061,14 +1086,19 @@ class Shift(models.Model):
         )
 
     def calculate_payment(self):
-        """Calculate the payment for this shift based on actual hours worked and hourly rate"""
-        if not self.actual_hours_worked or not self.hourly_rate:
+        """Calculate the payment for this shift based on actual hours worked and effective hourly rate"""
+        if not self.actual_hours_worked:
             return None
         
         from decimal import Decimal
+        # Use effective hourly rate which checks PayRate model
+        effective_rate = self.get_effective_hourly_rate()
+        if not effective_rate:
+            return None
+            
         # Ensure both values are Decimal for proper calculation
         hours = Decimal(str(self.actual_hours_worked))
-        rate = Decimal(str(self.hourly_rate))
+        rate = Decimal(str(effective_rate))
         return hours * rate
     
     @property
@@ -1077,13 +1107,32 @@ class Shift(models.Model):
         return self.calculate_payment()
 
     def get_effective_hourly_rate(self):
-        """Get the effective hourly rate for this shift, falling back to system defaults if not set"""
+        """Get the effective hourly rate for this shift, checking PayRate model first"""
+        # First check if shift has its own hourly rate set
         if self.hourly_rate:
             return self.hourly_rate
+        
+        # Check for venue-specific pay rate for this staff member
+        if self.staff_user and self.venue:
+            venue_rate = PayRate.objects.filter(
+                staff_user=self.staff_user, 
+                venue=self.venue
+            ).first()
+            if venue_rate:
+                return venue_rate.hourly_rate
+        
+        # Check for default pay rate for this staff member
+        if self.staff_user:
+            default_rate = PayRate.objects.filter(
+                staff_user=self.staff_user,
+                venue=None,
+                is_default=True
+            ).first()
+            if default_rate:
+                return default_rate.hourly_rate
             
-        # Fallback to system settings if no shift-specific rate is set
+        # Fallback to system settings if no pay rates are set
         try:
-            from .models import SystemSettings
             settings = SystemSettings.objects.first()
             if settings:
                 return settings.special_event_pay_rate if self.is_special_event else settings.default_hourly_rate
@@ -2058,3 +2107,21 @@ class RecruitmentApplication(models.Model):
         self.save()
         
         return user
+
+
+class EnforcementVisit(models.Model):
+    """Model to track enforcement visits during shifts"""
+    shift = models.ForeignKey(Shift, on_delete=models.CASCADE, related_name='enforcement_visits')
+    timestamp = models.DateTimeField(auto_now_add=True)
+    officer_name = models.CharField(max_length=100, help_text="Name of the visiting officer")
+    officer_badge = models.CharField(max_length=50, help_text="Badge/ID number of the officer")
+    reason_for_visit = models.TextField(help_text="Reason for the enforcement visit")
+    action_taken = models.TextField(help_text="Actions taken during the visit")
+    outcome = models.TextField(help_text="Outcome of the visit")
+    
+    class Meta:
+        db_table = 'enforcement_visits'
+        ordering = ['-timestamp']
+    
+    def __str__(self):
+        return f"Enforcement Visit - {self.officer_name} at {self.shift.venue.name} ({self.timestamp})"
