@@ -334,73 +334,105 @@ const ShiftCheckIn: React.FC = () => {
       return;
     }
 
-    const options = {
-      enableHighAccuracy: false, // Changed to false for better compatibility
-      timeout: 15000, // Increased timeout
-      maximumAge: 300000 // 5 minutes cache
+    // Try with high accuracy first, then fallback to lower accuracy
+    const tryLocation = (enableHighAccuracy: boolean, timeout: number): Promise<GeolocationPosition> => {
+      return new Promise((resolve, reject) => {
+        const options = {
+          enableHighAccuracy,
+          timeout,
+          maximumAge: enableHighAccuracy ? 60000 : 300000 // 1 min for high accuracy, 5 min for low
+        };
+
+        navigator.geolocation.getCurrentPosition(resolve, reject, options);
+      });
     };
 
     console.log('Requesting location permission...');
     
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        console.log('Location received:', position);
-        const userLocation: LocationPosition = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy
-        };
-
-        setCheckInData(prev => ({ ...prev, location: userLocation }));
+    try {
+      let position: GeolocationPosition;
+      
+      try {
+        // First attempt: High accuracy with shorter timeout
+        position = await tryLocation(true, 10000);
+        console.log('High accuracy location received:', position);
+      } catch (highAccuracyError) {
+        console.log('High accuracy location failed, trying low accuracy...', highAccuracyError);
         
-        // Check if user is within acceptable range of venue (if venue has coordinates)
-        console.log('Venue coordinates:', shift?.venue.latitude, shift?.venue.longitude);
-        if (shift?.venue.latitude && shift?.venue.longitude) {
-          const distance = calculateDistance(
-            userLocation.latitude,
-            userLocation.longitude,
-            Number(shift.venue.latitude),
-            Number(shift.venue.longitude)
-          );
+        try {
+          // Second attempt: Low accuracy with longer timeout
+          position = await tryLocation(false, 20000);
+          console.log('Low accuracy location received:', position);
+        } catch (lowAccuracyError) {
+          console.log('Low accuracy location also failed, trying cached location...', lowAccuracyError);
           
-          console.log(`Distance to venue: ${(distance * 1000).toFixed(0)}m`);
-          
-          // Allow check-in within 100 meters of venue
-          const isWithin = distance <= 0.1; // 0.1 km = 100 meters
-          setIsWithinRange(isWithin);
-          
-          if (isWithin) {
-            setLocationStatus('success');
-            setCurrentStep(2);
-          } else {
-            setLocationError(`You are ${(distance * 1000).toFixed(0)}m away from the venue. You must be within 100m to check in.`);
-            setLocationStatus('error');
-          }
+          // Third attempt: Use cached location
+          position = await tryLocation(false, 5000);
+          console.log('Cached location received:', position);
+        }
+      }
+
+      const userLocation: LocationPosition = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy
+      };
+
+      setCheckInData(prev => ({ ...prev, location: userLocation }));
+      
+      // Check if user is within acceptable range of venue (if venue has coordinates)
+      console.log('Venue coordinates:', shift?.venue.latitude, shift?.venue.longitude);
+      if (shift?.venue.latitude && shift?.venue.longitude) {
+        const distance = calculateDistance(
+          userLocation.latitude,
+          userLocation.longitude,
+          Number(shift.venue.latitude),
+          Number(shift.venue.longitude)
+        );
+        
+        console.log(`Distance to venue: ${(distance * 1000).toFixed(0)}m (accuracy: ±${userLocation.accuracy.toFixed(0)}m)`);
+        
+        // Allow check-in within 100 meters of venue, but adjust for GPS accuracy
+        const allowedDistance = Math.max(100, userLocation.accuracy * 1.5); // At least 100m or 1.5x GPS accuracy
+        const isWithin = distance * 1000 <= allowedDistance; // Convert km to meters
+        setIsWithinRange(isWithin);
+        
+        if (isWithin) {
+          setLocationStatus('success');
+          setCurrentStep(2);
         } else {
-          // If venue doesn't have coordinates, cannot verify location - this is a security issue
-          console.log('No venue coordinates available - cannot verify location');
-          setLocationError('This venue does not have location coordinates set up. Please contact your manager to configure the venue location before check-in is allowed.');
+          setLocationError(`You are ${(distance * 1000).toFixed(0)}m away from the venue. You must be within ${allowedDistance.toFixed(0)}m to check in.`);
           setLocationStatus('error');
         }
-      },
-      (error) => {
-        let errorMessage = 'Unable to retrieve your location';
+      } else {
+        // If venue doesn't have coordinates, cannot verify location - this is a security issue
+        console.log('No venue coordinates available - cannot verify location');
+        setLocationError('This venue does not have location coordinates set up. Please contact your manager to configure the venue location before check-in is allowed.');
+        setLocationStatus('error');
+      }
+    } catch (error: any) {
+      console.error('All location attempts failed:', error);
+      let errorMessage = 'Unable to retrieve your location';
+      
+      if (error.code) {
         switch (error.code) {
           case error.PERMISSION_DENIED:
-            errorMessage = 'Location access denied. Please enable location services and try again.';
+            errorMessage = 'Location access denied. Please enable location services in your browser settings and refresh the page.';
             break;
           case error.POSITION_UNAVAILABLE:
-            errorMessage = 'Location information is unavailable.';
+            errorMessage = 'Location information is unavailable. Please ensure you have a stable internet connection and GPS is enabled.';
             break;
           case error.TIMEOUT:
-            errorMessage = 'Location request timed out.';
+            errorMessage = 'Location request timed out. Please try again or move to an area with better GPS signal.';
             break;
+          default:
+            errorMessage = `Location error (${error.code}): ${error.message}`;
         }
-        setLocationError(errorMessage);
-        setLocationStatus('error');
-      },
-      options
-    );
+      }
+      
+      setLocationError(errorMessage);
+      setLocationStatus('error');
+    }
   };
 
   // Calculate distance between two coordinates (Haversine formula)
@@ -652,14 +684,31 @@ const ShiftCheckIn: React.FC = () => {
                   <MessageBar messageBarType={MessageBarType.error}>
                     {locationError}
                   </MessageBar>
-                  <PrimaryButton
-                    text="Try Again"
-                    onClick={() => {
-                      setLocationError(null);
-                      setLocationStatus('idle');
-                    }}
-                    iconProps={{ iconName: 'Location' }}
-                  />
+                  <Stack horizontal tokens={{ childrenGap: 8 }}>
+                    <PrimaryButton
+                      text="Try Again"
+                      onClick={() => {
+                        setLocationError(null);
+                        setLocationStatus('idle');
+                        setTimeout(() => requestLocation(), 100);
+                      }}
+                      iconProps={{ iconName: 'Refresh' }}
+                    />
+                    <DefaultButton
+                      text="Troubleshoot"
+                      onClick={() => {
+                        const troubleshootMsg = `Location troubleshooting tips:
+1. Ensure location services are enabled in your browser
+2. Allow location access when prompted
+3. Try refreshing the page
+4. Move to an area with better GPS signal
+5. Check that location services are enabled on your device
+6. If using iOS Safari, go to Settings > Privacy & Security > Location Services > Safari Websites and ensure it's enabled`;
+                        alert(troubleshootMsg);
+                      }}
+                      iconProps={{ iconName: 'Help' }}
+                    />
+                  </Stack>
                 </Stack>
               )}
               

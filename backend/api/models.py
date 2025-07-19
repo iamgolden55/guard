@@ -1086,7 +1086,11 @@ class Shift(models.Model):
         )
 
     def calculate_payment(self):
-        """Calculate the payment for this shift based on actual hours worked and effective hourly rate"""
+        """Calculate the payment for this shift based on actual hours worked and effective hourly rate
+        
+        Payment is capped at scheduled hours to prevent overtime exploitation from late checkouts.
+        Only auto-checkout and manager-approved overtime can exceed scheduled hours.
+        """
         if not self.actual_hours_worked:
             return None
         
@@ -1096,8 +1100,21 @@ class Shift(models.Model):
         if not effective_rate:
             return None
             
-        # Ensure both values are Decimal for proper calculation
+        # Calculate scheduled hours (excluding breaks)
+        scheduled_duration = self.end_time - self.start_time
+        scheduled_hours = Decimal(str(scheduled_duration.total_seconds() / 3600))
+        break_hours = Decimal(str(self.break_duration / 60))
+        max_payable_hours = scheduled_hours - break_hours
+        
+        # Use actual hours worked, but cap at scheduled hours unless:
+        # 1. This was an auto-checkout (already uses scheduled time)
+        # 2. Overtime is explicitly approved (future feature)
         hours = Decimal(str(self.actual_hours_worked))
+        
+        # Cap payment at scheduled hours for manual checkouts to prevent exploitation
+        if not self.auto_checkout:
+            hours = min(hours, max_payable_hours)
+            
         rate = Decimal(str(effective_rate))
         return hours * rate
     
