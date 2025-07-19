@@ -96,7 +96,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initialize auth state from localStorage
   useEffect(() => {
-    console.log('AuthContext - Initializing from localStorage');
     const token = localStorage.getItem('token');
     const refreshToken = localStorage.getItem('refreshToken');
     const userStr = localStorage.getItem('user');
@@ -105,7 +104,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
     if (userStr) {
       try {
         user = JSON.parse(userStr);
-        console.log('Loaded user from localStorage:', user.username);
         
         // Make sure firstName and lastName exist and are properly formatted
         if (user) {
@@ -128,12 +126,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
     }
     
     const isAuthenticated = !!token;
-    console.log('Initial auth state:', { 
-      token: token ? 'exists' : 'missing',
-      refreshToken: refreshToken ? 'exists' : 'missing',
-      user: user ? user.username : 'missing',
-      isAuthenticated
-    });
     
     // Set initial state from localStorage
     setAuthState(prev => ({
@@ -150,15 +142,12 @@ function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Only run when we have a token and are not already initialized
     if (authState.token && initializeRef.current) {
-      console.log('Validating token...');
       initializeRef.current = false;
 
       // Validate the token by fetching user profile
       const validateToken = async () => {
         try {
-          console.log('Fetching user profile to validate token...');
           const user = await authService.getUserProfile();
-          console.log('Token validation successful, user:', user.username);
           
           setAuthState(prev => ({
             ...prev,
@@ -168,7 +157,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
             error: null
           }));
         } catch (error) {
-          console.error('Token validation failed:', error);
           // Try to refresh the token once before logging out
           const refreshSuccessful = await refreshUserToken();
           

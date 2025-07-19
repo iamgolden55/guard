@@ -25,13 +25,15 @@ class ShiftSerializer(serializers.ModelSerializer):
     staff_details = SimpleUserSerializer(source='staff_user', read_only=True)
     required_security_role = serializers.CharField(default='sg', required=False)
     shift_group = serializers.CharField(required=False, allow_null=True)
+    calculated_payment = serializers.ReadOnlyField()
     
     class Meta:
         model = Shift
         fields = [
             'id', 'venue', 'venue_details', 'staff_user', 'staff_details', 
             'start_time', 'end_time', 'status', 'required_security_role', 'check_in_time', 
-            'check_out_time', 'shift_group', 'hourly_rate', 'is_special_event', 'created_at', 'updated_at'
+            'check_out_time', 'shift_group', 'hourly_rate', 'is_special_event', 'calculated_payment',
+            'actual_hours_worked', 'manager_approved', 'created_at', 'updated_at'
         ]
     
     def validate(self, data):

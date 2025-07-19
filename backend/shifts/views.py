@@ -27,6 +27,16 @@ class ShiftViewSet(viewsets.ModelViewSet):
     search_fields = ['venue__name', 'staff_user__first_name', 'staff_user__last_name']
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        """Filter shifts to only show the current user's shifts unless they're a manager/admin"""
+        user_role = getattr(self.request.user, 'role', 'staff')
+        if user_role in ['manager', 'admin']:
+            # Managers and admins can see all shifts
+            return Shift.objects.all().order_by('-start_time')
+        else:
+            # Regular staff can only see their own shifts
+            return Shift.objects.filter(staff_user=self.request.user).order_by('-start_time')
+
     def get_serializer_class(self):
         # Use the camelCase serializer for the frontend
         if self.request.query_params.get('format') == 'camel':

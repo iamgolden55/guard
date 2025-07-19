@@ -352,18 +352,35 @@ class ShiftService {
   // Shift-related methods
   async getShifts(staffId?: number): Promise<Shift[]> {
     const url = staffId ? `/?staff=${staffId}` : '/';
-    const response = await shiftApi.get<Shift[]>(url);
-    return response.data;
+    const response = await shiftApi.get<any>(url);
+    
+    // Handle paginated response from Django REST Framework
+    let shifts = response.data;
+    if (response.data && typeof response.data === 'object' && 'results' in response.data) {
+      shifts = response.data.results;
+    }
+    
+    // Transform the backend data to match frontend interface
+    const transformedShifts = (Array.isArray(shifts) ? shifts : []).map((shift: any) => {
+      return {
+        ...shift,
+        // Map snake_case to camelCase for key fields
+        startTime: shift.start_time || shift.startTime,
+        endTime: shift.end_time || shift.endTime,
+        calculatedPayment: shift.calculated_payment || shift.calculatedPayment,
+        actualHoursWorked: shift.actual_hours_worked || shift.actualHoursWorked,
+        hourlyRate: shift.hourly_rate || shift.hourlyRate,
+        managerApproved: shift.manager_approved || shift.managerApproved
+      };
+    });
+    
+    return transformedShifts;
   }
 
   async getMyShifts(): Promise<any[]> {
     try {
-      console.log('getMyShifts: Making API call to /my_shifts/');
       // Use the correct shifts endpoint from the Django backend
       const response = await shiftApi.get<any>('/my_shifts/');
-      
-      console.log('getMyShifts: Raw API response:', response);
-      console.log('getMyShifts: Response data:', response.data);
       
       // Handle different response structures
       let shifts = response.data;
@@ -371,12 +388,8 @@ class ShiftService {
         shifts = response.data.results; // Paginated response
       }
       
-      console.log(`getMyShifts: Success! Found ${shifts.length} shifts`);
-      console.log('getMyShifts: Raw shifts data:', shifts);
-      
       // Transform the backend data to match frontend interface
       const transformedShifts = shifts.map((shift: any) => {
-        console.log('getMyShifts: Processing shift:', shift);
         return {
           id: shift.id,
           venue: {
@@ -390,16 +403,16 @@ class ShiftService {
           startTime: shift.start_time || shift.startTime,
           endTime: shift.end_time || shift.endTime,
           status: shift.status || 'scheduled',
-          managerApproved: shift.manager_approved || shift.managerApproved || false
+          managerApproved: shift.manager_approved || shift.managerApproved || false,
+          calculatedPayment: shift.calculated_payment || shift.calculatedPayment,
+          actualHoursWorked: shift.actual_hours_worked || shift.actualHoursWorked,
+          hourlyRate: shift.hourly_rate || shift.hourlyRate
         };
       });
       
-      console.log('getMyShifts: Transformed shifts:', transformedShifts);
       return transformedShifts;
     } catch (error: any) {
       console.error('getMyShifts: Failed to fetch shifts:', error);
-      console.error('getMyShifts: Error response:', error.response);
-      console.error('getMyShifts: Error response data:', error.response?.data);
       throw error;
     }
   }
@@ -415,7 +428,6 @@ class ShiftService {
         shifts = response.data.results; // Paginated response
       }
       
-      console.log(`Manager view: Found ${shifts.length} shifts`);
       return shifts;
     } catch (error: any) {
       console.error('Failed to fetch manager shifts:', error);

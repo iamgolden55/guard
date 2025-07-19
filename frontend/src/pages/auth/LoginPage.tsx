@@ -29,13 +29,7 @@ const LoginPage: React.FC = () => {
 
   // Redirect if already authenticated
   React.useEffect(() => {
-    console.log('LoginPage useEffect - Auth state:',
-      authState.isAuthenticated ? 'Authenticated' : 'Not authenticated',
-      authState.isLoading ? 'Loading' : 'Not loading'
-    );
-
     if (authState.isAuthenticated && !authState.isLoading) {
-      console.log('User is authenticated, redirecting to dashboard or previous page:', from);
       navigate(from);
     }
   }, [authState, navigate, from]);
@@ -65,7 +59,6 @@ const LoginPage: React.FC = () => {
     onSubmit: async (values) => {
       setLoginError(null);
       try {
-        console.log('Attempting login with:', values.username);
         await login(values.username, values.password);
         // Navigation will happen in the useEffect above when isAuthenticated changes
       } catch (error) {

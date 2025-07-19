@@ -55,6 +55,9 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
     requiresCapacityMonitoring = serializers.SerializerMethodField()
     requiresToiletChecks = serializers.SerializerMethodField()
     payRate = serializers.DecimalField(max_digits=6, decimal_places=2, required=False, allow_null=True)
+    calculatedPayment = serializers.ReadOnlyField(source='calculated_payment')
+    actualHoursWorked = serializers.DecimalField(source='actual_hours_worked', max_digits=6, decimal_places=2, read_only=True)
+    hourlyRate = serializers.DecimalField(source='hourly_rate', max_digits=6, decimal_places=2, read_only=True)
     
     # Nested objects (read-only)
     venueDetails = FrontendVenueSerializer(source='venue', read_only=True)
@@ -69,6 +72,7 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
             'managerApproved', 'managerSignature', 'managerNotes', 'managerId',
             'createdAt', 'updatedAt', 'isSpecialEvent', 'requiresFireSafetyChecks',
             'requiresCapacityMonitoring', 'requiresToiletChecks', 'payRate',
+            'calculatedPayment', 'actualHoursWorked', 'hourlyRate',
             'venueDetails', 'staffUserDetails'
         )
     

@@ -13,27 +13,13 @@ const api: AxiosInstance = axios.create({
   timeout: 15000, // 15 seconds
 });
 
-// Debug the API URL
-console.log('API URL configured as:', API_URL);
-
 // Request interceptor for adding auth token
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log(`API Request to ${config.url}: Added token to request`);
-    } else {
-      console.warn(`API Request to ${config.url}: No token available`);
     }
-    
-    // Log outgoing requests for debugging
-    console.log('API Request:', {
-      method: config.method?.toUpperCase(),
-      url: config.url,
-      data: config.data,
-      timestamp: new Date().toISOString()
-    });
     
     return config;
   },
@@ -46,13 +32,10 @@ api.interceptors.request.use(
 // Response interceptor for handling token refresh
 api.interceptors.response.use(
   (response: AxiosResponse) => {
-    // Log successful responses
-    console.log(`API Response from ${response.config.url}: Status ${response.status}`);
     return response;
   },
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig;
-    console.error(`API Error for ${originalRequest?.url}:`, error.response?.status, error.message);
 
     // Specifically handle JSON parsing errors or empty responses
     if (error.message && (
@@ -60,7 +43,6 @@ api.interceptors.response.use(
       error.message.includes('Unexpected end of input') || 
       error.message.includes('empty response')
     )) {
-      console.error('JSON parsing error or empty response:', error.message);
       // Create a more helpful error message
       const enhancedError = new Error(
         'The server returned an invalid response. This could be due to authentication issues or server errors.'
@@ -79,7 +61,6 @@ api.interceptors.response.use(
 
       if (refreshToken) {
         try {
-          console.log('Attempting to refresh token...');
           
           // Try to get a new token with direct axios to avoid interceptors
           const response = await axios.post(`${API_URL}/token/refresh/`, {

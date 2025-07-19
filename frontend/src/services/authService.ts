@@ -5,7 +5,7 @@ import { type LoginRequest, type LoginResponse, type RefreshTokenResponse, type 
 const DEMO_MODE = false;  // Set to false to use real authentication
 
 // Debug flag for easier troubleshooting
-const DEBUG = true;
+const DEBUG = false;
 
 // Demo user data (for testing purposes only)
 const DEMO_USERS: { [key: string]: User } = {
