@@ -10,6 +10,7 @@ import AutoCheckoutStatus from './AutoCheckoutStatus';
 import SwipeableTabs from './SwipeableTabs';
 import ApplicationCard from './ApplicationCard';
 import ActiveShiftWidget from './ActiveShiftWidget';
+import ShiftCard from './ShiftCard';
 
 export {
   Card,
@@ -23,5 +24,6 @@ export {
   AutoCheckoutStatus,
   SwipeableTabs,
   ApplicationCard,
-  ActiveShiftWidget
+  ActiveShiftWidget,
+  ShiftCard
 };

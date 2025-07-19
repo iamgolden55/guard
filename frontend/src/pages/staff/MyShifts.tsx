@@ -1,31 +1,24 @@
 import type React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  DetailsList,
-  DetailsListLayoutMode,
-  SelectionMode,
-  type IColumn,
-  CommandBar,
-  type ICommandBarItemProps,
   SearchBox,
-  Dropdown,
-  type IDropdownOption,
-  Stack,
   Text,
-  StackItem,
   Spinner,
   SpinnerSize,
   MessageBar,
   MessageBarType,
   PrimaryButton,
-  DefaultButton
+  DefaultButton,
+  Icon,
+  Shimmer,
+  ShimmerElementType
 } from '@fluentui/react';
 import { useNavigate } from 'react-router-dom';
 import { MainLayout } from '../../layouts';
 import { ShiftStatus } from '../../types';
 import { shiftService } from '../../services';
 import { fetchPendingEarnings, type PendingEarnings } from '../../services/api';
-import { ActiveShiftWidget } from '../../components';
+import { ShiftCard, ActiveShiftWidget } from '../../components';
 
 interface MyShift {
   id: number;
@@ -42,207 +35,115 @@ interface MyShift {
   is_invoiced?: boolean;
 }
 
-// Status indicator pill component
-const StatusPill: React.FC<{status: ShiftStatus, autoCheckout?: boolean}> = ({ status, autoCheckout }) => {
-  let backgroundColor = '';
-  let color = 'white';
 
-  switch(status) {
-    case ShiftStatus.ACTIVE:
-      backgroundColor = '#10B981'; // Green
-      break;
-    case ShiftStatus.COMPLETED:
-      backgroundColor = '#F59E0B'; // Yellow
-      color = 'black';
-      break;
-    case ShiftStatus.APPROVED:
-      backgroundColor = '#3B82F6'; // Blue
-      break;
-    case ShiftStatus.REJECTED:
-      backgroundColor = '#EF4444'; // Red
-      break;
-    default:
-      backgroundColor = '#9CA3AF'; // Gray
-  }
+// Pagination interface
+interface PaginationState {
+  currentPage: number;
+  itemsPerPage: number;
+  totalItems: number;
+}
 
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-      <div
-        style={{
-          backgroundColor,
-          color,
-          padding: '4px 8px',
-          borderRadius: '12px',
-          display: 'inline-block',
-          fontSize: '12px',
-          fontWeight: 'bold',
-          textTransform: 'uppercase'
-        }}
-      >
-        {status}
-      </div>
-      {autoCheckout && (
-        <div
-          style={{
-            backgroundColor: '#10B981',
-            color: 'white',
-            padding: '2px 6px',
-            borderRadius: '8px',
-            fontSize: '10px',
-            fontWeight: 'bold',
-            textTransform: 'uppercase'
-          }}
-          title="This shift was automatically checked out"
-        >
-          🤖 Auto
-        </div>
-      )}
-    </div>
-  );
-};
+// Filter options for quick filtering
+const FILTER_OPTIONS = [
+  { key: 'all', text: 'All Shifts', color: '#6b7280' },
+  { key: 'upcoming', text: 'Upcoming', color: '#dc2626' },
+  { key: 'active', text: 'Active', color: '#059669' },
+  { key: 'completed', text: 'Completed', color: '#d97706' },
+  { key: 'approved', text: 'Approved', color: '#2563eb' },
+];
 
 const MyShifts: React.FC = () => {
   const navigate = useNavigate();
   const [shifts, setShifts] = useState<MyShift[]>([]);
-  const [filteredShifts, setFilteredShifts] = useState<MyShift[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [activeFilter, setActiveFilter] = useState('all');
   const [pendingEarnings, setPendingEarnings] = useState<PendingEarnings | null>(null);
+  const [pagination, setPagination] = useState<PaginationState>({
+    currentPage: 1,
+    itemsPerPage: 8,
+    totalItems: 0
+  });
 
-  // Set up columns for the DetailsList
-  const columns: IColumn[] = [
-    {
-      key: 'id',
-      name: 'Shift ID',
-      fieldName: 'id',
-      minWidth: 50,
-      maxWidth: 70,
-      isResizable: true,
-    },
-    {
-      key: 'venue',
-      name: 'Venue',
-      fieldName: 'venue',
-      minWidth: 100,
-      maxWidth: 200,
-      isResizable: true,
-      onRender: (item: MyShift) => <Text>{item.venue.name}</Text>,
-    },
-    {
-      key: 'startTime',
-      name: 'Start Time',
-      fieldName: 'startTime',
-      minWidth: 100,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: MyShift) => <Text>{new Date(item.startTime).toLocaleString()}</Text>,
-    },
-    {
-      key: 'endTime',
-      name: 'End Time',
-      fieldName: 'endTime',
-      minWidth: 100,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: MyShift) => <Text>{item.endTime ? new Date(item.endTime).toLocaleString() : '-'}</Text>,
-    },
-    {
-      key: 'status',
-      name: 'Status',
-      fieldName: 'status',
-      minWidth: 100,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: MyShift) => <StatusPill status={item.status} autoCheckout={item.autoCheckout} />,
-    },
-    {
-      key: 'approved',
-      name: 'Approval',
-      fieldName: 'managerApproved',
-      minWidth: 70,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: MyShift) => (
-        <Text>
-          {item.managerApproved ?
-            <span style={{ color: '#10B981' }}>✓ Approved</span> :
-            <span style={{ color: '#9CA3AF' }}>Pending</span>
-          }
-        </Text>
-      ),
-    },
-    {
-      key: 'earnings',
-      name: 'Earnings',
-      fieldName: 'calculated_payment',
-      minWidth: 80,
-      maxWidth: 120,
-      isResizable: true,
-      onRender: (item: MyShift) => (
-        <Stack>
-          {item.calculated_payment ? (
-            <Text>£{item.calculated_payment.toFixed(2)}</Text>
-          ) : (
-            <Text style={{ color: '#9CA3AF' }}>--</Text>
-          )}
-          {item.status === 'approved' && !item.is_invoiced && item.calculated_payment && (
-            <Text variant="small" style={{ color: '#F59E0B' }}>Pending</Text>
-          )}
-          {item.is_invoiced && (
-            <Text variant="small" style={{ color: '#10B981' }}>Invoiced</Text>
-          )}
-        </Stack>
-      ),
-    },
-    {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 120,
-      maxWidth: 150,
-      isResizable: false,
-      onRender: (item: MyShift) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
-          {item.status === 'scheduled' && (
-            <PrimaryButton
-              text="Check In"
-              onClick={() => handleCheckIn(item)}
-              iconProps={{ iconName: 'CheckMark' }}
-              styles={{ root: { minWidth: 'auto', padding: '4px 8px' } }}
-            />
-          )}
-          {item.status === 'in_progress' && (
-            <PrimaryButton
-              text="Check Out"
-              onClick={() => handleCheckOut(item)}
-              iconProps={{ iconName: 'SignOut' }}
-              styles={{ root: { minWidth: 'auto', padding: '4px 8px' } }}
-            />
-          )}
-          {item.status === 'active' && (
-            <DefaultButton
-              text="End Shift"
-              onClick={() => handleEndShift(item)}
-              iconProps={{ iconName: 'Stop' }}
-              styles={{ root: { minWidth: 'auto', padding: '4px 8px' } }}
-            />
-          )}
-        </Stack>
-      ),
+  // Helper functions for categorizing shifts
+  const categorizeShifts = useMemo(() => {
+    const now = new Date();
+    
+    const upcoming = shifts.filter(shift => 
+      new Date(shift.startTime) > now && 
+      (shift.status === 'scheduled' || shift.status === ShiftStatus.ACTIVE)
+    );
+    
+    const active = shifts.filter(shift => 
+      shift.status === ShiftStatus.ACTIVE
+    );
+    
+    const recent = shifts
+      .filter(shift => 
+        shift.status !== ShiftStatus.ACTIVE && 
+        new Date(shift.startTime) <= now
+      )
+      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+      .slice(0, 10);
+    
+    const past = shifts
+      .filter(shift => 
+        shift.status !== ShiftStatus.ACTIVE && 
+        new Date(shift.startTime) <= now
+      )
+      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    
+    return { upcoming, active, recent, past };
+  }, [shifts]);
+
+  // Filter shifts based on search and active filter
+  const getFilteredShifts = (shiftsToFilter: MyShift[]) => {
+    let filtered = shiftsToFilter;
+
+    // Apply search filter
+    if (searchText) {
+      const lowerCaseSearch = searchText.toLowerCase();
+      filtered = filtered.filter(shift =>
+        shift.venue.name.toLowerCase().includes(lowerCaseSearch) ||
+        shift.id.toString().includes(lowerCaseSearch)
+      );
     }
-  ];
 
-  // Status filter options
-  const statusOptions: IDropdownOption[] = [
-    { key: '', text: 'All Statuses' },
-    { key: ShiftStatus.ACTIVE, text: 'Active' },
-    { key: ShiftStatus.COMPLETED, text: 'Completed' },
-    { key: ShiftStatus.APPROVED, text: 'Approved' },
-    { key: ShiftStatus.REJECTED, text: 'Rejected' },
-  ];
+    // Apply status filter
+    switch (activeFilter) {
+      case 'upcoming':
+        filtered = filtered.filter(shift => new Date(shift.startTime) > new Date());
+        break;
+      case 'active':
+        filtered = filtered.filter(shift => shift.status === ShiftStatus.ACTIVE);
+        break;
+      case 'completed':
+        filtered = filtered.filter(shift => shift.status === ShiftStatus.COMPLETED);
+        break;
+      case 'approved':
+        filtered = filtered.filter(shift => shift.status === ShiftStatus.APPROVED);
+        break;
+      // 'all' shows everything
+    }
 
-  // Load shifts from API - using useCallback to avoid dependency issues in useEffect
+    return filtered;
+  };
+
+  // Paginate past shifts
+  const getPaginatedPastShifts = () => {
+    const filteredPast = getFilteredShifts(categorizeShifts.past);
+    const startIndex = (pagination.currentPage - 1) * pagination.itemsPerPage;
+    const endIndex = startIndex + pagination.itemsPerPage;
+    
+    return {
+      items: filteredPast.slice(startIndex, endIndex),
+      totalItems: filteredPast.length,
+      totalPages: Math.ceil(filteredPast.length / pagination.itemsPerPage)
+    };
+  };
+
+  // Load shifts from API
   const loadShifts = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -256,8 +157,13 @@ const MyShifts: React.FC = () => {
       ]);
       
       setShifts(shiftsResponse);
-      setFilteredShifts(shiftsResponse);
       setPendingEarnings(earningsResponse);
+      
+      // Update pagination total
+      setPagination(prev => ({
+        ...prev,
+        totalItems: shiftsResponse.length
+      }));
     } catch (error) {
       console.error('Failed to load shifts:', error);
       setError('Failed to load shifts. Please try again later.');
@@ -266,80 +172,116 @@ const MyShifts: React.FC = () => {
     }
   }, []);
 
-  // Handler functions for CommandBar
+  // Handler functions
   const handleNewShift = useCallback(() => {
     navigate('/shifts/new');
-    return false; // Return false to prevent default behavior
   }, [navigate]);
 
   const handleRefresh = useCallback(() => {
     loadShifts();
-    return false; // Return false to prevent default behavior
   }, [loadShifts]);
 
-  // Command bar items
-  const commandBarItems: ICommandBarItemProps[] = [
-    {
-      key: 'newShift',
-      text: 'Start New Shift',
-      iconProps: { iconName: 'Add' },
-      onClick: handleNewShift,
-    },
-    {
-      key: 'refresh',
-      text: 'Refresh',
-      iconProps: { iconName: 'Refresh' },
-      onClick: handleRefresh,
-    },
-  ];
+  // Pagination handlers
+  const handlePageChange = (page: number) => {
+    setPagination(prev => ({
+      ...prev,
+      currentPage: page
+    }));
+  };
 
-  // Apply filters when search text or status filter changes
+  // Reset pagination when filters change
   useEffect(() => {
-    let result = shifts;
-
-    // Apply search filter
-    if (searchText) {
-      const lowerCaseSearch = searchText.toLowerCase();
-      result = result.filter(shift =>
-        shift.venue.name.toLowerCase().includes(lowerCaseSearch) ||
-        shift.id.toString().includes(lowerCaseSearch)
-      );
-    }
-
-    // Apply status filter
-    if (statusFilter) {
-      result = result.filter(shift => shift.status === statusFilter);
-    }
-
-    setFilteredShifts(result);
-  }, [searchText, statusFilter, shifts]);
+    setPagination(prev => ({
+      ...prev,
+      currentPage: 1
+    }));
+  }, [searchText, activeFilter]);
 
   // Load shifts when component mounts
   useEffect(() => {
     loadShifts();
   }, [loadShifts]);
 
-  const onRenderItemColumn = (item: MyShift, _?: number, column?: IColumn) => {
-    if (!column) return null;
+  // Modern card component for consistent styling
+  const ModernCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ 
+    children, 
+    className = '' 
+  }) => (
+    <div 
+      className={`bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-all duration-300 ease-out ${className}`}
+      style={{ 
+        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+        transform: 'translateZ(0)'
+      }}
+    >
+      {children}
+    </div>
+  );
 
-    switch (column.key) {
-      case 'venue':
-        return <Text>{item.venue.name}</Text>;
-      case 'startTime':
-        return <Text>{new Date(item.startTime).toLocaleString()}</Text>;
-      case 'endTime':
-        return <Text>{item.endTime ? new Date(item.endTime).toLocaleString() : '-'}</Text>;
-      case 'status':
-        return <StatusPill status={item.status} autoCheckout={item.autoCheckout} />;
-      default:
-        return <Text>{String(item[column.fieldName as keyof MyShift])}</Text>;
-    }
-  };
+  // Pagination component
+  const PaginationControls: React.FC<{ 
+    currentPage: number; 
+    totalPages: number; 
+    onPageChange: (page: number) => void;
+  }> = ({ currentPage, totalPages, onPageChange }) => {
+    if (totalPages <= 1) return null;
 
-  const handleShiftClick = (item?: MyShift) => {
-    if (item) {
-      navigate(`/shifts/${item.id}`);
-    }
+    const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+    const showPages = pages.filter(page => 
+      page === 1 || 
+      page === totalPages || 
+      (page >= currentPage - 1 && page <= currentPage + 1)
+    );
+
+    return (
+      <div className="flex items-center justify-center space-x-2 mt-8">
+        <DefaultButton
+          text="Previous"
+          iconProps={{ iconName: 'ChevronLeft' }}
+          disabled={currentPage === 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          styles={{ 
+            root: { 
+              borderRadius: '8px',
+              border: '2px solid #e5e7eb'
+            }
+          }}
+        />
+        
+        <div className="flex space-x-1">
+          {showPages.map((page, index) => (
+            <div key={page}>
+              {index > 0 && showPages[index - 1] !== page - 1 && (
+                <span className="px-2 text-gray-400">...</span>
+              )}
+              <button
+                onClick={() => onPageChange(page)}
+                className={`px-3 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${
+                  currentPage === page
+                    ? 'bg-red-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {page}
+              </button>
+            </div>
+          ))}
+        </div>
+        
+        <DefaultButton
+          text="Next"
+          iconProps={{ iconName: 'ChevronRight' }}
+          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          styles={{ 
+            root: { 
+              borderRadius: '8px',
+              border: '2px solid #e5e7eb'
+            }
+          }}
+        />
+      </div>
+    );
   };
 
   const handleCheckIn = useCallback((shift: MyShift) => {
@@ -357,87 +299,319 @@ const MyShifts: React.FC = () => {
     navigate(`/shifts/${shift.id}/end`);
   }, [navigate]);
 
+  const paginatedPastShifts = getPaginatedPastShifts();
+
   return (
     <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">My Shifts</Text>
-        </Stack>
-
-        <CommandBar items={commandBarItems} />
-
-        {/* Active Shift Widget */}
-        <ActiveShiftWidget />
-
-        <Stack horizontal tokens={{ childrenGap: 10 }}>
-          <StackItem grow={3}>
-            <SearchBox
-              placeholder="Search by venue or shift ID"
-              onChange={(_, newValue) => setSearchText(newValue || '')}
-              onClear={() => setSearchText('')}
-            />
-          </StackItem>
-          <StackItem grow={1}>
-            <Dropdown
-              placeholder="Filter by status"
-              options={statusOptions}
-              selectedKey={statusFilter}
-              onChange={(_, option) => setStatusFilter(option?.key as string)}
-            />
-          </StackItem>
-        </Stack>
-
-        {/* Pending Earnings Display */}
-        {pendingEarnings && pendingEarnings.total_pending > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-              <Stack>
-                <Text variant="large" className="text-blue-800 font-semibold">
-                  Pending Earnings: £{pendingEarnings.total_pending.toFixed(2)}
-                </Text>
-                <Text variant="small" className="text-blue-600">
-                  {pendingEarnings.shift_count} approved shift{pendingEarnings.shift_count !== 1 ? 's' : ''} awaiting invoice
-                </Text>
-              </Stack>
+      <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+        <div className="max-w-7xl mx-auto space-y-8">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
+            <div>
+              <Text style={{ fontSize: '32px', fontWeight: '700', color: '#111827' }}>
+                My Shifts
+              </Text>
+             
+            </div>
+            <div className="flex space-x-3">
               <DefaultButton
-                text="View Details"
-                iconProps={{ iconName: 'Money' }}
-                onClick={() => navigate('/invoices')}
+                text="Refresh"
+                iconProps={{ iconName: 'Refresh' }}
+                onClick={handleRefresh}
+                styles={{ 
+                  root: { 
+                    borderRadius: '12px',
+                    border: '2px solid #e5e7eb',
+                    fontWeight: '600'
+                  }
+                }}
               />
-            </Stack>
+              <PrimaryButton
+                text="Start New Shift"
+                iconProps={{ iconName: 'Add' }}
+                onClick={handleNewShift}
+                styles={{ 
+                  root: { 
+                    backgroundColor: '#dc2626', 
+                    borderRadius: '12px',
+                    height: '48px',
+                    fontSize: '16px',
+                    fontWeight: '600'
+                  } 
+                }}
+              />
+            </div>
           </div>
-        )}
 
-        {error && (
-          <MessageBar
-            messageBarType={MessageBarType.error}
-            isMultiline={false}
-            dismissButtonAriaLabel="Close"
-          >
-            {error}
-          </MessageBar>
-        )}
+          {/* Active Shift Widget */}
+          <ActiveShiftWidget />
 
-        {isLoading ? (
-          <div className="flex justify-center py-12">
-            <Spinner size={SpinnerSize.large} label="Loading shifts..." />
-          </div>
-        ) : filteredShifts.length === 0 ? (
-          <div className="bg-gray-50 rounded-lg p-8 text-center">
-            <Text variant="large">No shifts found</Text>
-            <Text>Start a new shift or adjust your search criteria.</Text>
-          </div>
-        ) : (
-          <DetailsList
-            items={filteredShifts}
-            columns={columns}
-            layoutMode={DetailsListLayoutMode.justified}
-            selectionMode={SelectionMode.none}
-            onRenderItemColumn={onRenderItemColumn}
-            onItemInvoked={handleShiftClick}
-          />
-        )}
-      </Stack>
+          {/* Search and Filters */}
+          <ModernCard>
+            <div className="space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center space-y-4 md:space-y-0 md:space-x-4">
+                <div className="flex-1">
+                  <SearchBox
+                    placeholder="Search by venue or shift ID..."
+                    onChange={(_, newValue) => setSearchText(newValue || '')}
+                    onClear={() => setSearchText('')}
+                    styles={{ 
+                      root: { borderRadius: '12px' }
+                    }}
+                  />
+                </div>
+              </div>
+              
+              {/* Filter Chips */}
+              <div className="flex flex-wrap gap-2">
+                {FILTER_OPTIONS.map(option => (
+                  <button
+                    key={option.key}
+                    onClick={() => setActiveFilter(option.key)}
+                    className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${
+                      activeFilter === option.key
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {option.text}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </ModernCard>
+
+          {/* Pending Earnings */}
+          {pendingEarnings && pendingEarnings.total_pending > 0 && (
+            <ModernCard className="border-l-4 border-blue-400 bg-blue-50">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
+                <div className="flex items-center space-x-4">
+                  <div className="p-3 rounded-lg bg-blue-100">
+                    <Icon iconName="Money" className="text-blue-600" style={{ fontSize: '24px' }} />
+                  </div>
+                  <div>
+                    <Text style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af' }}>
+                      £{pendingEarnings.total_pending.toFixed(2)} Pending
+                    </Text>
+                    <Text style={{ fontSize: '14px', color: '#1e40af' }}>
+                      {pendingEarnings.shift_count} approved shift{pendingEarnings.shift_count !== 1 ? 's' : ''} awaiting invoice
+                    </Text>
+                  </div>
+                </div>
+                <DefaultButton
+                  text="View Invoices"
+                  iconProps={{ iconName: 'ChevronRight' }}
+                  onClick={() => navigate('/invoices')}
+                  styles={{ 
+                    root: { 
+                      borderRadius: '8px',
+                      border: '2px solid #2563eb',
+                      color: '#2563eb'
+                    }
+                  }}
+                />
+              </div>
+            </ModernCard>
+          )}
+
+          {error && (
+            <MessageBar
+              messageBarType={MessageBarType.error}
+              isMultiline={false}
+              dismissButtonAriaLabel="Close"
+            >
+              {error}
+            </MessageBar>
+          )}
+
+          {isLoading ? (
+            <div className="space-y-6">
+              {[1, 2, 3].map(i => (
+                <ModernCard key={i}>
+                  <Shimmer shimmerElements={[
+                    { type: ShimmerElementType.line, height: 24, width: '60%' },
+                    { type: ShimmerElementType.gap, width: '100%', height: 8 },
+                    { type: ShimmerElementType.line, height: 16, width: '40%' },
+                    { type: ShimmerElementType.line, height: 16, width: '50%' }
+                  ]} />
+                </ModernCard>
+              ))}
+            </div>
+          ) : (
+            <>
+              {/* Upcoming Shifts Section */}
+              {categorizeShifts.upcoming.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="h-1 w-8 bg-red-600 rounded-full"></div>
+                    <Text style={{ 
+                      fontSize: '28px', 
+                      fontWeight: '700', 
+                      color: '#111827',
+                      letterSpacing: '-0.025em'
+                    }}>
+                      Upcoming Shifts
+                    </Text>
+                    <div className="bg-red-100 text-red-800 px-2 py-1 rounded-full text-sm font-semibold">
+                      {categorizeShifts.upcoming.length}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {getFilteredShifts(categorizeShifts.upcoming).map(shift => (
+                      <ShiftCard
+                        key={shift.id}
+                        shift={shift}
+                        variant="upcoming"
+                        onCheckIn={handleCheckIn}
+                        onCheckOut={handleCheckOut}
+                        onEndShift={handleEndShift}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Active Shifts Section */}
+              {categorizeShifts.active.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="h-1 w-8 bg-green-600 rounded-full"></div>
+                    <Text style={{ 
+                      fontSize: '28px', 
+                      fontWeight: '700', 
+                      color: '#111827',
+                      letterSpacing: '-0.025em'
+                    }}>
+                      Active Shifts
+                    </Text>
+                    <div className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-sm font-semibold animate-pulse">
+                      {categorizeShifts.active.length} LIVE
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {getFilteredShifts(categorizeShifts.active).map(shift => (
+                      <ShiftCard
+                        key={shift.id}
+                        shift={shift}
+                        variant="active"
+                        onCheckIn={handleCheckIn}
+                        onCheckOut={handleCheckOut}
+                        onEndShift={handleEndShift}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recent Shifts Section */}
+              {categorizeShifts.recent.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="h-1 w-8 bg-blue-600 rounded-full"></div>
+                    <Text style={{ 
+                      fontSize: '28px', 
+                      fontWeight: '700', 
+                      color: '#111827',
+                      letterSpacing: '-0.025em'
+                    }}>
+                      Recent Shifts
+                    </Text>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {getFilteredShifts(categorizeShifts.recent).map(shift => (
+                      <ShiftCard
+                        key={shift.id}
+                        shift={shift}
+                        onCheckIn={handleCheckIn}
+                        onCheckOut={handleCheckOut}
+                        onEndShift={handleEndShift}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Past Shifts Section with Pagination */}
+              {paginatedPastShifts.totalItems > 0 && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="h-1 w-8 bg-gray-600 rounded-full"></div>
+                      <Text style={{ 
+                        fontSize: '28px', 
+                        fontWeight: '700', 
+                        color: '#111827',
+                        letterSpacing: '-0.025em'
+                      }}>
+                        Past Shifts
+                      </Text>
+                    </div>
+                    <Text style={{ fontSize: '14px', color: '#6b7280' }}>
+                      {paginatedPastShifts.totalItems} total shifts
+                    </Text>
+                  </div>
+                  
+                  {paginatedPastShifts.items.length > 0 ? (
+                    <>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {paginatedPastShifts.items.map(shift => (
+                          <ShiftCard
+                            key={shift.id}
+                            shift={shift}
+                            onCheckIn={handleCheckIn}
+                            onCheckOut={handleCheckOut}
+                            onEndShift={handleEndShift}
+                          />
+                        ))}
+                      </div>
+                      
+                      <PaginationControls
+                        currentPage={pagination.currentPage}
+                        totalPages={paginatedPastShifts.totalPages}
+                        onPageChange={handlePageChange}
+                      />
+                    </>
+                  ) : (
+                    <ModernCard className="text-center py-12">
+                      <Icon iconName="Calendar" className="text-gray-400 mb-4" style={{ fontSize: '48px' }} />
+                      <Text style={{ fontSize: '18px', color: '#6b7280' }}>
+                        No past shifts found matching your criteria
+                      </Text>
+                    </ModernCard>
+                  )}
+                </div>
+              )}
+
+              {/* Empty State */}
+              {shifts.length === 0 && !isLoading && (
+                <ModernCard className="text-center py-16">
+                  <Icon iconName="Calendar" className="text-gray-400 mb-6" style={{ fontSize: '64px' }} />
+                  <Text style={{ fontSize: '24px', fontWeight: '600', color: '#111827' }} className="mb-2">
+                    No shifts yet
+                  </Text>
+                  <Text style={{ fontSize: '16px', color: '#6b7280' }} className="mb-6">
+                    Start your first shift to begin tracking your work
+                  </Text>
+                  <PrimaryButton
+                    text="Start New Shift"
+                    iconProps={{ iconName: 'Add' }}
+                    onClick={handleNewShift}
+                    styles={{ 
+                      root: { 
+                        backgroundColor: '#dc2626', 
+                        borderRadius: '12px',
+                        height: '48px',
+                        fontSize: '16px',
+                        fontWeight: '600'
+                      } 
+                    }}
+                  />
+                </ModernCard>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </MainLayout>
   );
 };

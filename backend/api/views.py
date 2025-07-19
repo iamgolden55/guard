@@ -1275,16 +1275,37 @@ class FireExitCheckViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = FireExitCheck.objects.all()
     serializer_class = FireExitCheckSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        shift_id = self.request.query_params.get('shift', None)
+        if shift_id:
+            queryset = queryset.filter(shift_id=shift_id)
+        return queryset
 
 class CapacityCheckViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = CapacityCheck.objects.all()
     serializer_class = CapacityCheckSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        shift_id = self.request.query_params.get('shift', None)
+        if shift_id:
+            queryset = queryset.filter(shift_id=shift_id)
+        return queryset
 
 class ToiletCheckViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = ToiletCheck.objects.all()
     serializer_class = ToiletCheckSerializer
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        shift_id = self.request.query_params.get('shift', None)
+        if shift_id:
+            queryset = queryset.filter(shift_id=shift_id)
+        return queryset
 
 class ShiftExchangeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -1421,9 +1442,11 @@ class OpenShiftRequestViewSet(viewsets.ModelViewSet):
         if user.role in ['manager', 'admin']:
             return OpenShiftRequest.objects.all()
         else:
-            # Staff can see requests they created or claimed
+            # Staff can see requests they created, claimed, or that are available to claim
             return OpenShiftRequest.objects.filter(
-                models.Q(requesting_user=user) | models.Q(claimed_by=user)
+                models.Q(requesting_user=user) | 
+                models.Q(claimed_by=user) |
+                models.Q(status='open')  # Allow access to open shifts for claiming
             )
     
     def perform_create(self, serializer):

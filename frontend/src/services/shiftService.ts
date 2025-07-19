@@ -370,7 +370,12 @@ class ShiftService {
         calculatedPayment: shift.calculated_payment || shift.calculatedPayment,
         actualHoursWorked: shift.actual_hours_worked || shift.actualHoursWorked,
         hourlyRate: shift.hourly_rate || shift.hourlyRate,
-        managerApproved: shift.manager_approved || shift.managerApproved
+        managerApproved: shift.manager_approved || shift.managerApproved,
+        // Add missing time fields for active shift tracking
+        check_in_time: shift.check_in_time || shift.checkInTime,
+        check_out_time: shift.check_out_time || shift.checkOutTime,
+        checkInTime: shift.check_in_time || shift.checkInTime,
+        checkOutTime: shift.check_out_time || shift.checkOutTime
       };
     });
     
@@ -406,7 +411,12 @@ class ShiftService {
           managerApproved: shift.manager_approved || shift.managerApproved || false,
           calculatedPayment: shift.calculated_payment || shift.calculatedPayment,
           actualHoursWorked: shift.actual_hours_worked || shift.actualHoursWorked,
-          hourlyRate: shift.hourly_rate || shift.hourlyRate
+          hourlyRate: shift.hourly_rate || shift.hourlyRate,
+          // Add missing time fields for active shift tracking
+          check_in_time: shift.check_in_time || shift.checkInTime,
+          check_out_time: shift.check_out_time || shift.checkOutTime,
+          checkInTime: shift.check_in_time || shift.checkInTime,
+          checkOutTime: shift.check_out_time || shift.checkOutTime
         };
       });
       
@@ -512,7 +522,7 @@ class ShiftService {
       is_clear: data.isPassed,
       is_properly_marked: true, // Default to true
       is_accessible: true, // Default to true
-      comments: data.comments || ''
+      notes: data.comments || ''
     };
     const response = await api.post<FireExitCheck>('/fire-exit-checks/', requestData);
     return response.data;
@@ -531,7 +541,7 @@ class ShiftService {
       venue_capacity: 100, // Default venue capacity, should be fetched from venue
       is_at_capacity: false, // Will be calculated by backend
       action_taken: data.comments || '',
-      comments: data.comments || ''
+      notes: data.comments || ''
     };
     const response = await api.post<CapacityCheck>('/capacity-checks/', requestData);
     return response.data;
@@ -548,7 +558,7 @@ class ShiftService {
       timestamp: new Date().toISOString(),
       location_name: data.location,
       condition: data.condition,
-      comments: data.comments || ''
+      notes: data.comments || ''
     };
     const response = await api.post<ToiletCheck>('/toilet-checks/', requestData);
     return response.data;

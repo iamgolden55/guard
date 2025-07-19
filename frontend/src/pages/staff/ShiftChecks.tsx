@@ -59,8 +59,8 @@ const ShiftChecks: React.FC = () => {
         const shiftData = await shiftService.getShiftById(shiftId);
         setShift(shiftData);
 
-        // Check if shift is active
-        if (shiftData.status !== 'active') {
+        // Check if shift is active or in progress
+        if (shiftData.status !== 'active' && shiftData.status !== 'in_progress') {
           setError('This shift is not active. Checks can only be added to active shifts.');
         }
       } catch (error) {

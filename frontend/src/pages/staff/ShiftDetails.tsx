@@ -75,10 +75,7 @@ const ShiftDetails: React.FC = () => {
         return;
       }
 
-      // Debug: Log the actual data structure
-      console.log('Fire checks data:', fireData);
-      console.log('Capacity checks data:', capacityData);
-      console.log('Toilet checks data:', toiletData);
+      // Debug logs removed for production
 
       setShift(shiftData);
       // Handle paginated API responses - extract results array

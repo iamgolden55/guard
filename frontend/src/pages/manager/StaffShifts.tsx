@@ -108,6 +108,13 @@ const StatusPill: React.FC<{status: ShiftStatus}> = ({ status }) => {
   );
 };
 
+// Pagination interface
+interface PaginationState {
+  currentPage: number;
+  itemsPerPage: number;
+  totalItems: number;
+}
+
 const StaffShifts: React.FC = () => {
   const navigate = useNavigate();
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -124,6 +131,11 @@ const StaffShifts: React.FC = () => {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportFormat, setExportFormat] = useState<string>('excel');
   const [expandedShifts, setExpandedShifts] = useState<Set<number>>(new Set());
+  const [pagination, setPagination] = useState<PaginationState>({
+    currentPage: 1,
+    itemsPerPage: 20,
+    totalItems: 0
+  });
 
   // Set up columns for the DetailsList
   const columns: IColumn[] = [
@@ -468,6 +480,91 @@ const StaffShifts: React.FC = () => {
     });
   }, []);
 
+  // Pagination functions
+  const getPaginatedShifts = () => {
+    const startIndex = (pagination.currentPage - 1) * pagination.itemsPerPage;
+    const endIndex = startIndex + pagination.itemsPerPage;
+    
+    return {
+      items: filteredShifts.slice(startIndex, endIndex),
+      totalItems: filteredShifts.length,
+      totalPages: Math.ceil(filteredShifts.length / pagination.itemsPerPage)
+    };
+  };
+
+  const handlePageChange = (page: number) => {
+    setPagination(prev => ({
+      ...prev,
+      currentPage: page
+    }));
+  };
+
+  // Pagination Controls Component
+  const PaginationControls: React.FC<{ 
+    currentPage: number; 
+    totalPages: number; 
+    onPageChange: (page: number) => void;
+  }> = ({ currentPage, totalPages, onPageChange }) => {
+    if (totalPages <= 1) return null;
+
+    const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+    const showPages = pages.filter(page => 
+      page === 1 || 
+      page === totalPages || 
+      (page >= currentPage - 1 && page <= currentPage + 1)
+    );
+
+    return (
+      <div className="flex items-center justify-center space-x-2 mt-8">
+        <DefaultButton
+          text="Previous"
+          iconProps={{ iconName: 'ChevronLeft' }}
+          disabled={currentPage === 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          styles={{ 
+            root: { 
+              borderRadius: '8px',
+              border: '2px solid #e5e7eb'
+            }
+          }}
+        />
+        
+        <div className="flex space-x-1">
+          {showPages.map((page, index) => (
+            <div key={page}>
+              {index > 0 && showPages[index - 1] !== page - 1 && (
+                <span className="px-2 text-gray-400">...</span>
+              )}
+              <button
+                onClick={() => onPageChange(page)}
+                className={`px-3 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${
+                  currentPage === page
+                    ? 'bg-red-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {page}
+              </button>
+            </div>
+          ))}
+        </div>
+        
+        <DefaultButton
+          text="Next"
+          iconProps={{ iconName: 'ChevronRight' }}
+          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          styles={{ 
+            root: { 
+              borderRadius: '8px',
+              border: '2px solid #e5e7eb'
+            }
+          }}
+        />
+      </div>
+    );
+  };
+
   // Command bar items
   const commandBarItems: ICommandBarItemProps[] = [
     {
@@ -530,6 +627,13 @@ const StaffShifts: React.FC = () => {
     }
 
     setFilteredShifts(result);
+    
+    // Reset pagination when filters change
+    setPagination(prev => ({
+      ...prev,
+      currentPage: 1,
+      totalItems: result.length
+    }));
   }, [searchText, statusFilter, venueFilter, startDate, endDate, shifts]);
 
   // Load shifts when component mounts
@@ -615,6 +719,13 @@ const StaffShifts: React.FC = () => {
           </div>
         ) : (
           <div>
+            {/* Pagination Info */}
+            <Stack horizontal horizontalAlign="space-between" verticalAlign="center" style={{ marginBottom: '16px' }}>
+              <Text variant="medium">
+                Showing {Math.min((pagination.currentPage - 1) * pagination.itemsPerPage + 1, filteredShifts.length)} - {Math.min(pagination.currentPage * pagination.itemsPerPage, filteredShifts.length)} of {filteredShifts.length} shifts
+              </Text>
+            </Stack>
+            
             {/* Desktop Table View - Hidden on mobile */}
             <div className="hidden md:block">
               <Stack tokens={{ childrenGap: 0 }}>
@@ -640,7 +751,7 @@ const StaffShifts: React.FC = () => {
                 </div>
 
                 {/* Table Rows */}
-                {filteredShifts.map((shift, index) => (
+                {getPaginatedShifts().items.map((shift, index) => (
                   <div key={shift.id}>
                     {/* Main Row */}
                     <div style={{ 
@@ -733,7 +844,7 @@ const StaffShifts: React.FC = () => {
             {/* Mobile Card View - Visible only on mobile */}
             <div className="block md:hidden">
               <Stack tokens={{ childrenGap: 12 }}>
-                {filteredShifts.map((shift, index) => (
+                {getPaginatedShifts().items.map((shift, index) => (
                   <div key={shift.id} style={{
                     backgroundColor: '#ffffff',
                     border: '1px solid #dee2e6',
@@ -878,6 +989,13 @@ const StaffShifts: React.FC = () => {
                 ))}
               </Stack>
             </div>
+            
+            {/* Pagination Controls */}
+            <PaginationControls
+              currentPage={pagination.currentPage}
+              totalPages={getPaginatedShifts().totalPages}
+              onPageChange={handlePageChange}
+            />
           </div>
         )}
       </Stack>

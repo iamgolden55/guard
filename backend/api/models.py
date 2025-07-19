@@ -468,10 +468,12 @@ class VenueTermsAcceptance(models.Model):
     @classmethod
     def has_accepted_terms(cls, staff_user, venue):
         """Check if staff has accepted the current terms for this venue"""
+        # Use the same logic as when creating terms: default to '1' if terms_version is None
+        terms_version = venue.terms_version or '1'
         return cls.objects.filter(
             staff_user=staff_user,
             venue=venue,
-            terms_version=venue.terms_version
+            terms_version=terms_version
         ).exists()
 
 class PreferredVenue(models.Model):
@@ -656,13 +658,13 @@ class OpenShiftRequest(models.Model):
         if self.claimed_by:
             # Validate claiming user has required role
             if not self.claimed_by.has_security_role(self.original_shift.required_security_role):
-                raise ValueError("You do not have the required security role for this shift")
-            # Check for schedule conflicts
+                raise ValueError(f"You do not have the required security role '{self.original_shift.required_security_role}' for this shift")
+            # Check for schedule conflicts (exclude the current shift being claimed)
             conflicting_shifts = Shift.objects.filter(
                 staff_user=self.claimed_by,
                 start_time__lt=self.original_shift.end_time,
                 end_time__gt=self.original_shift.start_time
-            ).exclude(status__in=['cancelled', 'rejected'])
+            ).exclude(status__in=['cancelled', 'rejected']).exclude(id=self.original_shift.id)
             if conflicting_shifts.exists():
                 raise ValueError("You already have a shift during this time")
             # Check staff eligibility
@@ -852,14 +854,22 @@ class Shift(models.Model):
             break_hours = self.break_duration / 60
             self.actual_hours_worked = round(hours_worked - break_hours, 2)
 
-        # Auto-update status based on time and conditions
+        # Track if this is a new unassigned shift
+        is_new_unassigned = not self.pk and not self.staff_user
+        
+        # Ensure unassigned shifts are marked as 'open'
+        if not self.staff_user and self.status == 'scheduled':
+            self.status = 'open'
+
+        # Auto-update status based on time and conditions (only for assigned shifts)
         now = timezone.now()
-        if self.status == 'scheduled' and self.start_time <= now:
-            self.status = 'active'
-        elif self.status == 'active' and self.check_in_time:
-            self.status = 'in_progress'
-        elif self.status == 'in_progress' and self.check_out_time:
-            self.status = 'pending_approval'
+        if self.staff_user:  # Only apply these status changes if shift is assigned
+            if self.status == 'scheduled' and self.start_time <= now:
+                self.status = 'active'
+            elif self.status == 'active' and self.check_in_time:
+                self.status = 'in_progress'
+            elif self.status == 'in_progress' and self.check_out_time:
+                self.status = 'pending_approval'
             
         # Auto-approve if conditions are met
         old_status = self._original_status
@@ -872,6 +882,10 @@ class Shift(models.Model):
                 self.manager_approved = True
 
         super().save(*args, **kwargs)
+        
+        # Auto-create OpenShiftRequest for new unassigned shifts
+        if is_new_unassigned and self.status == 'open':
+            self.create_open_shift_request()
         
         # Auto-generate invoice when shift is approved
         if self.status == 'approved' and old_status != 'approved' and self.staff_user:
@@ -902,6 +916,32 @@ class Shift(models.Model):
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"Failed to auto-generate invoice for shift {self.id}: {str(e)}")
+
+    def create_open_shift_request(self):
+        """Create an OpenShiftRequest for this unassigned shift"""
+        try:
+            # Import here to avoid circular imports
+            from django.contrib.auth.models import User
+            
+            # Find an admin user to be the "requesting" user for system-generated requests
+            # Exclude the current user if they have superuser privileges to avoid self-claim issues
+            admin_user = User.objects.filter(is_superuser=True).exclude(id=getattr(self.staff_user, 'id', None)).first()
+            if not admin_user:
+                return
+                
+            # Create the OpenShiftRequest
+            OpenShiftRequest.objects.create(
+                original_shift=self,
+                requesting_user=admin_user,
+                status='open',
+                request_reason='System-generated: Open shift created for unassigned venue position'
+            )
+            
+        except Exception as e:
+            # Log error but don't fail the save operation
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to create OpenShiftRequest for shift {self.id}: {str(e)}")
 
     def can_start_shift(self):
         """Check if staff can start this shift"""

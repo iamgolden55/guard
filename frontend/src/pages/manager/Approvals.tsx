@@ -1249,7 +1249,7 @@ const Approvals: React.FC = () => {
                 </div>
               ) : filteredExchanges.length === 0 ? (
                 <div className="bg-gray-50 rounded-lg p-8 text-center">
-                  <Text variant="large">No exchange requests pending approval</Text>
+                  <Text variant="large">No exchange requests pending approval</Text><br />
                   <Text>No staff have accepted exchange requests that need manager approval.</Text>
                 </div>
               ) : (
@@ -1265,7 +1265,7 @@ const Approvals: React.FC = () => {
               
               {filteredOpenRequests.length === 0 ? (
                 <div className="bg-gray-50 rounded-lg p-8 text-center">
-                  <Text variant="large">No open shift claims pending approval</Text>
+                  <Text variant="large">No open shift claims pending approval</Text><br />
                   <Text>No staff have claimed open shifts that need manager approval.</Text>
                 </div>
               ) : (

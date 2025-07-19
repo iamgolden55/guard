@@ -194,30 +194,64 @@ class PreferredVenueSerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at',)
 
 class FireExitCheckSerializer(serializers.ModelSerializer):
+    # Add camelCase fields for frontend compatibility
+    isPassed = serializers.BooleanField(source='is_clear', read_only=True)
+    exitName = serializers.CharField(source='exit_name', read_only=True)
+    comments = serializers.CharField(source='notes', read_only=True)
+    
     class Meta:
         model = FireExitCheck
         fields = '__all__'
         read_only_fields = ('created_at',)
+    
+    def to_representation(self, instance):
+        # Include both snake_case and camelCase for compatibility
+        representation = super().to_representation(instance)
+        representation['isPassed'] = instance.is_clear
+        representation['exitName'] = instance.exit_name
+        representation['comments'] = instance.notes or ''
+        return representation
 
 class CapacityCheckSerializer(serializers.ModelSerializer):
+    # Add camelCase fields for frontend compatibility
+    count = serializers.IntegerField(source='current_count', read_only=True)
+    comments = serializers.CharField(source='notes', read_only=True)
+    
     class Meta:
         model = CapacityCheck
         fields = '__all__'
         read_only_fields = ('created_at',)
 
-    def validate_count(self, value):
+    def validate_current_count(self, value):
         # Ensure count is not negative
         if value < 0:
             raise serializers.ValidationError("Capacity count cannot be negative")
         return value
+    
+    def to_representation(self, instance):
+        # Include both snake_case and camelCase for compatibility
+        representation = super().to_representation(instance)
+        representation['count'] = instance.current_count
+        representation['comments'] = instance.notes or ''
+        return representation
 
 class ToiletCheckSerializer(serializers.ModelSerializer):
+    # Add camelCase fields for frontend compatibility
     condition_display = serializers.CharField(source='get_condition_display', read_only=True)
+    location = serializers.CharField(source='location_name', read_only=True)
+    comments = serializers.CharField(source='notes', read_only=True)
 
     class Meta:
         model = ToiletCheck
         fields = '__all__'
         read_only_fields = ('created_at',)
+    
+    def to_representation(self, instance):
+        # Include both snake_case and camelCase for compatibility
+        representation = super().to_representation(instance)
+        representation['location'] = instance.location_name
+        representation['comments'] = instance.notes or ''
+        return representation
 
 class ShiftSerializer(serializers.ModelSerializer):
     fire_exit_checks = FireExitCheckSerializer(many=True, read_only=True)

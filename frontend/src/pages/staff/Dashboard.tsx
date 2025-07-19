@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Text,
@@ -30,6 +30,37 @@ const StaffDashboard: React.FC = () => {
   const [weeklyEarnings, setWeeklyEarnings] = useState(0);
   const [monthlyEarnings, setMonthlyEarnings] = useState(0);
   const [earningsPeriod, setEarningsPeriod] = useState<'weekly' | 'monthly'>('weekly');
+  const [pendingEarnings, setPendingEarnings] = useState(0);
+
+  // Calculate pending earnings from active shift
+  const calculatePendingEarnings = useCallback((shift: Shift | null) => {
+    if (!shift || !shift.checkInTime || !shift.hourlyRate) return 0;
+
+    try {
+      const now = new Date();
+      const checkInTime = new Date(shift.checkInTime || shift.check_in_time || shift.startTime);
+      const endTime = new Date(shift.endTime);
+      
+      // Calculate elapsed time since check-in
+      const elapsedMs = now.getTime() - checkInTime.getTime();
+      const elapsedHours = elapsedMs / (1000 * 60 * 60);
+      
+      // Calculate scheduled hours for capping
+      const scheduledMs = endTime.getTime() - new Date(shift.startTime).getTime();
+      const scheduledHours = scheduledMs / (1000 * 60 * 60);
+      const breakHours = (shift.breakDuration || 0) / 60; // Convert minutes to hours
+      const maxPayableHours = scheduledHours - breakHours;
+      
+      // Cap elapsed hours at scheduled hours (same logic as backend)
+      const payableHours = Math.max(0, Math.min(elapsedHours, maxPayableHours)); // Ensure not negative and cap at max
+      const pendingAmount = payableHours * (shift.hourlyRate || 0);
+      
+      return pendingAmount;
+    } catch (error) {
+      console.error('Error calculating pending earnings:', error);
+      return 0;
+    }
+  }, []);
 
   // Load dashboard data and profile
   useEffect(() => {
@@ -50,13 +81,28 @@ const StaffDashboard: React.FC = () => {
         
         // Ensure shifts is an array before using array methods
         const shiftsArray = Array.isArray(shifts) ? shifts : [];
-        const active = shiftsArray.find(shift => shift.status === ShiftStatus.ACTIVE);
+        const active = shiftsArray.find(shift => 
+          shift.status === ShiftStatus.ACTIVE || 
+          shift.status === 'in_progress'
+        );
         const recent = shiftsArray
-          .filter(shift => shift.status !== ShiftStatus.ACTIVE)
+          .filter(shift => 
+            shift.status !== ShiftStatus.ACTIVE && 
+            shift.status !== 'in_progress'
+          )
           .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
           .slice(0, 3);
         setActiveShift(active || null);
         setRecentShifts(recent);
+        
+        // Calculate pending earnings from active shift
+        if (active) {
+          const pending = calculatePendingEarnings(active);
+          setPendingEarnings(pending);
+        } else {
+          setPendingEarnings(0);
+        }
+        
         // Get pending invoices
         const invoices = await invoiceService.getInvoices();
         setPendingInvoices(invoices.slice(0, 3));
@@ -76,6 +122,24 @@ const StaffDashboard: React.FC = () => {
     };
     loadDashboardData();
   }, [authState.user]);
+
+  // Update pending earnings in real-time for active shift
+  useEffect(() => {
+    if (!activeShift) return;
+
+    const updatePendingEarnings = () => {
+      const pending = calculatePendingEarnings(activeShift);
+      setPendingEarnings(pending);
+    };
+
+    // Update immediately
+    updatePendingEarnings();
+
+    // Update every 30 seconds
+    const interval = setInterval(updatePendingEarnings, 30000);
+
+    return () => clearInterval(interval);
+  }, [activeShift, calculatePendingEarnings]);
 
   // Format date for display
   const formatDate = (dateString: string) => {
@@ -174,20 +238,29 @@ const StaffDashboard: React.FC = () => {
     isLoading?: boolean; 
     period: 'weekly' | 'monthly';
     onPeriodChange: (period: 'weekly' | 'monthly') => void;
-  }> = ({ amount, isLoading = false, period, onPeriodChange }) => {
+    pendingAmount?: number;
+  }> = ({ amount, isLoading = false, period, onPeriodChange, pendingAmount = 0 }) => {
     const [animatedAmount, setAnimatedAmount] = useState(0);
+    const [lastAnimatedAmount, setLastAnimatedAmount] = useState(0);
     const radius = 80;
     const circumference = 2 * Math.PI * radius;
     const strokeDasharray = circumference;
     
-    // Calculate progress based on a target
+    // Calculate progress based on a target (confirmed earnings only)
     const target = period === 'weekly' ? 500 : 2000; // Example targets
     const progress = Math.min(amount / target, 1);
     const strokeDashoffset = circumference * (1 - progress);
     
-    // Animate the amount counting up
+    // Animate the amount counting up (only when confirmed amount actually changes)
     useEffect(() => {
       if (isLoading) return;
+      
+      // Only animate if the confirmed amount has actually changed significantly
+      if (Math.abs(amount - lastAnimatedAmount) < 0.01) {
+        // Amount hasn't changed significantly, just set it directly without animation
+        setAnimatedAmount(amount);
+        return;
+      }
       
       const duration = 1500; // 1.5 seconds
       const steps = 60;
@@ -198,6 +271,7 @@ const StaffDashboard: React.FC = () => {
         current += increment;
         if (current >= amount) {
           setAnimatedAmount(amount);
+          setLastAnimatedAmount(amount);
           clearInterval(timer);
         } else {
           setAnimatedAmount(current);
@@ -205,7 +279,7 @@ const StaffDashboard: React.FC = () => {
       }, duration / steps);
       
       return () => clearInterval(timer);
-    }, [amount, isLoading]);
+    }, [amount, isLoading, lastAnimatedAmount]);
     
     return (
       <div className="flex flex-col items-center justify-center space-y-6">
@@ -297,22 +371,49 @@ const StaffDashboard: React.FC = () => {
               style={{ 
                 fontSize: '12px', 
                 fontWeight: '500', 
-                color: amount > 0 ? '#059669' : '#6b7280',
+                color: '#059669',
                 letterSpacing: '0.05em',
                 textTransform: 'uppercase' as const
               }} 
               className="mt-2 transition-colors duration-300"
             >
-              {amount > 0 ? 'Confirmed' : 'No earnings yet'}
+              CONFIRMED
             </Text>
           </div>
         </div>
 
-        {/* Target Progress */}
-        <div className="text-center">
-          <Text style={{ fontSize: '12px', color: '#6b7280' }}>
-            Goal: £{target.toFixed(2)} ({(progress * 100).toFixed(0)}% complete)
-          </Text>
+        {/* Earnings Breakdown */}
+        <div className="text-center space-y-2">
+          <div className="flex items-center justify-between max-w-xs mx-auto">
+            <Text style={{ fontSize: '14px', color: '#6b7280', fontWeight: '500' }}>
+              Confirmed
+            </Text>
+            <Text style={{ fontSize: '14px', color: '#059669', fontWeight: '600' }}>
+              £{amount.toFixed(2)}
+            </Text>
+          </div>
+          
+          {pendingAmount > 0 && (
+            <>
+              <div className="flex items-center justify-between max-w-xs mx-auto">
+                <Text style={{ fontSize: '14px', color: '#6b7280', fontWeight: '500' }}>
+                  Current shift
+                </Text>
+                <Text style={{ fontSize: '14px', color: '#f59e0b', fontWeight: '600' }}>
+                  £{pendingAmount.toFixed(2)}
+                </Text>
+              </div>
+              <Text style={{ fontSize: '11px', color: '#9ca3af', fontStyle: 'italic' }}>
+                Updates every 30 seconds
+              </Text>
+            </>
+          )}
+          
+          {pendingAmount === 0 && (
+            <Text style={{ fontSize: '12px', color: '#9ca3af' }}>
+              No current shift running
+            </Text>
+          )}
         </div>
       </div>
     );
@@ -366,7 +467,7 @@ const StaffDashboard: React.FC = () => {
               <div>
                 <Text style={{ fontSize: '32px', fontWeight: '700', color: '#111827' }}>
                   Welcome, {authState.user?.firstName}
-                </Text>
+                </Text> <br />
                 <Text className="text-gray-500 mt-1">
                   {new Date().toLocaleDateString('en-GB', { 
                     weekday: 'long', 
@@ -401,6 +502,7 @@ const StaffDashboard: React.FC = () => {
                 isLoading={isLoading}
                 period={earningsPeriod}
                 onPeriodChange={setEarningsPeriod}
+                pendingAmount={pendingEarnings}
               />
             </ModernCard>
 

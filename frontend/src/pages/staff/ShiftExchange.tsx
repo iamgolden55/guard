@@ -183,9 +183,17 @@ const ShiftExchangePage: React.FC = () => {
       key: 'released_by',
       name: 'Released By',
       minWidth: 120,
-      onRender: (item: OpenShiftRequest) => (
-        <Text>{`${item.requesting_user_details.first_name} ${item.requesting_user_details.last_name}`}</Text>
-      )
+      onRender: (item: OpenShiftRequest) => {
+        // Check if this is a system-generated shift
+        const isSystemGenerated = item.request_reason?.includes('System-generated') || 
+                                 item.request_reason?.includes('unassigned venue shift');
+        
+        if (isSystemGenerated) {
+          return <Text style={{ fontStyle: 'italic', color: '#666' }}>System</Text>;
+        }
+        
+        return <Text>{`${item.requesting_user_details.first_name} ${item.requesting_user_details.last_name}`}</Text>;
+      }
     },
     {
       key: 'actions',
@@ -627,7 +635,14 @@ const ShiftExchangePage: React.FC = () => {
                                 {request.status}
                               </span>
                             </Stack>
-                            <Text>Released by: {`${request.requesting_user_details.first_name} ${request.requesting_user_details.last_name}`}</Text>
+                            <Text>
+                              Released by: {
+                                (request.request_reason?.includes('System-generated') || 
+                                 request.request_reason?.includes('unassigned venue shift'))
+                                  ? 'System'
+                                  : `${request.requesting_user_details.first_name} ${request.requesting_user_details.last_name}`
+                              }
+                            </Text>
                             <Text>{new Date(request.original_shift_details.start_time).toLocaleDateString()}</Text>
                             <Text>
                               {new Date(request.original_shift_details.start_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}

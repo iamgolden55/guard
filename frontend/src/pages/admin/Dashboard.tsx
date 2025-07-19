@@ -93,7 +93,9 @@ const AdminDashboard: React.FC = () => {
 
         // Process shifts - Assuming shiftService returns Shift[] directly
         const shiftsData = shiftsResult.status === 'fulfilled' && Array.isArray(shiftsResult.value) ? shiftsResult.value : [];
-        const activeShifts = shiftsData.filter((shift: Shift) => shift.status === 'active').length;
+        const activeShifts = shiftsData.filter((shift: Shift) => 
+          shift.status === 'active' || shift.status === 'in_progress'
+        ).length;
         const pendingApprovals = shiftsData.filter(
           (shift: Shift) => shift.status === 'completed' && !shift.managerApproved
         ).length;

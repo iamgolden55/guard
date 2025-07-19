@@ -42,6 +42,36 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     return user.username || 'User';
   })();
 
+  // Get the selected key based on current location
+  const getSelectedKey = (): string => {
+    const path = location.pathname;
+    
+    // Handle exact matches first
+    if (path === '/') return '/';
+    if (path === '/dashboard') return '/';
+    
+    // Handle staff-shifts specifically
+    if (path === '/staff-shifts') return '/staff-shifts';
+    
+    // Handle admin routes
+    if (path.startsWith('/admin/staff')) return '/admin/staff';
+    if (path.startsWith('/admin/scheduling')) return '/admin/scheduling';
+    if (path.startsWith('/admin/venues')) return '/admin/venues';
+    if (path.startsWith('/admin/recruitment')) return '/admin/recruitment';
+    if (path.startsWith('/admin/invoices')) return '/admin/invoices';
+    if (path.startsWith('/admin/deputy')) return '/admin/deputy';
+    if (path.startsWith('/admin/settings')) return '/admin/settings';
+    
+    // Handle other routes
+    if (path.startsWith('/shifts/exchange')) return '/shifts/exchange';
+    if (path.startsWith('/shifts')) return '/shifts';
+    if (path.startsWith('/invoices')) return '/invoices';
+    if (path.startsWith('/approvals')) return '/approvals';
+    
+    // Default fallback
+    return path;
+  };
+
   // Define navigation items based on role
   const getNavItems = (): INavLinkGroup[] => {
     // Common links for all users
@@ -49,7 +79,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       {
         name: 'Dashboard',
         url: '/',
-        key: 'dashboard',
+        key: '/',
         icon: 'ViewDashboard',
         isExpanded: location.pathname === '/'
       }
@@ -60,21 +90,21 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       {
         name: 'My Shifts',
         url: '/shifts',
-        key: 'shifts',
+        key: '/shifts',
         icon: 'Calendar',
         isExpanded: location.pathname.startsWith('/shifts')
       },
       {
         name: 'Shift Exchange',
         url: '/shifts/exchange',
-        key: 'shift-exchange',
+        key: '/shifts/exchange',
         icon: 'SwitcherStartEnd',
         isExpanded: location.pathname.startsWith('/shifts/exchange')
       },
       {
         name: 'My Invoices',
         url: '/invoices',
-        key: 'invoices',
+        key: '/invoices',
         icon: 'PaymentCard',
         isExpanded: location.pathname.startsWith('/invoices')
       }
@@ -85,14 +115,14 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       {
         name: 'Staff Shifts',
         url: '/staff-shifts',
-        key: 'staff-shifts',
+        key: '/staff-shifts',
         icon: 'PeopleAlert',
         isExpanded: location.pathname.startsWith('/staff-shifts')
       },
       {
         name: 'Approvals',
         url: '/approvals',
-        key: 'approvals',
+        key: '/approvals',
         icon: 'Checkmark',
         isExpanded: location.pathname.startsWith('/approvals')
       }
@@ -103,49 +133,49 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       {
         name: 'Staff Management',
         url: '/admin/staff',
-        key: 'staff-management',
+        key: '/admin/staff',
         icon: 'People',
         isExpanded: location.pathname.startsWith('/admin/staff')
       },
       {
         name: 'Shift Scheduling',
         url: '/admin/scheduling',
-        key: 'scheduling',
+        key: '/admin/scheduling',
         icon: 'ScheduleEventAction',
         isExpanded: location.pathname.startsWith('/admin/scheduling')
       },
       {
         name: 'Venues',
         url: '/admin/venues',
-        key: 'venues',
+        key: '/admin/venues',
         icon: 'POI',
         isExpanded: location.pathname.startsWith('/admin/venues')
       },
       {
         name: 'Recruitment',
         url: '/admin/recruitment',
-        key: 'recruitment',
+        key: '/admin/recruitment',
         icon: 'AddFriend',
         isExpanded: location.pathname.startsWith('/admin/recruitment')
       },
       {
         name: 'Invoices',
         url: '/admin/invoices',
-        key: 'admin-invoices',
+        key: '/admin/invoices',
         icon: 'Money',
         isExpanded: location.pathname.startsWith('/admin/invoices')
       },
       {
         name: 'Deputy Integration',
         url: '/admin/deputy',
-        key: 'deputy',
+        key: '/admin/deputy',
         icon: 'Plug',
         isExpanded: location.pathname.startsWith('/admin/deputy')
       },
       {
         name: 'Settings',
         url: '/admin/settings',
-        key: 'settings',
+        key: '/admin/settings',
         icon: 'Settings',
         isExpanded: location.pathname.startsWith('/admin/settings')
       }
@@ -263,13 +293,26 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
           <Nav
             groups={getNavItems()}
-            selectedKey={location.pathname}
+            selectedKey={getSelectedKey()}
             styles={{
               root: {
                 width: '100%',
                 height: '100%',
                 boxSizing: 'border-box',
                 overflowY: 'auto'
+              },
+              link: {
+                selectors: {
+                  '&.is-selected': {
+                    backgroundColor: theme.palette.themePrimary + '20', // 20% opacity
+                    color: theme.palette.themePrimary,
+                    fontWeight: '600',
+                    borderRight: `3px solid ${theme.palette.themePrimary}`
+                  },
+                  '&.is-selected::after': {
+                    borderRight: `3px solid ${theme.palette.themePrimary}`
+                  }
+                }
               }
             }}
             onLinkClick={() => setIsMobileNavOpen(false)}
@@ -277,7 +320,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         </aside>
 
         {/* Main content area */}
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-auto p-2">
           {children}
         </main>
       </div>
