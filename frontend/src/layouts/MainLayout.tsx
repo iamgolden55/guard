@@ -31,8 +31,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     if (!authState.user) return 'User';
 
     const user = authState.user;
-    const firstName = user.firstName || user.first_name || '';
-    const lastName = user.lastName || user.last_name || '';
+    const firstName = user.firstName || '';
+    const lastName = user.lastName || '';
 
     if (firstName || lastName) {
       return `${firstName} ${lastName}`.trim();
@@ -240,7 +240,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   };
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col">
       {/* Header */}
       <header
         className="p-2 flex justify-between items-center shadow-md"
@@ -275,7 +275,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0">
         {/* Sidebar - hidden on mobile unless toggled */}
         <aside
           className={`bg-gray-100 shadow-md md:block ${isMobileNavOpen ? 'block absolute z-10 h-full' : 'hidden'}`}
@@ -320,8 +320,10 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         </aside>
 
         {/* Main content area */}
-        <main className="flex-1 overflow-auto p-2">
-          {children}
+        <main className="flex-1 overflow-auto p-2 min-h-0 bg-gray-50">
+          <div className="min-h-full">
+            {children}
+          </div>
         </main>
       </div>
 

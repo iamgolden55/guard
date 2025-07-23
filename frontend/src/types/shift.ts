@@ -88,30 +88,9 @@ export enum RecurringPatternType {
   CUSTOM = 'custom'
 }
 
-export interface StaffProfile {
-  id: number;
-  userId: number;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string | null;
-  profileImage: string | null;
-  qualifications: string[] | null;
-  isActive: boolean;
-}
-
-export interface Venue {
-  id: number;
-  name: string;
-  address: string;
-  isActive: boolean;
-  description?: string; // Venue description
-  termsAndConditions?: string; // Terms and conditions for staff working at this venue
-  requiresFireSafetyChecks?: boolean;
-  requiresCapacityMonitoring?: boolean;
-  requiresToiletChecks?: boolean;
-  maxCapacity?: number;
-}
+// StaffProfile and Venue are imported from their respective type files
+import type { StaffProfile } from './profile';
+import type { Venue } from './venue';
 
 export interface FireExitCheck {
   id: number;

@@ -39,7 +39,7 @@ import {
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
 import { Card } from '../../components';
-import { BulkShiftModal } from '../../components/BulkShiftModal';
+// import { BulkShiftModal } from '../../components/BulkShiftModal';
 import { useAuth } from '../../contexts/AuthContext';
 import shiftService from '../../services/shiftService';
 import venueService from '../../services/venueService';

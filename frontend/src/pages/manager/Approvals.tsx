@@ -1308,7 +1308,7 @@ const Approvals: React.FC = () => {
                 </div>
               ) : filteredIncompleteShifts.length === 0 ? (
                 <div className="bg-green-50 rounded-lg p-8 text-center">
-                  <Text variant="large" style={{ color: '#10B981' }}>All shifts are complete!</Text>
+                  <Text variant="large" style={{ color: '#10B981' }}>All shifts are complete!</Text><br />
                   <Text>No shifts require manager intervention at this time.</Text>
                 </div>
               ) : (

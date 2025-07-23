@@ -141,7 +141,7 @@ export const getProfile = async (userId: number | undefined) => {
     } else {
       throw new Error('Profile not found');
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching profile:', error);
     throw error;
   }
@@ -151,7 +151,7 @@ export const updateProfile = async (profileId: number, data: any) => {
   try {
     const response = await api.patch(`/staff-profiles/${profileId}/`, data);
     return response;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating profile:', error);
     throw error;
   }
@@ -162,7 +162,7 @@ export const login = async (username: string, password: string) => {
   try {
     const response = await api.post('/login/', { username, password });
     return response;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Login error:', error);
     throw error;
   }
@@ -172,7 +172,7 @@ export const register = async (userData: any) => {
   try {
     const response = await api.post('/users/', userData);
     return response;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Registration error:', error);
     throw error;
   }
@@ -235,7 +235,7 @@ export const getShifts = async (params?: any): Promise<Shift[]> => {
     
     console.warn('Unexpected shift data format:', response.data);
     return [];
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching shifts:', error);
     // Return empty array rather than throwing to avoid breaking UI
     return [];
@@ -264,7 +264,7 @@ export const getFilteredShifts = async (venueId?: string, staffId?: string): Pro
     }
     
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching filtered shifts:', error);
     return [];
   }
@@ -281,7 +281,7 @@ export const createShift = async (shiftData: Omit<Shift, 'id'>): Promise<Shift |
       }
     });
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating shift:', error);
     return null;
   }
@@ -298,7 +298,7 @@ export const updateShift = async (id: string, shiftData: Partial<Shift>): Promis
       }
     });
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating shift:', error);
     // Log the detailed error response for debugging
     if (error.response) {
@@ -319,7 +319,7 @@ export const deleteShift = async (id: string): Promise<boolean> => {
       }
     });
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting shift:', error);
     
     // Log detailed error information for debugging
@@ -405,7 +405,7 @@ export const bulkCreateShifts = async (shifts: Array<{
             successCount++;
           }
         }
-      } catch (shiftError) {
+      } catch (shiftError: any) {
         console.error('Error creating individual shift:', shiftError);
         
         // Log detailed error information for debugging
@@ -438,7 +438,7 @@ export const bulkCreateShifts = async (shifts: Array<{
     console.log(`Bulk creation completed: ${successCount} successful, ${errorCount} failed out of ${shifts.length} total shifts`);
     
     return results.length > 0 ? results : null;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating bulk shifts:', error);
     return null;
   }
@@ -449,7 +449,7 @@ export const publishShifts = async (shiftIds: string[]): Promise<boolean> => {
   try {
     await api.post('/shifts/publish', { shiftIds });
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error publishing shifts:', error);
     return false;
   }
@@ -460,7 +460,7 @@ export const assignStaffToShift = async (shiftId: string, staffId: string): Prom
   try {
     const response = await api.put(`/shifts/${shiftId}/assign`, { staffId });
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error assigning staff to shift:', error);
     return null;
   }
@@ -485,7 +485,7 @@ export const fetchPendingEarnings = async (): Promise<PendingEarnings> => {
   try {
     const response = await api.get('/users/me/pending-earnings/');
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching pending earnings:', error);
     throw error;
   }
@@ -518,7 +518,7 @@ export const fetchWeeklyEarnings = async (): Promise<WeeklyEarnings> => {
   try {
     const response = await api.get('/users/me/weekly-earnings/');
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching weekly earnings:', error);
     throw error;
   }

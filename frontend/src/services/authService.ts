@@ -262,13 +262,7 @@ class AuthService {
       try {
         const user = JSON.parse(userStr) as User;
         
-        // Ensure firstName and lastName fields are available
-        if (user.first_name !== undefined && user.firstName === undefined) {
-          user.firstName = user.first_name;
-        }
-        if (user.last_name !== undefined && user.lastName === undefined) {
-          user.lastName = user.last_name; 
-        }
+        // User should already have firstName and lastName from the API
         
         // Ensure these fields are never undefined
         user.firstName = user.firstName || '';

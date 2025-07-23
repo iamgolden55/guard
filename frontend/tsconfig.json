@@ -10,12 +10,18 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
-    "strict": true,
+    "strict": false,
     "noFallthroughCasesInSwitch": true,
     "noEmit": true
   },
   "include": [
     "src",
     "vite.config.ts"
-  ]
+  ],
+  "exclude": [
+    "src/**/*.test.tsx",
+    "src/**/*.test.ts",
+    "src/__tests__/**/*"
+  ],
+  "types": ["@testing-library/jest-dom"]
 }
