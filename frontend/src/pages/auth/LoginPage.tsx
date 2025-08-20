@@ -70,19 +70,10 @@ const LoginPage: React.FC = () => {
 
   return (
     <AuthLayout
-      title="Welcome Back"
+      title="Welcome Back" 
       subtitle="Sign in to access your account"
     >
-      <div className="mb-4">
-        <div className="bg-blue-100 border border-blue-300 text-blue-800 px-4 py-2 rounded">
-          <p className="font-semibold">Demo Login Credentials:</p>
-          <ul className="list-disc list-inside">
-            <li>Username: <span className="font-mono">admin</span>, Password: <span className="font-mono">any</span> (Admin Role)</li>
-            <li>Username: <span className="font-mono">manager</span>, Password: <span className="font-mono">any</span> (Manager Role)</li>
-            <li>Username: <span className="font-mono">staff</span>, Password: <span className="font-mono">any</span> (Staff Role)</li>
-          </ul>
-        </div>
-      </div>
+     
 
       <form onSubmit={formik.handleSubmit}>
         <Stack tokens={{ childrenGap: 16 }}>

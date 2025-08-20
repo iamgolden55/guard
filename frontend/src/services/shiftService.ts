@@ -455,7 +455,7 @@ class ShiftService {
     photo: string;
     signature: string;
   }): Promise<any> {
-    const response = await shiftApi.post(`/${shiftId}/check_in/`, {
+    const response = await shiftApi.post(`/frontend/${shiftId}/checkIn/`, {
       latitude: data.location.latitude,
       longitude: data.location.longitude,
       photo: data.photo,
@@ -469,7 +469,7 @@ class ShiftService {
     photo: string;
     signature: string;
   }): Promise<any> {
-    const response = await shiftApi.post(`/${shiftId}/check_out/`, {
+    const response = await shiftApi.post(`/frontend/${shiftId}/checkOut/`, {
       latitude: data.location.latitude,
       longitude: data.location.longitude,
       photo: data.photo,

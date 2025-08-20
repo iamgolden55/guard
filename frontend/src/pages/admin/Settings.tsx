@@ -16,11 +16,19 @@ import {
   IDropdownOption,
   Spinner,
   SpinnerSize,
-  DefaultButton
+  DefaultButton,
+  DetailsList,
+  DetailsListLayoutMode,
+  SelectionMode,
+  type IColumn,
+  Link,
+  Icon
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
 import { settingsService, type SystemSettings } from '../../services/settingsService';
 import EmploymentTypesManagement from '../../components/EmploymentTypesManagement';
+import { financeIntegrationsService } from '../../services';
+import type { ProviderConnection, AccountingProvider } from '../../services/financeIntegrationsService';
 
 interface SettingsState {
   generalSettings: {
@@ -76,6 +84,11 @@ const Settings: React.FC = () => {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<SettingsState | null>(null);
+  
+  // Finance integrations state
+  const [financeConnections, setFinanceConnections] = useState<ProviderConnection[]>([]);
+  const [financeProviders, setFinanceProviders] = useState<AccountingProvider[]>([]);
+  const [financeLoading, setFinanceLoading] = useState(false);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -128,7 +141,24 @@ const Settings: React.FC = () => {
     };
 
     fetchSettings();
+    loadFinanceIntegrations();
   }, []);
+
+  const loadFinanceIntegrations = async () => {
+    try {
+      setFinanceLoading(true);
+      const [connectionsData, providersData] = await Promise.all([
+        financeIntegrationsService.getConnections(),
+        financeIntegrationsService.getProviders()
+      ]);
+      setFinanceConnections(connectionsData);
+      setFinanceProviders(providersData);
+    } catch (error) {
+      console.warn('Finance integrations not available:', error);
+    } finally {
+      setFinanceLoading(false);
+    }
+  };
 
   const handleSaveSettings = async () => {
     if (!settings) {
@@ -184,6 +214,134 @@ const Settings: React.FC = () => {
       }
     }));
   };
+
+  const handleTestConnection = async (connection: ProviderConnection) => {
+    try {
+      setFinanceLoading(true);
+      const result = await financeIntegrationsService.testConnection(connection.id);
+      
+      if (result.success) {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        setSaveError(`Connection test failed: ${result.error_message}`);
+      }
+      
+      await loadFinanceIntegrations();
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      setSaveError('Connection test failed. Please try again.');
+    } finally {
+      setFinanceLoading(false);
+    }
+  };
+
+  const handleDeleteConnection = async (connection: ProviderConnection) => {
+    if (!window.confirm(`Are you sure you want to delete the connection to ${connection.provider_name}?`)) {
+      return;
+    }
+
+    try {
+      setFinanceLoading(true);
+      await financeIntegrationsService.deleteConnection(connection.id);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      await loadFinanceIntegrations();
+    } catch (error) {
+      console.error('Delete connection failed:', error);
+      setSaveError('Failed to delete connection. Please try again.');
+    } finally {
+      setFinanceLoading(false);
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'connected':
+        return <Icon iconName="CheckMark" style={{ color: 'green' }} />;
+      case 'expired':
+      case 'error':
+        return <Icon iconName="Error" style={{ color: 'red' }} />;
+      case 'pending':
+        return <Icon iconName="Clock" style={{ color: 'orange' }} />;
+      default:
+        return <Icon iconName="Warning" style={{ color: 'gray' }} />;
+    }
+  };
+
+  // Column definitions for connections table
+  const connectionColumns: IColumn[] = [
+    {
+      key: 'provider',
+      name: 'Provider',
+      fieldName: 'provider_name',
+      minWidth: 120,
+      maxWidth: 150,
+      isResizable: true,
+      onRender: (item: ProviderConnection) => (
+        <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
+          <img 
+            src={financeIntegrationsService.getProviderLogo(item.provider_key)} 
+            alt={item.provider_name}
+            style={{ width: 24, height: 24 }}
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+          <Text>{item.provider_name}</Text>
+        </Stack>
+      )
+    },
+    {
+      key: 'company',
+      name: 'Company',
+      fieldName: 'company_name',
+      minWidth: 150,
+      maxWidth: 200,
+      isResizable: true
+    },
+    {
+      key: 'status',
+      name: 'Status',
+      fieldName: 'status',
+      minWidth: 100,
+      maxWidth: 120,
+      isResizable: true,
+      onRender: (item: ProviderConnection) => (
+        <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 4 }}>
+          {getStatusIcon(item.status)}
+          <Text>{item.status}</Text>
+          {item.is_sandbox && <Text style={{ fontSize: '10px', color: 'orange' }}>(Sandbox)</Text>}
+        </Stack>
+      )
+    },
+    {
+      key: 'lastSync',
+      name: 'Last Sync',
+      fieldName: 'last_sync_at',
+      minWidth: 120,
+      maxWidth: 150,
+      isResizable: true,
+      onRender: (item: ProviderConnection) => (
+        <Text>
+          {item.last_sync_at ? new Date(item.last_sync_at).toLocaleDateString() : 'Never'}
+        </Text>
+      )
+    },
+    {
+      key: 'actions',
+      name: 'Actions',
+      minWidth: 150,
+      maxWidth: 200,
+      isResizable: true,
+      onRender: (item: ProviderConnection) => (
+        <Stack horizontal tokens={{ childrenGap: 8 }}>
+          <Link onClick={() => handleTestConnection(item)} disabled={financeLoading}>Test</Link>
+          <Link onClick={() => handleDeleteConnection(item)} style={{ color: 'red' }} disabled={financeLoading}>Delete</Link>
+        </Stack>
+      )
+    }
+  ];
 
   return (
     <MainLayout>
@@ -422,6 +580,63 @@ const Settings: React.FC = () => {
                 <div style={{ padding: '20px 0' }}>
                   <EmploymentTypesManagement key="employment-types" />
                 </div>
+              </PivotItem>
+
+              <PivotItem headerText="Finance Integrations">
+                <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
+                  <Label>Accounting Software Connections</Label>
+                  <Text className="text-gray-600">
+                    Manage connections to accounting software for automated invoice and payroll sync.
+                  </Text>
+                  
+                  {financeLoading ? (
+                    <div className="flex justify-center py-4">
+                      <Spinner size={SpinnerSize.medium} label="Loading connections..." />
+                    </div>
+                  ) : financeConnections.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Icon iconName="PlugDisconnected" style={{ fontSize: 48, color: '#ccc', marginBottom: 16 }} />
+                      <Text variant="large">No accounting connections configured</Text>
+                      <Text>Set up accounting integrations in the Finance Integrations page.</Text>
+                      <PrimaryButton
+                        text="Go to Finance Integrations"
+                        iconProps={{ iconName: 'NavigateExternalInline' }}
+                        onClick={() => window.location.href = '/admin/finance-integrations'}
+                        style={{ marginTop: 16 }}
+                      />
+                    </div>
+                  ) : (
+                    <Stack tokens={{ childrenGap: 12 }}>
+                      <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
+                        <Text variant="medium" style={{ fontWeight: 600 }}>
+                          Connected Providers ({financeConnections.length})
+                        </Text>
+                        <Link 
+                          onClick={() => window.location.href = '/admin/finance-integrations'}
+                          style={{ fontSize: 14 }}
+                        >
+                          Manage All Connections
+                        </Link>
+                      </Stack>
+                      
+                      <DetailsList
+                        items={financeConnections}
+                        columns={connectionColumns}
+                        layoutMode={DetailsListLayoutMode.justified}
+                        selectionMode={SelectionMode.none}
+                        isHeaderVisible={true}
+                        compact
+                      />
+                      
+                      <MessageBar messageBarType={MessageBarType.info}>
+                        <Text>
+                          Finance integrations allow automatic export of invoices and payroll to your accounting software. 
+                          You can export data from the Invoice Management page.
+                        </Text>
+                      </MessageBar>
+                    </Stack>
+                  )}
+                </Stack>
               </PivotItem>
             </Pivot>
 

@@ -960,14 +960,49 @@ class Shift(models.Model):
         
         # Time-based restrictions
         now = timezone.now()
-        shift_date = self.start_time.date()
+        shift_start = self.start_time
+        shift_end = self.end_time
+        shift_start_date = shift_start.date()
         current_date = now.date()
         
-        # Restriction 1: Must be the same date
-        if shift_date != current_date:
-            if shift_date > current_date:
-                days_diff = (shift_date - current_date).days
-                raise ValueError(f"Cannot check in {days_diff} day{'s' if days_diff > 1 else ''} early. You can only check in on the day of your shift ({shift_date.strftime('%B %d, %Y')}).")
+        # Debug logging
+        import sys
+        print(f"🐛 MODEL CHECK-IN DEBUG: Now: {now}, Start: {shift_start}, End: {shift_end}", file=sys.stderr)
+        print(f"🐛 MODEL CHECK-IN DEBUG: Now date: {current_date}, Start date: {shift_start_date}, End date: {shift_end.date()}", file=sys.stderr)
+        
+        # Restriction 1: Must be within valid check-in window (handles overnight shifts)
+        is_overnight_shift = shift_end.date() > shift_start_date
+        is_valid_checkin_period = False
+        
+        print(f"🐛 MODEL CHECK-IN DEBUG: Is overnight shift: {is_overnight_shift}", file=sys.stderr)
+        
+        if is_overnight_shift:
+            # For overnight shifts: allow check-in if we're on start date OR 
+            # if we're on end date but before the shift end time
+            if current_date == shift_start_date:
+                is_valid_checkin_period = True
+            elif current_date == shift_end.date() and now <= shift_end:
+                is_valid_checkin_period = True
+        else:
+            # For same-day shifts: must be on the same date
+            is_valid_checkin_period = (current_date == shift_start_date)
+        
+        print(f"🐛 MODEL CHECK-IN DEBUG: Is valid check-in period: {is_valid_checkin_period}", file=sys.stderr)
+        
+        # Development override for testing
+        import os
+        if os.environ.get('DJANGO_DEBUG') == 'True' and not is_valid_checkin_period:
+            print("🚧 DEVELOPMENT OVERRIDE: Allowing late check-in for testing", file=sys.stderr)
+            is_valid_checkin_period = True
+        
+        if not is_valid_checkin_period:
+            if current_date < shift_start_date:
+                days_diff = (shift_start_date - current_date).days
+                raise ValueError(f"Cannot check in {days_diff} day{'s' if days_diff > 1 else ''} early. You can only check in on the day of your shift ({shift_start_date.strftime('%B %d, %Y')}).")
+            elif is_overnight_shift and now > shift_end:
+                # Special case for overnight shifts that have ended
+                shift_end_time = shift_end.strftime('%I:%M %p on %B %d, %Y')
+                raise ValueError(f"Cannot check in to an overnight shift that ended at {shift_end_time}. Please contact your manager if you need to check in late.")
             else:
                 raise ValueError("Cannot check in to a shift from a previous date. Please contact your manager.")
         

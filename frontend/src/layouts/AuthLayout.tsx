@@ -27,14 +27,18 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children, title, subtitle }) =>
       <main className="flex-1 flex items-center justify-center p-6">
         <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
           <Stack tokens={{ childrenGap: 16 }}>
-            <Stack.Item align="center">
-              <Text variant="xxLarge" className="font-bold">{title}</Text>
+            <Stack tokens={{ childrenGap: 4 }} className="text-center">
+              <Stack.Item>
+                <Text variant="xxLarge" className="font-bold">{title}</Text>
+              </Stack.Item>
               {subtitle && (
-                <Text variant="medium" className="text-gray-500 mt-2 text-center">
-                  {subtitle}
-                </Text>
+                <Stack.Item>
+                  <Text variant="medium" className="text-gray-500">
+                    {subtitle}
+                  </Text>
+                </Stack.Item>
               )}
-            </Stack.Item>
+            </Stack>
 
             <Stack.Item>
               {children}

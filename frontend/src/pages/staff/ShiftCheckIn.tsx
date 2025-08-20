@@ -17,7 +17,6 @@ import {
 import { MainLayout } from '../../layouts';
 import { Card, SignatureCanvas } from '../../components';
 import { shiftService } from '../../services';
-import type { Venue } from '../../types/venue';
 
 interface ShiftDetails {
   id: number;
@@ -27,6 +26,8 @@ interface ShiftDetails {
     address: string;
     latitude?: number;
     longitude?: number;
+    checkRadius?: number;
+    check_radius?: number;
   };
   startTime: string;
   endTime: string;
@@ -162,36 +163,22 @@ const ShiftCheckIn: React.FC = () => {
         const shiftData: any = await shiftService.getShiftById(parseInt(id));
         console.log('Shift data received:', shiftData);
         
-        // Get venue details with coordinates from venues API
-        const venuesResponse = await shiftService.getVenues();
-        console.log('Venues API response:', venuesResponse);
-        
-        // Handle different response structures
-        let venues = venuesResponse;
-        if (venuesResponse && typeof venuesResponse === 'object' && 'results' in venuesResponse) {
-          venues = venuesResponse.results; // Paginated response
-        } else if (venuesResponse && typeof venuesResponse === 'object' && 'venues' in venuesResponse) {
-          venues = venuesResponse.venues; // Nested response
-        }
-        
-        console.log('Processed venues array:', venues);
-        console.log('Looking for venue ID:', shiftData.venue.id);
-        
-        const venueDetails = Array.isArray(venues) ? venues.find(v => v.id === shiftData.venue.id) as Venue : null;
-        console.log('Found venue details:', venueDetails);
-        
         // Transform the API response to match our component interface
         const startTime = shiftData.start_time || shiftData.startTime;
         const endTime = shiftData.end_time || shiftData.endTime || '';
         
+        // Extract venue data - coordinates should be included in shift response
+        const venueData = shiftData.venue || shiftData.venue_details || shiftData.venueDetails;
+        console.log('Venue data from shift:', venueData);
+        
         const transformedShift: ShiftDetails = {
           id: shiftData.id,
           venue: {
-            id: shiftData.venue.id || shiftData.venue_details?.id,
-            name: shiftData.venue.name || shiftData.venue_details?.name,
-            address: shiftData.venue.address || shiftData.venue_details?.address || 'Unknown Address',
-            latitude: venueDetails?.latitude,
-            longitude: venueDetails?.longitude
+            id: venueData?.id,
+            name: venueData?.name || 'Unknown Venue',
+            address: venueData?.address || 'Unknown Address',
+            latitude: venueData?.latitude,
+            longitude: venueData?.longitude
           },
           startTime: startTime,
           endTime: endTime,
@@ -200,7 +187,11 @@ const ShiftCheckIn: React.FC = () => {
         };
         
         console.log('Transformed shift for UI:', transformedShift);
-        console.log('Venue has coordinates:', transformedShift.venue.latitude, transformedShift.venue.longitude);
+        console.log('Venue coordinates from shift response:', {
+          latitude: transformedShift.venue.latitude,
+          longitude: transformedShift.venue.longitude,
+          hasCoordinates: !!(transformedShift.venue.latitude && transformedShift.venue.longitude)
+        });
         
         // Validate check-in timing
         const timingValidation = validateCheckInTiming(transformedShift.startTime);
@@ -323,10 +314,21 @@ const ShiftCheckIn: React.FC = () => {
     }
   };
 
+  // Development mode bypass for location verification
+  const isDevelopmentMode = import.meta.env.DEV || window.location.hostname === 'localhost';
+  
   // Step 1: Get user location and verify proximity to venue
   const requestLocation = async () => {
     setLocationStatus('pending');
     setLocationError(null);
+    
+    // Development mode bypass - skip actual location verification
+    if (isDevelopmentMode && import.meta.env.VITE_BYPASS_LOCATION_CHECK === 'true') {
+      console.log('🚧 DEVELOPMENT MODE: Bypassing location verification');
+      setLocationStatus('success');
+      setCurrentStep(2);
+      return;
+    }
 
     if (!navigator.geolocation) {
       setLocationError('Geolocation is not supported by this browser');
@@ -358,6 +360,11 @@ const ShiftCheckIn: React.FC = () => {
         console.log('High accuracy location received:', position);
       } catch (highAccuracyError) {
         console.log('High accuracy location failed, trying low accuracy...', highAccuracyError);
+        console.log('High accuracy error details:', {
+          code: highAccuracyError.code,
+          message: highAccuracyError.message,
+          type: typeof highAccuracyError
+        });
         
         try {
           // Second attempt: Low accuracy with longer timeout
@@ -365,6 +372,11 @@ const ShiftCheckIn: React.FC = () => {
           console.log('Low accuracy location received:', position);
         } catch (lowAccuracyError) {
           console.log('Low accuracy location also failed, trying cached location...', lowAccuracyError);
+          console.log('Low accuracy error details:', {
+            code: lowAccuracyError.code,
+            message: lowAccuracyError.message,
+            type: typeof lowAccuracyError
+          });
           
           // Third attempt: Use cached location
           position = await tryLocation(false, 5000);
@@ -382,6 +394,14 @@ const ShiftCheckIn: React.FC = () => {
       
       // Check if user is within acceptable range of venue (if venue has coordinates)
       console.log('Venue coordinates:', shift?.venue.latitude, shift?.venue.longitude);
+      console.log('Venue coordinates type check:', {
+        latitudeType: typeof shift?.venue.latitude,
+        longitudeType: typeof shift?.venue.longitude,
+        latitudeValue: shift?.venue.latitude,
+        longitudeValue: shift?.venue.longitude,
+        hasLatitude: !!shift?.venue.latitude,
+        hasLongitude: !!shift?.venue.longitude
+      });
       if (shift?.venue.latitude && shift?.venue.longitude) {
         const distance = calculateDistance(
           userLocation.latitude,
@@ -392,16 +412,21 @@ const ShiftCheckIn: React.FC = () => {
         
         console.log(`Distance to venue: ${(distance * 1000).toFixed(0)}m (accuracy: ±${userLocation.accuracy.toFixed(0)}m)`);
         
-        // Allow check-in within 100 meters of venue, but adjust for GPS accuracy
-        const allowedDistance = Math.max(100, userLocation.accuracy * 1.5); // At least 100m or 1.5x GPS accuracy
+        // Use venue's actual check radius instead of hardcoded 100m
+        // Add GPS accuracy buffer to account for location uncertainty
+        const venueCheckRadius = shift.venue.checkRadius || shift.venue.check_radius || 50; // Default to 50m if not set
+        const gpsAccuracyBuffer = Math.min(userLocation.accuracy, 20); // Cap GPS buffer at 20m
+        const allowedDistance = venueCheckRadius + gpsAccuracyBuffer;
         const isWithin = distance * 1000 <= allowedDistance; // Convert km to meters
+        
+        console.log(`Venue check radius: ${venueCheckRadius}m, GPS accuracy: ${userLocation.accuracy.toFixed(0)}m, Total allowed: ${allowedDistance.toFixed(0)}m`);
         setIsWithinRange(isWithin);
         
         if (isWithin) {
           setLocationStatus('success');
           setCurrentStep(2);
         } else {
-          setLocationError(`You are ${(distance * 1000).toFixed(0)}m away from the venue. You must be within ${allowedDistance.toFixed(0)}m to check in.`);
+          setLocationError(`You are ${(distance * 1000).toFixed(0)}m away from the venue. You must be within ${venueCheckRadius}m (+ ${gpsAccuracyBuffer.toFixed(0)}m GPS buffer = ${allowedDistance.toFixed(0)}m total) to check in.`);
           setLocationStatus('error');
         }
       } else {
@@ -412,12 +437,18 @@ const ShiftCheckIn: React.FC = () => {
       }
     } catch (error: any) {
       console.error('All location attempts failed:', error);
+      console.log('Final error details:', {
+        code: error.code,
+        message: error.message,
+        type: typeof error,
+        errorObject: error
+      });
       let errorMessage = 'Unable to retrieve your location';
       
       if (error.code) {
         switch (error.code) {
           case error.PERMISSION_DENIED:
-            errorMessage = 'Location access denied. Please enable location services in your browser settings and refresh the page.';
+            errorMessage = 'Location access denied. To check in, you need to:\n1. Click the location icon 📍 in your browser address bar\n2. Select "Allow" for location access\n3. Refresh this page and try again';
             break;
           case error.POSITION_UNAVAILABLE:
             errorMessage = 'Location information is unavailable. Please ensure you have a stable internet connection and GPS is enabled.';
@@ -513,6 +544,15 @@ const ShiftCheckIn: React.FC = () => {
     setError(null);
 
     try {
+      console.log('Submitting check-in data:', {
+        shiftId: parseInt(id!),
+        location: checkInData.location,
+        hasPhoto: !!checkInData.photo,
+        photoLength: checkInData.photo?.length,
+        hasSignature: !!checkInData.signature,
+        signatureLength: checkInData.signature?.length
+      });
+      
       // Call the backend check-in API
       await shiftService.checkInShift(parseInt(id!), {
         location: checkInData.location,
@@ -527,9 +567,15 @@ const ShiftCheckIn: React.FC = () => {
           type: 'success'
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Check-in failed:', error);
-      setError('Failed to check in. Please try again.');
+      console.error('Error response data:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      console.error('Error headers:', error.response?.headers);
+      
+      // Show more specific error message if available
+      const errorMessage = error.response?.data?.error || error.response?.data?.detail || error.message || 'Failed to check in. Please try again.';
+      setError(`Check-in failed: ${errorMessage}`);
     } finally {
       setIsCheckingIn(false);
     }
@@ -668,6 +714,16 @@ const ShiftCheckIn: React.FC = () => {
           <Card>
             <Stack tokens={{ childrenGap: 16 }}>
               <Text variant="large">Step 2: Verify Your Location</Text>
+              
+              {/* Development mode indicator */}
+              {isDevelopmentMode && import.meta.env.VITE_BYPASS_LOCATION_CHECK === 'true' && (
+                <MessageBar
+                  messageBarType={MessageBarType.info}
+                  isMultiline={false}
+                >
+                  🚧 Development Mode: Location verification is bypassed for testing
+                </MessageBar>
+              )}
               <Text>
                 We need to verify that you are at the correct venue before you can check in.
               </Text>
@@ -708,6 +764,31 @@ const ShiftCheckIn: React.FC = () => {
                       }}
                       iconProps={{ iconName: 'Help' }}
                     />
+                    {isDevelopmentMode && (
+                      <DefaultButton
+                        text="Manual Override"
+                        onClick={() => {
+                          const confirmed = confirm(
+                            `⚠️ DEVELOPMENT OVERRIDE ⚠️\n\nAre you physically present at:\n${shift?.venue.name}\n${shift?.venue.address}\n\nThis bypasses location verification for testing only.`
+                          );
+                          if (confirmed) {
+                            setLocationStatus('success');
+                            setCurrentStep(2);
+                            // Set dummy location data
+                            setCheckInData(prev => ({
+                              ...prev,
+                              location: {
+                                latitude: Number(shift?.venue.latitude || 0),
+                                longitude: Number(shift?.venue.longitude || 0),
+                                accuracy: 10
+                              }
+                            }));
+                          }
+                        }}
+                        iconProps={{ iconName: 'Warning' }}
+                        styles={{ root: { backgroundColor: '#ff9800', color: 'white' } }}
+                      />
+                    )}
                   </Stack>
                 </Stack>
               )}

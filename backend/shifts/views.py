@@ -790,15 +790,42 @@ class ShiftViewSet(viewsets.ModelViewSet):
             
         # Time-based restrictions validation
         now = timezone.now()
-        shift_date = shift.start_time.date()
+        shift_start = shift.start_time
+        shift_end = shift.end_time
+        
+        # Debug logging
+        print(f"🐛 CHECK-IN DEBUG: Now: {now}, Start: {shift_start}, End: {shift_end}")
+        print(f"🐛 CHECK-IN DEBUG: Now date: {now.date()}, Start date: {shift_start.date()}, End date: {shift_end.date()}")
+        
+        # Restriction 1: Must be within the valid check-in window
+        # For overnight shifts, allow check-in if current time is within the shift duration
+        # or on the shift start date (even if we've crossed to the next day)
+        shift_start_date = shift_start.date()
         current_date = now.date()
         
-        # Restriction 1: Must be the same date
-        if shift_date != current_date:
-            if shift_date > current_date:
-                days_diff = (shift_date - current_date).days
+        # Calculate if we're in a valid check-in period
+        is_overnight_shift = shift_end.date() > shift_start.date()
+        is_valid_checkin_period = False
+        
+        print(f"🐛 CHECK-IN DEBUG: Is overnight shift: {is_overnight_shift}")
+        print(f"🐛 CHECK-IN DEBUG: Current time vs shift end: {now} <= {shift_end} = {now <= shift_end}")
+        
+        if is_overnight_shift:
+            # For overnight shifts: allow check-in if we're on start date OR 
+            # if we're on end date but before the shift end time
+            if current_date == shift_start_date:
+                is_valid_checkin_period = True
+            elif current_date == shift_end.date() and now <= shift_end:
+                is_valid_checkin_period = True
+        else:
+            # For same-day shifts: must be on the same date
+            is_valid_checkin_period = (current_date == shift_start_date)
+        
+        if not is_valid_checkin_period:
+            if current_date < shift_start_date:
+                days_diff = (shift_start_date - current_date).days
                 return Response(
-                    {"detail": f"Cannot check in {days_diff} day{'s' if days_diff > 1 else ''} early. You can only check in on the day of your shift ({shift_date.strftime('%B %d, %Y')})."}, 
+                    {"detail": f"Cannot check in {days_diff} day{'s' if days_diff > 1 else ''} early. You can only check in on the day of your shift ({shift_start_date.strftime('%B %d, %Y')})."}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
             else:

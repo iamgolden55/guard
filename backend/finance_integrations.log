@@ -1,0 +1,68 @@
+ERROR 2025-08-19 15:03:09,329 views 10498 6172323840 OAuth initiation failed
+Traceback (most recent call last):
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/views.py", line 320, in post
+    oauth_url, state = ConnectionSetupService.initiate_oauth_flow(
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        provider_key=serializer.validated_data['provider_key'],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        is_sandbox=serializer.validated_data.get('is_sandbox', False)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/services.py", line 563, in initiate_oauth_flow
+    provider = ProviderFactory.create_provider(provider_key, config)
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/providers/factory.py", line 37, in create_provider
+    raise ValueError(f"Unsupported provider: {provider_key}")
+ValueError: Unsupported provider: zoho
+ERROR 2025-08-19 15:51:48,894 views 10498 6172323840 OAuth initiation failed
+Traceback (most recent call last):
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/views.py", line 320, in post
+    oauth_url, state = ConnectionSetupService.initiate_oauth_flow(
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        provider_key=serializer.validated_data['provider_key'],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        is_sandbox=serializer.validated_data.get('is_sandbox', False)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/services.py", line 563, in initiate_oauth_flow
+    provider = ProviderFactory.create_provider(provider_key, config)
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/providers/factory.py", line 37, in create_provider
+    raise ValueError(f"Unsupported provider: {provider_key}")
+ValueError: Unsupported provider: zoho
+ERROR 2025-08-19 15:51:52,014 views 10498 6172323840 OAuth initiation failed
+Traceback (most recent call last):
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/views.py", line 320, in post
+    oauth_url, state = ConnectionSetupService.initiate_oauth_flow(
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        provider_key=serializer.validated_data['provider_key'],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        is_sandbox=serializer.validated_data.get('is_sandbox', False)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/services.py", line 563, in initiate_oauth_flow
+    provider = ProviderFactory.create_provider(provider_key, config)
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/providers/factory.py", line 37, in create_provider
+    raise ValueError(f"Unsupported provider: {provider_key}")
+ValueError: Unsupported provider: freeagent
+ERROR 2025-08-19 15:51:54,852 views 10498 6172323840 OAuth initiation failed
+Traceback (most recent call last):
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/views.py", line 320, in post
+    oauth_url, state = ConnectionSetupService.initiate_oauth_flow(
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        provider_key=serializer.validated_data['provider_key'],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        is_sandbox=serializer.validated_data.get('is_sandbox', False)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/services.py", line 563, in initiate_oauth_flow
+    provider = ProviderFactory.create_provider(provider_key, config)
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/providers/factory.py", line 37, in create_provider
+    raise ValueError(f"Unsupported provider: {provider_key}")
+ValueError: Unsupported provider: freshbooks

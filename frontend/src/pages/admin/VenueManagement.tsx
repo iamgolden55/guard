@@ -32,6 +32,7 @@ import {
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
 import { VenueLocationPicker, VenueLocationDisplay } from '../../components';
+import IntelligentAddressPicker from '../../components/IntelligentAddressPicker';
 import type { VenueLocationData } from '../../components/VenueLocationPicker';
 
 // Icons
@@ -111,6 +112,7 @@ const VenueManagement: React.FC = () => {
   const [showEditVenuePanel, setShowEditVenuePanel] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
+  const [useIntelligentPicker, setUseIntelligentPicker] = useState(true);
   
   // Google Maps API key from environment variables
   const [googleMapsApiKey] = useState(() => {
@@ -828,21 +830,38 @@ const VenueManagement: React.FC = () => {
 
           {/* Location Picker */}
           <Label style={{ marginTop: 20 }}>Venue Location</Label>
-          {googleMapsApiKey !== 'YOUR_GOOGLE_MAPS_API_KEY' ? (
+          <Toggle
+            label="Use Intelligent Address Finder"
+            checked={useIntelligentPicker}
+            onChange={(_, checked) => setUseIntelligentPicker(checked || false)}
+            onText="Smart Search"
+            offText="Basic Search"
+            style={{ marginBottom: 10 }}
+          />
+          {googleMapsApiKey === 'YOUR_GOOGLE_MAPS_API_KEY' ? (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <Text variant="small">🔑 Google Maps API key required for location features</Text>
+              <br />
+              <Text variant="small">Configure your API key to enable location selection and verification.</Text>
+            </div>
+          ) : useIntelligentPicker ? (
+            <IntelligentAddressPicker
+              key={`add-venue-intelligent-${showAddVenuePanel}`}
+              apiKey={googleMapsApiKey}
+              onLocationSelect={handleLocationSelect}
+              initialLocation={selectedLocation}
+              label="Find specific venue address"
+              placeholder="Enter postcode (e.g., BS34 7HH) or full address with house number..."
+            />
+          ) : (
             <VenueLocationPicker
-              key={`add-venue-${showAddVenuePanel}`} // Force re-render when panel opens
+              key={`add-venue-basic-${showAddVenuePanel}`}
               apiKey={googleMapsApiKey}
               onLocationSelect={handleLocationSelect}
               initialLocation={selectedLocation}
               label="Set venue location on map"
               placeholder="Search for venue address..."
             />
-          ) : (
-            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded">
-              <Text variant="small">🔑 Google Maps API key required for location features</Text>
-              <br />
-              <Text variant="small">Configure your API key to enable location selection and verification.</Text>
-            </div>
           )}
 
           <Label style={{ marginTop: 20 }}>Contact Information</Label>
@@ -978,21 +997,38 @@ const VenueManagement: React.FC = () => {
 
           {/* Location Picker */}
           <Label style={{ marginTop: 20 }}>Venue Location</Label>
-          {googleMapsApiKey !== 'YOUR_GOOGLE_MAPS_API_KEY' ? (
+          <Toggle
+            label="Use Intelligent Address Finder"
+            checked={useIntelligentPicker}
+            onChange={(_, checked) => setUseIntelligentPicker(checked || false)}
+            onText="Smart Search"
+            offText="Basic Search"
+            style={{ marginBottom: 10 }}
+          />
+          {googleMapsApiKey === 'YOUR_GOOGLE_MAPS_API_KEY' ? (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded">
+              <Text variant="small">🔑 Google Maps API key required for location features</Text>
+              <br />
+              <Text variant="small">Configure your API key to enable location selection and verification.</Text>
+            </div>
+          ) : useIntelligentPicker ? (
+            <IntelligentAddressPicker
+              key={`edit-venue-intelligent-${showEditVenuePanel}-${selectedVenue?.id}`}
+              apiKey={googleMapsApiKey}
+              onLocationSelect={handleLocationSelect}
+              initialLocation={selectedLocation}
+              label="Update venue address"
+              placeholder="Enter postcode (e.g., BS34 7HH) or full address with house number..."
+            />
+          ) : (
             <VenueLocationPicker
-              key={`edit-venue-${showEditVenuePanel}-${selectedVenue?.id}`} // Force re-render when panel opens
+              key={`edit-venue-basic-${showEditVenuePanel}-${selectedVenue?.id}`}
               apiKey={googleMapsApiKey}
               onLocationSelect={handleLocationSelect}
               initialLocation={selectedLocation}
               label="Update venue location on map"
               placeholder="Search for venue address..."
             />
-          ) : (
-            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded">
-              <Text variant="small">🔑 Google Maps API key required for location features</Text>
-              <br />
-              <Text variant="small">Configure your API key to enable location selection and verification.</Text>
-            </div>
           )}
 
           <Label style={{ marginTop: 20 }}>Contact Information</Label>

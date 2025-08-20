@@ -17,7 +17,6 @@ import {
 import { MainLayout } from '../../layouts';
 import { Card, SignatureCanvas } from '../../components';
 import { shiftService } from '../../services';
-import type { Venue } from '../../types/venue';
 
 interface ShiftDetails {
   id: number;
@@ -53,9 +52,7 @@ const ShiftCheckOut: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [shift, setShift] = useState<ShiftDetails | null>(null);
-  const [venues, setVenues] = useState<Venue[]>([]);
   const [currentStep, setCurrentStep] = useState(1);
-  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [checkOutData, setCheckOutData] = useState<CheckOutData>({
     location: null,
     photo: null,
@@ -64,7 +61,6 @@ const ShiftCheckOut: React.FC = () => {
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [locationStatus, setLocationStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [isWithinRange, setIsWithinRange] = useState<boolean | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -77,35 +73,21 @@ const ShiftCheckOut: React.FC = () => {
       if (!id) return;
       
       try {
-        const [shiftData, venuesData] = await Promise.all([
-          shiftService.getShiftById(parseInt(id)),
-          shiftService.getVenues()
-        ]);
-        
+        // Load shift data from API
+        const shiftData: any = await shiftService.getShiftById(parseInt(id));
         console.log('Shift data received:', shiftData);
-        console.log('Venues API response:', venuesData);
-        
-        // Handle venues data structure
-        let venuesArray: Venue[] = [];
-        if (Array.isArray(venuesData)) {
-          venuesArray = venuesData;
-        } else if (venuesData && venuesData.results && Array.isArray(venuesData.results)) {
-          venuesArray = venuesData.results;
-        }
-        
-        console.log('Processed venues array:', venuesArray);
-        console.log('Looking for venue ID:', shiftData.venue.id);
-        
-        const venueDetails = Array.isArray(venuesArray) ? venuesArray.find(v => v.id === shiftData.venue.id) as Venue : null;
-        console.log('Found venue details:', venueDetails);
-        
-        if (!venueDetails) {
-          throw new Error('Venue not found');
-        }
         
         // Transform the API response to match our component interface
         const startTime = shiftData.start_time || shiftData.startTime;
         const endTime = shiftData.end_time || shiftData.endTime || '';
+        
+        // Extract venue data - coordinates should be included in shift response
+        const venueData = shiftData.venue || shiftData.venue_details || shiftData.venueDetails;
+        console.log('Venue data from shift:', venueData);
+        
+        if (!venueData) {
+          throw new Error('Venue data not found in shift response');
+        }
         
         // Calculate total hours
         const startTimeDate = new Date(startTime);
@@ -116,11 +98,11 @@ const ShiftCheckOut: React.FC = () => {
         const transformedShift: ShiftDetails = {
           id: shiftData.id,
           venue: {
-            id: shiftData.venue.id || shiftData.venue_details?.id,
-            name: shiftData.venue.name || shiftData.venue_details?.name,
-            address: shiftData.venue.address || shiftData.venue_details?.address || 'Unknown Address',
-            latitude: venueDetails?.latitude,
-            longitude: venueDetails?.longitude
+            id: venueData?.id,
+            name: venueData?.name || 'Unknown Venue',
+            address: venueData?.address || 'Unknown Address',
+            latitude: venueData?.latitude,
+            longitude: venueData?.longitude
           },
           startTime: startTime,
           endTime: endTime,
@@ -129,17 +111,20 @@ const ShiftCheckOut: React.FC = () => {
           checkInTime: shiftData.check_in_time
         };
         
-        setShift(transformedShift);
-        setVenues(venuesArray);
-        
         console.log('Transformed shift for UI:', transformedShift);
-        console.log('Venue has coordinates:', transformedShift.venue.latitude, transformedShift.venue.longitude);
+        console.log('Venue coordinates from shift response:', {
+          latitude: transformedShift.venue.latitude,
+          longitude: transformedShift.venue.longitude,
+          hasCoordinates: !!(transformedShift.venue.latitude && transformedShift.venue.longitude)
+        });
         
         // Check if venue has coordinates
         if (!transformedShift.venue.latitude || !transformedShift.venue.longitude) {
           setError('This venue does not have location coordinates set up. Please contact your manager.');
           return;
         }
+        
+        setShift(transformedShift);
         
         // Verify shift is in_progress
         if (transformedShift.status !== 'in_progress') {
@@ -202,7 +187,6 @@ const ShiftCheckOut: React.FC = () => {
           accuracy: position.coords.accuracy
         };
         
-        setUserLocation(userLoc);
         
         // Check if user is within acceptable range of venue (if venue has coordinates)
         console.log('Venue coordinates:', shift?.venue.latitude, shift?.venue.longitude);
@@ -218,7 +202,6 @@ const ShiftCheckOut: React.FC = () => {
           
           // Allow check-out within 100 meters of venue
           const isWithin = distance <= 0.1; // 0.1 km = 100 meters
-          setIsWithinRange(isWithin);
           
           if (isWithin) {
             setLocationStatus('success');

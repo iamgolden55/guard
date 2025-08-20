@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'django_filters',
     'api',
     'shifts',
+    'finance_integrations',
 ]
 
 MIDDLEWARE = [
@@ -165,6 +166,61 @@ CORS_ALLOW_CREDENTIALS = True
 #     "http://localhost:3000",
 #     "http://127.0.0.1:3000",
 # ]
+
+# Finance Integrations OAuth Settings
+FINANCE_OAUTH_SETTINGS = {
+    'xero': {
+        'client_id': os.environ.get('XERO_CLIENT_ID', ''),
+        'client_secret': os.environ.get('XERO_CLIENT_SECRET', ''),
+        'scope': 'accounting.transactions accounting.contacts.read accounting.settings payroll.employees payroll.payruns payroll.settings files',
+        'redirect_uri': os.environ.get('XERO_REDIRECT_URI', 'http://localhost:3000/admin/finance-integrations/oauth-callback'),
+    },
+    'quickbooks': {
+        'client_id': os.environ.get('QUICKBOOKS_CLIENT_ID', ''),
+        'client_secret': os.environ.get('QUICKBOOKS_CLIENT_SECRET', ''),
+        'scope': 'com.intuit.quickbooks.accounting',
+        'redirect_uri': os.environ.get('QUICKBOOKS_REDIRECT_URI', 'http://localhost:3000/admin/finance-integrations/oauth-callback'),
+        'discovery_document': 'https://appcenter.intuit.com/connect/oauth2',
+    },
+    'sage': {
+        'client_id': os.environ.get('SAGE_CLIENT_ID', ''),
+        'client_secret': os.environ.get('SAGE_CLIENT_SECRET', ''),
+        'scope': 'full_access',
+        'redirect_uri': os.environ.get('SAGE_REDIRECT_URI', 'http://localhost:3000/admin/finance-integrations/oauth-callback'),
+    },
+}
+
+# Logging configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': 'finance_integrations.log',
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'finance_integrations': {
+            'handlers': ['file', 'console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}
 
 # REST Framework settings
 REST_FRAMEWORK = {

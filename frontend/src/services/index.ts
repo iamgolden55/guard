@@ -7,6 +7,7 @@ import profileService from './profileService';
 import venueService from './venueService';
 import exchangeService from './exchangeService';
 import userService from './userService';
+import financeIntegrationsService from './financeIntegrationsService';
 
 export {
   api,
@@ -17,5 +18,6 @@ export {
   profileService,
   venueService,
   exchangeService,
-  userService
+  userService,
+  financeIntegrationsService
 };

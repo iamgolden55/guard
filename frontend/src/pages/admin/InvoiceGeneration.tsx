@@ -30,8 +30,10 @@ import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { MainLayout } from '../../layouts';
 import { Card, BulkPayrollGeneration } from '../../components';
-import { invoiceService, shiftService, userService } from '../../services';
+import { invoiceService, shiftService, userService, financeIntegrationsService } from '../../services';
 import { type Invoice, InvoiceStatus } from '../../types';
+import type { ProviderConnection } from '../../services/financeIntegrationsService';
+import FinanceIntegrations from './FinanceIntegrations';
 
 const InvoiceGeneration: React.FC = () => {
   const navigate = useNavigate();
@@ -44,6 +46,13 @@ const InvoiceGeneration: React.FC = () => {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
+  
+  // Finance integrations state
+  const [financeConnections, setFinanceConnections] = useState<ProviderConnection[]>([]);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [selectedInvoicesForExport, setSelectedInvoicesForExport] = useState<number[]>([]);
+  const [selectedConnection, setSelectedConnection] = useState<number | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -63,6 +72,14 @@ const InvoiceGeneration: React.FC = () => {
           data: user
         }));
         setStaffOptions(staffOptions);
+
+        // Load finance connections
+        try {
+          const connections = await financeIntegrationsService.getConnections();
+          setFinanceConnections(connections.filter(conn => conn.status === 'connected'));
+        } catch (error) {
+          console.warn('Finance integrations not available:', error);
+        }
 
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -265,6 +282,66 @@ const InvoiceGeneration: React.FC = () => {
     }
   };
 
+  // Handle export to accounting
+  const handleExportToAccounting = (invoiceId: number) => {
+    setSelectedInvoicesForExport([invoiceId]);
+    setSelectedConnection(financeConnections.length > 0 ? financeConnections[0].id : null);
+    setShowExportDialog(true);
+  };
+
+  // Handle bulk export to accounting
+  const handleBulkExportToAccounting = () => {
+    const approvedInvoices = invoices.filter(invoice => 
+      invoice.status === InvoiceStatus.PAID
+    ).map(invoice => invoice.id);
+    
+    if (approvedInvoices.length === 0) {
+      setError('No approved invoices available for export.');
+      return;
+    }
+
+    setSelectedInvoicesForExport(approvedInvoices);
+    setSelectedConnection(financeConnections.length > 0 ? financeConnections[0].id : null);
+    setShowExportDialog(true);
+  };
+
+  // Confirm export to accounting
+  const handleConfirmExport = async () => {
+    if (!selectedConnection || selectedInvoicesForExport.length === 0) {
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      setError(null);
+
+      const result = await financeIntegrationsService.exportInvoices({
+        connection_id: selectedConnection,
+        invoice_ids: selectedInvoicesForExport
+      });
+
+      const successCount = result.exports.filter(exp => exp.status === 'completed').length;
+      const failCount = result.exports.filter(exp => exp.status === 'failed').length;
+
+      if (successCount > 0) {
+        setSuccess(`Successfully exported ${successCount} invoice(s) to accounting.`);
+      }
+      if (failCount > 0) {
+        setError(`Failed to export ${failCount} invoice(s). Check export history for details.`);
+      }
+
+      setShowExportDialog(false);
+      setSelectedInvoicesForExport([]);
+      setSelectedConnection(null);
+
+    } catch (error) {
+      console.error('Export failed:', error);
+      setError('Failed to export invoices. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // Column definitions for invoices
   const invoiceColumns: IColumn[] = [
     {
@@ -383,6 +460,20 @@ const InvoiceGeneration: React.FC = () => {
                 <Spinner size={SpinnerSize.xSmall} className="ml-2" />
               )}
             </Link>
+          )}
+
+          {/* Finance Integration Actions */}
+          {financeConnections.length > 0 && item.status === InvoiceStatus.PAID && (
+            <>
+              <span className="text-gray-300">|</span>
+              <Link
+                onClick={() => handleExportToAccounting(item.id)}
+                disabled={isSaving && selectedInvoiceId === item.id}
+                style={{ color: '#0078d4' }}
+              >
+                Send to Accounting
+              </Link>
+            </>
           )}
 
           {/* Status actions */}
@@ -524,7 +615,26 @@ const InvoiceGeneration: React.FC = () => {
           <PivotItem headerText="Invoice List">
             <Card>
               <Stack tokens={{ childrenGap: 16 }}>
-                <Text variant="large" className="mb-4">Manage Invoices</Text>
+                <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
+                  <Text variant="large" className="mb-4">Manage Invoices</Text>
+                  {financeConnections.length > 0 && invoices.some(inv => inv.status === InvoiceStatus.PAID) && (
+                    <PrimaryButton
+                      text="Export All Paid to Accounting"
+                      iconProps={{ iconName: 'CloudUpload' }}
+                      onClick={handleBulkExportToAccounting}
+                      disabled={isSaving || isExporting}
+                    />
+                  )}
+                </Stack>
+
+                {financeConnections.length > 0 && (
+                  <MessageBar messageBarType={MessageBarType.info}>
+                    <Text>
+                      Finance integrations are enabled. Paid invoices can be exported to: {' '}
+                      {financeConnections.map(conn => conn.provider_name).join(', ')}
+                    </Text>
+                  </MessageBar>
+                )}
 
                 {isLoading ? (
                   <div className="flex justify-center py-8">
@@ -558,6 +668,12 @@ const InvoiceGeneration: React.FC = () => {
                 
                 <BulkPayrollGeneration />
               </Stack>
+            </div>
+          </PivotItem>
+
+          <PivotItem headerText="Finance Integrations">
+            <div className="mt-6">
+              <FinanceIntegrations />
             </div>
           </PivotItem>
         </Pivot>
@@ -620,6 +736,80 @@ const InvoiceGeneration: React.FC = () => {
             }}
             text="Cancel"
             disabled={isSaving}
+          />
+        </DialogFooter>
+      </Dialog>
+
+      {/* Export to Accounting Dialog */}
+      <Dialog
+        hidden={!showExportDialog}
+        onDismiss={() => {
+          setShowExportDialog(false);
+          setSelectedInvoicesForExport([]);
+          setSelectedConnection(null);
+        }}
+        dialogContentProps={{
+          type: DialogType.normal,
+          title: 'Export to Accounting Software',
+          subText: `Export ${selectedInvoicesForExport.length} invoice(s) to your accounting software`
+        }}
+        minWidth={500}
+      >
+        <Stack tokens={{ childrenGap: 16 }}>
+          {financeConnections.length > 1 ? (
+            <Dropdown
+              label="Accounting Connection"
+              options={financeConnections.map(conn => ({
+                key: conn.id,
+                text: `${conn.provider_name} - ${conn.company_name}${conn.is_sandbox ? ' (Sandbox)' : ''}`
+              }))}
+              selectedKey={selectedConnection}
+              onChange={(_, option) => setSelectedConnection(option?.key as number || null)}
+              required
+            />
+          ) : financeConnections.length === 1 ? (
+            <div>
+              <Label>Accounting Connection</Label>
+              <Text>
+                {financeConnections[0].provider_name} - {financeConnections[0].company_name}
+                {financeConnections[0].is_sandbox && ' (Sandbox)'}
+              </Text>
+            </div>
+          ) : (
+            <MessageBar messageBarType={MessageBarType.warning}>
+              No accounting connections configured. Please set up a connection in the Finance Integrations tab first.
+            </MessageBar>
+          )}
+
+          <MessageBar messageBarType={MessageBarType.info}>
+            <Text>
+              This will create invoices in your accounting software for the selected staff invoices. 
+              The invoices will include all shift details and PDF attachments where available.
+            </Text>
+          </MessageBar>
+
+          {isExporting && (
+            <div className="flex items-center">
+              <Spinner size={SpinnerSize.small} style={{ marginRight: 8 }} />
+              <Text>Exporting invoices...</Text>
+            </div>
+          )}
+        </Stack>
+
+        <DialogFooter>
+          <PrimaryButton
+            onClick={handleConfirmExport}
+            text={`Export ${selectedInvoicesForExport.length} Invoice(s)`}
+            disabled={!selectedConnection || isExporting || financeConnections.length === 0}
+          />
+          <DefaultButton
+            onClick={() => {
+              setShowExportDialog(false);
+              setSelectedInvoicesForExport([]);
+              setSelectedConnection(null);
+            }}
+            text="Cancel"
+            disabled={isExporting}
           />
         </DialogFooter>
       </Dialog>

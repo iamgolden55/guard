@@ -12,7 +12,8 @@ import { NotFoundPage, UnauthorizedPage } from './pages/shared';
 import { StaffDashboard, StartShift, EndShift, ShiftChecks, MyShifts, MyInvoices, ProfilePage, ShiftExchange, ShiftCheckIn, ShiftCheckOut } from './pages/staff';
 import ShiftDetails from './pages/staff/ShiftDetails';
 import { ManagerDashboard, ShiftApproval } from './pages/manager';
-import { AdminDashboard, InvoiceGeneration, ShiftScheduling, Settings } from './pages/admin';
+import { AdminDashboard, InvoiceGeneration, ShiftScheduling, Settings, FinanceIntegrations } from './pages/admin';
+import FinanceIntegrationsOAuthCallback from './pages/admin/FinanceIntegrationsOAuthCallback';
 
 // New Components
 import StaffShifts from './pages/manager/StaffShifts';
@@ -71,6 +72,8 @@ const Router: React.FC = () => {
         <Route path="/admin/deputy/sync" element={<div>Deputy Sync</div>} />
         <Route path="/admin/recruitment" element={<RecruitmentManagement />} />
         <Route path="/admin/reports" element={<Reports />} />
+        <Route path="/admin/finance-integrations" element={<FinanceIntegrations />} />
+        <Route path="/admin/finance-integrations/oauth-callback" element={<FinanceIntegrationsOAuthCallback />} />
         <Route path="/admin/settings" element={<Settings />} />
       </Route>
 
