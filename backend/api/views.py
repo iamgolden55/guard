@@ -4877,10 +4877,11 @@ class OnboardingViewSet(viewsets.ViewSet):
     def get_permissions(self):
         """
         Override permissions for specific actions.
-        initiate_onboarding only requires IsAuthenticated since it creates the first company.
+        initiate_onboarding and get_progress only require IsAuthenticated since they handle
+        users who don't have company memberships yet during the onboarding process.
         All other actions require IsCompanyOwnerOrAdmin.
         """
-        if self.action == 'initiate_onboarding':
+        if self.action in ['initiate_onboarding', 'get_progress']:
             permission_classes = [IsAuthenticated]
         else:
             permission_classes = [IsAuthenticated, IsCompanyOwnerOrAdmin]
