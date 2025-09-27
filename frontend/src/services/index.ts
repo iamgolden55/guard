@@ -8,6 +8,11 @@ import venueService from './venueService';
 import exchangeService from './exchangeService';
 import userService from './userService';
 import financeIntegrationsService from './financeIntegrationsService';
+import leaveService from './leaveService';
+import holidayService from './holidayService';
+import reportService from './reportService';
+import onboardingService from './onboardingService';
+import companyService from './companyService';
 
 export {
   api,
@@ -19,5 +24,10 @@ export {
   venueService,
   exchangeService,
   userService,
-  financeIntegrationsService
+  financeIntegrationsService,
+  leaveService,
+  holidayService,
+  reportService,
+  onboardingService,
+  companyService
 };

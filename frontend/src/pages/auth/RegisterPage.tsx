@@ -18,12 +18,19 @@ const RegisterPage: React.FC = () => {
   const { register, authState } = useAuth();
   const navigate = useNavigate();
 
-  // Redirect if already authenticated
+  // Redirect based on authentication and onboarding status
   React.useEffect(() => {
     if (authState.isAuthenticated) {
-      navigate('/');
+      // If onboarding is not completed, redirect to onboarding
+      if (!authState.onboarding.isCompleted) {
+        const currentStep = authState.onboarding.currentStep || 1;
+        navigate(`/onboarding/step/${currentStep}`);
+      } else {
+        // If onboarding is completed, redirect to dashboard
+        navigate('/dashboard');
+      }
     }
-  }, [authState.isAuthenticated, navigate]);
+  }, [authState.isAuthenticated, authState.onboarding, navigate]);
 
   // Registration form validation schema
   const validationSchema = Yup.object({

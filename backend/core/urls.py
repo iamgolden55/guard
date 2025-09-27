@@ -40,6 +40,7 @@ urlpatterns = [
     path('api/v1/', include('api.urls')),
     path('api/shifts/', include('shifts.urls')),  # Add shifts app routing
     path('api/finance/', include('finance_integrations.urls')),  # Add finance integrations
+    path('api/v1/leave/', include('leave_management.urls')),  # Add leave management
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]

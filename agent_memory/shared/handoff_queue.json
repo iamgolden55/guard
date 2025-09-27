@@ -1,0 +1,120 @@
+{
+  "handoff_queue": [
+    {
+      "id": "HANDOFF-COMP-001",
+      "from_agent": "orchestrator",
+      "to_agent": "django_backend_expert",
+      "task_id": "COMP-001",
+      "deliverables": [
+        "Enhanced WorkingHoursRegulation model with regional fields",
+        "Security sector overrides for UK SIA requirements",
+        "Break requirements JSON field implementation",
+        "Night shift rules for UK/EU limitations",
+        "Opt-out provisions tracking",
+        "US state overrides support"
+      ],
+      "requirements": [
+        "Model must support UK, US, EU regulations",
+        "Handle security industry-specific rules",
+        "Support opt-out tracking for UK/EU",
+        "Manage US state-level overrides",
+        "Maintain backward compatibility"
+      ],
+      "instructions": "Enhance the existing WorkingHoursRegulation model to support regional compliance requirements. Add fields for security industry overrides, break requirements, night shift rules, and opt-out provisions. Ensure the model can handle UK SIA requirements, US state variations, and EU Working Time Directive.",
+      "priority": "critical",
+      "created_at": "2025-01-16T15:35:00Z",
+      "expected_start": "2025-01-16T15:45:00Z",
+      "estimated_duration_hours": 4.0,
+      "status": "pending",
+      "dependencies_met": true,
+      "validation_criteria": [
+        "All new fields properly indexed",
+        "Migration scripts created and tested",
+        "Unit tests cover new functionality",
+        "Existing data preserved during migration"
+      ]
+    }
+  ],
+  "pending_handoffs": [
+    {
+      "id": "HANDOFF-COMP-002",
+      "from_agent": "django_backend_expert",
+      "to_agent": "django_orm_expert",
+      "task_id": "COMP-002",
+      "status": "waiting_for_predecessor",
+      "dependencies": ["COMP-001"]
+    },
+    {
+      "id": "HANDOFF-COMP-003",
+      "from_agent": "django_orm_expert",
+      "to_agent": "django_api_developer",
+      "task_id": "COMP-003",
+      "status": "waiting_for_predecessor",
+      "dependencies": ["COMP-002"]
+    }
+  ],
+  "completed_handoffs": [],
+  "last_updated": "2025-01-16T15:35:00Z",
+  "queue_status": "active",
+  "active_handoffs_count": 1,
+
+  "example_handoff_structure": {
+    "id": "HANDOFF-001",
+    "from_agent": "django_backend_expert",
+    "to_agent": "django_api_developer",
+    "task_id": "TASK-012",
+    "deliverables": [
+      "LeavePolicy model completed",
+      "Migration files created",
+      "Unit tests passing"
+    ],
+    "requirements": [
+      "Model should support multiple leave types",
+      "Accrual calculations must be accurate",
+      "Integration with User model verified"
+    ],
+    "instructions": "Create REST API endpoints for the LeavePolicy model with CRUD operations",
+    "priority": "high",
+    "created_at": "2025-01-13T14:00:00Z",
+    "expected_start": "2025-01-13T16:00:00Z",
+    "estimated_duration_hours": 2.5,
+    "status": "pending",
+    "dependencies_met": true,
+    "validation_criteria": [
+      "All model tests passing",
+      "Database migration successful",
+      "Code review approved"
+    ]
+  },
+
+  "handoff_workflow": {
+    "1_preparation": "Sending agent prepares deliverables and documentation",
+    "2_validation": "Automated checks verify completion criteria",
+    "3_notification": "Receiving agent notified of pending handoff",
+    "4_acceptance": "Receiving agent accepts or requests clarification",
+    "5_transition": "Work officially transferred to receiving agent",
+    "6_confirmation": "Sending agent confirms successful handoff"
+  },
+
+  "quality_gates": [
+    "All deliverables present and verified",
+    "Dependencies resolved",
+    "Quality checks passed",
+    "Documentation complete",
+    "Receiving agent capacity available"
+  ],
+
+  "escalation_rules": {
+    "pending_over_4_hours": "notify_orchestrator",
+    "blocked_over_8_hours": "escalate_to_head_agent",
+    "failed_handoff_3_times": "manual_intervention_required"
+  },
+
+  "metrics": {
+    "total_handoffs_processed": 0,
+    "average_handoff_time_hours": 0.0,
+    "success_rate": 0.0,
+    "most_common_delays": [],
+    "agent_handoff_performance": {}
+  }
+}

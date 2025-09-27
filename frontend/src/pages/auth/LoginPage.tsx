@@ -30,7 +30,14 @@ const LoginPage: React.FC = () => {
   // Redirect if already authenticated
   React.useEffect(() => {
     if (authState.isAuthenticated && !authState.isLoading) {
-      navigate(from);
+      // If onboarding is not completed, redirect to onboarding
+      if (!authState.onboarding.isCompleted) {
+        const currentStep = authState.onboarding.currentStep || 1;
+        navigate(`/onboarding/step/${currentStep}`);
+      } else {
+        // If onboarding is completed, redirect to intended destination or dashboard
+        navigate(from === '/' ? '/dashboard' : from);
+      }
     }
   }, [authState, navigate, from]);
 

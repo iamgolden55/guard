@@ -3,6 +3,9 @@ export * from './invoice';
 export * from './deputy';
 export * from './profile';
 export * from './venue';
+export * from './leave';
+export * from './reports';
+export * from './onboarding';
 
 // Export shift types with aliases to avoid conflicts
 export type {

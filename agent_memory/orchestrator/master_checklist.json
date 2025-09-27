@@ -1,0 +1,40 @@
+{
+  "project": "Security Staff Management System Enhancement",
+  "project_id": "SSMS-2025",
+  "last_updated": "2025-01-13T10:00:00Z",
+  "orchestrator": "head_agent",
+  "phases": {
+    "Phase 1": {
+      "name": "Core Leave Management System",
+      "description": "Holiday leave management with requests, approvals, and balance tracking",
+      "priority": "Highest",
+      "target_weeks": "1-4",
+      "status": "in_progress",
+      "progress_percentage": 85,
+      "start_date": null,
+      "target_completion": "2025-02-10T23:59:59Z",
+      "actual_completion": null,
+      "tasks": {
+        "backend": {
+          "total": 10,
+          "completed": 7,
+          "in_progress": 0,
+          "blocked": 0,
+          "not_started": 3
+        },
+        "frontend": {
+          "total": 8,
+          "completed": 8,
+          "in_progress": 0,
+          "blocked": 0,
+          "not_started": 0
+        },
+        "supporting": {
+          "total": 4,
+          "completed": 0,
+          "in_progress": 0,
+          "blocked": 0,
+          "not_started": 4
+        }
+      },
+      "deliverables": [\n        \"Complete leave request/approval workflow functional\",\n        \"Auto-accrual calculations working accurately\",\n        \"Manager approval dashboard operational\",\n        \"Integration with existing shift scheduling system\"\n      ],\      "risks": [\n        \"Database migration complexity for existing data\",\n        \"Integration challenges with existing shift system\"\n      ]\n    },\n    \"Phase 2\": {\n      \"name\": \"Attendance & Virtual ID System\",\n      \"description\": \"Digital ID cards with QR codes, GPS-based attendance tracking\",\n      \"priority\": \"Highest\",\n      \"target_weeks\": \"5-8\",\n      \"status\": \"not_started\",\n      \"progress_percentage\": 0,\n      \"dependencies\": [\"Phase 1\"],\n      \"tasks\": {\n        \"backend\": {\n          \"total\": 6,\n          \"completed\": 0,\n          \"in_progress\": 0,\n          \"blocked\": 0,\n          \"not_started\": 6\n        },\n        \"frontend\": {\n          \"total\": 8,\n          \"completed\": 0,\n          \"in_progress\": 0,\n          \"blocked\": 0,\n          \"not_started\": 8\n        }\n      },\n      \"deliverables\": [\n        \"Virtual ID cards generated with QR codes\",\n        \"GPS-based check-in/out functionality working\",\n        \"Attendance pattern analysis and graphs operational\",\n        \"Mobile-responsive design validated\"\n      ]\n    },\n    \"Phase 3\": {\n      \"name\": \"Digital Signature & Compliance\",\n      \"description\": \"Enhanced signature capture, approval workflows, security compliance\",\n      \"priority\": \"High\",\n      \"target_weeks\": \"9-12\",\n      \"status\": \"not_started\",\n      \"progress_percentage\": 0,\n      \"dependencies\": [\"Phase 2\"]\n    },\n    \"Phase 4\": {\n      \"name\": \"Advanced Features & Analytics\",\n      \"description\": \"AI optimization, gamification, advanced analytics\",\n      \"priority\": \"Medium\",\n      \"target_weeks\": \"13-16\",\n      \"status\": \"not_started\",\n      \"progress_percentage\": 0,\n      \"dependencies\": [\"Phase 3\"]\n    }\n  },\n  \"agent_status\": {\n    \"django_backend_expert\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 5,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 15.0,\n      \"availability\": \"available\"\n    },\n    \"django_orm_expert\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 5,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 12.0,\n      \"availability\": \"available\"\n    },\n    \"django_api_developer\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 7,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 20.0,\n      \"availability\": \"available\"\n    },\n    \"react_component_architect\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 8,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 26.0,\n      \"availability\": \"available\"\n    },\n    \"react_state_manager\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 5.5,\n      \"availability\": \"available\"\n    },\n    \"frontend_developer\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 7.0,\n      \"availability\": \"available\"\n    },\n    \"api_architect\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 5.0,\n      \"availability\": \"available\"\n    },\n    \"performance_optimizer\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 5.0,\n      \"availability\": \"available\"\n    },\n    \"documentation_specialist\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 7.0,\n      \"availability\": \"available\"\n    },\n    \"code_reviewer\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 5.5,\n      \"availability\": \"available\"\n    }\n  },\n  \"critical_path\": [\n    \"LeavePolicy model → API endpoints → Frontend form → Manager approval\",\n    \"LeaveBalance calculations → Real-time display → Mobile optimization\",\n    \"Virtual ID generation → QR codes → Offline access → PWA features\"\n  ],\n  \"current_blockers\": [],\n  \"upcoming_milestones\": [\n    {\n      \"name\": \"Phase 1 Backend Foundation Complete\",\n      \"date\": \"2025-01-27T23:59:59Z\",\n      \"dependencies\": [\"TASK-001\", \"TASK-002\", \"TASK-003\", \"TASK-006\", \"TASK-007\"]\n    },\n    {\n      \"name\": \"Phase 1 API Layer Complete\",\n      \"date\": \"2025-02-03T23:59:59Z\",\n      \"dependencies\": [\"TASK-011\", \"TASK-012\", \"TASK-013\", \"TASK-014\"]\n    },\n    {\n      \"name\": \"Phase 1 Frontend Complete\",\n      \"date\": \"2025-02-10T23:59:59Z\",\n      \"dependencies\": [\"TASK-018\", \"TASK-019\", \"TASK-021\", \"TASK-026\"]\n    }\n  ],\n  \"risk_items\": [\n    {\n      \"risk\": \"Database migration complexity for existing data\",\n      \"impact\": \"high\",\n      \"probability\": \"medium\",\n      \"mitigation\": \"Plan thorough testing environment and rollback procedures\",\n      \"owner\": \"django_orm_expert\"\n    },\n    {\n      \"risk\": \"Mobile performance for offline PWA features\",\n      \"impact\": \"medium\",\n      \"probability\": \"medium\",\n      \"mitigation\": \"Early testing on various mobile devices\",\n      \"owner\": \"performance_optimizer\"\n    }\n  ],\n  \"success_metrics\": {\n    \"phase_1_targets\": {\n      \"leave_request_completion_rate\": 95,\n      \"manager_approval_time\": \"< 24 hours\",\n      \"balance_calculation_accuracy\": \"100%\",\n      \"api_response_time\": \"< 200ms\"\n    }\n  },\n  \"communication_log\": [\n    {\n      \"timestamp\": \"2025-01-13T10:00:00Z\",\n      \"message\": \"Agent memory system initialized\",\n      \"type\": \"system\",\n      \"priority\": \"info\"\n    }\n  ]\n}"

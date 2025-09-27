@@ -1,0 +1,55 @@
+{
+  "agent_name": "documentation_specialist",
+  "agent_type": "supporting",
+  "last_updated": "2025-01-13T10:00:00Z",
+  "current_status": "idle",
+  "current_task": null,
+  "completed_tasks": [],
+  "pending_tasks": [
+    {
+      "id": "TASK-034",
+      "description": "Document new leave management models and APIs",
+      "phase": "Phase 1",
+      "priority": "medium",
+      "dependencies": ["TASK-001", "TASK-002", "TASK-003", "TASK-031"],
+      "dependent_agents": ["api_architect"],
+      "estimated_hours": 4.0,
+      "requirements": [
+        "Model documentation with relationships",
+        "API endpoint documentation",
+        "Integration guides for developers"
+      ]
+    },
+    {
+      "id": "TASK-035",
+      "description": "Create user guides for leave management and virtual ID features",
+      "phase": "Phase 2",
+      "priority": "low",
+      "dependencies": ["TASK-022", "TASK-024"],
+      "dependent_agents": ["react_component_architect"],
+      "estimated_hours": 3.0
+    }
+  ],
+  "handoffs": {
+    "sent": [],
+    "received": []
+  },
+  "expertise_areas": [
+    "Technical documentation",
+    "API documentation",
+    "User guides",
+    "Developer documentation",
+    "Markdown",
+    "Documentation tooling"
+  ],
+  "knowledge_base": [],
+  "performance_metrics": {
+    "tasks_completed_this_phase": 0,
+    "average_task_duration_hours": 0.0,
+    "blocked_time_hours": 0.0,
+    "handoff_success_rate": 0.0,
+    "rework_rate": 0.0
+  },
+  "notes": ["Maintain consistency with existing documentation style"],
+  "alerts": []
+}

@@ -1,0 +1,50 @@
+
+> react-vite-tailwind@0.0.0 build
+> vite build --outDir dist
+
+vite v6.2.6 building for production...
+(node:45732) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/new/Projects/mead-security/remix2/frontend/postcss.config.js?t=1758763920633 is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/new/Projects/mead-security/remix2/frontend/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+transforming...
+✓ 3976 modules transformed.
+rendering chunks...
+[plugin vite:reporter] 
+(!) /Users/new/Projects/mead-security/remix2/frontend/src/services/api.ts is dynamically imported by /Users/new/Projects/mead-security/remix2/frontend/src/components/BulkPayrollGeneration.tsx, /Users/new/Projects/mead-security/remix2/frontend/src/components/BulkPayrollGeneration.tsx but also statically imported by /Users/new/Projects/mead-security/remix2/frontend/src/components/MandatoryProfileForm.tsx, /Users/new/Projects/mead-security/remix2/frontend/src/components/WeeklyEarnings.tsx, /Users/new/Projects/mead-security/remix2/frontend/src/pages/admin/Dashboard.tsx, /Users/new/Projects/mead-security/remix2/frontend/src/pages/admin/ShiftScheduling.tsx, /Users/new/Projects/mead-security/remix2/frontend/src/pages/admin/StaffManagement.tsx, /Users/new/Projects/mead-security/remix2/frontend/src/pages/staff/MyShifts.tsx, /Users/new/Projects/mead-security/remix2/frontend/src/services/authService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/companyService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/deputyService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/employmentTypeService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/exchangeService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/holidayService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/index.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/invoiceService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/leaveService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/onboardingService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/profileService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/recruitmentService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/reportService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/settingsService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/shiftService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/userService.ts, /Users/new/Projects/mead-security/remix2/frontend/src/services/venueService.ts, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) /Users/new/Projects/mead-security/remix2/frontend/src/pages/manager/TeamOverview.tsx is dynamically imported by /Users/new/Projects/mead-security/remix2/frontend/src/Router.tsx but also statically imported by /Users/new/Projects/mead-security/remix2/frontend/src/pages/leave/LeaveManagement.tsx, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) /Users/new/Projects/mead-security/remix2/frontend/src/pages/admin/LeavePolicies.tsx is dynamically imported by /Users/new/Projects/mead-security/remix2/frontend/src/Router.tsx but also statically imported by /Users/new/Projects/mead-security/remix2/frontend/src/pages/leave/LeaveManagement.tsx, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) /Users/new/Projects/mead-security/remix2/frontend/src/pages/admin/LeaveReports.tsx is dynamically imported by /Users/new/Projects/mead-security/remix2/frontend/src/Router.tsx but also statically imported by /Users/new/Projects/mead-security/remix2/frontend/src/pages/leave/LeaveManagement.tsx, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) /Users/new/Projects/mead-security/remix2/frontend/src/pages/admin/LeaveSettings.tsx is dynamically imported by /Users/new/Projects/mead-security/remix2/frontend/src/Router.tsx but also statically imported by /Users/new/Projects/mead-security/remix2/frontend/src/pages/leave/LeaveManagement.tsx, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) /Users/new/Projects/mead-security/remix2/frontend/src/components/compliance/ComplianceSettings.tsx is dynamically imported by /Users/new/Projects/mead-security/remix2/frontend/src/Router.tsx but also statically imported by /Users/new/Projects/mead-security/remix2/frontend/src/pages/compliance/ComplianceManagement.tsx, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/index.html                                     0.35 kB │ gzip:   0.25 kB
+dist/assets/index-CVM5tthg.css                     53.92 kB │ gzip:   9.90 kB
+dist/assets/recruitmentService-CXkyDICD.js          1.10 kB │ gzip:   0.43 kB
+dist/assets/DeputyIntegration-DuN-hxuv.js           8.25 kB │ gzip:   2.78 kB
+dist/assets/Reports-C_3gtPM_.js                    10.39 kB │ gzip:   2.72 kB
+dist/assets/RecruitmentApplication-DMYHCwFD.js     15.20 kB │ gzip:   4.36 kB
+dist/assets/RecruitmentManagement-BEQ_7p2X.js      18.69 kB │ gzip:   4.90 kB
+dist/assets/StaffShifts-D86GQiZl.js                22.75 kB │ gzip:   5.91 kB
+dist/assets/VenueManagement-CVADB7jy.js            29.23 kB │ gzip:   8.10 kB
+dist/assets/StaffManagement-CdCa2AdA.js            29.79 kB │ gzip:   7.62 kB
+dist/assets/Approvals-DTfYPDbt.js                  31.78 kB │ gzip:   8.33 kB
+dist/assets/ReportsPage-DiaAUR4d.js               118.52 kB │ gzip:  32.34 kB
+dist/assets/index-DouHIeoC.js                   2,695.83 kB │ gzip: 741.55 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 7.99s

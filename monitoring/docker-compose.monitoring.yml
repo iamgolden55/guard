@@ -1,0 +1,257 @@
+# Production Monitoring Stack for Legal Compliance Reporting System
+# SSMS-COMPLIANCE-2025 - Complete observability solution
+
+version: '3.8'
+
+services:
+  # Prometheus - Metrics Collection
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: compliance_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/rules/:/etc/prometheus/rules/
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=10GB'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    restart: unless-stopped
+    networks:
+      - compliance_monitoring
+
+  # Grafana - Visualization and Dashboards
+  grafana:
+    image: grafana/grafana:10.2.4
+    container_name: compliance_grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+      - ./grafana/dashboards/:/var/lib/grafana/dashboards/
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY:-compliance_secret_key}
+      - GF_DATABASE_TYPE=postgres
+      - GF_DATABASE_HOST=postgres:5432
+      - GF_DATABASE_NAME=grafana
+      - GF_DATABASE_USER=grafana
+      - GF_DATABASE_PASSWORD=${GRAFANA_DB_PASSWORD:-grafana123}
+    depends_on:
+      - prometheus
+      - postgres
+    restart: unless-stopped
+    networks:
+      - compliance_monitoring
+
+  # Redis for Application Caching and Sessions
+  redis:
+    image: redis:7.2-alpine
+    container_name: compliance_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/etc/redis/redis.conf
+    command: redis-server /etc/redis/redis.conf
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - compliance_monitoring
+
+  # PostgreSQL for Grafana and Application Data
+  postgres:
+    image: postgres:15.5-alpine
+    container_name: compliance_postgres
+    environment:
+      - POSTGRES_DB=compliance_monitoring
+      - POSTGRES_USER=monitoring_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-monitoring123}
+      - POSTGRES_MULTIPLE_DATABASES=grafana,compliance_prod
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U monitoring_user -d compliance_monitoring"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - compliance_monitoring
+
+  # Node Exporter - System Metrics
+  node_exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: compliance_node_exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+    networks:
+      - compliance_monitoring
+
+  # cAdvisor - Container Metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: compliance_cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    restart: unless-stopped
+    networks:
+      - compliance_monitoring
+
+  # AlertManager - Alert Handling
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: compliance_alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    networks:
+      - compliance_monitoring
+
+  # Blackbox Exporter - External Service Monitoring
+  blackbox:
+    image: prom/blackbox-exporter:v0.24.0
+    container_name: compliance_blackbox
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml
+    restart: unless-stopped
+    networks:
+      - compliance_monitoring
+
+  # Loki - Log Aggregation
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: compliance_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/loki
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+    networks:
+      - compliance_monitoring
+
+  # Promtail - Log Collection Agent
+  promtail:
+    image: grafana/promtail:2.9.4
+    container_name: compliance_promtail
+    volumes:
+      - /var/log:/var/log:ro
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml
+      - ../backend/logs:/app/logs:ro
+    command: -config.file=/etc/promtail/config.yml
+    restart: unless-stopped
+    depends_on:
+      - loki
+    networks:
+      - compliance_monitoring
+
+  # Nginx - Reverse Proxy and Load Balancer
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: compliance_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/conf.d/:/etc/nginx/conf.d/
+      - ./nginx/ssl/:/etc/nginx/ssl/
+      - ../frontend/dist:/usr/share/nginx/html
+    restart: unless-stopped
+    depends_on:
+      - grafana
+      - prometheus
+    networks:
+      - compliance_monitoring
+
+  # Jaeger - Distributed Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.52
+    container_name: compliance_jaeger
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=memory
+    restart: unless-stopped
+    networks:
+      - compliance_monitoring
+
+  # Performance Testing with K6
+  k6:
+    image: grafana/k6:0.47.0
+    container_name: compliance_k6
+    volumes:
+      - ./k6/scripts:/scripts
+      - ./k6/results:/results
+    environment:
+      - K6_PROMETHEUS_REMOTE_URL=http://prometheus:9090/api/v1/write
+    networks:
+      - compliance_monitoring
+    profiles:
+      - testing
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  loki_data:
+    driver: local
+
+networks:
+  compliance_monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

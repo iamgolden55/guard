@@ -1,0 +1,113 @@
+{
+  "agent_name": "AGENT_NAME_PLACEHOLDER",
+  "agent_type": "AGENT_TYPE_PLACEHOLDER",
+  "last_updated": "YYYY-MM-DDTHH:MM:SSZ",
+  "current_status": "idle|active|blocked|waiting",
+  "current_task": {
+    "id": "TASK-XXX",
+    "description": "Task description",
+    "phase": "Phase X",
+    "status": "not_started|in_progress|completed|blocked",
+    "priority": "low|medium|high|critical",
+    "started_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "estimated_completion": "YYYY-MM-DDTHH:MM:SSZ",
+    "actual_completion": null,
+    "blockers": [
+      {
+        "type": "dependency|resource|issue",
+        "description": "Blocker description",
+        "blocking_agent": "agent_name",
+        "reported_at": "YYYY-MM-DDTHH:MM:SSZ"
+      }
+    ]
+  },
+  "completed_tasks": [
+    {
+      "id": "TASK-000",
+      "description": "Previous task description",
+      "phase": "Phase X",
+      "completed_at": "YYYY-MM-DDTHH:MM:SSZ",
+      "duration_hours": 2.5,
+      "output": "Brief description of what was delivered",
+      "files_created": ["path/to/file1.py", "path/to/file2.tsx"],
+      "files_modified": ["path/to/existing/file.json"],
+      "api_endpoints_created": ["/api/v1/endpoint"],
+      "components_created": ["ComponentName.tsx"],
+      "models_created": ["ModelName"],
+      "tests_added": ["test_file.py"],
+      "notes": "Any important notes or discoveries"
+    }
+  ],
+  "pending_tasks": [
+    {
+      "id": "TASK-XXX",
+      "description": "Future task description",
+      "phase": "Phase X",
+      "priority": "low|medium|high|critical",
+      "dependencies": ["TASK-001", "TASK-002"],
+      "dependent_agents": ["agent_name_1", "agent_name_2"],
+      "estimated_hours": 3.0,
+      "requirements": ["Requirement 1", "Requirement 2"],
+      "acceptance_criteria": ["Criteria 1", "Criteria 2"]
+    }
+  ],
+  "handoffs": {
+    "sent": [
+      {
+        "id": "HANDOFF-XXX",
+        "to": "receiving_agent_name",
+        "task": "Task to be handed off",
+        "deliverables": ["file1.py", "documentation.md"],
+        "instructions": "Special instructions for receiving agent",
+        "timestamp": "YYYY-MM-DDTHH:MM:SSZ",
+        "status": "pending|accepted|completed|rejected",
+        "priority": "low|medium|high|critical"
+      }
+    ],
+    "received": [
+      {
+        "id": "HANDOFF-XXX",
+        "from": "sending_agent_name",
+        "task": "Task received",
+        "deliverables": ["file1.py", "documentation.md"],
+        "received_at": "YYYY-MM-DDTHH:MM:SSZ",
+        "status": "pending|in_progress|completed",
+        "notes": "Any questions or clarifications needed"
+      }
+    ]
+  },
+  "expertise_areas": [
+    "Django models",
+    "Database optimization",
+    "React components",
+    "API development"
+  ],
+  "knowledge_base": [
+    {
+      "topic": "Leave accrual calculations",
+      "key_findings": "Complex business rules require separate service class",
+      "reference_files": ["services/leave_accrual.py"],
+      "timestamp": "YYYY-MM-DDTHH:MM:SSZ"
+    }
+  ],
+  "performance_metrics": {
+    "tasks_completed_this_phase": 5,
+    "average_task_duration_hours": 2.3,
+    "blocked_time_hours": 1.2,
+    "handoff_success_rate": 0.95,
+    "rework_rate": 0.05
+  },
+  "notes": [
+    "Important observations, decisions, or discoveries",
+    "Technical debt items identified",
+    "Performance optimization opportunities"
+  ],
+  "alerts": [
+    {
+      "type": "warning|error|info",
+      "message": "Alert message",
+      "timestamp": "YYYY-MM-DDTHH:MM:SSZ",
+      "resolved": false
+    }
+  ]
+}

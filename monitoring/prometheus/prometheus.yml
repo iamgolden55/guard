@@ -1,0 +1,166 @@
+# Prometheus Configuration for Legal Compliance Reporting System
+# SSMS-COMPLIANCE-2025 - Complete metrics collection
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'compliance-system'
+    environment: 'production'
+
+rule_files:
+  - "/etc/prometheus/rules/compliance_alerts.yml"
+  - "/etc/prometheus/rules/performance_alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Django application metrics
+  - job_name: 'compliance-backend'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Node exporter - system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node_exporter:9100']
+    scrape_interval: 15s
+
+  # Container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 15s
+
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # PostgreSQL metrics (if exporter is configured)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 15s
+
+  # Nginx metrics (if exporter is configured)
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+    scrape_interval: 15s
+
+  # Blackbox exporter - external service monitoring
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - http://localhost:8000/health/
+        - http://localhost:3000/
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # WebSocket monitoring
+  - job_name: 'websocket-health'
+    metrics_path: /probe
+    params:
+      module: [websocket]
+    static_configs:
+      - targets:
+        - ws://localhost:8000/ws/compliance/
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # Custom compliance metrics
+  - job_name: 'compliance-metrics'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: '/api/v1/compliance/metrics/prometheus'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Frontend performance metrics (if configured)
+  - job_name: 'frontend-metrics'
+    static_configs:
+      - targets: ['host.docker.internal:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+# Performance and compliance specific recording rules
+recording_rules:
+  - name: compliance_performance_rules
+    interval: 30s
+    rules:
+      # API Response Time percentiles
+      - record: compliance:api_response_time:p50
+        expr: histogram_quantile(0.50, rate(django_http_request_duration_seconds_bucket[5m]))
+
+      - record: compliance:api_response_time:p95
+        expr: histogram_quantile(0.95, rate(django_http_request_duration_seconds_bucket[5m]))
+
+      - record: compliance:api_response_time:p99
+        expr: histogram_quantile(0.99, rate(django_http_request_duration_seconds_bucket[5m]))
+
+      # Database query performance
+      - record: compliance:db_query_time:p95
+        expr: histogram_quantile(0.95, rate(django_db_query_duration_seconds_bucket[5m]))
+
+      # Violation processing rate
+      - record: compliance:violations_processed_per_second
+        expr: rate(compliance_violations_processed_total[5m])
+
+      # Cache hit rate
+      - record: compliance:cache_hit_rate
+        expr: rate(cache_hits_total[5m]) / (rate(cache_hits_total[5m]) + rate(cache_misses_total[5m]))
+
+      # WebSocket connection health
+      - record: compliance:websocket_connections_active
+        expr: websocket_connections_active
+
+      # System resource usage
+      - record: compliance:cpu_usage_percent
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+
+      - record: compliance:memory_usage_percent
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
+
+      # Application-specific metrics
+      - record: compliance:active_users_count
+        expr: active_compliance_users
+
+      - record: compliance:pending_violations_count
+        expr: compliance_violations_pending_total
+
+      - record: compliance:critical_violations_rate
+        expr: rate(compliance_violations_total{severity="critical"}[5m])
+
+# Storage configuration
+storage:
+  tsdb:
+    retention: "30d"
+    retention_size: "10GB"

@@ -1,0 +1,207 @@
+{
+  "agent_name": "django_api_onboarding",
+  "agent_type": "api_development",
+  "last_updated": "2025-01-25T00:00:00Z",
+  "current_status": "waiting_for_handoff",
+  "current_task": {
+    "id": "ONBOARDING-API-001",
+    "description": "Create API endpoints for Security Firm Onboarding System",
+    "waiting_for": "django-backend-expert to complete onboarding models",
+    "dependencies": ["SecurityCompany", "CompanyOnboarding", "UserCompanyMembership models"]
+  },
+  "completed_tasks": [],
+  "pending_tasks": [
+    {
+      "id": "ONBOARDING-API-001",
+      "description": "Create onboarding API endpoints",
+      "phase": "Phase 1",
+      "priority": "critical",
+      "dependencies": ["SecurityCompany model", "CompanyOnboarding model", "UserCompanyMembership model"],
+      "dependent_agents": ["react-component-architect"],
+      "estimated_hours": 6.0,
+      "requirements": [
+        "POST /api/v1/onboarding/initiate/",
+        "GET /api/v1/onboarding/progress/",
+        "PUT /api/v1/onboarding/company-info/",
+        "PUT /api/v1/onboarding/regional-setup/",
+        "PUT /api/v1/onboarding/staff-configuration/",
+        "PUT /api/v1/onboarding/integrations/",
+        "POST /api/v1/onboarding/complete/",
+        "GET /api/v1/companies/current/"
+      ],
+      "acceptance_criteria": [
+        "All endpoints properly documented",
+        "Company-aware authentication implemented",
+        "Role-based permissions configured",
+        "Data validation for each step",
+        "Error handling and status codes",
+        "Integration with existing models"
+      ]
+    },
+    {
+      "id": "ONBOARDING-API-002",
+      "description": "Create serializers for onboarding data",
+      "phase": "Phase 1",
+      "priority": "critical",
+      "dependencies": ["ONBOARDING-API-001"],
+      "estimated_hours": 3.0,
+      "requirements": [
+        "SecurityCompanySerializer",
+        "OnboardingProgressSerializer",
+        "CompanyInfoSerializer",
+        "RegionalSetupSerializer",
+        "StaffConfigSerializer"
+      ]
+    },
+    {
+      "id": "ONBOARDING-API-003",
+      "description": "Update existing APIs for multi-tenancy",
+      "phase": "Phase 1",
+      "priority": "high",
+      "dependencies": ["ONBOARDING-API-001"],
+      "estimated_hours": 4.0,
+      "requirements": [
+        "Add company context to all existing endpoints",
+        "Filter data by user's company",
+        "Maintain backward compatibility"
+      ]
+    }
+  ],
+  "handoffs": {
+    "waiting_for": [
+      {
+        "from_agent": "django-backend-expert",
+        "expected_deliverables": [
+          "SecurityCompany model",
+          "CompanyOnboarding model",
+          "UserCompanyMembership model",
+          "CompanyIntegration model",
+          "CompanySubscription model",
+          "Multi-tenant middleware",
+          "Database migrations"
+        ],
+        "required_for": "ONBOARDING-API-001"
+      }
+    ],
+    "sent": [],
+    "received": []
+  },
+  "expertise_areas": [
+    "Django REST Framework",
+    "API endpoint design",
+    "Serializers and validation",
+    "Authentication and permissions",
+    "Multi-tenant architecture",
+    "Company-scoped data access",
+    "API versioning"
+  ],
+  "deliverable_specifications": {
+    "endpoints": {
+      "/api/v1/onboarding/initiate/": {
+        "method": "POST",
+        "description": "Start onboarding process for a new company",
+        "authentication": "JWT required",
+        "permissions": ["IsAuthenticated"],
+        "request_body": "CompanyBasicInfoSerializer",
+        "response": "OnboardingProgressSerializer"
+      },
+      "/api/v1/onboarding/progress/": {
+        "method": "GET",
+        "description": "Get current onboarding progress",
+        "authentication": "JWT required",
+        "permissions": ["IsAuthenticated", "IsCompanyOwner"],
+        "response": "OnboardingProgressSerializer"
+      },
+      "/api/v1/onboarding/company-info/": {
+        "method": "PUT",
+        "description": "Update company information step",
+        "authentication": "JWT required",
+        "permissions": ["IsAuthenticated", "IsCompanyOwner"],
+        "request_body": "CompanyInfoSerializer",
+        "response": "OnboardingProgressSerializer"
+      },
+      "/api/v1/onboarding/regional-setup/": {
+        "method": "PUT",
+        "description": "Configure regional compliance settings",
+        "authentication": "JWT required",
+        "permissions": ["IsAuthenticated", "IsCompanyOwner"],
+        "request_body": "RegionalSetupSerializer",
+        "response": "OnboardingProgressSerializer"
+      },
+      "/api/v1/onboarding/staff-configuration/": {
+        "method": "PUT",
+        "description": "Configure staff size and operations",
+        "authentication": "JWT required",
+        "permissions": ["IsAuthenticated", "IsCompanyOwner"],
+        "request_body": "StaffConfigSerializer",
+        "response": "OnboardingProgressSerializer"
+      },
+      "/api/v1/onboarding/integrations/": {
+        "method": "PUT",
+        "description": "Setup third-party integrations",
+        "authentication": "JWT required",
+        "permissions": ["IsAuthenticated", "IsCompanyOwner"],
+        "request_body": "IntegrationsSerializer",
+        "response": "OnboardingProgressSerializer"
+      },
+      "/api/v1/onboarding/complete/": {
+        "method": "POST",
+        "description": "Complete onboarding process",
+        "authentication": "JWT required",
+        "permissions": ["IsAuthenticated", "IsCompanyOwner"],
+        "response": "CompanyContextResponse"
+      },
+      "/api/v1/companies/current/": {
+        "method": "GET",
+        "description": "Get current user's company context",
+        "authentication": "JWT required",
+        "permissions": ["IsAuthenticated"],
+        "response": "CompanyContextResponse"
+      }
+    },
+    "serializers": {
+      "SecurityCompanySerializer": {
+        "fields": ["id", "name", "registration_number", "country_code", "compliance_profile", "staff_capacity", "subscription_tier"],
+        "validation": ["Unique registration_number", "Valid country_code", "Positive staff_capacity"]
+      },
+      "OnboardingProgressSerializer": {
+        "fields": ["currentStep", "totalSteps", "completedSteps", "companyData", "nextAction", "estimatedTimeRemaining"],
+        "read_only": true
+      },
+      "CompanyInfoSerializer": {
+        "fields": ["name", "registration_number", "industry", "address", "phone", "website"],
+        "validation": ["Required fields", "Format validation", "Business registration checks"]
+      },
+      "RegionalSetupSerializer": {
+        "fields": ["country_code", "compliance_profile", "regulatory_requirements", "licenses"],
+        "validation": ["Valid country_code", "Compliance profile exists", "Required licenses for region"]
+      },
+      "StaffConfigSerializer": {
+        "fields": ["expected_staff_size", "operation_hours", "shift_patterns", "staff_roles"],
+        "validation": ["Positive staff size", "Valid operation hours", "Valid shift patterns"]
+      }
+    }
+  },
+  "performance_metrics": {
+    "tasks_completed_this_phase": 0,
+    "average_task_duration_hours": 0.0,
+    "blocked_time_hours": 0.0,
+    "handoff_success_rate": 0.0,
+    "rework_rate": 0.0
+  },
+  "notes": [
+    "Waiting for django-backend-expert to implement onboarding models",
+    "Implementation plan reviewed from /docs/ONBOARDING_IMPLEMENTATION_PLAN.md",
+    "Ready to proceed once SecurityCompany and related models are created",
+    "Will focus on creating clean, well-documented REST APIs with proper validation",
+    "Multi-tenant architecture requires careful company context handling",
+    "Need to update existing endpoints to support company scoping",
+    "PREPARATION COMPLETE: Created detailed API specifications in /backend/api/ONBOARDING_API_SPECIFICATIONS.md",
+    "Analyzed current authentication system using JWT tokens",
+    "Reviewed existing URL patterns and ViewSet structure",
+    "Ready for immediate implementation once models are available"
+  ],
+  "alerts": [
+    "WAITING_FOR_HANDOFF: Cannot proceed without onboarding models from django-backend-expert"
+  ]
+}

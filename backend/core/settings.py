@@ -26,12 +26,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-default-key-change-this-in-production')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError('DJANGO_SECRET_KEY environment variable is required')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True'
+DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',')
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 
 # Application definition
@@ -49,9 +51,16 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'drf_yasg',
     'django_filters',
+    # Django Channels
+    'channels',
+    # Celery apps
+    'django_celery_beat',
+    'django_celery_results',
+    # Project apps
     'api',
     'shifts',
     'finance_integrations',
+    'leave_management',
 ]
 
 MIDDLEWARE = [
@@ -61,6 +70,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'api.middleware.tenant_middleware.TenantMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -157,15 +167,26 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS settings
-CORS_ALLOW_ALL_ORIGINS = True  # In production, set to False and use CORS_ALLOWED_ORIGINS instead
+# CORS settings - Secure configuration
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in debug mode
 CORS_ALLOW_CREDENTIALS = True
 
-# For production, specify allowed origins:
-# CORS_ALLOWED_ORIGINS = [
-#     "http://localhost:3000",
-#     "http://127.0.0.1:3000",
-# ]
+# Production CORS configuration
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://localhost:3000",
+    "https://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+    "https://localhost:3001",
+    "https://127.0.0.1:3001",
+]
+
+# Add any additional production origins from environment
+additional_origins = os.getenv('CORS_ADDITIONAL_ORIGINS')
+if additional_origins:
+    CORS_ALLOWED_ORIGINS.extend(additional_origins.split(','))
 
 # Finance Integrations OAuth Settings
 FINANCE_OAUTH_SETTINGS = {
@@ -284,3 +305,126 @@ AUTH_USER_MODEL = 'api.User'
 
 # Google Maps API Key
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
+
+# ==========================================
+# CELERY CONFIGURATION
+# ==========================================
+
+# Redis Configuration
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+
+# Celery Settings
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
+
+# Celery Database Results Backend (alternative to Redis for results)
+CELERY_RESULT_BACKEND_DB_URL = f"db+postgresql://{os.getenv('DB_USER', 'postgres')}:{os.getenv('DB_PASSWORD', 'postgres')}@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'security_management')}"
+
+# Use Redis by default, but allow database backend via environment variable
+if os.getenv('CELERY_USE_DB_BACKEND', 'False') == 'True':
+    CELERY_RESULT_BACKEND = CELERY_RESULT_BACKEND_DB_URL
+
+# Cache configuration (using Redis when available)
+try:
+    import django_redis
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            }
+        }
+    }
+except ImportError:
+    # Fallback to local memory cache if Redis is not available
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'unique-snowflake',
+        }
+    }
+
+# Cache timeout for report data (in seconds)
+CACHE_TIMEOUT_REPORT_DATA = 60 * 15  # 15 minutes
+CACHE_TIMEOUT_REPORT_JOBS = 60 * 5   # 5 minutes
+
+# Celery Task Configuration
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+
+# Task execution settings
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
+
+# Worker settings
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
+CELERY_TASK_ACKS_LATE = True
+
+# Result backend settings
+CELERY_RESULT_EXPIRES = 3600  # 1 hour
+CELERY_RESULT_PERSISTENT = True
+
+# Retry settings
+CELERY_TASK_DEFAULT_RETRY_DELAY = 60  # seconds
+CELERY_TASK_MAX_RETRIES = 3
+
+# Security settings
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_TASK_IGNORE_RESULT = False
+
+# Report generation specific settings
+REPORT_FILE_RETENTION_DAYS = int(os.getenv('REPORT_FILE_RETENTION_DAYS', '7'))
+REPORT_MAX_CONCURRENT_JOBS = int(os.getenv('REPORT_MAX_CONCURRENT_JOBS', '3'))
+REPORT_BATCH_SIZE = int(os.getenv('REPORT_BATCH_SIZE', '1000'))
+
+# File storage settings for reports
+REPORT_STORAGE_PATH = os.path.join(MEDIA_ROOT, 'reports')
+REPORT_TEMP_PATH = os.path.join(REPORT_STORAGE_PATH, 'temp')
+
+# Email settings for report notifications
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@security-management.com')
+
+# ==========================================
+# DJANGO CHANNELS CONFIGURATION
+# ==========================================
+
+# ASGI Application
+ASGI_APPLICATION = 'core.asgi.application'
+
+# Channels Layer Configuration
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [REDIS_URL],
+            'symmetric_encryption_keys': [SECRET_KEY],
+        },
+    },
+}
+
+# WebSocket settings
+WEBSOCKET_URL = os.getenv('WEBSOCKET_URL', 'ws://localhost:8000/ws/')
+
+# WebSocket authentication timeout (seconds)
+WEBSOCKET_AUTH_TIMEOUT = 30
+
+# WebSocket heartbeat interval (seconds)
+WEBSOCKET_HEARTBEAT_INTERVAL = 30
+
+# Maximum WebSocket connections per user
+WEBSOCKET_MAX_CONNECTIONS_PER_USER = 5
+
+# WebSocket message size limits (bytes)
+WEBSOCKET_MAX_MESSAGE_SIZE = 1024 * 1024  # 1MB

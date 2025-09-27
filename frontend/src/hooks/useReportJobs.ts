@@ -71,9 +71,13 @@ export const useReportJobs = (options: UseReportJobsOptions = {}): UseReportJobs
       const response: ReportJobListResponse = await reportService.getReportJobs(currentFilters);
 
       if (loadMore) {
-        setJobs(prev => [...prev, ...response.jobs]);
+        setJobs(prev => {
+          const prevJobs = Array.isArray(prev) ? prev : [];
+          const newJobs = Array.isArray(response.jobs) ? response.jobs : [];
+          return [...prevJobs, ...newJobs];
+        });
       } else {
-        setJobs(response.jobs);
+        setJobs(Array.isArray(response.jobs) ? response.jobs : []);
       }
 
       setPagination({
@@ -105,11 +109,14 @@ export const useReportJobs = (options: UseReportJobsOptions = {}): UseReportJobs
     try {
       await reportService.cancelJob(jobId);
       // Update job status locally for immediate feedback
-      setJobs(prev => prev.map(job =>
-        job.id === jobId
-          ? { ...job, status: ReportJobStatus.CANCELLED, cancelledAt: new Date().toISOString() }
-          : job
-      ));
+      setJobs(prev => {
+        const prevJobs = Array.isArray(prev) ? prev : [];
+        return prevJobs.map(job =>
+          job.id === jobId
+            ? { ...job, status: ReportJobStatus.CANCELLED, cancelledAt: new Date().toISOString() }
+            : job
+        );
+      });
     } catch (err) {
       console.error('Failed to cancel job:', err);
       setError(err instanceof Error ? err.message : 'Failed to cancel job');
@@ -119,9 +126,12 @@ export const useReportJobs = (options: UseReportJobsOptions = {}): UseReportJobs
   const retryJob = useCallback(async (jobId: string) => {
     try {
       const updatedJob = await reportService.retryJob(jobId);
-      setJobs(prev => prev.map(job =>
-        job.id === jobId ? updatedJob : job
-      ));
+      setJobs(prev => {
+        const prevJobs = Array.isArray(prev) ? prev : [];
+        return prevJobs.map(job =>
+          job.id === jobId ? updatedJob : job
+        );
+      });
     } catch (err) {
       console.error('Failed to retry job:', err);
       setError(err instanceof Error ? err.message : 'Failed to retry job');
@@ -131,7 +141,10 @@ export const useReportJobs = (options: UseReportJobsOptions = {}): UseReportJobs
   const deleteJob = useCallback(async (jobId: string) => {
     try {
       await reportService.deleteJob(jobId);
-      setJobs(prev => prev.filter(job => job.id !== jobId));
+      setJobs(prev => {
+        const prevJobs = Array.isArray(prev) ? prev : [];
+        return prevJobs.filter(job => job && job.id !== jobId);
+      });
       setPagination(prev => ({ ...prev, totalJobs: prev.totalJobs - 1 }));
     } catch (err) {
       console.error('Failed to delete job:', err);
@@ -146,8 +159,14 @@ export const useReportJobs = (options: UseReportJobsOptions = {}): UseReportJobs
   // Poll active jobs for progress updates
   const pollJobProgress = useCallback(async () => {
     setJobs(prevJobs => {
+      // Ensure prevJobs is an array before filtering
+      if (!Array.isArray(prevJobs)) {
+        console.warn('pollJobProgress: prevJobs is not an array:', prevJobs);
+        return [];
+      }
+
       const activeJobs = prevJobs.filter(job =>
-        [ReportJobStatus.PENDING, ReportJobStatus.PROCESSING, ReportJobStatus.RETRYING].includes(job.status)
+        job && [ReportJobStatus.PENDING, ReportJobStatus.PROCESSING, ReportJobStatus.RETRYING].includes(job.status)
       );
 
       if (activeJobs.length === 0) return prevJobs;
@@ -161,23 +180,31 @@ export const useReportJobs = (options: UseReportJobsOptions = {}): UseReportJobs
 
           const progressResults = await Promise.all(progressPromises);
 
-          setJobs(currentJobs => currentJobs.map(job => {
-            const progressIndex = activeJobs.findIndex(activeJob => activeJob.id === job.id);
-            const progress = progressResults[progressIndex];
-
-            if (progress) {
-              return {
-                ...job,
-                status: progress.status,
-                progress: progress.progress,
-                eta: progress.eta,
-                speed: progress.speed,
-                error: progress.error
-              };
+          setJobs(currentJobs => {
+            // Ensure currentJobs is an array before mapping
+            if (!Array.isArray(currentJobs)) {
+              console.warn('pollJobProgress inner: currentJobs is not an array:', currentJobs);
+              return [];
             }
 
-            return job;
-          }));
+            return currentJobs.map(job => {
+              const progressIndex = activeJobs.findIndex(activeJob => activeJob.id === job.id);
+              const progress = progressResults[progressIndex];
+
+              if (progress) {
+                return {
+                  ...job,
+                  status: progress.status,
+                  progress: progress.progress,
+                  eta: progress.eta,
+                  speed: progress.speed,
+                  error: progress.error
+                };
+              }
+
+              return job;
+            });
+          });
         } catch (err) {
           console.error('Failed to poll job progress:', err);
         }

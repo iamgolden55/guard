@@ -1,0 +1,75 @@
+{
+  "agent_name": "react_state_manager",
+  "agent_type": "frontend_development",
+  "last_updated": "2025-01-13T10:00:00Z",
+  "current_status": "idle",
+  "current_task": null,
+  "completed_tasks": [],
+  "pending_tasks": [
+    {
+      "id": "TASK-026",
+      "description": "Create leave management context and state providers",
+      "phase": "Phase 1",
+      "priority": "high",
+      "dependencies": ["TASK-018", "TASK-019"],
+      "dependent_agents": ["react_component_architect"],
+      "estimated_hours": 3.0,
+      "requirements": [
+        "Global state for leave balances and requests",
+        "Context providers for leave management",
+        "State synchronization with backend APIs"
+      ],
+      "acceptance_criteria": [
+        "LeaveContext with providers and hooks",
+        "Optimistic updates for better UX",
+        "Error handling and rollback mechanisms",
+        "Integration with existing auth context"
+      ]
+    },
+    {
+      "id": "TASK-027",
+      "description": "Implement attendance state management for Phase 2",
+      "phase": "Phase 2",
+      "priority": "high",
+      "dependencies": ["TASK-022", "TASK-024"],
+      "dependent_agents": ["react_component_architect"],
+      "estimated_hours": 2.5,
+      "requirements": [
+        "Attendance tracking state",
+        "Offline state synchronization",
+        "Real-time updates for managers"
+      ],
+      "acceptance_criteria": [
+        "AttendanceContext with offline support",
+        "Queue management for offline actions",
+        "Real-time sync when online",
+        "Conflict resolution mechanisms"
+      ]
+    }
+  ],
+  "handoffs": {
+    "sent": [],
+    "received": []
+  },
+  "expertise_areas": [
+    "React Context API",
+    "State management patterns",
+    "Custom hooks development",
+    "Data synchronization",
+    "Optimistic updates",
+    "Offline state management"
+  ],
+  "knowledge_base": [],
+  "performance_metrics": {
+    "tasks_completed_this_phase": 0,
+    "average_task_duration_hours": 0.0,
+    "blocked_time_hours": 0.0,
+    "handoff_success_rate": 0.0,
+    "rework_rate": 0.0
+  },
+  "notes": [
+    "Focus on performance optimization for state updates",
+    "Consider React Query for server state management"
+  ],
+  "alerts": []
+}

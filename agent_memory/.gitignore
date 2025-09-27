@@ -1,0 +1,46 @@
+# Agent Memory System .gitignore
+
+# Temporary working files
+*.tmp
+*.temp
+*~
+
+# Agent-specific temporary files
+*/tmp/
+*/temp/
+
+# Backup files (keep system state but not backups)
+*.backup
+*.bak
+backups/
+
+# Log rotation files (keep main logs, not rotated ones)
+*.log.*
+logs/archive/
+
+# System generated files
+.DS_Store
+Thumbs.db
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Keep all JSON memory files (these are essential)
+!*.json
+
+# Keep all log files (these track coordination)
+!*.log
+
+# Keep templates and documentation
+!templates/
+!README.md
+
+# Archive folder (for old completed work)
+archive/
+
+# Performance monitoring temp files
+*.perf
+*.profile

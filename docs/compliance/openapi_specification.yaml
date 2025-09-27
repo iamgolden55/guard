@@ -1,0 +1,1261 @@
+openapi: 3.0.3
+info:
+  title: SSMS Regional Compliance API
+  description: |
+    Comprehensive API for managing multi-jurisdictional employment compliance across UK, US, and EU regions.
+    
+    ## Key Features
+    - Auto-detection of applicable compliance regulations
+    - Real-time schedule validation against working time directives
+    - Cross-regional compliance comparison
+    - Violation tracking and resolution workflows
+    - Performance optimized with Redis caching
+    
+    ## Authentication
+    This API uses JWT Bearer tokens for authentication. Include the token in the Authorization header:
+    ```
+    Authorization: Bearer {token}
+    ```
+    
+    ## Rate Limiting
+    API requests are rate limited based on user roles:
+    - Staff: 1000 requests/hour
+    - Manager: 5000 requests/hour
+    - Admin: 10000 requests/hour
+    
+    Rate limit headers are included in responses.
+    
+  version: 1.0.0
+  contact:
+    name: SSMS API Support
+    email: api-support@ssms.com
+  license:
+    name: Proprietary
+    
+servers:
+  - url: https://api.ssms.com/v1
+    description: Production server
+  - url: https://staging-api.ssms.com/v1
+    description: Staging server
+  - url: http://localhost:8000/api/v1
+    description: Development server
+
+security:
+  - bearerAuth: []
+  - apiKey: []
+
+paths:
+  /compliance/regional/detect-region/:
+    get:
+      tags:
+        - Regional Compliance
+      summary: Auto-detect applicable compliance region
+      description: |
+        Automatically determine which compliance regulations apply based on venue location or IP address.
+        Uses geolocation services and venue postcode mapping to identify the correct regional ruleset.
+      operationId: detectComplianceRegion
+      parameters:
+        - name: venue_id
+          in: query
+          description: Venue ID to detect region from location
+          schema:
+            type: integer
+            example: 123
+        - name: ip_address
+          in: query
+          description: IP address for geolocation-based detection
+          schema:
+            type: string
+            format: ipv4
+            example: "192.168.1.1"
+        - name: force_refresh
+          in: query
+          description: Bypass cache and force fresh detection
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Region detected successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RegionDetectionResult'
+              examples:
+                uk_venue_detection:
+                  summary: UK region detected from venue
+                  value:
+                    status: success
+                    data:
+                      region_code: "UK"
+                      country_code: "GB"
+                      regulation_id: 1
+                      confidence_score: 0.95
+                      detection_method: "venue_location"
+                      applicable_regulations:
+                        working_time_directive: true
+                        sia_requirements: true
+                        opt_out_available: true
+                      notes: "Detected from venue postcode in England"
+                    meta:
+                      timestamp: "2024-01-15T10:00:00Z"
+                      cached: false
+                      response_time_ms: 45
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /compliance/regional/profiles/apply-preset/:
+    post:
+      tags:
+        - Regional Compliance
+      summary: Apply regional compliance preset
+      description: |
+        Apply region-specific compliance settings to an organizational compliance profile.
+        This includes working time limits, SIA requirements, and other regulatory provisions.
+      operationId: applyRegionalPreset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresetApplicationRequest'
+            examples:
+              uk_preset:
+                summary: Apply UK compliance preset
+                value:
+                  region_code: "UK"
+                  profile_id: 123
+                  override_existing: false
+                  apply_sia_requirements: true
+                  custom_overrides:
+                    max_daily_hours: 12.0
+                    reason: "Emergency services exemption"
+      responses:
+        '200':
+          description: Preset applied successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PresetApplicationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Compliance profile not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: error
+                error:
+                  code: "PROFILE_NOT_FOUND"
+                  message: "Compliance profile not found"
+                  details: "Profile with ID 123 does not exist"
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /compliance/regional/compare/:
+    get:
+      tags:
+        - Regional Compliance
+      summary: Compare regulations across regions
+      description: |
+        Generate a detailed comparison of compliance requirements across multiple jurisdictions.
+        Useful for multinational organizations managing staff across different regions.
+      operationId: compareRegulations
+      parameters:
+        - name: regions[]
+          in: query
+          description: List of region codes to compare
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [UK, US-DEFAULT, US-CA, US-NY, US-TX, EU-FR, EU-DE, EU-ES]
+            minItems: 2
+            maxItems: 5
+          example: ["UK", "US-CA", "EU-DE"]
+        - name: include_sia_requirements
+          in: query
+          description: Include SIA/security license requirements in comparison
+          schema:
+            type: boolean
+            default: true
+        - name: include_break_rules
+          in: query
+          description: Include break and rest period rules in comparison
+          schema:
+            type: boolean
+            default: true
+        - name: include_overtime
+          in: query
+          description: Include overtime calculation rules in comparison
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Regulation comparison generated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RegulationComparison'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /compliance/regional/validate-schedule/:
+    post:
+      tags:
+        - Regional Compliance
+      summary: Pre-validate shift schedule
+      description: |
+        Validate proposed shift schedules against applicable compliance rules before assignment.
+        Provides detailed feedback on violations, warnings, and optimization suggestions.
+      operationId: validateSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleValidationRequest'
+      responses:
+        '200':
+          description: Schedule validation completed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ScheduleValidationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          description: Schedule validation failed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - type: object
+                    properties:
+                      error:
+                        properties:
+                          violations:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/ComplianceViolation'
+
+  /compliance/violations/:
+    get:
+      tags:
+        - Compliance Violations
+      summary: List compliance violations
+      description: |
+        Retrieve a paginated list of compliance violations with filtering and sorting options.
+        Supports filtering by user, severity, status, and date ranges.
+      operationId: listViolations
+      parameters:
+        - name: user_id
+          in: query
+          description: Filter by specific user ID
+          schema:
+            type: integer
+        - name: severity
+          in: query
+          description: Filter by violation severity
+          schema:
+            type: string
+            enum: [info, warning, minor, major, critical]
+        - name: status
+          in: query
+          description: Filter by resolution status
+          schema:
+            type: string
+            enum: [open, investigating, pending_approval, approved_exception, resolved, false_positive, dismissed]
+        - name: violation_type
+          in: query
+          description: Filter by violation type
+          schema:
+            type: string
+            enum: [daily_overtime, weekly_overtime, consecutive_days, insufficient_rest, missing_break, late_checkin, early_checkout, location_violation, unauthorized_overtime, shift_abandonment, documentation_missing, custom]
+        - name: period_start
+          in: query
+          description: Start date for violation period filter
+          schema:
+            type: string
+            format: date
+        - name: period_end
+          in: query
+          description: End date for violation period filter
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: sort
+          in: query
+          description: Sort field and direction
+          schema:
+            type: string
+            enum: [created_at, -created_at, severity, -severity, period_start, -period_start]
+            default: "-created_at"
+      responses:
+        '200':
+          description: Violations retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          violations:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/ComplianceViolationDetailed'
+                          pagination:
+                            $ref: '#/components/schemas/PaginationInfo'
+    
+    post:
+      tags:
+        - Compliance Violations
+      summary: Create compliance violation
+      description: |
+        Manually create a compliance violation record. Typically used by system automation
+        or when violations are detected outside the normal shift validation process.
+      operationId: createViolation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ViolationCreateRequest'
+      responses:
+        '201':
+          description: Violation created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ComplianceViolationDetailed'
+
+  /compliance/violations/{id}/resolve/:
+    patch:
+      tags:
+        - Compliance Violations
+      summary: Resolve compliance violation
+      description: |
+        Mark a compliance violation as resolved, dismissed, or approved as an exception.
+        Requires manager-level permissions and includes audit trail logging.
+      operationId: resolveViolation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Violation ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ViolationResolutionRequest'
+      responses:
+        '200':
+          description: Violation resolved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ComplianceViolationDetailed'
+        '403':
+          description: Insufficient permissions to resolve violation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: error
+                error:
+                  code: "INSUFFICIENT_PERMISSIONS"
+                  message: "Manager role required to resolve violations"
+
+  /compliance/metrics/summary/:
+    get:
+      tags:
+        - Compliance Metrics
+      summary: Get compliance metrics summary
+      description: |
+        Retrieve aggregated compliance metrics for reporting and dashboard display.
+        Includes violation rates, compliance scores, and trend analysis.
+      operationId: getComplianceMetrics
+      parameters:
+        - name: user_id
+          in: query
+          description: Filter metrics for specific user
+          schema:
+            type: integer
+        - name: venue_id
+          in: query
+          description: Filter metrics for specific venue
+          schema:
+            type: integer
+        - name: period_type
+          in: query
+          description: Aggregation period type
+          schema:
+            type: string
+            enum: [daily, weekly, monthly, quarterly, yearly]
+            default: monthly
+        - name: start_date
+          in: query
+          description: Start date for metrics period
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          description: End date for metrics period
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ComplianceMetricsSummary'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from authentication endpoint
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for system integration
+
+  schemas:
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success]
+          example: success
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+        links:
+          $ref: '#/components/schemas/ResponseLinks'
+      required:
+        - status
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [error]
+          example: error
+        error:
+          $ref: '#/components/schemas/ErrorDetails'
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+      required:
+        - status
+        - error
+
+    ResponseMeta:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:00:00Z"
+        api_version:
+          type: string
+          example: "1.0"
+        response_time_ms:
+          type: integer
+          example: 45
+        cached:
+          type: boolean
+          example: true
+        cache_ttl:
+          type: integer
+          description: Cache TTL in seconds
+          example: 3600
+        request_id:
+          type: string
+          example: "req_123456789"
+
+    ResponseLinks:
+      type: object
+      properties:
+        self:
+          type: string
+          format: uri
+          example: "/api/v1/compliance/violations/123"
+        related:
+          type: object
+          additionalProperties:
+            type: string
+            format: uri
+          example:
+            user: "/api/v1/users/456"
+            shift: "/api/v1/shifts/789"
+
+    ErrorDetails:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "COMPLIANCE_VIOLATION"
+        message:
+          type: string
+          example: "Schedule violates working time regulations"
+        details:
+          type: string
+          example: "Weekly hours limit exceeded by 8.5 hours"
+        field:
+          type: string
+          example: "total_weekly_hours"
+        violation_type:
+          type: string
+          example: "weekly_overtime"
+        regulation_reference:
+          type: string
+          example: "UK Working Time Regulations 1998"
+      required:
+        - code
+        - message
+
+    RegionDetectionResult:
+      type: object
+      properties:
+        region_code:
+          type: string
+          enum: [UK, US-DEFAULT, US-CA, US-NY, US-TX, EU-FR, EU-DE, EU-ES, UNKNOWN]
+          example: "UK"
+        country_code:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          example: "GB"
+        regulation_id:
+          type: integer
+          nullable: true
+          example: 1
+        confidence_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.95
+        detection_method:
+          type: string
+          enum: [venue_location, ip_geolocation, user_preference, fallback]
+          example: "venue_location"
+        applicable_regulations:
+          type: object
+          properties:
+            working_time_directive:
+              type: boolean
+            sia_requirements:
+              type: boolean
+            opt_out_available:
+              type: boolean
+          example:
+            working_time_directive: true
+            sia_requirements: true
+            opt_out_available: true
+        notes:
+          type: string
+          example: "Detected from venue postcode in England"
+      required:
+        - region_code
+        - country_code
+        - confidence_score
+        - detection_method
+
+    PresetApplicationRequest:
+      type: object
+      properties:
+        region_code:
+          type: string
+          enum: [UK, US-DEFAULT, US-CA, US-NY, US-TX, EU-FR, EU-DE, EU-ES]
+          example: "UK"
+        profile_id:
+          type: integer
+          example: 123
+        override_existing:
+          type: boolean
+          default: false
+          description: Whether to override existing custom settings
+        apply_sia_requirements:
+          type: boolean
+          default: true
+          description: Whether to apply SIA license requirements (UK only)
+        custom_overrides:
+          type: object
+          description: Custom overrides to specific regulation values
+          properties:
+            max_daily_hours:
+              type: number
+              minimum: 1
+              maximum: 24
+            max_weekly_hours:
+              type: number
+              minimum: 1
+              maximum: 168
+            min_rest_hours:
+              type: number
+              minimum: 0
+              maximum: 24
+            reason:
+              type: string
+              description: Reason for custom override
+          example:
+            max_daily_hours: 12.0
+            reason: "Emergency services exemption"
+      required:
+        - region_code
+        - profile_id
+
+    PresetApplicationResult:
+      type: object
+      properties:
+        profile_id:
+          type: integer
+          example: 123
+        region_code:
+          type: string
+          example: "UK"
+        applied_settings:
+          type: object
+          properties:
+            max_daily_hours:
+              type: number
+            max_weekly_hours:
+              type: number
+            min_rest_hours:
+              type: number
+            sia_license_required:
+              type: boolean
+            working_time_opt_out:
+              type: boolean
+          example:
+            max_daily_hours: 11.0
+            max_weekly_hours: 48.0
+            min_rest_hours: 11.0
+            sia_license_required: true
+            working_time_opt_out: true
+        warnings:
+          type: array
+          items:
+            type: string
+          example:
+            - "SIA license expiry validation enabled"
+            - "Working time opt-out requires employee consent"
+        changes_summary:
+          type: object
+          properties:
+            modified_fields:
+              type: integer
+            compliance_impact:
+              type: string
+              enum: [no_change, stricter_limits, relaxed_limits, mixed_changes]
+            estimated_cost_impact:
+              type: string
+          example:
+            modified_fields: 5
+            compliance_impact: "stricter_limits"
+            estimated_cost_impact: "+15% overtime costs"
+
+    RegulationComparison:
+      type: object
+      properties:
+        comparison_matrix:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              max_daily_hours:
+                type: number
+              max_weekly_hours:
+                type: number
+              overtime_threshold:
+                type: number
+              sia_required:
+                type: boolean
+              break_requirements:
+                type: object
+          example:
+            UK:
+              max_daily_hours: 11.0
+              max_weekly_hours: 48.0
+              overtime_threshold: 40.0
+              sia_required: true
+            US-CA:
+              max_daily_hours: 12.0
+              max_weekly_hours: 40.0
+              overtime_threshold: 8.0
+              sia_required: false
+        key_differences:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              values:
+                type: object
+                additionalProperties:
+                  type: number
+              impact:
+                type: string
+          example:
+            - field: "overtime_threshold"
+              values:
+                UK: 40.0
+                US-CA: 8.0
+              impact: "US-CA triggers overtime much earlier"
+        recommendations:
+          type: array
+          items:
+            type: string
+          example:
+            - "Consider separate shift templates for each region"
+            - "Implement region-specific approval workflows"
+
+    ScheduleValidationRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          example: 123
+        proposed_shifts:
+          type: array
+          items:
+            type: object
+            properties:
+              venue_id:
+                type: integer
+              start_time:
+                type: string
+                format: date-time
+              end_time:
+                type: string
+                format: date-time
+              shift_type:
+                type: string
+                enum: [security_guard, door_supervisor, cctv_operator, event_security, mobile_patrol]
+          example:
+            - venue_id: 456
+              start_time: "2024-01-15T09:00:00Z"
+              end_time: "2024-01-15T21:00:00Z"
+              shift_type: "security_guard"
+        validation_options:
+          type: object
+          properties:
+            check_weekly_limits:
+              type: boolean
+              default: true
+            check_rest_periods:
+              type: boolean
+              default: true
+            include_warnings:
+              type: boolean
+              default: true
+            region_override:
+              type: string
+              description: Force specific region instead of auto-detection
+          example:
+            check_weekly_limits: true
+            check_rest_periods: true
+            include_warnings: true
+            region_override: "UK"
+      required:
+        - user_id
+        - proposed_shifts
+
+    ScheduleValidationResult:
+      type: object
+      properties:
+        validation_result:
+          type: string
+          enum: [compliant, warning, violation]
+          example: "warning"
+        is_compliant:
+          type: boolean
+          example: true
+        violations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComplianceViolation'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComplianceWarning'
+        compliance_summary:
+          type: object
+          properties:
+            weekly_hours_after:
+              type: number
+            weekly_limit:
+              type: number
+            daily_hours:
+              type: number
+            rest_period_compliant:
+              type: boolean
+            sia_license_valid:
+              type: boolean
+          example:
+            weekly_hours_after: 46.0
+            weekly_limit: 48.0
+            daily_hours: 12.0
+            rest_period_compliant: true
+            sia_license_valid: true
+        alternative_suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              modification:
+                type: string
+              hours:
+                type: number
+              reason:
+                type: string
+          example:
+            - modification: "reduce_shift_by_hours"
+              hours: 2.0
+              reason: "Stay within weekly limit comfort zone"
+
+    ComplianceViolation:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [daily_overtime, weekly_overtime, consecutive_days, insufficient_rest, missing_break, late_checkin, early_checkout, location_violation, unauthorized_overtime, shift_abandonment, documentation_missing, custom]
+        severity:
+          type: string
+          enum: [info, warning, minor, major, critical]
+        message:
+          type: string
+        threshold_exceeded:
+          type: number
+          nullable: true
+        regulation_reference:
+          type: string
+      example:
+        type: "weekly_overtime"
+        severity: "major"
+        message: "Weekly hours limit exceeded by 8.5 hours"
+        threshold_exceeded: 8.5
+        regulation_reference: "UK Working Time Regulations 1998"
+
+    ComplianceWarning:
+      type: object
+      properties:
+        type:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum: [info, low, medium, high]
+        recommendation:
+          type: string
+      example:
+        type: "approaching_weekly_limit"
+        message: "This shift will bring weekly hours to 46/48 allowed"
+        severity: "info"
+        recommendation: "Monitor remaining weekly capacity"
+
+    ComplianceViolationDetailed:
+      allOf:
+        - $ref: '#/components/schemas/ComplianceViolation'
+        - type: object
+          properties:
+            id:
+              type: integer
+            user_id:
+              type: integer
+            shift_id:
+              type: integer
+              nullable: true
+            period_start:
+              type: string
+              format: date-time
+            period_end:
+              type: string
+              format: date-time
+            description:
+              type: string
+            calculated_values:
+              type: object
+            resolution_status:
+              type: string
+              enum: [open, investigating, pending_approval, approved_exception, resolved, false_positive, dismissed]
+            resolution_notes:
+              type: string
+              nullable: true
+            resolved_by:
+              type: integer
+              nullable: true
+            resolved_at:
+              type: string
+              format: date-time
+              nullable: true
+            exception_granted:
+              type: boolean
+            financial_impact:
+              type: number
+              nullable: true
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+    ViolationCreateRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        violation_type:
+          type: string
+          enum: [daily_overtime, weekly_overtime, consecutive_days, insufficient_rest, missing_break, late_checkin, early_checkout, location_violation, unauthorized_overtime, shift_abandonment, documentation_missing, custom]
+        severity:
+          type: string
+          enum: [info, warning, minor, major, critical]
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+        shift_id:
+          type: integer
+          nullable: true
+        description:
+          type: string
+        calculated_values:
+          type: object
+        threshold_exceeded:
+          type: number
+          nullable: true
+        evidence_data:
+          type: object
+        system_generated:
+          type: boolean
+          default: false
+      required:
+        - user_id
+        - violation_type
+        - severity
+        - period_start
+        - period_end
+        - description
+
+    ViolationResolutionRequest:
+      type: object
+      properties:
+        resolution_status:
+          type: string
+          enum: [resolved, approved_exception, false_positive, dismissed]
+        resolution_notes:
+          type: string
+        exception_reason:
+          type: string
+          description: Required if resolution_status is approved_exception
+        financial_impact:
+          type: number
+          nullable: true
+          description: Financial impact of the violation resolution
+      required:
+        - resolution_status
+        - resolution_notes
+
+    ComplianceMetricsSummary:
+      type: object
+      properties:
+        period_summary:
+          type: object
+          properties:
+            start_date:
+              type: string
+              format: date
+            end_date:
+              type: string
+              format: date
+            period_type:
+              type: string
+              enum: [daily, weekly, monthly, quarterly, yearly]
+        violation_metrics:
+          type: object
+          properties:
+            total_violations:
+              type: integer
+            open_violations:
+              type: integer
+            resolved_violations:
+              type: integer
+            violation_rate:
+              type: number
+              description: Violations per 100 shifts
+            severity_breakdown:
+              type: object
+              properties:
+                critical:
+                  type: integer
+                major:
+                  type: integer
+                minor:
+                  type: integer
+                warning:
+                  type: integer
+                info:
+                  type: integer
+        compliance_scores:
+          type: object
+          properties:
+            overall_score:
+              type: number
+              minimum: 0
+              maximum: 100
+            previous_period_score:
+              type: number
+              minimum: 0
+              maximum: 100
+            trend:
+              type: string
+              enum: [improving, declining, stable]
+            grade:
+              type: string
+              enum: [A+, A, B+, B, C+, C, D+, D, F]
+        working_hours_metrics:
+          type: object
+          properties:
+            total_hours_worked:
+              type: number
+            overtime_hours:
+              type: number
+            overtime_percentage:
+              type: number
+            average_weekly_hours:
+              type: number
+            max_consecutive_days:
+              type: integer
+        financial_impact:
+          type: object
+          properties:
+            total_overtime_costs:
+              type: number
+            violation_related_costs:
+              type: number
+            potential_savings:
+              type: number
+
+    PaginationInfo:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total_items:
+          type: integer
+          example: 150
+        total_pages:
+          type: integer
+          example: 8
+        has_next:
+          type: boolean
+          example: true
+        has_prev:
+          type: boolean
+          example: false
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid parameters or request format
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            status: error
+            error:
+              code: "INVALID_REQUEST"
+              message: "Invalid request parameters"
+              details: "Missing required field: user_id"
+
+    Unauthorized:
+      description: Unauthorized - invalid or missing authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            status: error
+            error:
+              code: "UNAUTHORIZED"
+              message: "Authentication required"
+              details: "Valid JWT token required in Authorization header"
+
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          description: Request limit per hour
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Remaining requests in current window
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Unix timestamp when rate limit resets
+          schema:
+            type: integer
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            status: error
+            error:
+              code: "RATE_LIMIT_EXCEEDED"
+              message: "Rate limit exceeded"
+              details: "1000 requests per hour limit exceeded"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            status: error
+            error:
+              code: "INTERNAL_ERROR"
+              message: "Internal server error"
+              details: "An unexpected error occurred"
+
+  examples:
+    UKComplianceProfile:
+      summary: UK compliance profile with SIA requirements
+      value:
+        region_code: "UK"
+        max_daily_hours: 11.0
+        max_weekly_hours: 48.0
+        min_rest_hours: 11.0
+        sia_license_required: true
+        working_time_opt_out: true
+        break_requirements:
+          required_after_hours: 6.0
+          minimum_duration_minutes: 20
+
+    USComplianceProfile:
+      summary: US compliance profile with FLSA rules
+      value:
+        region_code: "US-DEFAULT"
+        max_daily_hours: 16.0
+        max_weekly_hours: 60.0
+        overtime_threshold: 40.0
+        overtime_multiplier: 1.5
+        state_specific_rules:
+          california:
+            daily_overtime_threshold: 8.0
+            double_time_threshold: 12.0
+
+tags:
+  - name: Regional Compliance
+    description: |
+      Regional compliance management including auto-detection of applicable regulations,
+      preset application, and cross-jurisdictional comparison.
+  - name: Compliance Violations
+    description: |
+      Violation tracking, reporting, and resolution workflows for compliance management.
+  - name: Compliance Metrics
+    description: |
+      Aggregated compliance metrics, reporting, and analytics for organizational oversight.
+
+externalDocs:
+  description: SSMS Compliance System Documentation
+  url: https://docs.ssms.com/compliance/

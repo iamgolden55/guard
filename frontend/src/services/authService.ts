@@ -1,5 +1,6 @@
 import api from './api';
 import { type LoginRequest, type LoginResponse, type RefreshTokenResponse, type RegisterRequest, type User, UserRole } from '../types';
+import { setAuthCookie, getAuthToken, removeAuthTokens } from '../utils/auth';
 
 // Demo mode flag - set to true to use demo authentication
 const DEMO_MODE = false;  // Set to false to use real authentication
@@ -68,10 +69,10 @@ class AuthService {
         user: demoUser
       };
 
-      // Store tokens and user data in localStorage
-      localStorage.setItem('token', demoResponse.access);
-      localStorage.setItem('refreshToken', demoResponse.refresh);
-      localStorage.setItem('user', JSON.stringify(demoResponse.user));
+      // Store tokens and user data securely
+      setAuthCookie('token', demoResponse.access);
+      setAuthCookie('refreshToken', demoResponse.refresh);
+      setAuthCookie('user', JSON.stringify(demoResponse.user));
 
       return demoResponse;
     }
@@ -101,10 +102,10 @@ class AuthService {
         user: user
       };
 
-      // Store tokens and user data in localStorage
-      localStorage.setItem('token', formattedResponse.access);
-      localStorage.setItem('refreshToken', formattedResponse.refresh);
-      localStorage.setItem('user', JSON.stringify(formattedResponse.user));
+      // Store tokens and user data securely
+      setAuthCookie('token', formattedResponse.access);
+      setAuthCookie('refreshToken', formattedResponse.refresh);
+      setAuthCookie('user', JSON.stringify(formattedResponse.user));
 
       return formattedResponse;
     } catch (error) {
@@ -147,8 +148,8 @@ class AuthService {
 
       if (DEBUG) console.log('Refresh token API response success');
       
-      // Update token in localStorage
-      localStorage.setItem('token', response.data.access);
+      // Update token securely
+      setAuthCookie('token', response.data.access);
 
       return response.data.access;
     } catch (error) {
@@ -161,8 +162,8 @@ class AuthService {
     if (DEBUG) console.log('AuthService.getUserProfile called');
     
     if (DEMO_MODE) {
-      // Return the stored user in localStorage
-      const userStr = localStorage.getItem('user');
+      // Return the stored user from secure storage
+      const userStr = getAuthToken('user');
       if (userStr) {
         try {
           const user = JSON.parse(userStr) as User;
@@ -186,10 +187,10 @@ class AuthService {
       // Try to get profile from API first
       try {
         // Since the /users/me/ endpoint doesn't exist, we can instead use:
-        // 1. Get user ID from localStorage
+        // 1. Get user ID from secure storage
         // 2. Make a request to /users/{id}/ endpoint
-        const userStr = localStorage.getItem('user');
-        if (!userStr) throw new Error('No user data in localStorage');
+        const userStr = getAuthToken('user');
+        if (!userStr) throw new Error('No user data in secure storage');
         
         const userData = JSON.parse(userStr) as User;
         if (!userData.id) throw new Error('User ID not found in localStorage');

@@ -20,7 +20,17 @@ export interface AuthState {
   refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  onboardingLoading: boolean;
   error: string | null;
+  onboarding: OnboardingStatus;
+}
+
+export interface OnboardingStatus {
+  isCompleted: boolean | null;
+  currentStep: number | null;
+  completedSteps: number[];
+  companyId?: string;
+  hasCompany: boolean;
 }
 
 export interface LoginRequest {

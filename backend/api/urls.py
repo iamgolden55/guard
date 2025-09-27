@@ -15,7 +15,16 @@ from .views import (
     ShiftTemplateViewSet, DeputyConfigView, SystemSettingsView,
     my_profile, update_my_user,
     FileUploadView, payroll_preview, payroll_generate,
-    EmploymentTypeViewSet, RecruitmentApplicationViewSet, RecruitmentApplicationPublicViewSet
+    EmploymentTypeViewSet, RecruitmentApplicationViewSet, RecruitmentApplicationPublicViewSet,
+    # Compliance system views
+    WorkingHoursRegulationViewSet, ComplianceProfileViewSet, ComplianceViolationViewSet,
+    ComplianceReportViewSet, WorkingHoursMetricsViewSet, check_compliance, compliance_alerts,
+    # Regional compliance API views
+    RegionalComplianceViewSet,
+    # Reporting system views
+    ReportTemplateViewSet, ReportJobViewSet, ReportMetricsViewSet, ExportViewSet, ReportTypesViewSet,
+    # Onboarding system views
+    OnboardingViewSet, CompaniesViewSet
 )
 
 router = DefaultRouter()
@@ -45,6 +54,23 @@ router.register('shift-templates', ShiftTemplateViewSet)
 router.register('employment-types', EmploymentTypeViewSet)
 router.register('recruitment-applications', RecruitmentApplicationViewSet)
 router.register('recruitment-apply', RecruitmentApplicationPublicViewSet)
+# Compliance system viewsets
+router.register('compliance/regulations', WorkingHoursRegulationViewSet, basename='compliance-regulations')
+router.register('compliance/profiles', ComplianceProfileViewSet, basename='compliance-profiles')
+router.register('compliance/violations', ComplianceViolationViewSet, basename='compliance-violations')
+router.register('compliance/reports', ComplianceReportViewSet, basename='compliance-reports')
+router.register('compliance/metrics', WorkingHoursMetricsViewSet, basename='compliance-metrics')
+# Regional compliance API endpoints
+router.register('compliance/regional', RegionalComplianceViewSet, basename='compliance-regional')
+# Reporting system endpoints
+router.register('reports/templates', ReportTemplateViewSet, basename='report-templates')
+router.register('reports/jobs', ReportJobViewSet, basename='report-jobs')
+router.register('reports/metrics', ReportMetricsViewSet, basename='report-metrics')
+router.register('reports/types', ReportTypesViewSet, basename='report-types')
+router.register('exports', ExportViewSet, basename='exports')
+# Onboarding system endpoints
+router.register('onboarding', OnboardingViewSet, basename='onboarding')
+router.register('companies', CompaniesViewSet, basename='companies')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -59,4 +85,7 @@ urlpatterns = [
     path('upload/', FileUploadView.as_view(), name='file-upload'),
     path('admin/payroll/preview/', payroll_preview, name='payroll-preview'),
     path('admin/payroll/generate/', payroll_generate, name='payroll-generate'),
+    # Compliance system endpoints
+    path('compliance/check/', check_compliance, name='compliance-check'),
+    path('compliance/alerts/', compliance_alerts, name='compliance-alerts'),
 ] 

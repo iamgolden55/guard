@@ -793,22 +793,15 @@ class ShiftViewSet(viewsets.ModelViewSet):
         shift_start = shift.start_time
         shift_end = shift.end_time
         
-        # Debug logging
-        print(f"🐛 CHECK-IN DEBUG: Now: {now}, Start: {shift_start}, End: {shift_end}")
-        print(f"🐛 CHECK-IN DEBUG: Now date: {now.date()}, Start date: {shift_start.date()}, End date: {shift_end.date()}")
-        
         # Restriction 1: Must be within the valid check-in window
         # For overnight shifts, allow check-in if current time is within the shift duration
         # or on the shift start date (even if we've crossed to the next day)
         shift_start_date = shift_start.date()
         current_date = now.date()
-        
+
         # Calculate if we're in a valid check-in period
         is_overnight_shift = shift_end.date() > shift_start.date()
         is_valid_checkin_period = False
-        
-        print(f"🐛 CHECK-IN DEBUG: Is overnight shift: {is_overnight_shift}")
-        print(f"🐛 CHECK-IN DEBUG: Current time vs shift end: {now} <= {shift_end} = {now <= shift_end}")
         
         if is_overnight_shift:
             # For overnight shifts: allow check-in if we're on start date OR 

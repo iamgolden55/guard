@@ -1,0 +1,6 @@
+# Django Channels WebSocket requirements
+channels==4.1.0
+channels-redis==4.2.0
+redis==5.0.1
+uvicorn[standard]==0.30.0
+websockets==12.0

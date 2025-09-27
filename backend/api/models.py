@@ -8,8 +8,722 @@ from model_utils import FieldTracker
 import googlemaps
 import math
 import logging
+import uuid
+
+# Import optimized managers
+from .compliance_query_optimizations import (
+    OptimizedComplianceViolationManager,
+    OptimizedWorkingHoursMetricsManager
+)
 
 logger = logging.getLogger(__name__)
+
+
+# =====================================================
+# MULTI-TENANT ONBOARDING MODELS (PLACED EARLY TO AVOID FORWARD REFERENCES)
+# =====================================================
+
+class SecurityCompany(models.Model):
+    """
+    Main company model for multi-tenant system.
+    Each security firm has their own company record with compliance and subscription settings.
+    """
+    SUBSCRIPTION_TIER_CHOICES = [
+        ('starter', 'Starter'),
+        ('professional', 'Professional'),
+        ('enterprise', 'Enterprise'),
+        ('custom', 'Custom'),
+    ]
+
+    COMPANY_SIZE_CHOICES = [
+        ('small', '1-10 employees'),
+        ('medium', '11-50 employees'),
+        ('large', '51-200 employees'),
+        ('enterprise', '200+ employees'),
+    ]
+
+    INDUSTRY_TYPE_CHOICES = [
+        ('events', 'Event Security'),
+        ('retail', 'Retail Security'),
+        ('corporate', 'Corporate Security'),
+        ('construction', 'Construction Security'),
+        ('healthcare', 'Healthcare Security'),
+        ('education', 'Education Security'),
+        ('hospitality', 'Hospitality Security'),
+        ('transport', 'Transport Security'),
+        ('mixed', 'Mixed Services'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Basic Company Information
+    name = models.CharField(
+        max_length=255,
+        help_text="Official company name"
+    )
+    trading_name = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Trading name if different from official name"
+    )
+    registration_number = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Company registration number"
+    )
+    tax_id = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Tax ID or VAT number"
+    )
+
+    # Location and Compliance
+    country_code = models.CharField(
+        max_length=3,
+        help_text="ISO 3166-1 alpha-3 country code"
+    )
+    state_province = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="State or province"
+    )
+    city = models.CharField(
+        max_length=100,
+        help_text="Primary city of operations"
+    )
+    postal_code = models.CharField(
+        max_length=20,
+        help_text="Postal or ZIP code"
+    )
+    address_line_1 = models.CharField(
+        max_length=255,
+        help_text="Primary address"
+    )
+    address_line_2 = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Secondary address (suite, floor, etc.)"
+    )
+
+    # Business Details
+    industry_type = models.CharField(
+        max_length=20,
+        choices=INDUSTRY_TYPE_CHOICES,
+        default='mixed',
+        help_text="Primary industry focus"
+    )
+    company_size = models.CharField(
+        max_length=20,
+        choices=COMPANY_SIZE_CHOICES,
+        default='small',
+        help_text="Current company size"
+    )
+
+    # Operational Configuration
+    compliance_profile = models.ForeignKey(
+        'ComplianceProfile',  # Forward reference since ComplianceProfile comes later
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        help_text="Associated compliance profile for regulatory requirements"
+    )
+    staff_capacity = models.IntegerField(
+        default=50,
+        validators=[MinValueValidator(1), MaxValueValidator(10000)],
+        help_text="Maximum number of staff members allowed"
+    )
+    venue_capacity = models.IntegerField(
+        default=20,
+        validators=[MinValueValidator(1), MaxValueValidator(1000)],
+        help_text="Maximum number of venues allowed"
+    )
+
+    # Subscription and Billing
+    subscription_tier = models.CharField(
+        max_length=50,
+        choices=SUBSCRIPTION_TIER_CHOICES,
+        default='starter',
+        help_text="Current subscription tier"
+    )
+    subscription_start_date = models.DateTimeField(
+        default=timezone.now,
+        help_text="When subscription started"
+    )
+    subscription_end_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When subscription ends (null for active subscriptions)"
+    )
+    billing_email = models.EmailField(
+        help_text="Email for billing and invoices"
+    )
+
+    # Contact Information
+    primary_contact_name = models.CharField(
+        max_length=255,
+        help_text="Name of primary contact person"
+    )
+    primary_contact_email = models.EmailField(
+        help_text="Email of primary contact person"
+    )
+    primary_contact_phone = models.CharField(
+        max_length=20,
+        help_text="Phone number of primary contact"
+    )
+
+    # Company Settings and Preferences
+    timezone = models.CharField(
+        max_length=50,
+        default='UTC',
+        help_text="Company timezone for shift scheduling"
+    )
+    currency = models.CharField(
+        max_length=3,
+        default='USD',
+        help_text="Currency for billing and payments"
+    )
+    date_format = models.CharField(
+        max_length=20,
+        default='DD/MM/YYYY',
+        choices=[
+            ('DD/MM/YYYY', 'DD/MM/YYYY'),
+            ('MM/DD/YYYY', 'MM/DD/YYYY'),
+            ('YYYY-MM-DD', 'YYYY-MM-DD'),
+        ]
+    )
+
+    # Features and Limits
+    features_enabled = models.JSONField(
+        default=dict,
+        help_text="Dictionary of enabled features for this company"
+    )
+    custom_settings = models.JSONField(
+        default=dict,
+        help_text="Company-specific custom settings"
+    )
+
+    # Status and Metadata
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether the company account is active"
+    )
+    is_trial = models.BooleanField(
+        default=False,
+        help_text="Whether this is a trial account"
+    )
+    trial_end_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When trial period ends"
+    )
+
+    # Audit Fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='companies_created',
+        help_text="User who created this company"
+    )
+
+    class Meta:
+        db_table = 'security_companies'
+        ordering = ['name']
+        verbose_name = 'Security Company'
+        verbose_name_plural = 'Security Companies'
+        indexes = [
+            models.Index(fields=['country_code']),
+            models.Index(fields=['subscription_tier']),
+            models.Index(fields=['is_active']),
+            models.Index(fields=['registration_number']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_subscription_tier_display()})"
+
+    def get_current_staff_count(self):
+        """Get current number of staff members"""
+        return self.memberships.filter(is_active=True).count()
+
+    def get_current_venue_count(self):
+        """Get current number of venues"""
+        return self.venues.filter(is_active=True).count()
+
+    def can_add_staff(self):
+        """Check if company can add more staff members"""
+        return self.get_current_staff_count() < self.staff_capacity
+
+    def can_add_venue(self):
+        """Check if company can add more venues"""
+        return self.get_current_venue_count() < self.venue_capacity
+
+    def is_feature_enabled(self, feature_name):
+        """Check if a specific feature is enabled for this company"""
+        return self.features_enabled.get(feature_name, False)
+
+    def get_subscription_status(self):
+        """Get current subscription status"""
+        now = timezone.now()
+
+        if self.is_trial:
+            if self.trial_end_date and now > self.trial_end_date:
+                return 'trial_expired'
+            return 'trial_active'
+
+        if self.subscription_end_date and now > self.subscription_end_date:
+            return 'subscription_expired'
+
+        return 'active'
+
+
+class UserCompanyMembership(models.Model):
+    """
+    Links users to companies with role-based access control.
+    Supports multi-tenant access where users can belong to multiple companies.
+    """
+    MEMBERSHIP_ROLE_CHOICES = [
+        ('owner', 'Company Owner'),
+        ('admin', 'Company Administrator'),
+        ('manager', 'Manager'),
+        ('staff', 'Staff Member'),
+        ('viewer', 'Viewer'),
+    ]
+
+    INVITATION_STATUS_CHOICES = [
+        ('pending', 'Invitation Pending'),
+        ('accepted', 'Invitation Accepted'),
+        ('declined', 'Invitation Declined'),
+        ('expired', 'Invitation Expired'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Core Relationships
+    user = models.ForeignKey(
+        'User',  # Forward reference to User model that comes later
+        on_delete=models.CASCADE,
+        related_name='company_memberships'
+    )
+    company = models.ForeignKey(
+        SecurityCompany,
+        on_delete=models.CASCADE,
+        related_name='memberships'
+    )
+
+    # Membership Details
+    role = models.CharField(
+        max_length=20,
+        choices=MEMBERSHIP_ROLE_CHOICES,
+        default='staff'
+    )
+    is_owner = models.BooleanField(
+        default=False,
+        help_text="Whether this user is the company owner"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this membership is currently active"
+    )
+
+    # Invitation Management
+    invitation_status = models.CharField(
+        max_length=20,
+        choices=INVITATION_STATUS_CHOICES,
+        default='accepted',
+        help_text="Status of the membership invitation"
+    )
+    invited_by = models.ForeignKey(
+        'User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='company_invitations_sent',
+        help_text="User who sent the invitation"
+    )
+    invitation_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When invitation was sent"
+    )
+    invitation_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When invitation expires"
+    )
+
+    # Access Control
+    permissions = models.JSONField(
+        default=dict,
+        help_text="Custom permissions for this membership"
+    )
+    access_restrictions = models.JSONField(
+        default=dict,
+        help_text="Any access restrictions for this user"
+    )
+
+    # Audit Fields
+    joined_at = models.DateTimeField(auto_now_add=True)
+    last_accessed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When user last accessed this company's data"
+    )
+
+    class Meta:
+        db_table = 'user_company_memberships'
+        unique_together = ['user', 'company']
+        ordering = ['-joined_at']
+        indexes = [
+            models.Index(fields=['company', 'is_active']),
+            models.Index(fields=['user', 'is_active']),
+            models.Index(fields=['role']),
+            models.Index(fields=['is_owner']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} at {self.company.name} ({self.role})"
+
+    def has_permission(self, permission_name):
+        """Check if user has a specific permission in this company"""
+        return self.permissions.get(permission_name, False)
+
+    def is_invitation_valid(self):
+        """Check if invitation is still valid"""
+        if self.invitation_status != 'pending':
+            return False
+
+        if self.invitation_expires_at and timezone.now() > self.invitation_expires_at:
+            return False
+
+        return True
+
+
+class CompanyOnboarding(models.Model):
+    """
+    Tracks the progress of company onboarding through the wizard steps.
+    Stores step completion status and collects data during the onboarding process.
+    """
+    ONBOARDING_STEPS = [
+        (1, 'Company Information'),
+        (2, 'Regional Compliance Setup'),
+        (3, 'Staff Operations Configuration'),
+        (4, 'Integrations Setup'),
+        (5, 'Account Finalization'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Core Relationship
+    company = models.OneToOneField(
+        SecurityCompany,
+        on_delete=models.CASCADE,
+        related_name='onboarding'
+    )
+
+    # Progress Tracking
+    current_step = models.IntegerField(
+        default=1,
+        validators=[MinValueValidator(1), MaxValueValidator(5)]
+    )
+    total_steps = models.IntegerField(default=5)
+
+    # Step Completion Status
+    company_info_completed = models.BooleanField(default=False)
+    regional_setup_completed = models.BooleanField(default=False)
+    staff_setup_completed = models.BooleanField(default=False)
+    integrations_completed = models.BooleanField(default=False)
+    finalization_completed = models.BooleanField(default=False)
+
+    # Onboarding Data (stored temporarily during process)
+    step_data = models.JSONField(
+        default=dict,
+        help_text="Temporary storage for step data during onboarding"
+    )
+    validation_errors = models.JSONField(
+        default=dict,
+        help_text="Validation errors for each step"
+    )
+
+    # Session Management
+    session_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Browser session ID for onboarding continuity"
+    )
+    last_step_accessed = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When user last accessed any step"
+    )
+
+    # Completion Tracking
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When onboarding was fully completed"
+    )
+    completed_by = models.ForeignKey(
+        'User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='onboardings_completed',
+        help_text="User who completed the onboarding"
+    )
+
+    # Time Tracking
+    time_spent_minutes = models.IntegerField(
+        default=0,
+        help_text="Total time spent in onboarding (minutes)"
+    )
+    estimated_time_remaining = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Estimated remaining time in minutes"
+    )
+
+    # Audit Fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'company_onboarding'
+        ordering = ['-updated_at']
+        indexes = [
+            models.Index(fields=['company', 'current_step']),
+            models.Index(fields=['completed_at']),
+            models.Index(fields=['session_id']),
+        ]
+
+    def __str__(self):
+        status = "Completed" if self.is_completed else f"Step {self.current_step}/{self.total_steps}"
+        return f"{self.company.name} Onboarding - {status}"
+
+    @property
+    def is_completed(self):
+        """Check if onboarding is fully completed"""
+        return self.completed_at is not None
+
+    @property
+    def progress_percentage(self):
+        """Calculate completion percentage"""
+        completed_steps = sum([
+            self.company_info_completed,
+            self.regional_setup_completed,
+            self.staff_setup_completed,
+            self.integrations_completed,
+            self.finalization_completed,
+        ])
+        return int((completed_steps / self.total_steps) * 100)
+
+    def get_next_step(self):
+        """Get the next incomplete step"""
+        if not self.company_info_completed:
+            return 1
+        elif not self.regional_setup_completed:
+            return 2
+        elif not self.staff_setup_completed:
+            return 3
+        elif not self.integrations_completed:
+            return 4
+        elif not self.finalization_completed:
+            return 5
+        return None
+
+    def mark_step_completed(self, step_number):
+        """Mark a specific step as completed"""
+        step_mapping = {
+            1: 'company_info_completed',
+            2: 'regional_setup_completed',
+            3: 'staff_setup_completed',
+            4: 'integrations_completed',
+            5: 'finalization_completed',
+        }
+
+        if step_number in step_mapping:
+            setattr(self, step_mapping[step_number], True)
+            self.current_step = min(step_number + 1, self.total_steps)
+            self.last_step_accessed = timezone.now()
+
+            # Check if all steps are complete
+            if all([
+                self.company_info_completed,
+                self.regional_setup_completed,
+                self.staff_setup_completed,
+                self.integrations_completed,
+                self.finalization_completed,
+            ]):
+                if not self.completed_at:
+                    self.completed_at = timezone.now()
+
+            self.save()
+
+    def update_session_activity(self, session_id=None):
+        """Update session activity for onboarding continuity"""
+        self.last_step_accessed = timezone.now()
+        if session_id:
+            self.session_id = session_id
+        self.save()
+
+
+class CompanyIntegration(models.Model):
+    """
+    Manages third-party integrations for each company.
+    Stores configuration and status for various external services.
+    """
+    INTEGRATION_TYPE_CHOICES = [
+        ('deputy', 'Deputy Workforce Management'),
+        ('payroll', 'Payroll System'),
+        ('accounting', 'Accounting Software'),
+        ('crm', 'Customer Relationship Management'),
+        ('security', 'Security Monitoring'),
+        ('communication', 'Communication Platform'),
+        ('analytics', 'Analytics Platform'),
+        ('custom', 'Custom Integration'),
+    ]
+
+    STATUS_CHOICES = [
+        ('inactive', 'Not Configured'),
+        ('configuring', 'Being Configured'),
+        ('testing', 'Testing Connection'),
+        ('active', 'Active'),
+        ('error', 'Configuration Error'),
+        ('suspended', 'Temporarily Suspended'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Core Relationships
+    company = models.ForeignKey(
+        SecurityCompany,
+        on_delete=models.CASCADE,
+        related_name='integrations'
+    )
+
+    # Integration Details
+    integration_type = models.CharField(
+        max_length=50,
+        choices=INTEGRATION_TYPE_CHOICES
+    )
+    name = models.CharField(
+        max_length=100,
+        help_text="Display name for this integration"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Description of what this integration does"
+    )
+
+    # Configuration
+    configuration = models.JSONField(
+        default=dict,
+        help_text="Integration-specific configuration settings"
+    )
+    credentials = models.JSONField(
+        default=dict,
+        help_text="Encrypted credentials for the integration"
+    )
+
+    # Status and Health
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='inactive'
+    )
+    is_enabled = models.BooleanField(
+        default=True,
+        help_text="Whether this integration is enabled"
+    )
+    last_sync_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When data was last synchronized"
+    )
+    last_health_check = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When connection was last tested"
+    )
+    health_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('healthy', 'Healthy'),
+            ('warning', 'Warning'),
+            ('error', 'Error'),
+            ('unknown', 'Unknown'),
+        ],
+        default='unknown'
+    )
+
+    # Error Tracking
+    last_error = models.TextField(
+        blank=True,
+        help_text="Last error message if any"
+    )
+    error_count = models.IntegerField(
+        default=0,
+        help_text="Number of consecutive errors"
+    )
+
+    # Sync Settings
+    sync_frequency = models.CharField(
+        max_length=20,
+        choices=[
+            ('realtime', 'Real-time'),
+            ('hourly', 'Hourly'),
+            ('daily', 'Daily'),
+            ('weekly', 'Weekly'),
+            ('manual', 'Manual only'),
+        ],
+        default='daily'
+    )
+    auto_sync_enabled = models.BooleanField(
+        default=True,
+        help_text="Whether automatic syncing is enabled"
+    )
+
+    # Audit Fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    configured_by = models.ForeignKey(
+        'User',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='integrations_configured',
+        help_text="User who configured this integration"
+    )
+
+    class Meta:
+        db_table = 'company_integrations'
+        unique_together = ['company', 'integration_type', 'name']
+        ordering = ['integration_type', 'name']
+        indexes = [
+            models.Index(fields=['company', 'status']),
+            models.Index(fields=['integration_type']),
+            models.Index(fields=['is_enabled', 'status']),
+        ]
+
+    def __str__(self):
+        return f"{self.company.name} - {self.name} ({self.get_status_display()})"
+
+    def test_connection(self):
+        """Test the integration connection"""
+        # This would be implemented with actual integration testing logic
+        self.last_health_check = timezone.now()
+        # For now, just mark as healthy
+        self.health_status = 'healthy'
+        self.save()
+        return True
+
+    def perform_sync(self):
+        """Perform data synchronization"""
+        # This would be implemented with actual sync logic
+        self.last_sync_at = timezone.now()
+        self.save()
+        return True
+
 
 class User(AbstractUser):
     # Main role choices for all users
@@ -330,6 +1044,15 @@ class StaffAvailability(models.Model):
         return f"{self.staff_profile.user.username} - {self.get_day_of_week_display()}"
 
 class Venue(models.Model):
+    # Company relationship for multi-tenancy
+    company = models.ForeignKey(
+        SecurityCompany,
+        on_delete=models.CASCADE,
+        related_name='venues',
+        null=True,  # Temporary for migration - will be changed to NOT NULL after migration
+        help_text="Company that owns this venue"
+    )
+
     name = models.CharField(max_length=255)
     address = models.CharField(max_length=255)
     city = models.CharField(max_length=100)
@@ -965,16 +1688,9 @@ class Shift(models.Model):
         shift_start_date = shift_start.date()
         current_date = now.date()
         
-        # Debug logging
-        import sys
-        print(f"🐛 MODEL CHECK-IN DEBUG: Now: {now}, Start: {shift_start}, End: {shift_end}", file=sys.stderr)
-        print(f"🐛 MODEL CHECK-IN DEBUG: Now date: {current_date}, Start date: {shift_start_date}, End date: {shift_end.date()}", file=sys.stderr)
-        
         # Restriction 1: Must be within valid check-in window (handles overnight shifts)
         is_overnight_shift = shift_end.date() > shift_start_date
         is_valid_checkin_period = False
-        
-        print(f"🐛 MODEL CHECK-IN DEBUG: Is overnight shift: {is_overnight_shift}", file=sys.stderr)
         
         if is_overnight_shift:
             # For overnight shifts: allow check-in if we're on start date OR 
@@ -987,12 +1703,10 @@ class Shift(models.Model):
             # For same-day shifts: must be on the same date
             is_valid_checkin_period = (current_date == shift_start_date)
         
-        print(f"🐛 MODEL CHECK-IN DEBUG: Is valid check-in period: {is_valid_checkin_period}", file=sys.stderr)
-        
         # Development override for testing
         import os
         if os.environ.get('DJANGO_DEBUG') == 'True' and not is_valid_checkin_period:
-            print("🚧 DEVELOPMENT OVERRIDE: Allowing late check-in for testing", file=sys.stderr)
+            # Allow late check-in in debug mode for testing
             is_valid_checkin_period = True
         
         if not is_valid_checkin_period:
@@ -1596,7 +2310,7 @@ class Invoice(models.Model):
         ).first()
         
         if existing_invoice:
-            print(f"Invoice already exists for {staff_user.username} for period {start_date} to {end_date}")
+            # Invoice already exists - skip creation
             return existing_invoice
         
         # Get all approved shifts for the staff member in the date range
@@ -2210,10 +2924,1707 @@ class EnforcementVisit(models.Model):
     reason_for_visit = models.TextField(help_text="Reason for the enforcement visit")
     action_taken = models.TextField(help_text="Actions taken during the visit")
     outcome = models.TextField(help_text="Outcome of the visit")
-    
+
     class Meta:
         db_table = 'enforcement_visits'
         ordering = ['-timestamp']
-    
+
     def __str__(self):
         return f"Enforcement Visit - {self.officer_name} at {self.shift.venue.name} ({self.timestamp})"
+
+
+# =============================================================================
+# LEGAL COMPLIANCE AND WORKING HOURS REGULATION MODELS
+# =============================================================================
+
+class WorkingHoursRegulationManager(models.Manager):
+    """Manager for WorkingHoursRegulation model with useful query methods"""
+
+    def by_country(self, country_code):
+        """Get regulation for specific country"""
+        return self.get_queryset().filter(country_code__iexact=country_code).first()
+
+    def active_regulations(self):
+        """Get all active regulations"""
+        return self.get_queryset().filter(is_active=True)
+
+    def with_overtime_rules(self):
+        """Get regulations that have overtime rules defined"""
+        return self.get_queryset().filter(overtime_threshold_hours__isnull=False)
+
+
+class WorkingHoursRegulation(models.Model):
+    """
+    Model defining country/region-specific labor regulations and working hours rules.
+    This serves as the foundation for compliance checking across different jurisdictions.
+    """
+
+    # Country identification
+    country_code = models.CharField(
+        max_length=3,
+        unique=True,
+        help_text="ISO 3166-1 alpha-2 country code (e.g., 'GB', 'US', 'FR')"
+    )
+    country_name = models.CharField(
+        max_length=100,
+        help_text="Full country name for display purposes"
+    )
+
+    # Standard working hours
+    standard_weekly_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Standard weekly working hours (e.g., 40.0 for UK/US, 35.0 for France)"
+    )
+    standard_daily_hours = models.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        default=8.0,
+        validators=[MinValueValidator(0), MaxValueValidator(24)],
+        help_text="Standard daily working hours"
+    )
+
+    # Overtime rules
+    overtime_threshold_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Weekly hours threshold before overtime applies"
+    )
+    overtime_multiplier_1 = models.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        default=1.5,
+        validators=[MinValueValidator(1.0), MaxValueValidator(5.0)],
+        help_text="First overtime rate multiplier (e.g., 1.5 for time-and-a-half)"
+    )
+    overtime_threshold_2 = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Second overtime threshold for higher rates (optional)"
+    )
+    overtime_multiplier_2 = models.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1.0), MaxValueValidator(5.0)],
+        help_text="Second overtime rate multiplier (e.g., 2.0 for double time)"
+    )
+
+    # Maximum limits
+    max_daily_hours = models.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        validators=[MinValueValidator(1), MaxValueValidator(24)],
+        help_text="Maximum allowed daily working hours"
+    )
+    max_weekly_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        validators=[MinValueValidator(1), MaxValueValidator(168)],
+        help_text="Maximum allowed weekly working hours"
+    )
+    max_consecutive_days = models.PositiveIntegerField(
+        default=6,
+        validators=[MinValueValidator(1), MaxValueValidator(14)],
+        help_text="Maximum consecutive working days allowed"
+    )
+
+    # Rest period requirements
+    min_rest_between_shifts_hours = models.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        default=11.0,
+        validators=[MinValueValidator(0), MaxValueValidator(24)],
+        help_text="Minimum rest hours required between shifts"
+    )
+    min_weekly_rest_hours = models.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        default=24.0,
+        validators=[MinValueValidator(0), MaxValueValidator(168)],
+        help_text="Minimum weekly continuous rest period"
+    )
+
+    # Break requirements
+    break_duration_minutes = models.PositiveIntegerField(
+        default=30,
+        validators=[MaxValueValidator(480)],
+        help_text="Required break duration in minutes for standard shifts"
+    )
+    break_trigger_hours = models.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        default=6.0,
+        validators=[MinValueValidator(1), MaxValueValidator(12)],
+        help_text="Shift length that triggers break requirement"
+    )
+
+    # Flexible rules
+    special_rules = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Additional country-specific rules as JSON (e.g., night shift premiums, holiday rules)"
+    )
+
+    # Security industry specific overrides
+    security_sector_overrides = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Security industry specific rules and requirements (SIA licensing, specialized training, etc.)"
+    )
+
+    # Break requirements by region and shift duration
+    break_requirements = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Break requirements mapped by shift duration (e.g., {'6_hours': {'duration_minutes': 20, 'paid': True}})"
+    )
+
+    # Night shift specific rules
+    night_shift_rules = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Night work specific limitations and requirements (max hours, health assessments, etc.)"
+    )
+
+    # Opt-out provisions for UK/EU
+    opt_out_provisions = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Working time directive opt-out rules and requirements (written agreements, notice periods, etc.)"
+    )
+
+    # US state-level overrides
+    state_overrides = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="US state-specific labor law overrides and additional requirements"
+    )
+
+    # Enhanced metadata
+    last_regulatory_update = models.DateTimeField(
+        auto_now=True,
+        help_text="Timestamp of last update to regulatory data"
+    )
+    regulatory_source = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Source of regulatory information (e.g., 'UK Health and Safety Executive', 'FLSA')"
+    )
+    industry_specific_rules = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Additional industry-specific compliance rules beyond general labor law"
+    )
+
+    # Status and metadata
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this regulation is currently active"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = WorkingHoursRegulationManager()
+
+    class Meta:
+        db_table = 'working_hours_regulations'
+        ordering = ['country_name']
+        verbose_name = 'Working Hours Regulation'
+        verbose_name_plural = 'Working Hours Regulations'
+
+    def __str__(self):
+        return f"{self.country_name} ({self.country_code}) - {self.standard_weekly_hours}h/week"
+
+    def get_overtime_rate(self, weekly_hours):
+        """Calculate overtime multiplier based on hours worked"""
+        if not self.overtime_threshold_hours or weekly_hours <= self.overtime_threshold_hours:
+            return 1.0
+
+        if (self.overtime_threshold_2 and weekly_hours > self.overtime_threshold_2):
+            return float(self.overtime_multiplier_2 or self.overtime_multiplier_1)
+
+        return float(self.overtime_multiplier_1)
+
+    def validate_daily_hours(self, hours):
+        """Check if daily hours comply with regulations"""
+        return hours <= self.max_daily_hours
+
+    def validate_weekly_hours(self, hours):
+        """Check if weekly hours comply with regulations"""
+        return hours <= self.max_weekly_hours
+
+    def get_effective_rules_for_security(self, venue_location=None):
+        """
+        Get effective rules considering security industry overrides.
+
+        Args:
+            venue_location (str, optional): Specific location for state-level overrides (US)
+
+        Returns:
+            dict: Combined rules with security industry considerations
+        """
+        base_rules = {
+            'standard_weekly_hours': float(self.standard_weekly_hours),
+            'standard_daily_hours': float(self.standard_daily_hours),
+            'max_daily_hours': float(self.max_daily_hours),
+            'max_weekly_hours': float(self.max_weekly_hours),
+            'max_consecutive_days': self.max_consecutive_days,
+            'min_rest_between_shifts_hours': float(self.min_rest_between_shifts_hours),
+            'min_weekly_rest_hours': float(self.min_weekly_rest_hours),
+            'break_duration_minutes': self.break_duration_minutes,
+            'break_trigger_hours': float(self.break_trigger_hours),
+        }
+
+        # Apply security sector overrides
+        if self.security_sector_overrides:
+            base_rules.update(self.security_sector_overrides)
+
+        # Apply US state-level overrides if venue location provided
+        if venue_location and self.country_code == 'US' and self.state_overrides:
+            state_rules = self.state_overrides.get(venue_location.upper(), {})
+            base_rules.update(state_rules)
+
+        # Apply industry-specific rules
+        if self.industry_specific_rules:
+            base_rules.update(self.industry_specific_rules)
+
+        return base_rules
+
+    def supports_opt_out(self):
+        """
+        Check if this regulation supports opt-out agreements.
+        Primarily for UK/EU Working Time Directive opt-outs.
+
+        Returns:
+            bool: True if opt-out is supported
+        """
+        if not self.opt_out_provisions:
+            return False
+
+        return self.opt_out_provisions.get('allowed', False)
+
+    def get_break_requirements(self, shift_hours):
+        """
+        Get break requirements for given shift duration.
+
+        Args:
+            shift_hours (float): Duration of shift in hours
+
+        Returns:
+            dict: Break requirements or None if no break required
+        """
+        if not self.break_requirements:
+            # Fallback to default break rules
+            if shift_hours >= float(self.break_trigger_hours):
+                return {
+                    'duration_minutes': self.break_duration_minutes,
+                    'paid': True,
+                    'mandatory': True
+                }
+            return None
+
+        # Check configured break requirements - find the highest applicable threshold
+        applicable_breaks = []
+        for hours_key, break_rule in self.break_requirements.items():
+            required_hours = float(hours_key.replace('_hours', ''))
+            if shift_hours >= required_hours:
+                applicable_breaks.append((required_hours, break_rule))
+
+        if applicable_breaks:
+            # Return the break rule for the highest threshold that applies
+            applicable_breaks.sort(key=lambda x: x[0], reverse=True)
+            return applicable_breaks[0][1]
+
+        return None
+
+    def get_night_work_limits(self):
+        """
+        Get night work hour limitations and requirements.
+
+        Returns:
+            dict: Night work rules and limitations
+        """
+        default_limits = {
+            'max_consecutive_nights': 8,
+            'max_night_hours_per_week': 40,
+            'health_assessment_required': False,
+            'night_start_time': '23:00',
+            'night_end_time': '06:00'
+        }
+
+        if self.night_shift_rules:
+            default_limits.update(self.night_shift_rules)
+
+        return default_limits
+
+    def get_opt_out_requirements(self):
+        """
+        Get opt-out agreement requirements if supported.
+
+        Returns:
+            dict: Opt-out requirements or None if not supported
+        """
+        if not self.supports_opt_out():
+            return None
+
+        return self.opt_out_provisions
+
+    def validate_security_shift(self, shift_data):
+        """
+        Validate a security shift against all applicable rules.
+
+        Args:
+            shift_data (dict): Shift information including duration, type, etc.
+
+        Returns:
+            dict: Validation result with status and any violations
+        """
+        violations = []
+        warnings = []
+
+        shift_hours = shift_data.get('duration_hours', 0)
+        is_night_shift = shift_data.get('is_night_shift', False)
+        venue_location = shift_data.get('venue_location')
+
+        # Get effective rules
+        rules = self.get_effective_rules_for_security(venue_location)
+
+        # Validate daily hours
+        if shift_hours > rules['max_daily_hours']:
+            violations.append(f"Shift exceeds maximum daily hours: {shift_hours}h > {rules['max_daily_hours']}h")
+
+        # Validate night work limits if applicable
+        if is_night_shift:
+            night_limits = self.get_night_work_limits()
+            max_night_hours = night_limits.get('max_night_hours_daily', rules['max_daily_hours'])
+            if shift_hours > max_night_hours:
+                violations.append(f"Night shift exceeds maximum: {shift_hours}h > {max_night_hours}h")
+
+        # Check security-specific requirements
+        if self.security_sector_overrides:
+            sia_required = self.security_sector_overrides.get('sia_license_required', False)
+            if sia_required and not shift_data.get('staff_has_sia_license', False):
+                violations.append("SIA license required for security shifts")
+
+        # Check break requirements
+        break_req = self.get_break_requirements(shift_hours)
+        if break_req and break_req.get('mandatory', False):
+            if not shift_data.get('break_scheduled', False):
+                warnings.append(f"Break required: {break_req['duration_minutes']} minutes for {shift_hours}h shift")
+
+        return {
+            'valid': len(violations) == 0,
+            'violations': violations,
+            'warnings': warnings,
+            'effective_rules': rules
+        }
+
+
+class ComplianceProfileManager(models.Manager):
+    """Manager for ComplianceProfile model"""
+
+    def get_active_profile(self):
+        """Get the currently active compliance profile"""
+        return self.get_queryset().filter(is_active=True).first()
+
+    def for_regulation(self, regulation):
+        """Get profiles using specific regulation"""
+        return self.get_queryset().filter(working_hours_regulation=regulation)
+
+
+class ComplianceProfile(models.Model):
+    """
+    Organization-specific compliance settings and overrides.
+    Allows customization of compliance rules while maintaining regulatory base requirements.
+    """
+
+    name = models.CharField(
+        max_length=100,
+        help_text="Profile name for identification (e.g., 'UK Security Operations')"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Description of this compliance profile and its intended use"
+    )
+
+    # Base regulation
+    working_hours_regulation = models.ForeignKey(
+        WorkingHoursRegulation,
+        on_delete=models.PROTECT,
+        related_name='compliance_profiles',
+        help_text="Base working hours regulation for this profile"
+    )
+
+    # Custom overrides (optional stricter rules)
+    override_max_daily_hours = models.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(24)],
+        help_text="Override max daily hours (must be <= regulation max)"
+    )
+    override_max_weekly_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(168)],
+        help_text="Override max weekly hours (must be <= regulation max)"
+    )
+    override_max_consecutive_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(14)],
+        help_text="Override max consecutive days (must be <= regulation max)"
+    )
+
+    # Warning thresholds (percentage of limits)
+    daily_hours_warning_threshold = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=80.00,
+        validators=[MinValueValidator(50), MaxValueValidator(99.99)],
+        help_text="Percentage of daily limit that triggers warning (e.g., 80.00 for 80%)"
+    )
+    weekly_hours_warning_threshold = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=85.00,
+        validators=[MinValueValidator(50), MaxValueValidator(99.99)],
+        help_text="Percentage of weekly limit that triggers warning"
+    )
+    consecutive_days_warning_threshold = models.PositiveIntegerField(
+        default=5,
+        validators=[MinValueValidator(1), MaxValueValidator(13)],
+        help_text="Number of consecutive days that triggers warning"
+    )
+
+    # Auto-approval settings
+    auto_approve_overtime = models.BooleanField(
+        default=False,
+        help_text="Automatically approve overtime shifts within compliance limits"
+    )
+    auto_approve_extended_hours = models.BooleanField(
+        default=False,
+        help_text="Automatically approve extended daily hours within limits"
+    )
+    require_manager_approval = models.BooleanField(
+        default=True,
+        help_text="Require manager approval for shifts that may cause violations"
+    )
+
+    # Notification settings
+    notify_on_warnings = models.BooleanField(
+        default=True,
+        help_text="Send notifications when warning thresholds are reached"
+    )
+    notify_on_violations = models.BooleanField(
+        default=True,
+        help_text="Send notifications when violations occur"
+    )
+    notification_recipients = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of email addresses to receive compliance notifications"
+    )
+
+    # Grace periods and flexibility
+    grace_period_minutes = models.PositiveIntegerField(
+        default=15,
+        validators=[MaxValueValidator(120)],
+        help_text="Grace period in minutes for minor timing violations"
+    )
+    allow_break_flexibility = models.BooleanField(
+        default=True,
+        help_text="Allow flexible break scheduling within shifts"
+    )
+
+    # Custom rules and exceptions
+    custom_rules = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Custom compliance rules specific to this organization"
+    )
+    exception_roles = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="User roles exempt from certain compliance checks"
+    )
+
+    # Status
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this profile is currently active"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ComplianceProfileManager()
+
+    class Meta:
+        db_table = 'compliance_profiles'
+        ordering = ['-is_active', 'name']
+        verbose_name = 'Compliance Profile'
+        verbose_name_plural = 'Compliance Profiles'
+
+    def __str__(self):
+        status = "Active" if self.is_active else "Inactive"
+        return f"{self.name} ({status}) - {self.working_hours_regulation.country_code}"
+
+    def get_max_daily_hours(self):
+        """Get effective max daily hours (override or regulation default)"""
+        return self.override_max_daily_hours or self.working_hours_regulation.max_daily_hours
+
+    def get_max_weekly_hours(self):
+        """Get effective max weekly hours (override or regulation default)"""
+        return self.override_max_weekly_hours or self.working_hours_regulation.max_weekly_hours
+
+    def get_max_consecutive_days(self):
+        """Get effective max consecutive days (override or regulation default)"""
+        return self.override_max_consecutive_days or self.working_hours_regulation.max_consecutive_days
+
+    def check_daily_hours_warning(self, hours):
+        """Check if daily hours trigger warning threshold"""
+        max_hours = self.get_max_daily_hours()
+        warning_limit = max_hours * (self.daily_hours_warning_threshold / 100)
+        return hours >= warning_limit
+
+    def check_weekly_hours_warning(self, hours):
+        """Check if weekly hours trigger warning threshold"""
+        max_hours = self.get_max_weekly_hours()
+        warning_limit = max_hours * (self.weekly_hours_warning_threshold / 100)
+        return hours >= warning_limit
+
+
+class ComplianceViolationManager(models.Manager):
+    """Manager for ComplianceViolation model with useful query methods"""
+
+    def active_violations(self):
+        """Get all unresolved violations"""
+        return self.get_queryset().filter(
+            resolution_status__in=['open', 'investigating', 'pending_approval']
+        )
+
+    def by_user(self, user):
+        """Get violations for specific user"""
+        return self.get_queryset().filter(user=user)
+
+    def by_severity(self, severity):
+        """Get violations of specific severity"""
+        return self.get_queryset().filter(severity=severity)
+
+    def by_type(self, violation_type):
+        """Get violations of specific type"""
+        return self.get_queryset().filter(violation_type=violation_type)
+
+    def in_date_range(self, start_date, end_date):
+        """Get violations within date range"""
+        return self.get_queryset().filter(
+            period_start__lte=end_date,
+            period_end__gte=start_date
+        )
+
+    def critical_violations(self):
+        """Get critical severity violations"""
+        return self.by_severity('critical')
+
+    def recent_violations(self, days=30):
+        """Get violations from the last N days"""
+        cutoff_date = timezone.now() - timedelta(days=days)
+        return self.get_queryset().filter(created_at__gte=cutoff_date)
+
+
+class ComplianceViolation(models.Model):
+    """
+    Model to track and log all compliance violations with detailed information
+    for audit trails and resolution tracking.
+    """
+
+    VIOLATION_TYPE_CHOICES = [
+        ('daily_overtime', 'Daily Hours Exceeded'),
+        ('weekly_overtime', 'Weekly Hours Exceeded'),
+        ('consecutive_days', 'Too Many Consecutive Days'),
+        ('insufficient_rest', 'Insufficient Rest Between Shifts'),
+        ('missing_break', 'Required Break Not Taken'),
+        ('late_checkin', 'Late Check-in'),
+        ('early_checkout', 'Early Check-out'),
+        ('location_violation', 'Location Compliance Violation'),
+        ('unauthorized_overtime', 'Unauthorized Overtime'),
+        ('shift_abandonment', 'Shift Abandonment'),
+        ('documentation_missing', 'Missing Required Documentation'),
+        ('custom', 'Custom Violation Type'),
+    ]
+
+    SEVERITY_CHOICES = [
+        ('info', 'Informational'),
+        ('warning', 'Warning'),
+        ('minor', 'Minor Violation'),
+        ('major', 'Major Violation'),
+        ('critical', 'Critical Violation'),
+    ]
+
+    RESOLUTION_STATUS_CHOICES = [
+        ('open', 'Open'),
+        ('investigating', 'Under Investigation'),
+        ('pending_approval', 'Pending Manager Approval'),
+        ('approved_exception', 'Approved as Exception'),
+        ('resolved', 'Resolved'),
+        ('false_positive', 'False Positive'),
+        ('dismissed', 'Dismissed'),
+    ]
+
+    # Basic violation information
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='compliance_violations',
+        help_text="Staff member involved in the violation"
+    )
+    violation_type = models.CharField(
+        max_length=30,
+        choices=VIOLATION_TYPE_CHOICES,
+        help_text="Type of compliance violation"
+    )
+    severity = models.CharField(
+        max_length=10,
+        choices=SEVERITY_CHOICES,
+        default='warning',
+        help_text="Severity level of the violation"
+    )
+
+    # Time period and scope
+    period_start = models.DateTimeField(
+        help_text="Start of the time period when violation occurred"
+    )
+    period_end = models.DateTimeField(
+        help_text="End of the time period when violation occurred"
+    )
+    shift = models.ForeignKey(
+        'Shift',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='compliance_violations',
+        help_text="Specific shift related to violation (if applicable)"
+    )
+
+    # Violation details
+    description = models.TextField(
+        help_text="Detailed description of the violation"
+    )
+    calculated_values = models.JSONField(
+        default=dict,
+        help_text="Calculated values that triggered the violation (hours, limits, etc.)"
+    )
+    threshold_exceeded = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Amount by which threshold was exceeded"
+    )
+
+    # Context and evidence
+    related_shifts = models.ManyToManyField(
+        'Shift',
+        blank=True,
+        related_name='contributing_violations',
+        help_text="Other shifts that contributed to this violation"
+    )
+    evidence_data = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Supporting evidence and data for the violation"
+    )
+    system_generated = models.BooleanField(
+        default=True,
+        help_text="Whether this violation was automatically detected by the system"
+    )
+
+    # Resolution tracking
+    resolution_status = models.CharField(
+        max_length=20,
+        choices=RESOLUTION_STATUS_CHOICES,
+        default='open',
+        help_text="Current status of violation resolution"
+    )
+    resolution_notes = models.TextField(
+        blank=True,
+        help_text="Notes about the resolution or investigation"
+    )
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='resolved_violations',
+        help_text="Manager who resolved the violation"
+    )
+    resolved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the violation was resolved"
+    )
+
+    # Approval and exceptions
+    exception_granted = models.BooleanField(
+        default=False,
+        help_text="Whether an exception was granted for this violation"
+    )
+    exception_reason = models.TextField(
+        blank=True,
+        help_text="Reason for granting exception"
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_violations',
+        help_text="Manager who approved the exception"
+    )
+
+    # Impact assessment
+    financial_impact = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Financial impact of the violation (overtime costs, penalties, etc.)"
+    )
+    compliance_score_impact = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        help_text="Impact on overall compliance score"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = OptimizedComplianceViolationManager()
+
+    class Meta:
+        db_table = 'compliance_violations'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['violation_type', '-created_at']),
+            models.Index(fields=['severity', '-created_at']),
+            models.Index(fields=['resolution_status']),
+            models.Index(fields=['period_start', 'period_end']),
+        ]
+        verbose_name = 'Compliance Violation'
+        verbose_name_plural = 'Compliance Violations'
+
+    def __str__(self):
+        return f"{self.get_violation_type_display()} - {self.user.username} ({self.get_severity_display()})"
+
+    def is_resolved(self):
+        """Check if violation is resolved"""
+        return self.resolution_status in ['resolved', 'approved_exception', 'false_positive', 'dismissed']
+
+    def duration_hours(self):
+        """Calculate duration of violation period in hours"""
+        if self.period_start and self.period_end:
+            duration = self.period_end - self.period_start
+            return duration.total_seconds() / 3600
+        return 0
+
+    def resolve(self, resolved_by, resolution_notes='', exception_granted=False, exception_reason=''):
+        """Mark violation as resolved"""
+        self.resolution_status = 'approved_exception' if exception_granted else 'resolved'
+        self.resolved_by = resolved_by
+        self.resolved_at = timezone.now()
+        self.resolution_notes = resolution_notes
+        self.exception_granted = exception_granted
+        self.exception_reason = exception_reason
+        if exception_granted:
+            self.approved_by = resolved_by
+        self.save()
+
+    def dismiss(self, dismissed_by, reason=''):
+        """Dismiss violation as false positive"""
+        self.resolution_status = 'false_positive'
+        self.resolved_by = dismissed_by
+        self.resolved_at = timezone.now()
+        self.resolution_notes = reason
+        self.save()
+
+
+class WorkingHoursMetricsManager(models.Manager):
+    """Manager for WorkingHoursMetrics model"""
+
+    def for_user(self, user):
+        """Get metrics for specific user"""
+        return self.get_queryset().filter(user=user)
+
+    def for_period(self, start_date, end_date):
+        """Get metrics for specific period"""
+        return self.get_queryset().filter(
+            period_start__lte=end_date,
+            period_end__gte=start_date
+        )
+
+    def weekly_metrics(self):
+        """Get weekly metrics only"""
+        return self.get_queryset().filter(period_type='weekly')
+
+    def monthly_metrics(self):
+        """Get monthly metrics only"""
+        return self.get_queryset().filter(period_type='monthly')
+
+    def with_violations(self):
+        """Get metrics with violations"""
+        return self.get_queryset().filter(violation_count__gt=0)
+
+    def high_overtime(self, threshold=10):
+        """Get metrics with high overtime hours"""
+        return self.get_queryset().filter(overtime_hours__gte=threshold)
+
+
+class WorkingHoursMetrics(models.Model):
+    """
+    Pre-calculated aggregated working hours data for performance and reporting.
+    This model stores computed metrics to avoid expensive real-time calculations.
+    """
+
+    PERIOD_TYPE_CHOICES = [
+        ('weekly', 'Weekly'),
+        ('monthly', 'Monthly'),
+        ('quarterly', 'Quarterly'),
+        ('yearly', 'Yearly'),
+    ]
+
+    # User and time period
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='working_hours_metrics',
+        help_text="Staff member for these metrics"
+    )
+    period_type = models.CharField(
+        max_length=10,
+        choices=PERIOD_TYPE_CHOICES,
+        help_text="Type of time period for aggregation"
+    )
+    period_start = models.DateField(
+        help_text="Start date of the period"
+    )
+    period_end = models.DateField(
+        help_text="End date of the period"
+    )
+
+    # Core working hours metrics
+    total_hours_worked = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=0,
+        help_text="Total hours worked in the period"
+    )
+    regular_hours = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=0,
+        help_text="Regular hours worked (within standard limits)"
+    )
+    overtime_hours = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=0,
+        help_text="Overtime hours worked"
+    )
+    break_hours = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        help_text="Total break time taken"
+    )
+
+    # Shift patterns
+    total_shifts = models.PositiveIntegerField(
+        default=0,
+        help_text="Total number of shifts worked"
+    )
+    completed_shifts = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of completed shifts"
+    )
+    cancelled_shifts = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of cancelled shifts"
+    )
+    average_shift_duration = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Average duration of shifts in hours"
+    )
+
+    # Compliance metrics
+    violation_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of compliance violations in this period"
+    )
+    warning_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of compliance warnings in this period"
+    )
+    compliance_score = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=100.00,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Overall compliance score for the period (0-100)"
+    )
+
+    # Rest period compliance
+    adequate_rest_periods = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of shifts with adequate rest before"
+    )
+    insufficient_rest_periods = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of shifts with insufficient rest before"
+    )
+    consecutive_working_days = models.PositiveIntegerField(
+        default=0,
+        help_text="Maximum consecutive working days in period"
+    )
+
+    # Financial metrics
+    estimated_regular_pay = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Estimated regular pay for the period"
+    )
+    estimated_overtime_pay = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Estimated overtime pay for the period"
+    )
+    total_estimated_pay = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Total estimated pay for the period"
+    )
+
+    # Performance indicators
+    punctuality_score = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Punctuality score based on on-time arrivals (0-100)"
+    )
+    attendance_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Attendance rate for scheduled shifts (0-100)"
+    )
+
+    # Additional data
+    venues_worked = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of different venues worked at"
+    )
+    shift_types_data = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Breakdown of hours by shift type"
+    )
+    detailed_metrics = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Additional detailed metrics and breakdowns"
+    )
+
+    # Calculation metadata
+    calculated_at = models.DateTimeField(auto_now_add=True)
+    last_updated = models.DateTimeField(auto_now=True)
+    calculation_version = models.CharField(
+        max_length=20,
+        default='1.0',
+        help_text="Version of calculation algorithm used"
+    )
+    needs_recalculation = models.BooleanField(
+        default=False,
+        help_text="Whether metrics need to be recalculated due to data changes"
+    )
+
+    objects = OptimizedWorkingHoursMetricsManager()
+
+    class Meta:
+        db_table = 'working_hours_metrics'
+        ordering = ['-period_start', 'user']
+        unique_together = ['user', 'period_type', 'period_start', 'period_end']
+        indexes = [
+            models.Index(fields=['user', '-period_start']),
+            models.Index(fields=['period_type', '-period_start']),
+            models.Index(fields=['compliance_score']),
+            models.Index(fields=['violation_count']),
+            models.Index(fields=['needs_recalculation']),
+        ]
+        verbose_name = 'Working Hours Metrics'
+        verbose_name_plural = 'Working Hours Metrics'
+
+    def __str__(self):
+        return f"{self.user.username} - {self.get_period_type_display()} ({self.period_start} to {self.period_end})"
+
+    def overtime_percentage(self):
+        """Calculate overtime as percentage of total hours"""
+        if self.total_hours_worked > 0:
+            return (self.overtime_hours / self.total_hours_worked) * 100
+        return 0
+
+    def shift_completion_rate(self):
+        """Calculate percentage of shifts completed"""
+        if self.total_shifts > 0:
+            return (self.completed_shifts / self.total_shifts) * 100
+        return 0
+
+    def has_violations(self):
+        """Check if period has any violations"""
+        return self.violation_count > 0
+
+    def compliance_grade(self):
+        """Get letter grade based on compliance score"""
+        if self.compliance_score >= 95:
+            return 'A+'
+        elif self.compliance_score >= 90:
+            return 'A'
+        elif self.compliance_score >= 85:
+            return 'B+'
+        elif self.compliance_score >= 80:
+            return 'B'
+        elif self.compliance_score >= 75:
+            return 'C+'
+        elif self.compliance_score >= 70:
+            return 'C'
+        elif self.compliance_score >= 65:
+            return 'D+'
+        elif self.compliance_score >= 60:
+            return 'D'
+        else:
+            return 'F'
+
+    def mark_for_recalculation(self):
+        """Mark metrics for recalculation"""
+        self.needs_recalculation = True
+        self.save(update_fields=['needs_recalculation'])
+
+
+# =============================================================================
+# REPORTING & EXPORT MODELS
+# =============================================================================
+
+class ReportTemplate(models.Model):
+    """
+    Template for generating reports with customizable parameters and SQL queries.
+    Supports multiple report types for compliance, working hours, and violations.
+    """
+
+    TEMPLATE_TYPES = [
+        ('compliance_summary', 'Compliance Summary'),
+        ('violation_detail', 'Violation Detail Report'),
+        ('working_hours', 'Working Hours Report'),
+        ('venue_performance', 'Venue Performance'),
+        ('staff_compliance', 'Staff Compliance'),
+        ('trends_analysis', 'Trends Analysis'),
+    ]
+
+    name = models.CharField(
+        max_length=200,
+        help_text="Display name for the report template"
+    )
+    template_type = models.CharField(
+        max_length=50,
+        choices=TEMPLATE_TYPES,
+        help_text="Type of report this template generates"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Description of what this report shows"
+    )
+
+    # Query and parameters
+    sql_query = models.TextField(
+        help_text="SQL query for generating report data (use parameterized queries)"
+    )
+    parameters = models.JSONField(
+        default=dict,
+        help_text="Parameter definitions for the report (e.g., date ranges, filters)"
+    )
+
+    # Permissions and access
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        help_text="User who created this template"
+    )
+    allowed_roles = models.JSONField(
+        default=list,
+        help_text="List of roles that can use this template (e.g., ['admin', 'manager'])"
+    )
+    allowed_venues = models.ManyToManyField(
+        'Venue',
+        blank=True,
+        help_text="Specific venues this template applies to (empty = all venues)"
+    )
+
+    # Template configuration
+    template_config = models.JSONField(
+        default=dict,
+        help_text="Additional configuration for report formatting and behavior"
+    )
+
+    # Status and timestamps
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this template is available for use"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'report_templates'
+        indexes = [
+            models.Index(fields=['template_type', 'is_active']),
+            models.Index(fields=['created_by']),
+            models.Index(fields=['-created_at']),
+        ]
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.template_type})"
+
+    def is_accessible_by_user(self, user):
+        """Check if user has access to this template"""
+        # Admin users can access all templates
+        if user.role == 'admin':
+            return True
+
+        # Check role-based access
+        if self.allowed_roles and user.role not in self.allowed_roles:
+            return False
+
+        # Check venue-based access for non-admin users
+        if self.allowed_venues.exists():
+            user_venues = user.staffprofile.venues.all() if hasattr(user, 'staffprofile') else []
+            return self.allowed_venues.filter(id__in=user_venues).exists()
+
+        return True
+
+
+class ReportJob(models.Model):
+    """
+    Tracks report generation jobs, their status, and resulting files.
+    Handles both synchronous and asynchronous report generation.
+    """
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled')
+    ]
+
+    EXPORT_FORMATS = [
+        ('csv', 'CSV'),
+        ('excel', 'Excel'),
+        ('json', 'JSON'),
+        ('pdf', 'PDF'),
+    ]
+
+    # Job identification
+    job_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        help_text="Unique identifier for this report job"
+    )
+    template = models.ForeignKey(
+        ReportTemplate,
+        on_delete=models.CASCADE,
+        help_text="Template used for this report"
+    )
+    requested_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        help_text="User who requested this report"
+    )
+
+    # Job status and format
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending',
+        help_text="Current status of the report generation"
+    )
+    export_format = models.CharField(
+        max_length=10,
+        choices=EXPORT_FORMATS,
+        help_text="Format for the exported report"
+    )
+
+    # Parameters and filters
+    date_range_start = models.DateTimeField(
+        help_text="Start date for report data"
+    )
+    date_range_end = models.DateTimeField(
+        help_text="End date for report data"
+    )
+    filters = models.JSONField(
+        default=dict,
+        help_text="Additional filters applied to the report"
+    )
+
+    # Execution tracking
+    started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When report generation started"
+    )
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When report generation completed"
+    )
+
+    # File information
+    file_path = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text="Path to the generated report file"
+    )
+    file_size = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Size of the generated file in bytes"
+    )
+    download_count = models.IntegerField(
+        default=0,
+        help_text="Number of times this report has been downloaded"
+    )
+
+    # Error handling
+    error_message = models.TextField(
+        blank=True,
+        help_text="Error message if generation failed"
+    )
+    retry_count = models.IntegerField(
+        default=0,
+        help_text="Number of retry attempts"
+    )
+
+    # Progress tracking
+    progress = models.IntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Report generation progress percentage (0-100)"
+    )
+
+    # Timestamps and retention
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(
+        help_text="When this report file expires and should be deleted"
+    )
+
+    class Meta:
+        db_table = 'report_jobs'
+        indexes = [
+            models.Index(fields=['requested_by', '-created_at']),
+            models.Index(fields=['status', 'created_at']),
+            models.Index(fields=['expires_at']),
+            models.Index(fields=['job_id']),
+        ]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Report Job {self.job_id} - {self.template.name} ({self.status})"
+
+    @property
+    def duration(self):
+        """Calculate duration of report generation"""
+        if self.started_at and self.completed_at:
+            return self.completed_at - self.started_at
+        elif self.started_at:
+            return timezone.now() - self.started_at
+        return None
+
+    @property
+    def file_size_mb(self):
+        """Get file size in MB"""
+        if self.file_size:
+            return round(self.file_size / (1024 * 1024), 2)
+        return None
+
+    def is_expired(self):
+        """Check if this report has expired"""
+        return timezone.now() > self.expires_at
+
+    def increment_download_count(self):
+        """Increment download counter"""
+        self.download_count += 1
+        self.save(update_fields=['download_count'])
+
+    def mark_as_failed(self, error_message):
+        """Mark job as failed with error message"""
+        self.status = 'failed'
+        self.error_message = error_message
+        self.completed_at = timezone.now()
+        self.save(update_fields=['status', 'error_message', 'completed_at'])
+
+
+class ScheduledReport(models.Model):
+    """
+    Automated report generation with configurable scheduling and distribution.
+    Supports recurring reports with multiple delivery methods.
+    """
+
+    FREQUENCY_CHOICES = [
+        ('daily', 'Daily'),
+        ('weekly', 'Weekly'),
+        ('monthly', 'Monthly'),
+        ('quarterly', 'Quarterly'),
+        ('annually', 'Annually')
+    ]
+
+    DELIVERY_METHODS = [
+        ('email', 'Email'),
+        ('webhook', 'Webhook'),
+        ('storage', 'File Storage Only')
+    ]
+
+    # Basic information
+    name = models.CharField(
+        max_length=200,
+        help_text="Name for this scheduled report"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Description of what this scheduled report does"
+    )
+    template = models.ForeignKey(
+        ReportTemplate,
+        on_delete=models.CASCADE,
+        help_text="Template to use for generating reports"
+    )
+
+    # Scheduling configuration
+    frequency = models.CharField(
+        max_length=20,
+        choices=FREQUENCY_CHOICES,
+        help_text="How often this report should be generated"
+    )
+    next_run = models.DateTimeField(
+        help_text="When this report should next be generated"
+    )
+    last_run = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this report was last generated"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this scheduled report is active"
+    )
+
+    # Distribution configuration
+    recipients = models.JSONField(
+        default=list,
+        help_text="List of email addresses to send reports to"
+    )
+    delivery_methods = models.JSONField(
+        default=list,
+        help_text="List of delivery methods (email, webhook, storage)"
+    )
+    webhook_url = models.URLField(
+        blank=True,
+        help_text="Webhook URL for report delivery notifications"
+    )
+
+    # Report parameters
+    parameters = models.JSONField(
+        default=dict,
+        help_text="Parameters to use when generating the report"
+    )
+    export_formats = models.JSONField(
+        default=list,
+        help_text="List of formats to generate (pdf, excel, csv, json)"
+    )
+
+    # Configuration options
+    include_empty_reports = models.BooleanField(
+        default=False,
+        help_text="Whether to send reports even when no data is found"
+    )
+    retention_days = models.IntegerField(
+        default=30,
+        help_text="How long to keep generated report files (days)"
+    )
+
+    # Ownership and timestamps
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        help_text="User who created this scheduled report"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'scheduled_reports'
+        indexes = [
+            models.Index(fields=['next_run', 'is_active']),
+            models.Index(fields=['created_by']),
+            models.Index(fields=['frequency', 'is_active']),
+        ]
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.frequency})"
+
+    def calculate_next_run(self):
+        """Calculate the next run time based on frequency"""
+        from datetime import timedelta
+        from dateutil.relativedelta import relativedelta
+
+        if not self.last_run:
+            return self.next_run
+
+        if self.frequency == 'daily':
+            return self.last_run + timedelta(days=1)
+        elif self.frequency == 'weekly':
+            return self.last_run + timedelta(weeks=1)
+        elif self.frequency == 'monthly':
+            return self.last_run + relativedelta(months=1)
+        elif self.frequency == 'quarterly':
+            return self.last_run + relativedelta(months=3)
+        elif self.frequency == 'annually':
+            return self.last_run + relativedelta(years=1)
+
+        return self.next_run
+
+    def update_next_run(self):
+        """Update next_run time and save"""
+        self.next_run = self.calculate_next_run()
+        self.last_run = timezone.now()
+        self.save(update_fields=['next_run', 'last_run'])
+
+    def is_due(self):
+        """Check if this scheduled report is due to run"""
+        return self.is_active and timezone.now() >= self.next_run
+
+
+class ExportConfiguration(models.Model):
+    """
+    Configuration settings for different export formats including
+    compression, formatting options, and file naming patterns.
+    """
+
+    COMPRESSION_CHOICES = [
+        ('none', 'No Compression'),
+        ('zip', 'ZIP'),
+        ('gzip', 'GZIP')
+    ]
+
+    # Basic information
+    name = models.CharField(
+        max_length=200,
+        help_text="Name for this export configuration"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Description of this export configuration"
+    )
+    export_format = models.CharField(
+        max_length=10,
+        choices=ReportJob.EXPORT_FORMATS,
+        help_text="Export format this configuration applies to"
+    )
+
+    # File naming and compression
+    filename_pattern = models.CharField(
+        max_length=200,
+        default='{report_type}_{date_range}_{timestamp}',
+        help_text="Pattern for naming exported files (supports variables)"
+    )
+    compression = models.CharField(
+        max_length=10,
+        choices=COMPRESSION_CHOICES,
+        default='none',
+        help_text="Compression method for exported files"
+    )
+
+    # Format-specific settings
+    template_settings = models.JSONField(
+        default=dict,
+        help_text="General template settings for this export format"
+    )
+    pdf_settings = models.JSONField(
+        default=dict,
+        help_text="PDF-specific settings (DPI, page size, margins, etc.)"
+    )
+    excel_settings = models.JSONField(
+        default=dict,
+        help_text="Excel-specific settings (sheet names, formatting, charts, etc.)"
+    )
+    csv_settings = models.JSONField(
+        default=dict,
+        help_text="CSV-specific settings (delimiter, encoding, headers, etc.)"
+    )
+
+    # Quality and performance settings
+    max_file_size_mb = models.IntegerField(
+        default=100,
+        help_text="Maximum file size in MB before compression/splitting"
+    )
+    enable_charts = models.BooleanField(
+        default=True,
+        help_text="Whether to include charts in exports (where supported)"
+    )
+    enable_formatting = models.BooleanField(
+        default=True,
+        help_text="Whether to apply advanced formatting"
+    )
+
+    # Access control
+    is_default = models.BooleanField(
+        default=False,
+        help_text="Whether this is the default configuration for this format"
+    )
+    allowed_roles = models.JSONField(
+        default=list,
+        help_text="Roles that can use this configuration"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'export_configurations'
+        indexes = [
+            models.Index(fields=['export_format', 'is_default']),
+            models.Index(fields=['is_default']),
+        ]
+        unique_together = [
+            ('export_format', 'name'),  # Unique name per format
+        ]
+        ordering = ['export_format', 'name']
+
+    def __str__(self):
+        return f"{self.name} ({self.export_format})"
+
+    def get_filename(self, report_data: dict = None) -> str:
+        """Generate filename based on pattern and report data"""
+        from datetime import datetime
+        import re
+
+        pattern = self.filename_pattern
+
+        # Default substitutions
+        substitutions = {
+            'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S'),
+            'date': datetime.now().strftime('%Y-%m-%d'),
+            'format': self.export_format,
+        }
+
+        # Add report-specific substitutions if available
+        if report_data:
+            metadata = report_data.get('metadata', {})
+            parameters = report_data.get('parameters', {})
+
+            substitutions.update({
+                'report_type': metadata.get('template_type', 'report'),
+                'template_name': metadata.get('template_name', 'unknown'),
+                'row_count': str(metadata.get('row_count', 0)),
+            })
+
+            # Add date range if available
+            start_date = parameters.get('date_range_start')
+            end_date = parameters.get('date_range_end')
+            if start_date and end_date:
+                substitutions['date_range'] = f"{start_date[:10]}_to_{end_date[:10]}"
+            else:
+                substitutions['date_range'] = datetime.now().strftime('%Y-%m')
+
+        # Perform substitutions
+        filename = pattern
+        for key, value in substitutions.items():
+            filename = filename.replace(f'{{{key}}}', str(value))
+
+        # Clean up filename (remove invalid characters)
+        filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+
+        # Add file extension
+        extensions = {
+            'pdf': '.pdf',
+            'excel': '.xlsx',
+            'csv': '.csv',
+            'json': '.json'
+        }
+
+        extension = extensions.get(self.export_format, '.txt')
+        if not filename.endswith(extension):
+            filename += extension
+
+        return filename
+
+    def get_export_config(self) -> dict:
+        """Get merged configuration for export handlers"""
+        config = self.template_settings.copy()
+
+        # Add format-specific settings
+        if self.export_format == 'pdf':
+            config.update(self.pdf_settings)
+        elif self.export_format == 'excel':
+            config.update(self.excel_settings)
+        elif self.export_format == 'csv':
+            config.update(self.csv_settings)
+
+        # Add general settings
+        config.update({
+            'compression': self.compression,
+            'max_file_size_mb': self.max_file_size_mb,
+            'include_charts': self.enable_charts,
+            'include_formatting': self.enable_formatting,
+        })
+
+        return config
+
+    @classmethod
+    def get_default_config(cls, export_format: str):
+        """Get default configuration for an export format"""
+        try:
+            return cls.objects.get(export_format=export_format, is_default=True)
+        except cls.DoesNotExist:
+            # Return a basic default configuration
+            return cls(
+                name=f"Default {export_format.title()}",
+                export_format=export_format,
+                is_default=True
+            )

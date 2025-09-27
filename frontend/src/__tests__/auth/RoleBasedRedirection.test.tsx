@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, Outlet } from 'react-router-dom';
 import { UserRole } from '../../types/auth';
-import ProtectedRoute from '../../components/ProtectedRoute';
+import AuthGuard from '../../components/AuthGuard';
 import { AuthProvider } from '../../contexts/AuthContext';
 
 // Mock components
@@ -34,7 +34,7 @@ describe('Role-Based Redirection Tests', () => {
       <MemoryRouter initialEntries={['/dashboard']}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/dashboard" element={<ProtectedRoute />}>
+          <Route path="/dashboard" element={<AuthGuard />}>
             <Route index element={<StaffDashboard />} />
           </Route>
         </Routes>
@@ -70,7 +70,7 @@ describe('Role-Based Redirection Tests', () => {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
-          <Route path="/admin/dashboard" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN]} />}>
+          <Route path="/admin/dashboard" element={<AuthGuard allowedRoles={[UserRole.ADMIN]} />}>
             <Route index element={<AdminDashboard />} />
           </Route>
         </Routes>
@@ -106,7 +106,7 @@ describe('Role-Based Redirection Tests', () => {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
-          <Route path="/manager/dashboard" element={<ProtectedRoute allowedRoles={[UserRole.MANAGER]} />}>
+          <Route path="/manager/dashboard" element={<AuthGuard allowedRoles={[UserRole.MANAGER]} />}>
             <Route index element={<ManagerDashboard />} />
           </Route>
         </Routes>
@@ -142,7 +142,7 @@ describe('Role-Based Redirection Tests', () => {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
-          <Route path="/staff/dashboard" element={<ProtectedRoute allowedRoles={[UserRole.STAFF]} />}>
+          <Route path="/staff/dashboard" element={<AuthGuard allowedRoles={[UserRole.STAFF]} />}>
             <Route index element={<StaffDashboard />} />
           </Route>
         </Routes>
@@ -154,7 +154,7 @@ describe('Role-Based Redirection Tests', () => {
     });
   });
 
-  test('Staff users cannot access admin dashboard (DEMO_MODE bypasses this restriction)', async () => {
+  test('Staff users cannot access admin dashboard', async () => {
     // Mock the auth context for staff user
     require('../../contexts/AuthContext').useAuth.mockReturnValue({
       authState: {
@@ -178,19 +178,17 @@ describe('Role-Based Redirection Tests', () => {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
-          <Route path="/admin/dashboard" element={<ProtectedRoute allowedRoles={[UserRole.ADMIN]} />}>
+          <Route path="/admin/dashboard" element={<AuthGuard allowedRoles={[UserRole.ADMIN]} />}>
             <Route index element={<AdminDashboard />} />
           </Route>
         </Routes>
       </MemoryRouter>
     );
 
-    // This would normally redirect to Unauthorized, but DEMO_MODE in ProtectedRoute bypasses this
+    // AuthGuard should redirect to Unauthorized for insufficient permissions
     await waitFor(() => {
-      // In a real application (not demo mode), this would be:
-      // expect(screen.getByText('Unauthorized Access')).toBeInTheDocument();
-      // But due to DEMO_MODE being true, staff can access admin dashboard:
-      expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
+      // Staff user should not have access to admin dashboard
+      expect(screen.getByText('Unauthorized Access')).toBeInTheDocument();
     });
   });
 

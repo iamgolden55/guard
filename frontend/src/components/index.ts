@@ -1,5 +1,5 @@
 import Card from './Card';
-import ProtectedRoute from './ProtectedRoute';
+import AuthGuard from './AuthGuard';
 import SignatureCanvas from './SignatureCanvas';
 import MapComponent from './MapComponent';
 import VenueLocationPicker from './VenueLocationPicker';
@@ -16,7 +16,7 @@ import AccountMappingInterface from './AccountMappingInterface';
 
 export {
   Card,
-  ProtectedRoute,
+  AuthGuard,
   SignatureCanvas,
   MapComponent,
   VenueLocationPicker,

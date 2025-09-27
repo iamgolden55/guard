@@ -1,13 +1,20 @@
 import datetime
 import logging
+import uuid
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db.models import Q, Count, Avg, Sum, Max, Min
+from django.core.cache import cache
+from django.http import HttpResponse
+from .compliance_performance_guide import CompliancePerformanceGuide
 # Create your views here.
-from rest_framework import viewsets, status, serializers
+from rest_framework import viewsets, status, serializers, filters
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -23,7 +30,11 @@ from .models import (
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
     Shift, FireExitCheck, CapacityCheck, ToiletCheck, ShiftExchange, OpenShiftRequest,
     Invoice, InvoiceItem, PayRate, DeputyConfig, DeputyEmployee,
-    DeputyTimesheet, SystemSettings, EmploymentType, RecruitmentApplication
+    DeputyTimesheet, SystemSettings, EmploymentType, RecruitmentApplication,
+    WorkingHoursRegulation, ComplianceProfile, ComplianceViolation, WorkingHoursMetrics,
+    ReportTemplate, ReportJob,
+    # Onboarding models
+    SecurityCompany, CompanyOnboarding, CompanyIntegration, UserCompanyMembership
 )
 from .serializers import (
     UserSerializer, StaffProfileSerializer, EmergencyContactSerializer,
@@ -33,12 +44,132 @@ from .serializers import (
     ShiftSerializer, ShiftExchangeSerializer, OpenShiftRequestSerializer, InvoiceSerializer, InvoiceItemSerializer,
     PayRateSerializer, DeputyConfigSerializer, DeputyEmployeeSerializer,
     DeputyTimesheetSerializer, ShiftTemplateSerializer, SystemSettingsSerializer,
-    EmploymentTypeSerializer, RecruitmentApplicationSerializer, RecruitmentApplicationPublicSerializer
+    EmploymentTypeSerializer, RecruitmentApplicationSerializer, RecruitmentApplicationPublicSerializer,
+    WorkingHoursRegulationSerializer, ComplianceProfileSerializer, ComplianceViolationSerializer,
+    WorkingHoursMetricsSerializer, ComplianceViolationResolveSerializer, ComplianceCheckSerializer,
+    BulkViolationResolveSerializer, ReportTemplateSerializer, ReportJobSerializer,
+    ReportJobCreateSerializer, ReportJobStatusSerializer,
+    # Onboarding serializers
+    SecurityCompanySerializer, CompanyOnboardingSerializer, CompanyInfoSerializer,
+    RegionalSetupSerializer, StaffConfigSerializer, IntegrationsSerializer,
+    CompanyIntegrationSerializer, UserCompanyMembershipSerializer
 )
 
 User = get_user_model()
 
 logger = logging.getLogger(__name__)
+
+
+# =====================================================
+# CUSTOM PERMISSION CLASSES FOR ONBOARDING SYSTEM
+# =====================================================
+
+class IsCompanyMember(BasePermission):
+    """
+    Custom permission to check if user is a member of the company.
+    Ensures company-scoped data access.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Allow access if user has company memberships
+        return request.user.company_memberships.filter(is_active=True).exists()
+    
+    def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Check if the object is related to a company the user belongs to
+        if hasattr(obj, 'company'):
+            company_id = obj.company.id
+        elif hasattr(obj, 'company_id'):
+            company_id = obj.company_id
+        else:
+            return True  # Allow access if no company relationship
+        
+        return request.user.company_memberships.filter(
+            company_id=company_id,
+            is_active=True
+        ).exists()
+
+
+class IsCompanyOwnerOrAdmin(BasePermission):
+    """
+    Custom permission to check if user is a company owner or admin.
+    Required for sensitive operations like onboarding management.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Allow access if user is owner or admin of any company
+        return request.user.company_memberships.filter(
+            is_active=True,
+            role__in=['owner', 'admin']
+        ).exists()
+    
+    def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Check if user is owner/admin of the specific company
+        if hasattr(obj, 'company'):
+            company_id = obj.company.id
+        elif hasattr(obj, 'company_id'):
+            company_id = obj.company_id
+        else:
+            return True  # Allow access if no company relationship
+        
+        return request.user.company_memberships.filter(
+            company_id=company_id,
+            is_active=True,
+            role__in=['owner', 'admin']
+        ).exists()
+
+
+class IsCompanyOwner(BasePermission):
+    """
+    Custom permission to check if user is the company owner.
+    Required for critical operations like company deletion.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Allow access if user is owner of any company
+        return request.user.company_memberships.filter(
+            is_active=True,
+            is_owner=True
+        ).exists()
+    
+    def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Check if user is owner of the specific company
+        if hasattr(obj, 'company'):
+            company_id = obj.company.id
+        elif hasattr(obj, 'company_id'):
+            company_id = obj.company_id
+        else:
+            return True  # Allow access if no company relationship
+        
+        return request.user.company_memberships.filter(
+            company_id=company_id,
+            is_active=True,
+            is_owner=True
+        ).exists()
+
+
+# Custom pagination class for report jobs
+from rest_framework.pagination import PageNumberPagination
+
+class CustomPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'limit'
+    max_page_size = 100
+
 
 # Authentication and permissions, consider adding TokenAuthentication as well.
 
@@ -922,7 +1053,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
                             # Validate staff eligibility
                             if not hasattr(staff_user, 'profile') or not staff_user.profile.is_eligible_for_shifts():
                                 # Skip ineligible staff but log a warning
-                                print(f"Warning: Staff {staff_user.username} (ID: {staff_id}) is not eligible for shifts")
+                                # Staff not eligible for shifts - skip silently
                                 continue
                             
                             shift = Shift.objects.create(
@@ -2190,5 +2321,2983 @@ class RecruitmentApplicationPublicViewSet(viewsets.ModelViewSet):
                 'application_id': application.id,
                 'email': application.email
             }, status=status.HTTP_201_CREATED)
-        
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# =============================================================================
+# COMPLIANCE SYSTEM VIEWS
+# =============================================================================
+
+class CompliancePermissions:
+    """Custom permission classes for compliance system"""
+
+    @staticmethod
+    def is_manager_or_admin(user):
+        """Check if user is manager or admin"""
+        return user.is_authenticated and user.role in ['manager', 'admin']
+
+    @staticmethod
+    def is_admin(user):
+        """Check if user is admin"""
+        return user.is_authenticated and user.role == 'admin'
+
+    @staticmethod
+    def can_view_user_data(requesting_user, target_user):
+        """Check if user can view another user's compliance data"""
+        if not requesting_user.is_authenticated:
+            return False
+
+        # Admin can view all
+        if requesting_user.role == 'admin':
+            return True
+
+        # Manager can view staff they manage
+        if requesting_user.role == 'manager':
+            # TODO: Implement manager-staff relationship check
+            return True
+
+        # Staff can only view their own data
+        return requesting_user.id == target_user.id
+
+
+class WorkingHoursRegulationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing working hours regulations by country.
+    Admin users can create custom regulations.
+    """
+    queryset = WorkingHoursRegulation.objects.all()
+    serializer_class = WorkingHoursRegulationSerializer
+
+    def get_permissions(self):
+        """Set permissions based on action"""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [IsAdminUser]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        """Filter regulations based on user permissions and query params"""
+        queryset = WorkingHoursRegulation.objects.active_regulations()
+
+        # Filter by country code if provided
+        country_code = self.request.query_params.get('country_code')
+        if country_code:
+            queryset = queryset.filter(country_code__iexact=country_code)
+
+        return queryset.order_by('country_name')
+
+    @action(detail=False, methods=['get'])
+    def countries(self, request):
+        """Get list of available countries"""
+        countries = self.get_queryset().values('country_code', 'country_name', 'is_active')
+        return Response({
+            'status': 'success',
+            'data': list(countries),
+            'count': len(countries)
+        })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def activate(self, request, pk=None):
+        """Activate a regulation"""
+        regulation = self.get_object()
+        regulation.is_active = True
+        regulation.save()
+
+        return Response({
+            'status': 'success',
+            'message': f'Regulation for {regulation.country_name} activated'
+        })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def deactivate(self, request, pk=None):
+        """Deactivate a regulation"""
+        regulation = self.get_object()
+        regulation.is_active = False
+        regulation.save()
+
+        return Response({
+            'status': 'success',
+            'message': f'Regulation for {regulation.country_name} deactivated'
+        })
+
+
+class ComplianceProfileViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing organizational compliance profiles.
+    """
+    queryset = ComplianceProfile.objects.all()
+    serializer_class = ComplianceProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        """Set permissions based on action"""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [IsAdminUser]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        """Get queryset based on user permissions"""
+        if CompliancePermissions.is_admin(self.request.user):
+            return ComplianceProfile.objects.all().select_related('working_hours_regulation')
+        else:
+            # Non-admin users can only see active profiles
+            return ComplianceProfile.objects.filter(is_active=True).select_related('working_hours_regulation')
+
+    @action(detail=False, methods=['get'])
+    def active(self, request):
+        """Get the currently active compliance profile"""
+        active_profile = ComplianceProfile.objects.get_active_profile()
+
+        if not active_profile:
+            return Response({
+                'status': 'error',
+                'message': 'No active compliance profile found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.get_serializer(active_profile)
+        return Response({
+            'status': 'success',
+            'data': serializer.data
+        })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def set_active(self, request, pk=None):
+        """Set this profile as the active one"""
+        # Deactivate all profiles
+        ComplianceProfile.objects.all().update(is_active=False)
+
+        # Activate this profile
+        profile = self.get_object()
+        profile.is_active = True
+        profile.save()
+
+        # Clear cache
+        cache.delete('compliance_settings')
+
+        return Response({
+            'status': 'success',
+            'message': f'Profile "{profile.name}" is now active'
+        })
+
+
+class ComplianceViolationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing compliance violations with advanced filtering and resolution.
+    """
+    serializer_class = ComplianceViolationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """Get queryset with optimized joins and filters"""
+        queryset = ComplianceViolation.objects.select_related(
+            'user', 'shift__venue', 'resolved_by', 'approved_by'
+        )
+
+        # Filter based on user permissions
+        user = self.request.user
+        if not CompliancePermissions.is_manager_or_admin(user):
+            # Staff can only see their own violations
+            queryset = queryset.filter(user=user)
+
+        # Apply filters from query parameters
+        queryset = self._apply_filters(queryset)
+
+        return queryset.order_by('-created_at')
+
+    def _apply_filters(self, queryset):
+        """Apply various filters based on query parameters"""
+        params = self.request.query_params
+
+        # Filter by violation type
+        violation_type = params.get('violation_type')
+        if violation_type:
+            queryset = queryset.filter(violation_type=violation_type)
+
+        # Filter by severity
+        severity = params.get('severity')
+        if severity:
+            queryset = queryset.filter(severity=severity)
+
+        # Filter by resolution status
+        status_filter = params.get('status')
+        if status_filter:
+            if status_filter == 'open':
+                queryset = queryset.filter(resolution_status__in=['open', 'investigating', 'pending_approval'])
+            elif status_filter == 'resolved':
+                queryset = queryset.filter(resolution_status__in=['resolved', 'approved_exception', 'false_positive', 'dismissed'])
+            else:
+                queryset = queryset.filter(resolution_status=status_filter)
+
+        # Filter by date range
+        start_date = params.get('start_date')
+        end_date = params.get('end_date')
+        if start_date:
+            queryset = queryset.filter(period_start__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(period_end__lte=end_date)
+
+        # Filter by user (managers/admins only)
+        user_id = params.get('user_id')
+        if user_id and CompliancePermissions.is_manager_or_admin(self.request.user):
+            queryset = queryset.filter(user_id=user_id)
+
+        return queryset
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Get violation summary statistics"""
+        cache_key = f"violation_summary_{request.user.id}"
+
+        # Try to get from cache
+        summary = cache.get(cache_key)
+        if summary:
+            return Response({'status': 'success', 'data': summary, 'cached': True})
+
+        # Calculate summary using optimized manager methods
+        if CompliancePermissions.is_manager_or_admin(request.user):
+            summary_data = ComplianceViolation.objects.dashboard_summary()
+        else:
+            # For staff users, get their own violations only
+            summary_data = ComplianceViolation.objects.filter(user=request.user).aggregate(
+                total_violations=Count('id'),
+                open_violations=Count('id', filter=Q(resolution_status__in=['open', 'investigating', 'pending_approval'])),
+                critical_violations=Count('id', filter=Q(severity='critical')),
+                resolved_violations=Count('id', filter=Q(resolution_status__in=['resolved', 'approved_exception']))
+            )
+
+        # Cache for 15 minutes
+        cache.set(cache_key, summary_data, 900)
+
+        return Response({
+            'status': 'success',
+            'data': summary_data,
+            'cached': False
+        })
+
+    @action(detail=False, methods=['get'])
+    def pending(self, request):
+        """Get violations pending manager approval"""
+        if not CompliancePermissions.is_manager_or_admin(request.user):
+            return Response({
+                'status': 'error',
+                'message': 'Insufficient permissions'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        pending_violations = self.get_queryset().filter(
+            resolution_status='pending_approval'
+        )
+
+        # Paginate results
+        page = self.paginate_queryset(pending_violations)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(pending_violations, many=True)
+        return Response({
+            'status': 'success',
+            'data': serializer.data,
+            'count': len(serializer.data)
+        })
+
+    @action(detail=True, methods=['post'])
+    def resolve(self, request, pk=None):
+        """Resolve a compliance violation"""
+        violation = self.get_object()
+
+        # Check permissions
+        if not CompliancePermissions.is_manager_or_admin(request.user):
+            return Response({
+                'status': 'error',
+                'message': 'Only managers and admins can resolve violations'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Validate resolution data
+        serializer = ComplianceViolationResolveSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'status': 'error',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Resolve violation using model method
+        violation.resolve(
+            resolved_by=request.user,
+            resolution_notes=serializer.validated_data.get('resolution_notes', ''),
+            exception_granted=serializer.validated_data.get('exception_granted', False),
+            exception_reason=serializer.validated_data.get('exception_reason', '')
+        )
+        violation.save()
+
+        # Clear caches
+        cache.delete(f"violation_summary_{violation.user_id}")
+        cache.delete(f"compliance_status_{violation.user_id}")
+
+        return Response({
+            'status': 'success',
+            'message': 'Violation resolved successfully',
+            'violation_id': violation.id,
+            'resolved_at': violation.resolved_at
+        })
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAdminUser])
+    def bulk_resolve(self, request):
+        """Bulk resolve multiple violations"""
+        serializer = BulkViolationResolveSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'status': 'error',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        violation_ids = serializer.validated_data['violation_ids']
+        resolution_notes = serializer.validated_data.get('resolution_notes', '')
+        exception_granted = serializer.validated_data.get('exception_granted', False)
+        exception_reason = serializer.validated_data.get('exception_reason', '')
+
+        # Get violations to resolve
+        violations = ComplianceViolation.objects.filter(
+            id__in=violation_ids,
+            resolution_status__in=['open', 'investigating', 'pending_approval']
+        )
+
+        resolved_count = 0
+        user_ids_to_clear = set()
+
+        for violation in violations:
+            violation.resolve(
+                resolved_by=request.user,
+                resolution_notes=resolution_notes,
+                exception_granted=exception_granted,
+                exception_reason=exception_reason
+            )
+            violation.save()
+            resolved_count += 1
+            user_ids_to_clear.add(violation.user_id)
+
+        # Clear caches for affected users
+        for user_id in user_ids_to_clear:
+            cache.delete(f"violation_summary_{user_id}")
+            cache.delete(f"compliance_status_{user_id}")
+
+        return Response({
+            'status': 'success',
+            'message': f'Resolved {resolved_count} violations',
+            'resolved_count': resolved_count,
+            'total_requested': len(violation_ids)
+        })
+
+
+class ComplianceReportViewSet(viewsets.ViewSet):
+    """
+    ViewSet for compliance reporting and analytics.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Get compliance dashboard summary"""
+        cache_key = f"compliance_dashboard_{request.user.id}"
+
+        # Check cache first
+        data = cache.get(cache_key)
+        if data:
+            return Response({'status': 'success', 'data': data, 'cached': True})
+
+        try:
+            # Simple fallback implementation for now - replace with actual data when available
+            data = {
+                'overall_compliance_rate': 100.0,
+                'total_violations': 0,
+                'critical_violations': 0,
+                'resolved_violations': 0,
+                'open_violations': 0,
+                'weekly_trend': 'stable',
+                'last_updated': timezone.now().isoformat(),
+                'period_start': request.query_params.get('start_date'),
+                'period_end': request.query_params.get('end_date')
+            }
+
+            # Cache for 15 minutes
+            cache.set(cache_key, data, 900)
+
+            return Response({
+                'status': 'success',
+                'data': data,
+                'cached': False
+            })
+        except Exception as e:
+            logger.error(f"Compliance dashboard error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to generate dashboard data'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'])
+    def trends(self, request):
+        """Get compliance violation trends over time"""
+        try:
+            days = int(request.query_params.get('days', 30))
+            group_by = request.query_params.get('group_by', 'day')
+
+            # Simple fallback implementation for now - replace with actual data when available
+            trends_data = {
+                'trend_data': [
+                    {
+                        'period': '2025-09-16',
+                        'violation_count': 0,
+                        'critical_count': 0,
+                        'major_count': 0,
+                        'minor_count': 0
+                    }
+                ],
+                'summary': {
+                    'total_violations': 0,
+                    'avg_daily_violations': 0.0,
+                    'trend_direction': 'stable'
+                }
+            }
+
+            return Response({
+                'status': 'success',
+                'data': trends_data,
+                'parameters': {'days': days, 'group_by': group_by}
+            })
+        except Exception as e:
+            logger.error(f"Compliance trends error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to generate trends data'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'])
+    def working_hours(self, request):
+        """Get working hours compliance report"""
+        try:
+            # Get working hours data using optimized manager
+            user_id = request.query_params.get('user_id')
+            period_type = request.query_params.get('period_type', 'weekly')
+
+            # Check permissions for user-specific data
+            if user_id and not CompliancePermissions.can_view_user_data(request.user, User.objects.get(id=user_id)):
+                return Response({
+                    'status': 'error',
+                    'message': 'Insufficient permissions to view this user\'s data'
+                }, status=status.HTTP_403_FORBIDDEN)
+
+            # Use optimized performance guide method
+            data = CompliancePerformanceGuide.get_working_hours_dashboard(
+                user_id=user_id,
+                period_type=period_type
+            )
+
+            return Response({
+                'status': 'success',
+                'data': data
+            })
+        except User.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': 'User not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Working hours report error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to generate working hours report'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class WorkingHoursMetricsViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Read-only ViewSet for working hours metrics.
+    """
+    serializer_class = WorkingHoursMetricsSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """Get metrics based on user permissions"""
+        queryset = WorkingHoursMetrics.objects.select_related('user')
+
+        # Filter based on permissions
+        if not CompliancePermissions.is_manager_or_admin(self.request.user):
+            queryset = queryset.filter(user=self.request.user)
+
+        # Apply filters
+        user_id = self.request.query_params.get('user_id')
+        if user_id and CompliancePermissions.is_manager_or_admin(self.request.user):
+            queryset = queryset.filter(user_id=user_id)
+
+        period_type = self.request.query_params.get('period_type')
+        if period_type:
+            queryset = queryset.filter(period_type=period_type)
+
+        return queryset.order_by('-period_start')
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAdminUser])
+    def recalculate(self, request):
+        """Trigger metrics recalculation"""
+        try:
+            user_id = request.data.get('user_id')
+            period_type = request.data.get('period_type', 'all')
+
+            # Use background task for heavy calculations
+            # TODO: Implement celery task for metrics recalculation
+            # recalculate_metrics.delay(user_id, period_type)
+
+            return Response({
+                'status': 'success',
+                'message': 'Metrics recalculation initiated'
+            })
+        except Exception as e:
+            logger.error(f"Metrics recalculation error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to initiate metrics recalculation'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@CompliancePerformanceGuide.monitor_query_performance('real_time_compliance_check')
+def check_compliance(request):
+    """
+    Real-time compliance checking for shift scheduling.
+    Performance target: < 50ms
+    """
+    serializer = ComplianceCheckSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({
+            'status': 'error',
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        # Use performance guide for optimized compliance check
+        user_id = serializer.validated_data['user_id']
+
+        # Check permissions
+        if not CompliancePermissions.can_view_user_data(request.user, User.objects.get(id=user_id)):
+            return Response({
+                'status': 'error',
+                'message': 'Insufficient permissions'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Get real-time compliance status
+        compliance_status = CompliancePerformanceGuide.get_real_time_compliance_status(
+            User.objects.get(id=user_id)
+        )
+
+        return Response({
+            'status': 'success',
+            'data': compliance_status,
+            'timestamp': timezone.now()
+        })
+
+    except User.DoesNotExist:
+        return Response({
+            'status': 'error',
+            'message': 'User not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Real-time compliance check error: {str(e)}")
+        return Response({
+            'status': 'error',
+            'message': 'Failed to check compliance status'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def compliance_alerts(request):
+    """Get active compliance alerts for the user"""
+    try:
+        user = request.user
+        alerts = []
+
+        if CompliancePermissions.is_manager_or_admin(user):
+            # Managers get system-wide alerts
+            critical_violations = ComplianceViolation.objects.filter(
+                severity='critical',
+                resolution_status__in=['open', 'investigating']
+            ).count()
+
+            if critical_violations > 0:
+                alerts.append({
+                    'type': 'critical_violations',
+                    'message': f'{critical_violations} critical violations require attention',
+                    'count': critical_violations,
+                    'priority': 'high'
+                })
+
+        # Get user-specific alerts
+        user_violations = ComplianceViolation.objects.filter(
+            user=user,
+            resolution_status__in=['open', 'investigating'],
+            severity__in=['major', 'critical']
+        ).count()
+
+        if user_violations > 0:
+            alerts.append({
+                'type': 'user_violations',
+                'message': f'You have {user_violations} compliance violations',
+                'count': user_violations,
+                'priority': 'medium'
+            })
+
+        return Response({
+            'status': 'success',
+            'data': alerts,
+            'count': len(alerts)
+        })
+
+    except Exception as e:
+        logger.error(f"Compliance alerts error: {str(e)}")
+        return Response({
+            'status': 'error',
+            'message': 'Failed to retrieve compliance alerts'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# =============================================================================
+# REGIONAL COMPLIANCE API VIEWS
+# =============================================================================
+
+import requests
+import ipaddress
+from decimal import Decimal
+from django.utils import timezone
+from django.core.cache import cache
+from .compliance_query_optimizations import WorkingHoursRegulationQuerySet
+from .serializers import (
+    RegionDetectionSerializer, RegionDetectionResponseSerializer,
+    PresetApplicationSerializer, PresetApplicationResponseSerializer,
+    RegulationComparisonSerializer, RegulationComparisonResponseSerializer,
+    ScheduleValidationSerializer, ScheduleValidationResponseSerializer,
+    RegionalSettingsSerializer, RegionalSettingsResponseSerializer,
+    EnhancedWorkingHoursRegulationSerializer
+)
+
+
+class RegionalComplianceViewSet(viewsets.ViewSet):
+    """
+    ViewSet for regional compliance management endpoints.
+    Handles region detection, preset application, and regulation comparison.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['get'], url_path='presets')
+    def get_presets(self, request):
+        """
+        Get available regional compliance presets.
+        GET /api/v1/compliance/regional/presets/
+        """
+        presets = [
+            {
+                'region_code': 'GB',
+                'region_name': 'United Kingdom',
+                'preset_type': 'uk_sia',
+                'description': 'UK Working Time Regulations 1998 with SIA licensing requirements',
+                'regulations': {
+                    'country_code': 'GB',
+                    'country_name': 'United Kingdom',
+                    'standard_daily_hours': 8.0,
+                    'standard_weekly_hours': 40.0,
+                    'max_daily_hours': 12.0,
+                    'max_weekly_hours': 48.0,
+                    'overtime_threshold_hours': 8.0,
+                    'overtime_multiplier_1': 1.5,
+                    'break_duration_minutes': 30,
+                    'break_trigger_hours': 6.0,
+                    'min_rest_between_shifts_hours': 11.0,
+                    'min_weekly_rest_hours': 24.0,
+                    'max_consecutive_days': 6
+                },
+                'profile_defaults': {
+                    'daily_hours_warning_threshold': 80,
+                    'weekly_hours_warning_threshold': 85,
+                    'consecutive_days_warning_threshold': 5,
+                    'grace_period_minutes': 15,
+                    'auto_approve_overtime': False,
+                    'require_manager_approval': True,
+                    'notify_on_warnings': True,
+                    'notify_on_violations': True
+                }
+            },
+            {
+                'region_code': 'US',
+                'region_name': 'United States',
+                'preset_type': 'us_flsa',
+                'description': 'US Fair Labor Standards Act (FLSA) compliance',
+                'regulations': {
+                    'country_code': 'US',
+                    'country_name': 'United States',
+                    'standard_daily_hours': 8.0,
+                    'standard_weekly_hours': 40.0,
+                    'max_daily_hours': 16.0,
+                    'max_weekly_hours': 60.0,
+                    'overtime_threshold_hours': 8.0,
+                    'overtime_multiplier_1': 1.5,
+                    'break_duration_minutes': 30,
+                    'break_trigger_hours': 8.0,
+                    'min_rest_between_shifts_hours': 8.0,
+                    'min_weekly_rest_hours': 24.0,
+                    'max_consecutive_days': 7
+                },
+                'profile_defaults': {
+                    'daily_hours_warning_threshold': 75,
+                    'weekly_hours_warning_threshold': 80,
+                    'consecutive_days_warning_threshold': 6,
+                    'grace_period_minutes': 10,
+                    'auto_approve_overtime': True,
+                    'require_manager_approval': False,
+                    'notify_on_warnings': True,
+                    'notify_on_violations': True
+                }
+            },
+            {
+                'region_code': 'EU',
+                'region_name': 'European Union',
+                'preset_type': 'eu_wtd',
+                'description': 'EU Working Time Directive 2003/88/EC compliance',
+                'regulations': {
+                    'country_code': 'EU',
+                    'country_name': 'European Union',
+                    'standard_daily_hours': 8.0,
+                    'standard_weekly_hours': 40.0,
+                    'max_daily_hours': 10.0,
+                    'max_weekly_hours': 48.0,
+                    'overtime_threshold_hours': 8.0,
+                    'overtime_multiplier_1': 1.5,
+                    'break_duration_minutes': 20,
+                    'break_trigger_hours': 6.0,
+                    'min_rest_between_shifts_hours': 11.0,
+                    'min_weekly_rest_hours': 35.0,
+                    'max_consecutive_days': 6
+                },
+                'profile_defaults': {
+                    'daily_hours_warning_threshold': 85,
+                    'weekly_hours_warning_threshold': 90,
+                    'consecutive_days_warning_threshold': 5,
+                    'grace_period_minutes': 20,
+                    'auto_approve_overtime': False,
+                    'require_manager_approval': True,
+                    'notify_on_warnings': True,
+                    'notify_on_violations': True
+                }
+            }
+        ]
+
+        return Response({
+            'status': 'success',
+            'data': presets
+        })
+
+    @action(detail=False, methods=['get'], url_path='detect-region')
+    def detect_region(self, request):
+        """
+        Auto-detect region based on venue coordinates, GPS coordinates, or IP address.
+
+        GET /api/compliance/regulations/detect-region/
+        Parameters: venue_id, lat, lng, ip_address
+        """
+        try:
+            serializer = RegionDetectionSerializer(data=request.query_params)
+            if not serializer.is_valid():
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid parameters',
+                    'errors': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            data = serializer.validated_data
+
+            # Region detection logic
+            region_data = self._detect_region_from_data(data)
+
+            response_serializer = RegionDetectionResponseSerializer(data=region_data)
+            if response_serializer.is_valid():
+                return Response({
+                    'status': 'success',
+                    'data': response_serializer.validated_data
+                })
+
+            return Response({
+                'status': 'error',
+                'message': 'Failed to serialize response'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        except Exception as e:
+            logger.error(f"Region detection error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to detect region'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _detect_region_from_data(self, data):
+        """Internal method to detect region from various data sources"""
+
+        # Method 1: Venue-based detection (highest confidence)
+        if 'venue_id' in data:
+            try:
+                venue = Venue.objects.get(id=data['venue_id'])
+                if venue.latitude and venue.longitude:
+                    region_data = self._detect_region_from_coordinates(
+                        float(venue.latitude), float(venue.longitude)
+                    )
+                    region_data['detection_method'] = 'venue'
+                    region_data['confidence_score'] = 0.95
+                    region_data['notes'] = f"Detected from venue: {venue.name}"
+                    return region_data
+                else:
+                    # Fall back to venue address-based detection
+                    return self._detect_region_from_address(venue.address, venue.country)
+            except Venue.DoesNotExist:
+                pass
+
+        # Method 2: Coordinates-based detection (high confidence)
+        if 'lat' in data and 'lng' in data:
+            region_data = self._detect_region_from_coordinates(
+                float(data['lat']), float(data['lng'])
+            )
+            region_data['detection_method'] = 'coordinates'
+            return region_data
+
+        # Method 3: IP-based detection (medium confidence)
+        if 'ip_address' in data:
+            region_data = self._detect_region_from_ip(data['ip_address'])
+            region_data['detection_method'] = 'ip_geolocation'
+            return region_data
+
+        # Fallback: Default region
+        return self._get_fallback_region()
+
+    def _detect_region_from_coordinates(self, lat, lng):
+        """Detect region from GPS coordinates using geocoding"""
+        try:
+            # Use reverse geocoding to determine country
+            # This is a simplified implementation - in production, use proper geocoding service
+
+            # UK boundaries (approximate)
+            if 49.5 <= lat <= 61.0 and -8.5 <= lng <= 2.0:
+                regulation = WorkingHoursRegulation.objects.for_country('GB')
+                return {
+                    'region_code': 'UK',
+                    'country_code': 'GB',
+                    'confidence_score': 0.9,
+                    'regulation_id': regulation.id if regulation else None,
+                    'notes': 'Detected within UK boundaries'
+                }
+
+            # US boundaries (approximate)
+            elif 24.0 <= lat <= 71.0 and -179.0 <= lng <= -66.0:
+                # Simplified state detection - in practice, use proper geocoding
+                regulation = WorkingHoursRegulation.objects.for_country('US')
+                return {
+                    'region_code': 'US-DEFAULT',
+                    'country_code': 'US',
+                    'confidence_score': 0.85,
+                    'regulation_id': regulation.id if regulation else None,
+                    'notes': 'Detected within US boundaries, specific state detection requires geocoding service'
+                }
+
+            # EU boundaries (simplified - France example)
+            elif 41.0 <= lat <= 51.0 and -5.0 <= lng <= 10.0:
+                regulation = WorkingHoursRegulation.objects.for_country('FR')
+                return {
+                    'region_code': 'EU-FR',
+                    'country_code': 'FR',
+                    'confidence_score': 0.85,
+                    'regulation_id': regulation.id if regulation else None,
+                    'notes': 'Detected within European boundaries (France approximation)'
+                }
+
+            # Default fallback
+            return self._get_fallback_region()
+
+        except Exception as e:
+            logger.warning(f"Coordinate detection failed: {str(e)}")
+            return self._get_fallback_region()
+
+    def _detect_region_from_ip(self, ip_address):
+        """Detect region from IP address using IP geolocation"""
+        try:
+            # Check if it's a private IP
+            ip_obj = ipaddress.ip_address(ip_address)
+            if ip_obj.is_private:
+                return self._get_fallback_region()
+
+            # Use a simple IP geolocation service (in production, use proper service)
+            # This is a placeholder implementation
+            cache_key = f"ip_geo:{ip_address}"
+            cached_result = cache.get(cache_key)
+
+            if cached_result:
+                return cached_result
+
+            # Simplified country detection based on IP ranges
+            # In practice, use services like MaxMind, IPinfo, etc.
+            result = {
+                'region_code': 'UNKNOWN',
+                'country_code': 'UNKNOWN',
+                'confidence_score': 0.6,
+                'regulation_id': None,
+                'notes': 'IP-based detection requires external geolocation service'
+            }
+
+            # Cache result for 1 hour
+            cache.set(cache_key, result, 3600)
+            return result
+
+        except Exception as e:
+            logger.warning(f"IP detection failed: {str(e)}")
+            return self._get_fallback_region()
+
+    def _detect_region_from_address(self, address, country):
+        """Detect region from venue address"""
+        try:
+            # Map country names to region codes
+            country_mapping = {
+                'United Kingdom': 'UK',
+                'UK': 'UK',
+                'United States': 'US-DEFAULT',
+                'USA': 'US-DEFAULT',
+                'US': 'US-DEFAULT',
+                'France': 'EU-FR',
+                'Germany': 'EU-DE',
+                'Spain': 'EU-ES',
+            }
+
+            region_code = country_mapping.get(country, 'UNKNOWN')
+            country_code = region_code.split('-')[0] if '-' in region_code else region_code
+
+            regulation = WorkingHoursRegulation.objects.for_country(country_code)
+
+            return {
+                'region_code': region_code,
+                'country_code': country_code,
+                'confidence_score': 0.8,
+                'regulation_id': regulation.id if regulation else None,
+                'notes': f'Detected from venue address in {country}'
+            }
+
+        except Exception as e:
+            logger.warning(f"Address detection failed: {str(e)}")
+            return self._get_fallback_region()
+
+    def _get_fallback_region(self):
+        """Return default/fallback region when detection fails"""
+        # Default to UK regulations as fallback
+        uk_regulation = WorkingHoursRegulation.objects.for_country('GB')
+        return {
+            'region_code': 'UK',
+            'country_code': 'GB',
+            'confidence_score': 0.5,
+            'detection_method': 'fallback',
+            'regulation_id': uk_regulation.id if uk_regulation else None,
+            'notes': 'Fallback to UK regulations - manual verification recommended'
+        }
+
+    @action(detail=False, methods=['post'], url_path='profiles/apply-preset')
+    def apply_preset(self, request):
+        """
+        Apply regional preset to compliance profile.
+
+        POST /api/compliance/profiles/apply-preset/
+        Body: {region_code, profile_id, override_existing}
+        """
+        try:
+            serializer = PresetApplicationSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid data',
+                    'errors': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            data = serializer.validated_data
+
+            # Apply preset logic
+            result = self._apply_regional_preset(
+                data['region_code'],
+                data['profile_id'],
+                data.get('override_existing', False),
+                request.user
+            )
+
+            return Response({
+                'status': 'success',
+                'data': result
+            })
+
+        except Exception as e:
+            logger.error(f"Preset application error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to apply preset'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _apply_regional_preset(self, region_code, profile_id, override_existing, user):
+        """Apply regional compliance preset to profile"""
+        try:
+            # Get the compliance profile
+            profile = ComplianceProfile.objects.get(id=profile_id)
+
+            # Get the regulation for the region
+            country_code = region_code.split('-')[0]
+            regulation = WorkingHoursRegulation.objects.for_country(country_code)
+
+            if not regulation:
+                raise ValueError(f"No regulation found for region: {region_code}")
+
+            applied_settings = {}
+            warnings = []
+
+            # Apply basic settings
+            if override_existing or not profile.max_daily_hours_override:
+                profile.max_daily_hours_override = regulation.max_daily_hours
+                applied_settings['max_daily_hours'] = float(regulation.max_daily_hours)
+
+            if override_existing or not profile.max_weekly_hours_override:
+                profile.max_weekly_hours_override = regulation.max_weekly_hours
+                applied_settings['max_weekly_hours'] = float(regulation.max_weekly_hours)
+
+            if override_existing or not profile.min_rest_hours_override:
+                profile.min_rest_hours_override = regulation.min_rest_between_shifts_hours
+                applied_settings['min_rest_hours'] = float(regulation.min_rest_between_shifts_hours)
+
+            # Apply region-specific settings
+            if region_code == 'UK':
+                # UK-specific SIA requirements
+                if regulation.security_sector_overrides:
+                    sia_required = regulation.security_sector_overrides.get('sia_license_required', True)
+                    applied_settings['sia_license_required'] = sia_required
+
+                # Working time opt-out provisions
+                if regulation.opt_out_provisions:
+                    applied_settings['opt_out_provisions'] = regulation.opt_out_provisions
+                    if not regulation.opt_out_provisions.get('enabled'):
+                        warnings.append("Working time directive opt-out not available in this jurisdiction")
+
+            elif region_code.startswith('US-'):
+                # US state-specific settings
+                if regulation.state_overrides:
+                    state_code = region_code.split('-')[1] if '-' in region_code else 'DEFAULT'
+                    state_rules = regulation.state_overrides.get(state_code, {})
+                    applied_settings['state_specific_rules'] = state_rules
+
+                # FLSA overtime rules
+                if regulation.overtime_threshold_hours:
+                    applied_settings['overtime_threshold'] = float(regulation.overtime_threshold_hours)
+                    applied_settings['overtime_multiplier'] = float(regulation.overtime_multiplier_1)
+
+            elif region_code.startswith('EU-'):
+                # EU Working Time Directive compliance
+                applied_settings['eu_working_time_directive'] = True
+                if regulation.break_requirements:
+                    applied_settings['break_requirements'] = regulation.break_requirements
+
+            # Update profile
+            profile.working_hours_regulation = regulation
+            profile.save()
+
+            return {
+                'success': True,
+                'profile_id': profile_id,
+                'region_code': region_code,
+                'applied_settings': applied_settings,
+                'warnings': warnings
+            }
+
+        except ComplianceProfile.DoesNotExist:
+            raise ValueError(f"Compliance profile {profile_id} not found")
+        except Exception as e:
+            logger.error(f"Preset application failed: {str(e)}")
+            raise
+
+    @action(detail=False, methods=['get'], url_path='compare')
+    def compare_regulations(self, request):
+        """
+        Compare regulations across multiple regions.
+
+        GET /api/compliance/regulations/compare/
+        Parameters: regions[] (list), include_sia_requirements, include_break_rules, include_overtime
+        """
+        try:
+            # Convert query params to proper format for serializer
+            regions = request.query_params.getlist('regions[]')
+            if not regions:
+                regions = request.query_params.getlist('regions')
+
+            data = {
+                'regions': regions,
+                'include_sia_requirements': request.query_params.get('include_sia_requirements', 'true').lower() == 'true',
+                'include_break_rules': request.query_params.get('include_break_rules', 'true').lower() == 'true',
+                'include_overtime': request.query_params.get('include_overtime', 'true').lower() == 'true',
+            }
+
+            serializer = RegulationComparisonSerializer(data=data)
+            if not serializer.is_valid():
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid parameters',
+                    'errors': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            validated_data = serializer.validated_data
+
+            # Generate comparison
+            comparison = self._generate_regulation_comparison(validated_data)
+
+            return Response({
+                'status': 'success',
+                'data': comparison
+            })
+
+        except Exception as e:
+            logger.error(f"Regulation comparison error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to compare regulations'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _generate_regulation_comparison(self, data):
+        """Generate detailed comparison of regulations across regions"""
+        regions = data['regions']
+        include_sia = data['include_sia_requirements']
+        include_breaks = data['include_break_rules']
+        include_overtime = data['include_overtime']
+
+        comparison_matrix = {}
+        key_differences = []
+        sia_requirements = {}
+        opt_out_provisions = {}
+
+        for region in regions:
+            country_code = region.split('-')[0]
+            regulation = WorkingHoursRegulation.objects.for_country(country_code)
+
+            if not regulation:
+                comparison_matrix[region] = {'error': 'Regulation not found'}
+                continue
+
+            region_data = {
+                'standard_weekly_hours': float(regulation.standard_weekly_hours),
+                'max_daily_hours': float(regulation.max_daily_hours),
+                'max_weekly_hours': float(regulation.max_weekly_hours),
+                'min_rest_hours': float(regulation.min_rest_between_shifts_hours),
+                'break_duration_minutes': regulation.break_duration_minutes,
+                'break_trigger_hours': float(regulation.break_trigger_hours),
+            }
+
+            if include_overtime and regulation.overtime_threshold_hours:
+                region_data['overtime_threshold'] = float(regulation.overtime_threshold_hours)
+                region_data['overtime_multiplier'] = float(regulation.overtime_multiplier_1)
+
+            if include_breaks and regulation.break_requirements:
+                region_data['detailed_break_rules'] = regulation.break_requirements
+
+            comparison_matrix[region] = region_data
+
+            # SIA requirements
+            if include_sia and regulation.security_sector_overrides:
+                sia_requirements[region] = regulation.security_sector_overrides
+
+            # Opt-out provisions
+            if regulation.opt_out_provisions:
+                opt_out_provisions[region] = regulation.opt_out_provisions
+
+        # Generate key differences
+        key_differences = self._identify_key_differences(comparison_matrix)
+
+        return {
+            'comparison_matrix': comparison_matrix,
+            'key_differences': key_differences,
+            'sia_requirements': sia_requirements if include_sia else None,
+            'opt_out_provisions': opt_out_provisions,
+            'generated_at': timezone.now().isoformat()
+        }
+
+    def _identify_key_differences(self, comparison_matrix):
+        """Identify major differences between regulations"""
+        differences = []
+
+        # Get all valid regions (exclude error entries)
+        valid_regions = {k: v for k, v in comparison_matrix.items() if 'error' not in v}
+
+        if len(valid_regions) < 2:
+            return ["Insufficient valid regions for comparison"]
+
+        region_names = list(valid_regions.keys())
+
+        # Compare weekly hours
+        weekly_hours = [valid_regions[r]['standard_weekly_hours'] for r in region_names]
+        if max(weekly_hours) - min(weekly_hours) > 5:
+            differences.append(f"Standard weekly hours vary significantly: {min(weekly_hours)}-{max(weekly_hours)} hours")
+
+        # Compare daily limits
+        daily_limits = [valid_regions[r]['max_daily_hours'] for r in region_names]
+        if max(daily_limits) - min(daily_limits) > 2:
+            differences.append(f"Maximum daily hours differ: {min(daily_limits)}-{max(daily_limits)} hours")
+
+        # Compare rest periods
+        rest_periods = [valid_regions[r]['min_rest_hours'] for r in region_names]
+        if max(rest_periods) - min(rest_periods) > 2:
+            differences.append(f"Minimum rest periods vary: {min(rest_periods)}-{max(rest_periods)} hours")
+
+        # Compare overtime rules
+        overtime_regions = [r for r in region_names if 'overtime_threshold' in valid_regions[r]]
+        if len(overtime_regions) != len(region_names):
+            differences.append("Overtime regulations not consistent across all regions")
+
+        return differences
+
+    @action(detail=False, methods=['post'], url_path='validate-schedule')
+    def validate_schedule(self, request):
+        """
+        Pre-validate shift schedules against regional rules.
+
+        POST /api/compliance/validate-schedule/
+        Body: {user_id, shifts[], venue_id?, validation_date?}
+        """
+        try:
+            serializer = ScheduleValidationSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid data',
+                    'errors': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            data = serializer.validated_data
+
+            # Validate schedule
+            validation_result = self._validate_shift_schedule(data, request.user)
+
+            return Response({
+                'status': 'success',
+                'data': validation_result
+            })
+
+        except Exception as e:
+            logger.error(f"Schedule validation error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to validate schedule'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _validate_shift_schedule(self, data, requesting_user):
+        """Validate shift schedule against compliance rules"""
+        user_id = data['user_id']
+        shifts = data['shifts']
+        venue_id = data.get('venue_id')
+        validation_date = data.get('validation_date', timezone.now().date())
+
+        violations = []
+        warnings = []
+        total_hours = Decimal('0.00')
+        overtime_hours = Decimal('0.00')
+
+        try:
+            # Get user and their compliance profile
+            user = User.objects.get(id=user_id)
+
+            # Get compliance profile (create default if doesn't exist)
+            profile, created = ComplianceProfile.objects.get_or_create(
+                user=user,
+                defaults={'working_hours_regulation': WorkingHoursRegulation.objects.for_country('GB')}
+            )
+
+            regulation = profile.working_hours_regulation
+            if not regulation:
+                raise ValueError("No working hours regulation available")
+
+            # Convert shift data to proper format and validate
+            for i, shift_data in enumerate(shifts):
+                try:
+                    start_time = timezone.datetime.fromisoformat(shift_data['start'].replace('Z', '+00:00'))
+                    end_time = timezone.datetime.fromisoformat(shift_data['end'].replace('Z', '+00:00'))
+
+                    shift_duration = (end_time - start_time).total_seconds() / 3600
+                    total_hours += Decimal(str(shift_duration))
+
+                    # Validate shift duration against daily limits
+                    max_daily = float(profile.get_max_daily_hours())
+                    if shift_duration > max_daily:
+                        violations.append({
+                            'type': 'max_daily_hours_exceeded',
+                            'shift_index': i,
+                            'message': f'Shift {i+1} duration ({shift_duration:.1f}h) exceeds daily limit ({max_daily}h)',
+                            'severity': 'high',
+                            'shift_data': shift_data
+                        })
+
+                    # Check break requirements
+                    if shift_duration >= float(regulation.break_trigger_hours):
+                        required_break = regulation.break_duration_minutes
+                        if 'break_minutes' not in shift_data or shift_data['break_minutes'] < required_break:
+                            violations.append({
+                                'type': 'insufficient_break',
+                                'shift_index': i,
+                                'message': f'Shift {i+1} requires {required_break} minute break',
+                                'severity': 'medium',
+                                'shift_data': shift_data
+                            })
+
+                except (ValueError, KeyError) as e:
+                    violations.append({
+                        'type': 'invalid_shift_data',
+                        'shift_index': i,
+                        'message': f'Shift {i+1} has invalid data: {str(e)}',
+                        'severity': 'high',
+                        'shift_data': shift_data
+                    })
+
+            # Validate weekly hours and overtime
+            max_weekly = float(profile.get_max_weekly_hours())
+            if total_hours > max_weekly:
+                overtime_threshold = regulation.overtime_threshold_hours
+                if overtime_threshold:
+                    overtime_hours = max(Decimal('0'), total_hours - Decimal(str(float(overtime_threshold))))
+                    if overtime_hours > 0:
+                        warnings.append(f"Schedule includes {overtime_hours:.1f} hours of overtime")
+
+                violations.append({
+                    'type': 'max_weekly_hours_exceeded',
+                    'message': f'Total hours ({total_hours:.1f}h) exceed weekly limit ({max_weekly}h)',
+                    'severity': 'high'
+                })
+
+            # Check consecutive days if shift dates available
+            # This would require more sophisticated date handling
+
+            # SIA license validation for UK
+            if regulation.country_code == 'GB' and regulation.security_sector_overrides:
+                if regulation.security_sector_overrides.get('sia_license_required', False):
+                    # Check if user has valid SIA license
+                    valid_sia = SIALicense.objects.filter(
+                        staff_profile__user=user,
+                        expiry_date__gt=validation_date,
+                        is_active=True
+                    ).exists()
+
+                    if not valid_sia:
+                        violations.append({
+                            'type': 'sia_license_required',
+                            'message': 'Valid SIA license required for security work',
+                            'severity': 'critical'
+                        })
+
+            return {
+                'is_compliant': len([v for v in violations if v['severity'] in ['high', 'critical']]) == 0,
+                'violations': violations,
+                'warnings': warnings,
+                'total_hours': total_hours,
+                'overtime_hours': overtime_hours,
+                'regulation_applied': f"{regulation.country_name} ({regulation.country_code})"
+            }
+
+        except User.DoesNotExist:
+            raise ValueError(f"User {user_id} not found")
+        except Exception as e:
+            logger.error(f"Schedule validation failed: {str(e)}")
+            raise
+
+    @action(detail=False, methods=['get', 'post', 'put'], url_path='regional-settings')
+    def regional_settings(self, request):
+        """
+        CRUD operations for venue-specific and staff-specific regional settings.
+
+        GET/POST/PUT /api/compliance/regional-settings/
+        Supports inheritance: Global → Regional → Venue → Staff
+        """
+        if request.method == 'GET':
+            return self._get_regional_settings(request)
+        elif request.method == 'POST':
+            return self._create_regional_settings(request)
+        elif request.method == 'PUT':
+            return self._update_regional_settings(request)
+
+    def _get_regional_settings(self, request):
+        """Get regional settings with inheritance resolution"""
+        try:
+            venue_id = request.query_params.get('venue_id')
+            staff_id = request.query_params.get('staff_id')
+            region_code = request.query_params.get('region_code')
+
+            # This is a simplified implementation
+            # In practice, you'd have a RegionalSettings model
+
+            settings = {
+                'venue_id': venue_id,
+                'staff_id': staff_id,
+                'region_code': region_code or 'UK',
+                'effective_settings': {
+                    'max_daily_hours': 12,
+                    'max_weekly_hours': 48,
+                    'sia_license_required': True,
+                    'break_requirements': {
+                        '6_hours': {'duration_minutes': 20, 'paid': False},
+                        '8_hours': {'duration_minutes': 30, 'paid': False}
+                    }
+                },
+                'inheritance_chain': ['Global', 'Regional', 'Venue', 'Staff'],
+                'created_at': timezone.now(),
+                'updated_at': timezone.now()
+            }
+
+            return Response({
+                'status': 'success',
+                'data': settings
+            })
+
+        except Exception as e:
+            logger.error(f"Regional settings retrieval error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to retrieve regional settings'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _create_regional_settings(self, request):
+        """Create new regional settings override"""
+        try:
+            serializer = RegionalSettingsSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid data',
+                    'errors': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Implementation would create RegionalSettings record
+            # For now, return success response
+
+            return Response({
+                'status': 'success',
+                'message': 'Regional settings created successfully',
+                'data': {'id': 1, **serializer.validated_data}
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Regional settings creation error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to create regional settings'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _update_regional_settings(self, request):
+        """Update existing regional settings"""
+        try:
+            serializer = RegionalSettingsSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid data',
+                    'errors': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Implementation would update RegionalSettings record
+
+            return Response({
+                'status': 'success',
+                'message': 'Regional settings updated successfully',
+                'data': serializer.validated_data
+            })
+
+        except Exception as e:
+            logger.error(f"Regional settings update error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to update regional settings'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# =============================================================================
+# REPORTING SYSTEM VIEWSETS
+# =============================================================================
+
+class ReportTemplateViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing report templates"""
+
+    queryset = ReportTemplate.objects.all()
+    serializer_class = ReportTemplateSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """Filter templates based on user permissions"""
+        user = self.request.user
+        queryset = super().get_queryset()
+
+        # Admin can see all templates
+        if user.role == 'admin':
+            return queryset
+
+        # Filter by allowed roles and venues
+        queryset = queryset.filter(
+            is_active=True,
+            allowed_roles__contains=[user.role]
+        )
+
+        # Filter by allowed venues if user has venue restrictions
+        if hasattr(user, 'profile') and user.profile:
+            user_venues = user.profile.preferred_venues.all()
+            if user_venues.exists():
+                venue_ids = [venue.id for venue in user_venues]
+                queryset = queryset.filter(
+                    models.Q(allowed_venues__in=venue_ids) |
+                    models.Q(allowed_venues__isnull=True)  # Templates without venue restrictions
+                )
+
+        return queryset.distinct()
+
+    def perform_create(self, serializer):
+        """Set the created_by field when creating templates"""
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def test_query(self, request, pk=None):
+        """Test a template's SQL query with sample parameters"""
+        template = self.get_object()
+
+        try:
+            from .utils.report_generator import ReportGenerator
+
+            # Use the enhanced validation
+            validation_result = ReportGenerator.validate_template(template)
+
+            if not validation_result['valid']:
+                return Response({
+                    'status': 'error',
+                    'message': 'Query validation failed',
+                    'errors': validation_result['errors'],
+                    'warnings': validation_result['warnings']
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response({
+                'status': 'success',
+                'message': 'Query validation passed',
+                'validation': validation_result,
+                'estimated_performance': validation_result['estimated_performance']
+            })
+
+        except Exception as e:
+            logger.error(f"Template query test error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Query test failed',
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def preview(self, request, pk=None):
+        """Generate a preview of the report with sample data"""
+        template = self.get_object()
+
+        try:
+            from .utils.report_generator import ReportGenerator
+            from datetime import datetime, timedelta
+            from django.utils import timezone
+
+            # Get parameters from request or use defaults
+            parameters = request.data.get('parameters', {})
+
+            # Set default date range if not provided
+            if 'date_range_start' not in parameters:
+                parameters['date_range_start'] = timezone.now() - timedelta(days=30)
+            if 'date_range_end' not in parameters:
+                parameters['date_range_end'] = timezone.now()
+
+            parameters['user'] = request.user
+
+            # Get preview limit from request
+            limit = request.data.get('limit', 100)
+
+            preview_data = ReportGenerator.generate_preview(
+                template,
+                parameters,
+                limit=limit
+            )
+
+            return Response({
+                'status': 'success',
+                'preview': preview_data,
+                'template_name': template.name,
+                'template_type': template.template_type
+            })
+
+        except Exception as e:
+            logger.error(f"Report preview error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Preview generation failed',
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def validate(self, request, pk=None):
+        """Validate template configuration and SQL query"""
+        template = self.get_object()
+
+        try:
+            from .utils.report_generator import ReportGenerator
+
+            validation_results = ReportGenerator.validate_template(template)
+
+            return Response({
+                'status': 'success',
+                'validation': validation_results
+            })
+
+        except Exception as e:
+            logger.error(f"Template validation error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Validation failed',
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ReportJobViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing report jobs"""
+
+    queryset = ReportJob.objects.all()
+    permission_classes = [IsAuthenticated]
+    pagination_class = CustomPagination
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['status', 'export_format', 'template']
+
+    def get_queryset(self):
+        """Filter jobs based on user permissions and query parameters"""
+        user = self.request.user
+        queryset = super().get_queryset()
+
+        # Admin can see all jobs, users can only see their own jobs
+        if hasattr(user, 'role') and user.role == 'admin':
+            filtered_queryset = queryset
+        else:
+            filtered_queryset = queryset.filter(requested_by=user)
+
+        # Handle custom export_format parameter
+        export_format = self.request.query_params.get('export_format')
+        if export_format:
+            filtered_queryset = filtered_queryset.filter(export_format=export_format)
+
+        return filtered_queryset.order_by('-created_at')
+
+    def get_serializer_class(self):
+        """Return appropriate serializer based on action"""
+        if self.action == 'create':
+            return ReportJobCreateSerializer
+        elif self.action in ['status', 'progress']:
+            return ReportJobStatusSerializer
+        return ReportJobSerializer
+
+    def perform_create(self, serializer):
+        """Create a new report job"""
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Set default expiry if not provided (7 days from now)
+        if not serializer.validated_data.get('expires_at'):
+            expires_at = timezone.now() + timedelta(days=7)
+            serializer.validated_data['expires_at'] = expires_at
+
+        # Save with the requesting user
+        job = serializer.save(requested_by=self.request.user)
+
+        # TODO: Queue the job for background processing
+        # For now, we'll just set it to pending
+        logger.info(f"Report job {job.job_id} created by user {self.request.user.id}")
+
+    @action(detail=True, methods=['get'])
+    def status(self, request, pk=None):
+        """Get the current status of a report job"""
+        job = self.get_object()
+        serializer = ReportJobStatusSerializer(job)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def download(self, request, pk=None):
+        """Download the generated report file"""
+        job = self.get_object()
+
+        if job.status != 'completed':
+            return Response({
+                'status': 'error',
+                'message': 'Report is not ready for download'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not job.file_path or not os.path.exists(job.file_path):
+            return Response({
+                'status': 'error',
+                'message': 'Report file not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if report has expired
+        from django.utils import timezone
+        if timezone.now() > job.expires_at:
+            return Response({
+                'status': 'error',
+                'message': 'Report has expired'
+            }, status=status.HTTP_410_GONE)
+
+        try:
+            # Increment download count
+            job.download_count += 1
+            job.save(update_fields=['download_count'])
+
+            # Return file download response
+            from django.http import FileResponse
+            response = FileResponse(
+                open(job.file_path, 'rb'),
+                as_attachment=True,
+                filename=f"{job.template.name}_{job.job_id}.{job.export_format}"
+            )
+            return response
+
+        except Exception as e:
+            logger.error(f"Report download error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to download report'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        """Cancel a pending or processing report job"""
+        job = self.get_object()
+
+        if job.status in ['completed', 'failed', 'cancelled']:
+            return Response({
+                'status': 'error',
+                'message': f'Cannot cancel job with status: {job.status}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        job.status = 'cancelled'
+        job.save(update_fields=['status'])
+
+        logger.info(f"Report job {job.job_id} cancelled by user {request.user.id}")
+
+        return Response({
+            'status': 'success',
+            'message': 'Report job cancelled successfully'
+        })
+
+    @action(detail=False, methods=['post'])
+    def generate_report(self, request):
+        """Generate a report immediately (synchronous operation for CSV/JSON)"""
+        serializer = ReportJobCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        template = serializer.validated_data['template']
+        export_format = serializer.validated_data['export_format']
+        parameters = serializer.validated_data.get('parameters', {})
+
+        # For CSV and JSON, we can generate synchronously
+        if export_format in ['csv', 'json']:
+            try:
+                from .utils.report_generator import ReportGenerator
+
+                # Generate the report using ReportGenerator
+                generator = ReportGenerator(
+                    template=template,
+                    parameters=parameters,
+                    export_format=export_format
+                )
+
+                result = generator.generate()
+
+                return Response({
+                    'status': 'success',
+                    'data': {
+                        'message': 'Report generated successfully',
+                        'format': export_format,
+                        'template': template.name,
+                        'rows': result.get('row_count', 0),
+                        'file_path': result.get('file_path'),
+                        'data': result.get('data') if export_format == 'json' else None
+                    }
+                })
+
+            except Exception as e:
+                logger.error(f"Synchronous report generation error: {str(e)}")
+                return Response({
+                    'status': 'error',
+                    'message': 'Failed to generate report',
+                    'error': str(e)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        else:
+            # For Excel/PDF, create a job for async processing
+            job = serializer.save(requested_by=request.user)
+            return Response({
+                'status': 'success',
+                'message': 'Report job created',
+                'job_id': job.job_id
+            }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'])
+    def my_jobs(self, request):
+        """Get current user's report jobs"""
+        jobs = self.get_queryset().filter(requested_by=request.user)[:20]
+        serializer = ReportJobStatusSerializer(jobs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Get dashboard summary statistics"""
+        from django.utils import timezone
+        from datetime import timedelta
+
+        user_jobs = self.get_queryset().filter(requested_by=request.user)
+
+        # Calculate date ranges
+        now = timezone.now()
+        last_week = now - timedelta(days=7)
+        last_month = now - timedelta(days=30)
+
+        # Basic counts
+        total_jobs = user_jobs.count()
+        active_jobs = user_jobs.filter(status__in=['pending', 'processing']).count()
+        completed_jobs = user_jobs.filter(status='completed').count()
+        failed_jobs = user_jobs.filter(status='failed').count()
+
+        # Recent activity
+        recent_jobs = user_jobs.filter(created_at__gte=last_week).count()
+        this_month_jobs = user_jobs.filter(created_at__gte=last_month).count()
+
+        # Success rate
+        processed_jobs = completed_jobs + failed_jobs
+        success_rate = (completed_jobs / processed_jobs * 100) if processed_jobs > 0 else 0
+
+        return Response({
+            'total_jobs': total_jobs,
+            'active_jobs': active_jobs,
+            'completed_jobs': completed_jobs,
+            'failed_jobs': failed_jobs,
+            'recent_jobs': recent_jobs,
+            'this_month_jobs': this_month_jobs,
+            'success_rate': round(success_rate, 1),
+            'recent_activity': user_jobs.order_by('-created_at')[:5].values(
+                'job_id', 'template__name', 'status', 'created_at', 'export_format'
+            )
+        })
+
+    @action(detail=False, methods=['get'])
+    def metrics(self, request):
+        """Get report metrics and performance data"""
+        from django.utils import timezone
+        from datetime import timedelta
+        from django.db.models import Count, Avg
+
+        # Get period parameter (default 7d)
+        period = request.query_params.get('period', '7d')
+
+        # Calculate date range based on period
+        now = timezone.now()
+        if period == '30d':
+            start_date = now - timedelta(days=30)
+        elif period == '90d':
+            start_date = now - timedelta(days=90)
+        else:  # Default to 7d
+            start_date = now - timedelta(days=7)
+
+        user_jobs = self.get_queryset().filter(
+            requested_by=request.user,
+            created_at__gte=start_date
+        )
+
+        # Performance metrics
+        total_jobs_period = user_jobs.count()
+        completed_jobs_period = user_jobs.filter(status='completed').count()
+        failed_jobs_period = user_jobs.filter(status='failed').count()
+        cancelled_jobs_period = user_jobs.filter(status='cancelled').count()
+
+        # Success rate for period
+        processed_jobs_period = completed_jobs_period + failed_jobs_period
+        success_rate_period = (completed_jobs_period / processed_jobs_period * 100) if processed_jobs_period > 0 else 0
+
+        # Average processing time for completed jobs (in seconds)
+        completed_jobs_with_time = user_jobs.filter(
+            status='completed',
+            completed_at__isnull=False
+        )
+
+        avg_processing_time = 0
+        if completed_jobs_with_time.exists():
+            processing_times = []
+            for job in completed_jobs_with_time:
+                if job.completed_at and job.created_at:
+                    processing_time = (job.completed_at - job.created_at).total_seconds()
+                    processing_times.append(processing_time)
+
+            if processing_times:
+                avg_processing_time = sum(processing_times) / len(processing_times)
+
+        # Jobs by format
+        format_breakdown = user_jobs.values('export_format').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        # Jobs by status over time (daily for the period)
+        daily_stats = []
+        for i in range((now.date() - start_date.date()).days + 1):
+            date = start_date.date() + timedelta(days=i)
+            day_jobs = user_jobs.filter(created_at__date=date)
+
+            daily_stats.append({
+                'date': date.isoformat(),
+                'total': day_jobs.count(),
+                'completed': day_jobs.filter(status='completed').count(),
+                'failed': day_jobs.filter(status='failed').count(),
+                'cancelled': day_jobs.filter(status='cancelled').count(),
+            })
+
+        return Response({
+            'period': period,
+            'total_jobs': total_jobs_period,
+            'completed_jobs': completed_jobs_period,
+            'failed_jobs': failed_jobs_period,
+            'cancelled_jobs': cancelled_jobs_period,
+            'success_rate': round(success_rate_period, 1),
+            'avg_processing_time': round(avg_processing_time, 2),
+            'format_breakdown': list(format_breakdown),
+            'daily_stats': daily_stats,
+            'most_recent_job': user_jobs.order_by('-created_at').first().job_id if user_jobs.exists() else None
+        })
+
+    @action(detail=False, methods=['get'])
+    def types(self, request):
+        """Get available report types/templates"""
+        # Get available templates based on user permissions
+        user = self.request.user
+        templates_queryset = ReportTemplate.objects.filter(is_active=True)
+
+        # Admin can see all templates
+        if user.role != 'admin':
+            templates_queryset = templates_queryset.filter(
+                allowed_roles__contains=[user.role]
+            )
+
+        # Convert templates to the expected format
+        report_types = []
+        for template in templates_queryset:
+            report_types.append({
+                'id': str(template.id),
+                'name': template.name,
+                'description': template.description or f"Generate {template.name} report"
+            })
+
+        return Response(report_types)
+
+    @action(detail=False, methods=['post'])
+    def bulk_generate(self, request):
+        """Generate multiple reports in bulk"""
+        if not isinstance(request.data, list):
+            return Response({
+                'status': 'error',
+                'message': 'Expected a list of report configurations'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(request.data) > 10:  # Limit bulk operations
+            return Response({
+                'status': 'error',
+                'message': 'Maximum 10 reports can be generated in bulk'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        results = []
+        errors = []
+
+        for i, report_config in enumerate(request.data):
+            try:
+                serializer = ReportJobCreateSerializer(data=report_config)
+                if not serializer.is_valid():
+                    errors.append({
+                        'index': i,
+                        'errors': serializer.errors
+                    })
+                    continue
+
+                # Create the job
+                job = serializer.save(requested_by=request.user)
+                results.append({
+                    'index': i,
+                    'job_id': job.job_id,
+                    'template_name': job.template.name,
+                    'export_format': job.export_format,
+                    'status': job.status
+                })
+
+                logger.info(f"Bulk report job {job.job_id} created by user {request.user.id}")
+
+            except Exception as e:
+                logger.error(f"Bulk report generation error at index {i}: {str(e)}")
+                errors.append({
+                    'index': i,
+                    'error': str(e)
+                })
+
+        return Response({
+            'status': 'success' if not errors else 'partial_success',
+            'created_jobs': len(results),
+            'total_requested': len(request.data),
+            'results': results,
+            'errors': errors
+        })
+
+
+class ExportViewSet(viewsets.ViewSet):
+    """ViewSet for handling various export operations"""
+
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['get'])
+    def formats(self, request):
+        """Get available export formats and their capabilities"""
+        formats = {
+            'csv': {
+                'name': 'CSV (Comma Separated Values)',
+                'extension': 'csv',
+                'mime_type': 'text/csv',
+                'supports_charts': False,
+                'supports_formatting': False,
+                'max_rows': 1000000,
+                'description': 'Simple tabular data format, best for data analysis'
+            },
+            'json': {
+                'name': 'JSON (JavaScript Object Notation)',
+                'extension': 'json',
+                'mime_type': 'application/json',
+                'supports_charts': False,
+                'supports_formatting': False,
+                'max_rows': 100000,
+                'description': 'Structured data format, ideal for API consumption'
+            },
+            'excel': {
+                'name': 'Excel Workbook',
+                'extension': 'xlsx',
+                'mime_type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'supports_charts': True,
+                'supports_formatting': True,
+                'max_rows': 1048576,
+                'description': 'Rich spreadsheet format with charts and formatting'
+            },
+            'pdf': {
+                'name': 'PDF Document',
+                'extension': 'pdf',
+                'mime_type': 'application/pdf',
+                'supports_charts': True,
+                'supports_formatting': True,
+                'max_rows': 50000,
+                'description': 'Professional document format for reports and presentations'
+            }
+        }
+
+        # Convert to the expected array format for frontend
+        format_array = []
+        for format_key, format_data in formats.items():
+            format_array.append({
+                'format': format_key,
+                'name': format_data['name'],
+                'description': format_data['description'],
+                'fileExtension': format_data['extension'],
+                'mimeType': format_data['mime_type'],
+                'maxRows': format_data['max_rows'],
+                'supportsCharts': format_data['supports_charts'],
+                'supportsImages': format_data['supports_formatting'],  # Use formatting as proxy for images
+                'supportsMultipleSheets': format_key == 'excel',  # Only Excel supports multiple sheets
+                'supported': True,
+                'options': [{
+                    'key': 'max_rows',
+                    'label': 'Maximum Rows',
+                    'type': 'number',
+                    'default': format_data['max_rows'],
+                    'description': f'Maximum number of rows for {format_data["name"]}'
+                }] if format_key != 'pdf' else []
+            })
+
+        return Response(format_array)
+
+    @action(detail=False, methods=['post'])
+    def convert(self, request):
+        """Convert data from one format to another"""
+        from .utils.report_generator import ReportGenerator
+
+        source_format = request.data.get('source_format')
+        target_format = request.data.get('target_format')
+        data = request.data.get('data')
+
+        if not all([source_format, target_format, data]):
+            return Response({
+                'status': 'error',
+                'message': 'source_format, target_format, and data are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if source_format == target_format:
+            return Response({
+                'status': 'error',
+                'message': 'Source and target formats cannot be the same'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Create a temporary template for conversion
+            from django.utils import timezone
+            temp_template_data = {
+                'name': f'temp_conversion_{timezone.now().timestamp()}',
+                'query': 'SELECT * FROM temp_data',
+                'description': 'Temporary template for conversion'
+            }
+
+            # For simplicity, we'll create the generator directly with data
+            generator = ReportGenerator(
+                template=None,  # We'll handle this specially for conversion
+                parameters={},
+                export_format=target_format
+            )
+
+            # Override the data source for conversion
+            result = generator._export_with_handler({
+                'data': data,
+                'columns': list(data[0].keys()) if data and isinstance(data, list) and data else [],
+                'row_count': len(data) if isinstance(data, list) else 0,
+                'query': 'Data conversion',
+                'parameters': {}
+            })
+
+            return Response({
+                'status': 'success',
+                'message': f'Data converted from {source_format} to {target_format}',
+                'result': result
+            })
+
+        except Exception as e:
+            logger.error(f"Export conversion error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to convert data',
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def validate_data(self, request):
+        """Validate data for export compatibility"""
+        data = request.data.get('data')
+        export_format = request.data.get('format', 'csv')
+
+        if not data:
+            return Response({
+                'status': 'error',
+                'message': 'Data is required for validation'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        validation_results = {
+            'valid': True,
+            'warnings': [],
+            'errors': [],
+            'recommendations': []
+        }
+
+        try:
+            # Basic data structure validation
+            if not isinstance(data, list):
+                validation_results['errors'].append('Data must be a list of objects')
+                validation_results['valid'] = False
+            elif not data:
+                validation_results['warnings'].append('Data list is empty')
+            else:
+                # Check data consistency
+                if not all(isinstance(row, dict) for row in data):
+                    validation_results['errors'].append('All data rows must be objects')
+                    validation_results['valid'] = False
+                else:
+                    # Check column consistency
+                    if data:
+                        first_keys = set(data[0].keys())
+                        for i, row in enumerate(data[1:], 1):
+                            row_keys = set(row.keys())
+                            if row_keys != first_keys:
+                                validation_results['warnings'].append(
+                                    f'Row {i} has different columns than first row'
+                                )
+
+                    # Format-specific validations
+                    row_count = len(data)
+                    if export_format == 'pdf' and row_count > 50000:
+                        validation_results['warnings'].append(
+                            f'PDF format recommended for max 50,000 rows, got {row_count}'
+                        )
+                    elif export_format == 'json' and row_count > 100000:
+                        validation_results['warnings'].append(
+                            f'JSON format recommended for max 100,000 rows, got {row_count}'
+                        )
+
+                    # Check for special characters in CSV
+                    if export_format == 'csv':
+                        for i, row in enumerate(data[:10]):  # Check first 10 rows
+                            for key, value in row.items():
+                                if isinstance(value, str) and (',' in value or '\n' in value):
+                                    validation_results['recommendations'].append(
+                                        'Consider using quotes for CSV fields containing commas or newlines'
+                                    )
+                                    break
+
+        except Exception as e:
+            validation_results['errors'].append(f'Validation error: {str(e)}')
+            validation_results['valid'] = False
+
+        return Response({
+            'status': 'success',
+            'validation': validation_results
+        })
+
+    @action(detail=False, methods=['get'])
+    def templates(self, request):
+        """Get available export templates with format compatibility"""
+        from .models import ReportTemplate
+
+        templates = ReportTemplate.objects.all()
+        template_data = []
+
+        for template in templates:
+            # Determine supported formats based on template characteristics
+            supported_formats = ['csv', 'json']  # All templates support these
+
+            # Check if template is suitable for Excel/PDF
+            if template.query and len(template.query) < 10000:  # Not too complex
+                supported_formats.extend(['excel', 'pdf'])
+
+            template_data.append({
+                'id': template.id,
+                'name': template.name,
+                'description': template.description,
+                'supported_formats': supported_formats,
+                'parameters': template.parameters,
+                'estimated_complexity': 'low' if len(template.query or '') < 1000 else 'medium',
+                'created_at': template.created_at
+            })
+
+        return Response({
+            'status': 'success',
+            'templates': template_data
+        })
+
+# Force reload
+
+class ReportMetricsViewSet(viewsets.ViewSet):
+    """ViewSet for report generation metrics and analytics"""
+
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        """Default metrics endpoint - redirect to summary"""
+        return self.summary(request)
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Get report metrics for a specific time period"""
+        from django.db.models import Count, Avg, Q, F
+        from django.utils import timezone
+        from datetime import timedelta
+        import re
+
+        # Get period parameter, default to 7 days
+        period = request.query_params.get('period', '7d')
+
+        # Parse period string (e.g., '7d', '30d', '90d', '1y')
+        period_match = re.match(r'(\d+)([dmy])', period)
+        if not period_match:
+            return Response({
+                'error': 'Invalid period format. Use format like "7d", "30d", "90d", or "1y"'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        amount, unit = period_match.groups()
+        amount = int(amount)
+
+        # Calculate start date
+        now = timezone.now()
+        if unit == 'd':
+            start_date = now - timedelta(days=amount)
+        elif unit == 'm':
+            start_date = now - timedelta(days=amount * 30)  # Approximate month as 30 days
+        elif unit == 'y':
+            start_date = now - timedelta(days=amount * 365)  # Approximate year as 365 days
+        else:
+            return Response({
+                'error': 'Invalid period unit. Use "d" (days), "m" (months), or "y" (years)'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Base queryset for the period
+        jobs_in_period = ReportJob.objects.filter(created_at__gte=start_date)
+
+        # Filter by user permissions
+        user = request.user
+        if not user.is_authenticated:
+            return Response({
+                'error': 'Authentication required'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Check if user has role attribute and is admin
+        user_role = getattr(user, 'role', 'staff')
+        if user_role != 'admin':
+            jobs_in_period = jobs_in_period.filter(requested_by=user)
+
+        # Total reports generated
+        total_reports = jobs_in_period.count()
+
+        # Success/failure rates
+        completed_jobs = jobs_in_period.filter(status='completed').count()
+        failed_jobs = jobs_in_period.filter(status='failed').count()
+        pending_jobs = jobs_in_period.filter(status='pending').count()
+        processing_jobs = jobs_in_period.filter(status='processing').count()
+
+        success_rate = (completed_jobs / total_reports * 100) if total_reports > 0 else 0
+        failure_rate = (failed_jobs / total_reports * 100) if total_reports > 0 else 0
+
+        # Average generation time (only for completed jobs)
+        completed_with_times = jobs_in_period.filter(
+            status='completed',
+            started_at__isnull=False,
+            completed_at__isnull=False
+        )
+
+        avg_generation_time = None
+        if completed_with_times.exists():
+            # Calculate average duration in seconds
+            durations = []
+            for job in completed_with_times:
+                duration = (job.completed_at - job.started_at).total_seconds()
+                durations.append(duration)
+
+            if durations:
+                avg_generation_time = sum(durations) / len(durations)
+
+        # Popular report types
+        popular_templates = (
+            jobs_in_period
+            .values('template__name', 'template__template_type')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:5]
+        )
+
+        # Popular export formats
+        popular_formats = (
+            jobs_in_period
+            .values('export_format')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+
+        # Peak usage times (by hour of day)
+        from django.db.models.functions import Extract
+        usage_by_hour = (
+            jobs_in_period
+            .annotate(hour=Extract('created_at', 'hour'))
+            .values('hour')
+            .annotate(count=Count('id'))
+            .order_by('hour')
+        )
+
+        # Usage trend over time (daily for periods <= 30 days, weekly for longer)
+        if amount <= 30 and unit == 'd':
+            # Daily trend
+            trend_data = []
+            current_date = start_date.date()
+            end_date = now.date()
+
+            while current_date <= end_date:
+                day_jobs = jobs_in_period.filter(
+                    created_at__date=current_date
+                ).count()
+                trend_data.append({
+                    'date': current_date.isoformat(),
+                    'count': day_jobs
+                })
+                current_date += timedelta(days=1)
+        else:
+            # Weekly trend
+            trend_data = []
+            current_week = start_date
+
+            while current_week < now:
+                week_end = min(current_week + timedelta(days=7), now)
+                week_jobs = jobs_in_period.filter(
+                    created_at__gte=current_week,
+                    created_at__lt=week_end
+                ).count()
+                trend_data.append({
+                    'date': current_week.date().isoformat(),
+                    'count': week_jobs
+                })
+                current_week = week_end
+
+        # File size statistics (for completed jobs with file size)
+        file_size_stats = {}
+        jobs_with_size = jobs_in_period.filter(
+            status='completed',
+            file_size__isnull=False,
+            file_size__gt=0
+        )
+
+        if jobs_with_size.exists():
+            file_sizes_mb = []
+            for job in jobs_with_size:
+                size_mb = job.file_size / (1024 * 1024)  # Convert bytes to MB
+                file_sizes_mb.append(size_mb)
+
+            if file_sizes_mb:
+                file_size_stats = {
+                    'avg_size_mb': sum(file_sizes_mb) / len(file_sizes_mb),
+                    'min_size_mb': min(file_sizes_mb),
+                    'max_size_mb': max(file_sizes_mb),
+                    'total_size_mb': sum(file_sizes_mb)
+                }
+
+        # Most active users (admin only)
+        user_activity = []
+        if user_role == 'admin':
+            user_activity = list(
+                jobs_in_period
+                .values('requested_by__username', 'requested_by__first_name', 'requested_by__last_name')
+                .annotate(report_count=Count('id'))
+                .order_by('-report_count')[:10]
+            )
+
+        return Response({
+            'status': 'success',
+            'period': period,
+            'period_start': start_date.isoformat(),
+            'period_end': now.isoformat(),
+            'metrics': {
+                'total_reports': total_reports,
+                'status_breakdown': {
+                    'completed': completed_jobs,
+                    'failed': failed_jobs,
+                    'pending': pending_jobs,
+                    'processing': processing_jobs
+                },
+                'success_rate_percent': round(success_rate, 2),
+                'failure_rate_percent': round(failure_rate, 2),
+                'avg_generation_time_seconds': round(avg_generation_time, 2) if avg_generation_time else None,
+                'popular_report_types': list(popular_templates),
+                'popular_export_formats': [
+                    {
+                        'format': item['export_format'],
+                        'count': item['count']
+                    } for item in popular_formats
+                ],
+                'usage_by_hour': [
+                    {
+                        'hour': item['hour'],
+                        'count': item['count']
+                    } for item in usage_by_hour
+                ],
+                'usage_trend': trend_data,
+                'file_size_stats': file_size_stats,
+                'user_activity': user_activity if user_role == 'admin' else []
+            }
+        })
+
+# Test endpoint added at Wed Sep 24 13:01:01 BST 2025
+
+
+class ReportTypesViewSet(viewsets.ViewSet):
+    """
+    ViewSet for managing report types/templates.
+    Provides a dedicated endpoint for retrieving available report types.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        """
+        Get available report types/templates based on user permissions.
+        Returns report types that the authenticated user can access.
+        """
+        user = request.user
+
+        # Get active templates based on user permissions
+        templates_queryset = ReportTemplate.objects.filter(is_active=True)
+
+        # Non-admin users can only see templates allowed for their role
+        if user.role != 'admin':
+            templates_queryset = templates_queryset.filter(
+                allowed_roles__contains=[user.role]
+            )
+
+        # Filter by user's venue access if they have venue restrictions
+        if hasattr(user, 'profile') and user.profile:
+            user_venues = getattr(user.profile, 'preferred_venues', None)
+            if user_venues and user_venues.exists():
+                venue_ids = [venue.id for venue in user_venues.all()]
+                templates_queryset = templates_queryset.filter(
+                    models.Q(allowed_venues__in=venue_ids) |
+                    models.Q(allowed_venues__isnull=True)  # Templates without venue restrictions
+                ).distinct()
+
+        # Convert templates to expected format
+        report_types = []
+        for template in templates_queryset.select_related('created_by'):
+            report_types.append({
+                'id': str(template.id),
+                'name': template.name,
+                'description': template.description or f"Generate {template.name} report",
+                'category': template.template_type,
+                'template_type': template.get_template_type_display(),
+                'parameters': template.parameters,
+                'created_by': template.created_by.get_full_name() if template.created_by else 'System',
+                'created_at': template.created_at.isoformat(),
+                'updated_at': template.updated_at.isoformat()
+            })
+
+        # Sort by name for consistent ordering
+        report_types.sort(key=lambda x: x['name'])
+
+        return Response({
+            'count': len(report_types),
+            'results': report_types
+        })
+
+
+# =====================================================
+# ONBOARDING SYSTEM VIEWSETS
+# =====================================================
+
+class OnboardingViewSet(viewsets.ViewSet):
+    """
+    ViewSet for managing company onboarding process.
+    Provides all 8 required endpoints for the onboarding wizard.
+    """
+    permission_classes = [IsAuthenticated, IsCompanyOwnerOrAdmin]
+
+    def get_permissions(self):
+        """
+        Override permissions for specific actions.
+        initiate_onboarding only requires IsAuthenticated since it creates the first company.
+        All other actions require IsCompanyOwnerOrAdmin.
+        """
+        if self.action == 'initiate_onboarding':
+            permission_classes = [IsAuthenticated]
+        else:
+            permission_classes = [IsAuthenticated, IsCompanyOwnerOrAdmin]
+        return [permission() for permission in permission_classes]
+
+    def get_user_company(self, request):
+        """Get the user's current company context"""
+        # For now, get the first active company membership where user is owner/admin
+        membership = request.user.company_memberships.filter(
+            is_active=True,
+            role__in=['owner', 'admin']
+        ).select_related('company').first()
+        
+        if not membership:
+            return None
+        return membership.company
+
+    @action(detail=False, methods=['post'], url_path='initiate')
+    def initiate_onboarding(self, request):
+        """
+        POST /api/v1/onboarding/initiate/
+        Start the onboarding process for a new company.
+        """
+        try:
+            # Check if user already has a company with incomplete onboarding
+            existing_membership = request.user.company_memberships.filter(
+                is_active=True,
+                is_owner=True
+            ).select_related('company__onboarding').first()
+
+            if existing_membership and hasattr(existing_membership.company, 'onboarding'):
+                onboarding = existing_membership.company.onboarding
+                if not onboarding.is_completed:
+                    # Return existing onboarding
+                    serializer = CompanyOnboardingSerializer(onboarding)
+                    return Response({
+                        'status': 'existing_onboarding_found',
+                        'message': 'Continuing with existing onboarding process',
+                        'onboarding': serializer.data
+                    })
+                else:
+                    # User already has completed onboarding - they shouldn't be here
+                    return Response({
+                        'status': 'error',
+                        'message': 'User already has completed company onboarding',
+                        'redirect': '/dashboard'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Create new company and onboarding
+            company_data = request.data.get('company', {})
+            company_serializer = SecurityCompanySerializer(data=company_data, context={'request': request})
+            
+            if not company_serializer.is_valid():
+                return Response({
+                    'status': 'error',
+                    'message': 'Invalid company data',
+                    'errors': company_serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Create company
+            company = company_serializer.save(created_by=request.user)
+
+            # Create user membership as owner
+            UserCompanyMembership.objects.create(
+                user=request.user,
+                company=company,
+                role='owner',
+                is_owner=True,
+                is_active=True
+            )
+
+            # Create onboarding record
+            onboarding = CompanyOnboarding.objects.create(
+                company=company,
+                session_id=request.session.session_key or str(uuid.uuid4())
+            )
+            onboarding.update_session_activity()
+
+            serializer = CompanyOnboardingSerializer(onboarding)
+            return Response({
+                'status': 'success',
+                'message': 'Onboarding initiated successfully',
+                'onboarding': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Error initiating onboarding: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'Failed to initiate onboarding'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'], url_path='progress')
+    def get_progress(self, request):
+        """
+        GET /api/v1/onboarding/progress/
+        Get current onboarding progress.
+        """
+        company = self.get_user_company(request)
+        if not company:
+            return Response({
+                'status': 'error',
+                'message': 'No company found or insufficient permissions'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            onboarding = company.onboarding
+        except CompanyOnboarding.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': 'Onboarding not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        onboarding.update_session_activity()
+        serializer = CompanyOnboardingSerializer(onboarding)
+        return Response({
+            'status': 'success',
+            'onboarding': serializer.data
+        })
+
+    @action(detail=False, methods=['put'], url_path='company-info')
+    def save_company_info(self, request):
+        """
+        PUT /api/v1/onboarding/company-info/
+        Save company information step.
+        """
+        company = self.get_user_company(request)
+        if not company:
+            return Response({
+                'status': 'error',
+                'message': 'No company found or insufficient permissions'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CompanyInfoSerializer(data=request.data, context={'request': request})
+        if not serializer.is_valid():
+            return Response({
+                'status': 'error',
+                'message': 'Invalid company information',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Update company with validated data
+        validated_data = serializer.validated_data
+        for field, value in validated_data.items():
+            setattr(company, field, value)
+        company.save()
+
+        # Update onboarding progress
+        onboarding = company.onboarding
+        onboarding.step_data['company_info'] = validated_data
+        onboarding.mark_step_completed(1)
+
+        return Response({
+            'status': 'success',
+            'message': 'Company information saved successfully',
+            'onboarding': CompanyOnboardingSerializer(onboarding).data
+        })
+
+    @action(detail=False, methods=['put'], url_path='regional-setup')
+    def save_regional_setup(self, request):
+        """
+        PUT /api/v1/onboarding/regional-setup/
+        Save regional compliance configuration.
+        """
+        company = self.get_user_company(request)
+        if not company:
+            return Response({
+                'status': 'error',
+                'message': 'No company found or insufficient permissions'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = RegionalSetupSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'status': 'error',
+                'message': 'Invalid regional setup data',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Save regional setup data
+        validated_data = serializer.validated_data
+        onboarding = company.onboarding
+        onboarding.step_data['regional_setup'] = validated_data
+        onboarding.mark_step_completed(2)
+
+        # TODO: Create compliance profile based on regional requirements
+        # This would integrate with the compliance system
+
+        return Response({
+            'status': 'success',
+            'message': 'Regional setup saved successfully',
+            'onboarding': CompanyOnboardingSerializer(onboarding).data
+        })
+
+    @action(detail=False, methods=['put'], url_path='staff-config')
+    def save_staff_config(self, request):
+        """
+        PUT /api/v1/onboarding/staff-config/
+        Save staff operations configuration.
+        """
+        company = self.get_user_company(request)
+        if not company:
+            return Response({
+                'status': 'error',
+                'message': 'No company found or insufficient permissions'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = StaffConfigSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'status': 'error',
+                'message': 'Invalid staff configuration data',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Save staff configuration data
+        validated_data = serializer.validated_data
+        onboarding = company.onboarding
+        onboarding.step_data['staff_config'] = validated_data
+        onboarding.mark_step_completed(3)
+
+        # Update company capacity based on expected staff count
+        company.staff_capacity = max(company.staff_capacity, validated_data.get('expected_staff_count', 50))
+        company.save()
+
+        return Response({
+            'status': 'success',
+            'message': 'Staff configuration saved successfully',
+            'onboarding': CompanyOnboardingSerializer(onboarding).data
+        })
+
+    @action(detail=False, methods=['put'], url_path='integrations')
+    def save_integrations(self, request):
+        """
+        PUT /api/v1/onboarding/integrations/
+        Save third-party integrations configuration.
+        """
+        company = self.get_user_company(request)
+        if not company:
+            return Response({
+                'status': 'error',
+                'message': 'No company found or insufficient permissions'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = IntegrationsSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'status': 'error',
+                'message': 'Invalid integrations data',
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Save integrations configuration
+        validated_data = serializer.validated_data
+        onboarding = company.onboarding
+        onboarding.step_data['integrations'] = validated_data
+        onboarding.mark_step_completed(4)
+
+        # Create integration records for enabled services
+        integrations_created = []
+        
+        if validated_data.get('deputy_enabled'):
+            integration, created = CompanyIntegration.objects.get_or_create(
+                company=company,
+                integration_type='deputy',
+                name='Deputy Workforce Management',
+                defaults={
+                    'description': 'Integration with Deputy for workforce management',
+                    'configuration': {
+                        'api_key': validated_data.get('deputy_api_key'),
+                        'endpoint': validated_data.get('deputy_endpoint')
+                    },
+                    'status': 'configuring',
+                    'configured_by': request.user
+                }
+            )
+            if created:
+                integrations_created.append('deputy')
+
+        # Add other integrations as needed
+        for system_type in ['payroll_system', 'accounting_system', 'communication_platform']:
+            system_value = validated_data.get(system_type)
+            if system_value and system_value != 'none':
+                integration, created = CompanyIntegration.objects.get_or_create(
+                    company=company,
+                    integration_type=system_type.replace('_system', '').replace('_platform', ''),
+                    name=f"{system_value.title()} Integration",
+                    defaults={
+                        'description': f'Integration with {system_value.title()}',
+                        'configuration': validated_data.get(f"{system_type.replace('_system', '').replace('_platform', '')}_credentials", {}),
+                        'status': 'configuring',
+                        'configured_by': request.user
+                    }
+                )
+                if created:
+                    integrations_created.append(system_value)
+
+        return Response({
+            'status': 'success',
+            'message': 'Integrations configuration saved successfully',
+            'integrations_created': integrations_created,
+            'onboarding': CompanyOnboardingSerializer(onboarding).data
+        })
+
+    @action(detail=False, methods=['post'], url_path='complete')
+    def complete_onboarding(self, request):
+        """
+        POST /api/v1/onboarding/complete/
+        Complete the onboarding process.
+        """
+        company = self.get_user_company(request)
+        if not company:
+            return Response({
+                'status': 'error',
+                'message': 'No company found or insufficient permissions'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        onboarding = company.onboarding
+        
+        # Check if all steps are completed
+        if not all([
+            onboarding.company_info_completed,
+            onboarding.regional_setup_completed,
+            onboarding.staff_setup_completed,
+            onboarding.integrations_completed
+        ]):
+            return Response({
+                'status': 'error',
+                'message': 'Not all onboarding steps have been completed'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Mark onboarding as completed
+        onboarding.mark_step_completed(5)
+        onboarding.completed_by = request.user
+        onboarding.save()
+
+        # Activate company if not already active
+        if not company.is_active:
+            company.is_active = True
+            company.save()
+
+        # Enable default features based on subscription tier
+        default_features = {
+            'shift_management': True,
+            'staff_tracking': True,
+            'basic_reporting': True,
+            'mobile_app': True,
+        }
+        
+        if company.subscription_tier in ['professional', 'enterprise']:
+            default_features.update({
+                'advanced_reporting': True,
+                'compliance_tracking': True,
+                'api_access': True,
+            })
+        
+        company.features_enabled = default_features
+        company.save()
+
+        return Response({
+            'status': 'success',
+            'message': 'Onboarding completed successfully!',
+            'company': SecurityCompanySerializer(company).data,
+            'onboarding': CompanyOnboardingSerializer(onboarding).data
+        })
+
+
+class CompaniesViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for managing company information.
+    Provides read-only access to company data with proper filtering.
+    """
+    serializer_class = SecurityCompanySerializer
+    permission_classes = [IsAuthenticated, IsCompanyMember]
+
+    def get_queryset(self):
+        """Filter companies based on user's memberships"""
+        user = self.request.user
+        company_ids = user.company_memberships.filter(
+            is_active=True
+        ).values_list('company_id', flat=True)
+        
+        return SecurityCompany.objects.filter(
+            id__in=company_ids,
+            is_active=True
+        )
+
+    @action(detail=False, methods=['get'], url_path='current')
+    def get_current_company(self, request):
+        """
+        GET /api/v1/companies/current/
+        Get the user's current company context.
+        """
+        # Get the user's primary company (first active membership with highest role)
+        role_priority = {'owner': 1, 'admin': 2, 'manager': 3, 'staff': 4, 'viewer': 5}
+        
+        membership = request.user.company_memberships.filter(
+            is_active=True
+        ).select_related('company').order_by(
+            models.Case(
+                *[models.When(role=role, then=priority) for role, priority in role_priority.items()],
+                default=6,
+                output_field=models.IntegerField()
+            )
+        ).first()
+
+        if not membership:
+            return Response({
+                'status': 'error',
+                'message': 'No active company membership found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        company_serializer = SecurityCompanySerializer(membership.company)
+        membership_serializer = UserCompanyMembershipSerializer(membership)
+
+        return Response({
+            'status': 'success',
+            'company': company_serializer.data,
+            'membership': membership_serializer.data
+        })

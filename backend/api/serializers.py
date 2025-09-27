@@ -6,7 +6,11 @@ from .models import (
     Shift, FireExitCheck, CapacityCheck, ToiletCheck,
     ShiftExchange, OpenShiftRequest, Invoice, InvoiceItem, PayRate, DeputyConfig,
     DeputyEmployee, DeputyTimesheet, ShiftTemplate, SystemSettings,
-    EmploymentType, RecruitmentApplication, EnforcementVisit
+    EmploymentType, RecruitmentApplication, EnforcementVisit,
+    WorkingHoursRegulation, ComplianceProfile, ComplianceViolation, WorkingHoursMetrics,
+    ReportTemplate, ReportJob,
+    # Onboarding models
+    SecurityCompany, CompanyOnboarding, CompanyIntegration, UserCompanyMembership
 )
 
 User = get_user_model() # Ensure User model is fetched
@@ -668,5 +672,1396 @@ class EnforcementVisitSerializer(serializers.ModelSerializer):
         for field in required_fields:
             if not data.get(field):
                 raise serializers.ValidationError({field: f"{field.replace('_', ' ').title()} is required"})
+
+        return data
+
+
+# =============================================================================
+# COMPLIANCE SYSTEM SERIALIZERS
+# =============================================================================
+
+class WorkingHoursRegulationSerializer(serializers.ModelSerializer):
+    """Serializer for WorkingHoursRegulation model"""
+
+    country_name_display = serializers.CharField(source='__str__', read_only=True)
+
+    class Meta:
+        model = WorkingHoursRegulation
+        fields = [
+            'id', 'country_code', 'country_name', 'country_name_display',
+            'standard_weekly_hours', 'standard_daily_hours',
+            'overtime_threshold_hours', 'overtime_multiplier_1',
+            'overtime_threshold_2', 'overtime_multiplier_2',
+            'max_daily_hours', 'max_weekly_hours', 'max_consecutive_days',
+            'min_rest_between_shifts_hours', 'min_weekly_rest_hours',
+            'break_duration_minutes', 'break_trigger_hours',
+            'special_rules', 'security_sector_overrides', 'break_requirements',
+            'night_shift_rules', 'opt_out_provisions', 'state_overrides',
+            'industry_specific_rules', 'last_regulatory_update', 'regulatory_source',
+            'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'country_name_display', 'last_regulatory_update']
+
+    def validate_country_code(self, value):
+        """Validate country code format"""
+        if not value or len(value.strip()) < 2:
+            raise serializers.ValidationError("Country code must be at least 2 characters")
+        return value.upper().strip()
+
+    def validate(self, data):
+        """Validate regulation data consistency"""
+        errors = {}
+
+        # Standard hours validation
+        if data.get('standard_daily_hours', 0) > data.get('max_daily_hours', 24):
+            errors['standard_daily_hours'] = "Standard daily hours cannot exceed maximum daily hours"
+
+        if data.get('standard_weekly_hours', 0) > data.get('max_weekly_hours', 168):
+            errors['standard_weekly_hours'] = "Standard weekly hours cannot exceed maximum weekly hours"
+
+        # Overtime threshold validation
+        overtime_1 = data.get('overtime_threshold_hours')
+        overtime_2 = data.get('overtime_threshold_2')
+        if overtime_1 and overtime_2 and overtime_2 <= overtime_1:
+            errors['overtime_threshold_2'] = "Second overtime threshold must be higher than first"
+
+        # Break validation
+        if data.get('break_trigger_hours', 0) > data.get('max_daily_hours', 24):
+            errors['break_trigger_hours'] = "Break trigger hours cannot exceed maximum daily hours"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+class ComplianceProfileSerializer(serializers.ModelSerializer):
+    """Serializer for ComplianceProfile model"""
+
+    working_hours_regulation_data = WorkingHoursRegulationSerializer(
+        source='working_hours_regulation', read_only=True
+    )
+    effective_max_daily_hours = serializers.DecimalField(
+        max_digits=3, decimal_places=1, read_only=True, source='get_max_daily_hours'
+    )
+    effective_max_weekly_hours = serializers.DecimalField(
+        max_digits=4, decimal_places=1, read_only=True, source='get_max_weekly_hours'
+    )
+    effective_max_consecutive_days = serializers.IntegerField(
+        read_only=True, source='get_max_consecutive_days'
+    )
+
+    class Meta:
+        model = ComplianceProfile
+        fields = [
+            'id', 'name', 'description', 'working_hours_regulation',
+            'working_hours_regulation_data', 'override_max_daily_hours',
+            'override_max_weekly_hours', 'override_max_consecutive_days',
+            'daily_hours_warning_threshold', 'weekly_hours_warning_threshold',
+            'consecutive_days_warning_threshold', 'auto_approve_overtime',
+            'auto_approve_extended_hours', 'require_manager_approval',
+            'notify_on_warnings', 'notify_on_violations', 'notification_recipients',
+            'grace_period_minutes', 'allow_break_flexibility', 'custom_rules',
+            'exception_roles', 'is_active', 'effective_max_daily_hours',
+            'effective_max_weekly_hours', 'effective_max_consecutive_days',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'created_at', 'updated_at', 'working_hours_regulation_data',
+            'effective_max_daily_hours', 'effective_max_weekly_hours',
+            'effective_max_consecutive_days'
+        ]
+
+    def validate(self, data):
+        """Validate compliance profile settings"""
+        errors = {}
+
+        # Validate overrides don't exceed regulation maximums
+        regulation = data.get('working_hours_regulation')
+        if regulation:
+            if data.get('override_max_daily_hours'):
+                if data['override_max_daily_hours'] > regulation.max_daily_hours:
+                    errors['override_max_daily_hours'] = f"Cannot exceed regulation maximum of {regulation.max_daily_hours} hours"
+
+            if data.get('override_max_weekly_hours'):
+                if data['override_max_weekly_hours'] > regulation.max_weekly_hours:
+                    errors['override_max_weekly_hours'] = f"Cannot exceed regulation maximum of {regulation.max_weekly_hours} hours"
+
+            if data.get('override_max_consecutive_days'):
+                if data['override_max_consecutive_days'] > regulation.max_consecutive_days:
+                    errors['override_max_consecutive_days'] = f"Cannot exceed regulation maximum of {regulation.max_consecutive_days} days"
+
+        # Validate warning thresholds
+        daily_threshold = data.get('daily_hours_warning_threshold', 80)
+        if daily_threshold < 50 or daily_threshold >= 100:
+            errors['daily_hours_warning_threshold'] = "Warning threshold must be between 50% and 99%"
+
+        weekly_threshold = data.get('weekly_hours_warning_threshold', 85)
+        if weekly_threshold < 50 or weekly_threshold >= 100:
+            errors['weekly_hours_warning_threshold'] = "Warning threshold must be between 50% and 99%"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+class ComplianceViolationSerializer(serializers.ModelSerializer):
+    """Serializer for ComplianceViolation model"""
+
+    user_data = serializers.SerializerMethodField()
+    shift_data = serializers.SerializerMethodField()
+    violation_type_display = serializers.CharField(source='get_violation_type_display', read_only=True)
+    severity_display = serializers.CharField(source='get_severity_display', read_only=True)
+    resolution_status_display = serializers.CharField(source='get_resolution_status_display', read_only=True)
+    duration_hours = serializers.DecimalField(max_digits=6, decimal_places=2, read_only=True, source='duration_hours')
+    is_resolved = serializers.BooleanField(read_only=True, source='is_resolved')
+    resolved_by_name = serializers.CharField(source='resolved_by.get_full_name', read_only=True)
+    approved_by_name = serializers.CharField(source='approved_by.get_full_name', read_only=True)
+
+    class Meta:
+        model = ComplianceViolation
+        fields = [
+            'id', 'user', 'user_data', 'violation_type', 'violation_type_display',
+            'severity', 'severity_display', 'period_start', 'period_end',
+            'shift', 'shift_data', 'description', 'calculated_values',
+            'threshold_exceeded', 'evidence_data', 'system_generated',
+            'resolution_status', 'resolution_status_display', 'resolution_notes',
+            'resolved_by', 'resolved_by_name', 'resolved_at', 'exception_granted',
+            'exception_reason', 'approved_by', 'approved_by_name', 'financial_impact',
+            'compliance_score_impact', 'duration_hours', 'is_resolved',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'user_data', 'shift_data', 'violation_type_display',
+            'severity_display', 'resolution_status_display', 'duration_hours',
+            'is_resolved', 'resolved_by_name', 'approved_by_name', 'created_at',
+            'updated_at'
+        ]
+
+    def get_user_data(self, obj):
+        """Get basic user information"""
+        if obj.user:
+            return {
+                'id': obj.user.id,
+                'username': obj.user.username,
+                'full_name': obj.user.get_full_name(),
+                'email': obj.user.email
+            }
+        return None
+
+    def get_shift_data(self, obj):
+        """Get basic shift information if available"""
+        if obj.shift:
+            return {
+                'id': obj.shift.id,
+                'venue_name': obj.shift.venue.name if obj.shift.venue else None,
+                'start_time': obj.shift.start_time,
+                'end_time': obj.shift.end_time,
+                'status': obj.shift.status
+            }
+        return None
+
+    def validate(self, data):
+        """Validate violation data"""
+        errors = {}
+
+        # Validate period dates
+        period_start = data.get('period_start')
+        period_end = data.get('period_end')
+        if period_start and period_end and period_start >= period_end:
+            errors['period_end'] = "End time must be after start time"
+
+        # Validate threshold exceeded is provided for appropriate violation types
+        violation_type = data.get('violation_type')
+        threshold_types = ['daily_overtime', 'weekly_overtime', 'consecutive_days']
+        if violation_type in threshold_types and not data.get('threshold_exceeded'):
+            errors['threshold_exceeded'] = f"Threshold exceeded value required for {violation_type} violations"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+class ComplianceViolationResolveSerializer(serializers.Serializer):
+    """Serializer for resolving compliance violations"""
+
+    resolution_notes = serializers.CharField(max_length=1000, required=False, allow_blank=True)
+    exception_granted = serializers.BooleanField(default=False)
+    exception_reason = serializers.CharField(
+        max_length=500, required=False, allow_blank=True,
+        help_text="Required if exception_granted is True"
+    )
+
+    def validate(self, data):
+        """Validate resolution data"""
+        if data.get('exception_granted') and not data.get('exception_reason'):
+            raise serializers.ValidationError({
+                'exception_reason': 'Exception reason is required when granting an exception'
+            })
+        return data
+
+
+class WorkingHoursMetricsSerializer(serializers.ModelSerializer):
+    """Serializer for WorkingHoursMetrics model"""
+
+    user_data = serializers.SerializerMethodField()
+    period_type_display = serializers.CharField(source='get_period_type_display', read_only=True)
+    overtime_percentage = serializers.SerializerMethodField()
+    completion_rate = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WorkingHoursMetrics
+        fields = [
+            'id', 'user', 'user_data', 'period_type', 'period_type_display',
+            'period_start', 'period_end', 'total_hours_worked', 'regular_hours',
+            'overtime_hours', 'break_hours', 'total_shifts', 'completed_shifts',
+            'cancelled_shifts', 'no_show_shifts', 'late_arrivals', 'early_departures',
+            'average_shift_length', 'longest_shift_hours', 'shortest_shift_hours',
+            'violation_count', 'warning_count', 'compliance_score',
+            'overtime_cost', 'penalty_cost', 'overtime_percentage', 'completion_rate',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'user_data', 'period_type_display', 'overtime_percentage',
+            'completion_rate', 'created_at', 'updated_at'
+        ]
+
+    def get_user_data(self, obj):
+        """Get basic user information"""
+        if obj.user:
+            return {
+                'id': obj.user.id,
+                'username': obj.user.username,
+                'full_name': obj.user.get_full_name()
+            }
+        return None
+
+    def get_overtime_percentage(self, obj):
+        """Calculate overtime as percentage of total hours"""
+        if obj.total_hours_worked > 0:
+            return round((float(obj.overtime_hours) / float(obj.total_hours_worked)) * 100, 2)
+        return 0
+
+    def get_completion_rate(self, obj):
+        """Calculate shift completion rate"""
+        if obj.total_shifts > 0:
+            return round((obj.completed_shifts / obj.total_shifts) * 100, 2)
+        return 0
+
+
+class ComplianceCheckSerializer(serializers.Serializer):
+    """Serializer for real-time compliance checking"""
+
+    user_id = serializers.IntegerField()
+    shift_start = serializers.DateTimeField()
+    shift_end = serializers.DateTimeField()
+    venue_id = serializers.IntegerField(required=False)
+
+    def validate(self, data):
+        """Validate compliance check data"""
+        errors = {}
+
+        # Validate time period
+        if data['shift_start'] >= data['shift_end']:
+            errors['shift_end'] = "Shift end must be after shift start"
+
+        # Validate user exists
+        try:
+            User.objects.get(id=data['user_id'])
+        except User.DoesNotExist:
+            errors['user_id'] = "User not found"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+class BulkViolationResolveSerializer(serializers.Serializer):
+    """Serializer for bulk violation resolution"""
+
+    violation_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        min_length=1,
+        help_text="List of violation IDs to resolve"
+    )
+    resolution_notes = serializers.CharField(
+        max_length=1000, required=False, allow_blank=True,
+        help_text="Notes applied to all violations"
+    )
+    exception_granted = serializers.BooleanField(default=False)
+    exception_reason = serializers.CharField(
+        max_length=500, required=False, allow_blank=True,
+        help_text="Reason for exception (required if exception_granted is True)"
+    )
+
+    def validate(self, data):
+        """Validate bulk resolution data"""
+        errors = {}
+
+        # Check if exception reason is provided when needed
+        if data.get('exception_granted') and not data.get('exception_reason'):
+            errors['exception_reason'] = 'Exception reason is required when granting exceptions'
+
+        # Validate all violation IDs exist and are not already resolved
+        violation_ids = data['violation_ids']
+        existing_violations = ComplianceViolation.objects.filter(
+            id__in=violation_ids
+        ).values_list('id', flat=True)
+
+        missing_ids = set(violation_ids) - set(existing_violations)
+        if missing_ids:
+            errors['violation_ids'] = f"Violations not found: {list(missing_ids)}"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+# =============================================================================
+# REGIONAL COMPLIANCE API SERIALIZERS
+# =============================================================================
+
+class RegionDetectionSerializer(serializers.Serializer):
+    """Serializer for region detection request"""
+
+    venue_id = serializers.IntegerField(required=False, help_text="Venue ID for location-based detection")
+    lat = serializers.DecimalField(
+        max_digits=18, decimal_places=15, required=False,
+        help_text="Latitude for coordinates-based detection"
+    )
+    lng = serializers.DecimalField(
+        max_digits=18, decimal_places=15, required=False,
+        help_text="Longitude for coordinates-based detection"
+    )
+    ip_address = serializers.CharField(
+        required=False, max_length=15, help_text="IP address for IP-based detection"
+    )
+
+    def validate(self, data):
+        """Ensure at least one detection method is provided"""
+        if not any([data.get('venue_id'),
+                   all([data.get('lat'), data.get('lng')]),
+                   data.get('ip_address')]):
+            raise serializers.ValidationError(
+                "Must provide venue_id, coordinates (lat+lng), or ip_address"
+            )
+        return data
+
+
+class RegionDetectionResponseSerializer(serializers.Serializer):
+    """Serializer for region detection response"""
+
+    region_code = serializers.CharField(help_text="Detected region code (e.g., 'UK', 'US-CA', 'EU-FR')")
+    country_code = serializers.CharField(help_text="ISO country code")
+    confidence_score = serializers.FloatField(help_text="Detection confidence (0.0-1.0)")
+    detection_method = serializers.ChoiceField(
+        choices=[
+            ('venue', 'Venue Location'),
+            ('coordinates', 'GPS Coordinates'),
+            ('ip_geolocation', 'IP Geolocation'),
+            ('fallback', 'Default Region')
+        ]
+    )
+    regulation_id = serializers.IntegerField(help_text="Working hours regulation ID")
+    notes = serializers.CharField(required=False, help_text="Additional detection notes")
+
+
+class PresetApplicationSerializer(serializers.Serializer):
+    """Serializer for applying regional presets"""
+
+    region_code = serializers.CharField(help_text="Region code to apply (e.g., 'UK', 'US-CA', 'EU-FR')")
+    profile_id = serializers.IntegerField(help_text="Compliance profile ID to update")
+    override_existing = serializers.BooleanField(
+        default=False, help_text="Whether to override existing custom settings"
+    )
+
+    def validate_region_code(self, value):
+        """Validate region code format"""
+        if not value or len(value.strip()) < 2:
+            raise serializers.ValidationError("Invalid region code format")
+        return value.upper().strip()
+
+
+class PresetApplicationResponseSerializer(serializers.Serializer):
+    """Serializer for preset application response"""
+
+    success = serializers.BooleanField()
+    profile_id = serializers.IntegerField()
+    region_code = serializers.CharField()
+    applied_settings = serializers.JSONField(help_text="Summary of applied settings")
+    warnings = serializers.ListField(
+        child=serializers.CharField(), required=False,
+        help_text="Non-critical warnings during application"
+    )
+
+
+class RegulationComparisonSerializer(serializers.Serializer):
+    """Serializer for multi-region regulation comparison"""
+
+    regions = serializers.ListField(
+        child=serializers.CharField(),
+        min_length=2, max_length=10,
+        help_text="List of region codes to compare"
+    )
+    include_sia_requirements = serializers.BooleanField(
+        default=True, help_text="Include SIA licensing requirements in comparison"
+    )
+    include_break_rules = serializers.BooleanField(
+        default=True, help_text="Include break and rest requirements"
+    )
+    include_overtime = serializers.BooleanField(
+        default=True, help_text="Include overtime calculations"
+    )
+
+    def validate_regions(self, value):
+        """Validate all region codes"""
+        validated_regions = []
+        for region in value:
+            if not region or len(region.strip()) < 2:
+                raise serializers.ValidationError(f"Invalid region code: {region}")
+            validated_regions.append(region.upper().strip())
+        return validated_regions
+
+
+class RegulationComparisonResponseSerializer(serializers.Serializer):
+    """Serializer for regulation comparison response"""
+
+    comparison_matrix = serializers.JSONField(help_text="Matrix of regulation differences")
+    key_differences = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Summary of major differences"
+    )
+    sia_requirements = serializers.JSONField(required=False, help_text="SIA licensing comparison")
+    opt_out_provisions = serializers.JSONField(required=False, help_text="Working time opt-out rules")
+    generated_at = serializers.DateTimeField(help_text="Comparison generation timestamp")
+
+
+class ScheduleValidationSerializer(serializers.Serializer):
+    """Serializer for schedule validation request"""
+
+    user_id = serializers.IntegerField(help_text="Staff member ID")
+    shifts = serializers.ListField(
+        child=serializers.JSONField(),
+        help_text="List of shift objects to validate"
+    )
+    venue_id = serializers.IntegerField(required=False, help_text="Venue for location-based rules")
+    validation_date = serializers.DateField(required=False, help_text="Date to validate against")
+
+    def validate_shifts(self, value):
+        """Validate shift data structure"""
+        required_fields = ['start', 'end', 'role']
+        for i, shift in enumerate(value):
+            for field in required_fields:
+                if field not in shift:
+                    raise serializers.ValidationError(
+                        f"Shift {i+1} missing required field: {field}"
+                    )
+        return value
+
+
+class ScheduleValidationResponseSerializer(serializers.Serializer):
+    """Serializer for schedule validation response"""
+
+    is_compliant = serializers.BooleanField(help_text="Overall compliance status")
+    violations = serializers.ListField(
+        child=serializers.JSONField(),
+        help_text="List of compliance violations found"
+    )
+    warnings = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Non-critical warnings"
+    )
+    total_hours = serializers.DecimalField(
+        max_digits=5, decimal_places=2,
+        help_text="Total scheduled hours"
+    )
+    overtime_hours = serializers.DecimalField(
+        max_digits=5, decimal_places=2,
+        help_text="Overtime hours calculated"
+    )
+    regulation_applied = serializers.CharField(help_text="Regulation used for validation")
+
+
+class RegionalSettingsSerializer(serializers.Serializer):
+    """Serializer for regional settings management"""
+
+    venue_id = serializers.IntegerField(required=False, help_text="Venue ID for venue-level settings")
+    staff_id = serializers.IntegerField(required=False, help_text="Staff ID for individual overrides")
+    region_code = serializers.CharField(help_text="Region code for settings")
+    max_daily_hours_override = serializers.DecimalField(
+        max_digits=3, decimal_places=1, required=False,
+        help_text="Override maximum daily hours"
+    )
+    max_weekly_hours_override = serializers.DecimalField(
+        max_digits=4, decimal_places=1, required=False,
+        help_text="Override maximum weekly hours"
+    )
+    break_requirements_override = serializers.JSONField(
+        required=False, help_text="Custom break requirements"
+    )
+    security_clearance_required = serializers.BooleanField(
+        default=False, help_text="Whether security clearance is required"
+    )
+    sia_license_required = serializers.BooleanField(
+        default=True, help_text="Whether SIA license is required"
+    )
+    custom_rules = serializers.JSONField(
+        default=dict, help_text="Additional custom compliance rules"
+    )
+
+
+class RegionalSettingsResponseSerializer(serializers.Serializer):
+    """Serializer for regional settings response"""
+
+    id = serializers.IntegerField()
+    venue_id = serializers.IntegerField(required=False)
+    staff_id = serializers.IntegerField(required=False)
+    region_code = serializers.CharField()
+    effective_settings = serializers.JSONField(help_text="Resolved effective settings")
+    inheritance_chain = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Settings inheritance order (Global → Regional → Venue → Staff)"
+    )
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+
+class EnhancedWorkingHoursRegulationSerializer(WorkingHoursRegulationSerializer):
+    """Enhanced serializer with regional compliance features"""
+
+    supports_opt_out = serializers.SerializerMethodField()
+    requires_sia_license = serializers.SerializerMethodField()
+    has_state_variations = serializers.SerializerMethodField()
+    compliance_complexity = serializers.SerializerMethodField()
+
+    class Meta(WorkingHoursRegulationSerializer.Meta):
+        fields = WorkingHoursRegulationSerializer.Meta.fields + [
+            'supports_opt_out', 'requires_sia_license',
+            'has_state_variations', 'compliance_complexity'
+        ]
+
+    def get_supports_opt_out(self, obj):
+        """Check if regulation supports working time opt-out"""
+        return bool(obj.opt_out_provisions and obj.opt_out_provisions.get('enabled', False))
+
+    def get_requires_sia_license(self, obj):
+        """Check if regulation requires SIA license for security work"""
+        return bool(obj.security_sector_overrides and
+                   obj.security_sector_overrides.get('sia_license_required', False))
+
+    def get_has_state_variations(self, obj):
+        """Check if regulation has state/province level variations"""
+        return bool(obj.state_overrides)
+
+    def get_compliance_complexity(self, obj):
+        """Calculate compliance complexity score"""
+        complexity = 0
+
+        # Base complexity factors
+        if obj.overtime_threshold_2:
+            complexity += 1  # Multiple overtime tiers
+        if obj.night_shift_rules:
+            complexity += 1  # Night shift rules
+        if obj.break_requirements:
+            complexity += len(obj.break_requirements)  # Break complexity
+        if obj.opt_out_provisions:
+            complexity += 2  # Opt-out provisions
+        if obj.state_overrides:
+            complexity += len(obj.state_overrides)  # State variations
+        if obj.security_sector_overrides:
+            complexity += 1  # Security-specific rules
+
+        return min(complexity, 10)  # Cap at 10 for readability
+
+
+# =============================================================================
+# REPORTING SYSTEM SERIALIZERS
+# =============================================================================
+
+class ReportTemplateSerializer(serializers.ModelSerializer):
+    """Serializer for ReportTemplate model"""
+
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
+    allowed_venues_data = serializers.SerializerMethodField()
+    template_type_display = serializers.CharField(source='get_template_type_display', read_only=True)
+
+    class Meta:
+        model = ReportTemplate
+        fields = [
+            'id', 'name', 'template_type', 'template_type_display', 'description',
+            'sql_query', 'parameters', 'allowed_roles', 'template_config',
+            'is_active', 'created_by', 'created_by_name', 'allowed_venues',
+            'allowed_venues_data', 'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'created_by', 'created_by_name', 'template_type_display',
+            'allowed_venues_data', 'created_at', 'updated_at'
+        ]
+
+    def get_allowed_venues_data(self, obj):
+        """Get basic venue information for allowed venues"""
+        return [
+            {
+                'id': venue.id,
+                'name': venue.name,
+                'city': venue.city
+            }
+            for venue in obj.allowed_venues.all()
+        ]
+
+    def validate_sql_query(self, value):
+        """Basic validation for SQL queries"""
+        if not value.strip():
+            raise serializers.ValidationError("SQL query cannot be empty")
+
+        # Check for dangerous SQL keywords (basic security)
+        dangerous_keywords = ['DROP', 'DELETE', 'TRUNCATE', 'ALTER', 'CREATE', 'INSERT', 'UPDATE']
+        query_upper = value.upper()
+        for keyword in dangerous_keywords:
+            if keyword in query_upper:
+                raise serializers.ValidationError(f"SQL query cannot contain '{keyword}' statements")
+
+        return value.strip()
+
+    def validate_parameters(self, value):
+        """Validate parameters JSON structure"""
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Parameters must be a valid JSON object")
+        return value
+
+    def validate_allowed_roles(self, value):
+        """Validate allowed roles list"""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Allowed roles must be a list")
+
+        valid_roles = ['staff', 'manager', 'admin']
+        for role in value:
+            if role not in valid_roles:
+                raise serializers.ValidationError(f"Invalid role: {role}")
+
+        return value
+
+
+class ReportJobSerializer(serializers.ModelSerializer):
+    """Serializer for ReportJob model"""
+
+    requested_by_name = serializers.CharField(source='requested_by.get_full_name', read_only=True)
+    template_data = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    export_format_display = serializers.CharField(source='get_export_format_display', read_only=True)
+    duration_seconds = serializers.SerializerMethodField()
+    file_size_mb = serializers.SerializerMethodField()
+    is_expired = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReportJob
+        fields = [
+            'id', 'job_id', 'template', 'template_data', 'status', 'status_display',
+            'export_format', 'export_format_display', 'date_range_start', 'date_range_end',
+            'filters', 'started_at', 'completed_at', 'file_path', 'file_size',
+            'file_size_mb', 'download_count', 'error_message', 'retry_count',
+            'requested_by', 'requested_by_name', 'duration_seconds', 'is_expired',
+            'created_at', 'expires_at'
+        ]
+        read_only_fields = [
+            'id', 'job_id', 'template_data', 'status_display', 'export_format_display',
+            'started_at', 'completed_at', 'file_path', 'file_size', 'file_size_mb',
+            'download_count', 'error_message', 'retry_count', 'requested_by',
+            'requested_by_name', 'duration_seconds', 'is_expired', 'created_at'
+        ]
+
+    def get_template_data(self, obj):
+        """Get basic template information"""
+        if obj.template:
+            return {
+                'id': obj.template.id,
+                'name': obj.template.name,
+                'template_type': obj.template.template_type,
+                'template_type_display': obj.template.get_template_type_display()
+            }
+        return None
+
+    def get_duration_seconds(self, obj):
+        """Calculate job duration in seconds"""
+        if obj.started_at and obj.completed_at:
+            return int((obj.completed_at - obj.started_at).total_seconds())
+        return None
+
+    def get_file_size_mb(self, obj):
+        """Convert file size to MB"""
+        if obj.file_size:
+            return round(obj.file_size / (1024 * 1024), 2)
+        return None
+
+    def get_is_expired(self, obj):
+        """Check if report has expired"""
+        from django.utils import timezone
+        return timezone.now() > obj.expires_at
+
+    def validate(self, data):
+        """Validate report job data"""
+        errors = {}
+
+        # Validate date range
+        if data.get('date_range_end') and data.get('date_range_start'):
+            if data['date_range_end'] <= data['date_range_start']:
+                errors['date_range_end'] = "End date must be after start date"
+
+        # Validate filters
+        if data.get('filters') and not isinstance(data['filters'], dict):
+            errors['filters'] = "Filters must be a valid JSON object"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+class ReportJobCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating new report jobs"""
+
+    class Meta:
+        model = ReportJob
+        fields = [
+            'template', 'export_format', 'date_range_start', 'date_range_end',
+            'filters', 'expires_at'
+        ]
+
+    def validate_template(self, value):
+        """Validate template exists and is active"""
+        if not value.is_active:
+            raise serializers.ValidationError("Template is not active")
+        return value
+
+    def validate(self, data):
+        """Validate report job creation data"""
+        errors = {}
+
+        # Validate date range
+        if data.get('date_range_end') and data.get('date_range_start'):
+            if data['date_range_end'] <= data['date_range_start']:
+                errors['date_range_end'] = "End date must be after start date"
+
+        # Validate filters against template parameters
+        template = data.get('template')
+        filters = data.get('filters', {})
+
+        if template and template.parameters:
+            # Check if all required parameters are provided
+            for param_name, param_config in template.parameters.items():
+                if param_config.get('required', False) and param_name not in filters:
+                    errors['filters'] = f"Required parameter '{param_name}' is missing"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+class ReportJobStatusSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for checking report job status"""
+
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    progress_percentage = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReportJob
+        fields = [
+            'id', 'job_id', 'status', 'status_display', 'started_at',
+            'completed_at', 'error_message', 'progress_percentage'
+        ]
+        read_only_fields = ['id', 'job_id', 'status', 'status_display', 'started_at', 'completed_at', 'error_message', 'progress_percentage']
+
+    def get_progress_percentage(self, obj):
+        """Calculate progress percentage (simplified)"""
+        if obj.status == 'completed':
+            return 100
+        elif obj.status == 'processing':
+            # Simple time-based estimation (could be enhanced with actual progress tracking)
+            if obj.started_at:
+                from django.utils import timezone
+                elapsed = (timezone.now() - obj.started_at).total_seconds()
+                # Estimate 60 seconds for completion, cap at 95%
+                return min(int((elapsed / 60) * 100), 95)
+            return 10
+        elif obj.status == 'failed':
+            return 0
+        else:  # pending
+            return 0
+
+
+# =====================================================
+# ONBOARDING SYSTEM SERIALIZERS
+# =====================================================
+
+class SecurityCompanySerializer(serializers.ModelSerializer):
+    """
+    Serializer for SecurityCompany model with complete company information.
+    Used for company management and onboarding processes.
+    """
+    current_staff_count = serializers.SerializerMethodField()
+    current_venue_count = serializers.SerializerMethodField()
+    can_add_staff = serializers.SerializerMethodField()
+    can_add_venue = serializers.SerializerMethodField()
+    subscription_status = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = SecurityCompany
+        fields = [
+            'id', 'name', 'trading_name', 'registration_number', 'tax_id',
+            'country_code', 'state_province', 'city', 'postal_code',
+            'address_line_1', 'address_line_2', 'industry_type', 'company_size',
+            'staff_capacity', 'venue_capacity', 'subscription_tier',
+            'subscription_start_date', 'subscription_end_date', 'billing_email',
+            'primary_contact_name', 'primary_contact_email', 'primary_contact_phone',
+            'timezone', 'currency', 'date_format', 'features_enabled',
+            'custom_settings', 'is_active', 'is_trial', 'trial_end_date',
+            'created_at', 'updated_at',
+            # Computed fields
+            'current_staff_count', 'current_venue_count', 'can_add_staff',
+            'can_add_venue', 'subscription_status'
+        ]
+        read_only_fields = [
+            'id', 'created_at', 'updated_at', 'current_staff_count',
+            'current_venue_count', 'can_add_staff', 'can_add_venue',
+            'subscription_status'
+        ]
+
+    def get_current_staff_count(self, obj):
+        return obj.get_current_staff_count()
+
+    def get_current_venue_count(self, obj):
+        return obj.get_current_venue_count()
+
+    def get_can_add_staff(self, obj):
+        return obj.can_add_staff()
+
+    def get_can_add_venue(self, obj):
+        return obj.can_add_venue()
+
+    def get_subscription_status(self, obj):
+        return obj.get_subscription_status()
+
+    def validate(self, data):
+        """Validate company data"""
+        errors = {}
+
+        # Validate registration number format
+        registration_number = data.get('registration_number')
+        if registration_number and len(registration_number) < 6:
+            errors['registration_number'] = "Registration number must be at least 6 characters"
+
+        # Validate contact email
+        primary_contact_email = data.get('primary_contact_email')
+        billing_email = data.get('billing_email')
+        if primary_contact_email and billing_email and primary_contact_email == billing_email:
+            # This is allowed, just noting they're the same
+            pass
+
+        # Validate capacity limits
+        staff_capacity = data.get('staff_capacity')
+        if staff_capacity and staff_capacity < 1:
+            errors['staff_capacity'] = "Staff capacity must be at least 1"
+
+        venue_capacity = data.get('venue_capacity')
+        if venue_capacity and venue_capacity < 1:
+            errors['venue_capacity'] = "Venue capacity must be at least 1"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+class UserCompanyMembershipSerializer(serializers.ModelSerializer):
+    """
+    Serializer for user company memberships with role management.
+    """
+    company_name = serializers.CharField(source='company.name', read_only=True)
+    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    invitation_valid = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserCompanyMembership
+        fields = [
+            'id', 'user', 'company', 'role', 'is_owner', 'is_active',
+            'invitation_status', 'invited_by', 'invitation_sent_at',
+            'invitation_expires_at', 'permissions', 'access_restrictions',
+            'joined_at', 'last_accessed_at',
+            # Computed fields
+            'company_name', 'user_name', 'invitation_valid'
+        ]
+        read_only_fields = [
+            'id', 'joined_at', 'company_name', 'user_name', 'invitation_valid'
+        ]
+
+    def get_invitation_valid(self, obj):
+        return obj.is_invitation_valid()
+
+
+class CompanyOnboardingSerializer(serializers.ModelSerializer):
+    """
+    Serializer for company onboarding progress tracking.
+    Provides detailed progress information and step management.
+    """
+    is_completed = serializers.BooleanField(read_only=True)
+    progress_percentage = serializers.IntegerField(read_only=True)
+    next_step = serializers.SerializerMethodField()
+    company_name = serializers.CharField(source='company.name', read_only=True)
+    time_spent_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CompanyOnboarding
+        fields = [
+            'id', 'company', 'current_step', 'total_steps',
+            'company_info_completed', 'regional_setup_completed',
+            'staff_setup_completed', 'integrations_completed',
+            'finalization_completed', 'step_data', 'validation_errors',
+            'session_id', 'last_step_accessed', 'completed_at', 'completed_by',
+            'time_spent_minutes', 'estimated_time_remaining',
+            'created_at', 'updated_at',
+            # Computed fields
+            'is_completed', 'progress_percentage', 'next_step',
+            'company_name', 'time_spent_display'
+        ]
+        read_only_fields = [
+            'id', 'created_at', 'updated_at', 'is_completed',
+            'progress_percentage', 'next_step', 'company_name',
+            'time_spent_display'
+        ]
+
+    def get_next_step(self, obj):
+        return obj.get_next_step()
+
+    def get_time_spent_display(self, obj):
+        """Convert minutes to human-readable format"""
+        if not obj.time_spent_minutes:
+            return "0 minutes"
         
+        hours = obj.time_spent_minutes // 60
+        minutes = obj.time_spent_minutes % 60
+        
+        if hours > 0:
+            return f"{hours}h {minutes}m" if minutes > 0 else f"{hours}h"
+        return f"{minutes}m"
+
+
+class CompanyInfoSerializer(serializers.Serializer):
+    """
+    Serializer for company information step in onboarding.
+    Validates and processes company details.
+    """
+    # Basic Company Information
+    name = serializers.CharField(max_length=255)
+    trading_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    registration_number = serializers.CharField(max_length=100)
+    tax_id = serializers.CharField(max_length=50, required=False, allow_blank=True)
+
+    # Location and Compliance
+    country_code = serializers.CharField(max_length=3)
+    state_province = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    city = serializers.CharField(max_length=100)
+    postal_code = serializers.CharField(max_length=20)
+    address_line_1 = serializers.CharField(max_length=255)
+    address_line_2 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+    # Business Details
+    industry_type = serializers.ChoiceField(choices=SecurityCompany.INDUSTRY_TYPE_CHOICES)
+    company_size = serializers.ChoiceField(choices=SecurityCompany.COMPANY_SIZE_CHOICES)
+
+    # Contact Information
+    primary_contact_name = serializers.CharField(max_length=255)
+    primary_contact_email = serializers.EmailField()
+    primary_contact_phone = serializers.CharField(max_length=20)
+    billing_email = serializers.EmailField()
+
+    # Company Preferences
+    timezone = serializers.CharField(max_length=50, default='UTC')
+    currency = serializers.CharField(max_length=3, default='USD')
+    date_format = serializers.ChoiceField(
+        choices=[
+            ('DD/MM/YYYY', 'DD/MM/YYYY'),
+            ('MM/DD/YYYY', 'MM/DD/YYYY'),
+            ('YYYY-MM-DD', 'YYYY-MM-DD'),
+        ],
+        default='DD/MM/YYYY'
+    )
+
+    def validate(self, data):
+        """Validate company information"""
+        errors = {}
+
+        # Validate registration number format
+        registration_number = data.get('registration_number')
+        if registration_number and len(registration_number) < 6:
+            errors['registration_number'] = "Registration number must be at least 6 characters"
+
+        # Validate country code
+        country_code = data.get('country_code')
+        if country_code and len(country_code) != 3:
+            errors['country_code'] = "Country code must be 3 characters (ISO 3166-1 alpha-3)"
+
+        # Validate phone number format (basic validation)
+        phone = data.get('primary_contact_phone')
+        if phone and len(phone) < 10:
+            errors['primary_contact_phone'] = "Phone number must be at least 10 digits"
+
+        # Check if registration number is unique (if this is a new company)
+        if hasattr(self, 'context') and self.context.get('request'):
+            request = self.context['request']
+            if hasattr(request.user, 'company_memberships'):
+                existing_companies = SecurityCompany.objects.filter(
+                    registration_number=registration_number
+                ).exclude(
+                    id__in=[m.company.id for m in request.user.company_memberships.all()]
+                )
+                if existing_companies.exists():
+                    errors['registration_number'] = "A company with this registration number already exists"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+class RegionalSetupSerializer(serializers.Serializer):
+    """
+    Serializer for regional compliance setup step.
+    Handles regulatory and compliance configuration.
+    """
+    # Regional Settings
+    operating_regions = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        help_text="List of regions where company operates"
+    )
+    primary_jurisdiction = serializers.CharField(
+        max_length=100,
+        help_text="Primary legal jurisdiction"
+    )
+    
+    # Compliance Requirements
+    regulatory_requirements = serializers.JSONField(
+        default=dict,
+        help_text="Regulatory requirements for each region"
+    )
+    compliance_certifications = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        required=False,
+        default=list,
+        help_text="List of compliance certifications held"
+    )
+    
+    # Working Hours Configuration
+    standard_working_hours = serializers.JSONField(
+        default=dict,
+        help_text="Standard working hours configuration"
+    )
+    overtime_policies = serializers.JSONField(
+        default=dict,
+        help_text="Overtime policies and rates"
+    )
+    break_requirements = serializers.JSONField(
+        default=dict,
+        help_text="Required break periods"
+    )
+    
+    # Holiday and Leave Configuration
+    public_holidays = serializers.ListField(
+        child=serializers.DateField(),
+        required=False,
+        default=list,
+        help_text="List of public holidays"
+    )
+    minimum_leave_entitlement = serializers.IntegerField(
+        default=28,
+        help_text="Minimum annual leave entitlement in days"
+    )
+
+    def validate(self, data):
+        """Validate regional setup configuration"""
+        errors = {}
+
+        # Validate operating regions
+        operating_regions = data.get('operating_regions', [])
+        if not operating_regions:
+            errors['operating_regions'] = "At least one operating region must be specified"
+
+        # Validate primary jurisdiction
+        primary_jurisdiction = data.get('primary_jurisdiction')
+        if primary_jurisdiction not in operating_regions:
+            errors['primary_jurisdiction'] = "Primary jurisdiction must be one of the operating regions"
+
+        # Validate leave entitlement
+        leave_entitlement = data.get('minimum_leave_entitlement')
+        if leave_entitlement and leave_entitlement < 0:
+            errors['minimum_leave_entitlement'] = "Leave entitlement cannot be negative"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+class StaffConfigSerializer(serializers.Serializer):
+    """
+    Serializer for staff operations configuration step.
+    Handles staff management and operational settings.
+    """
+    # Staff Capacity and Organization
+    expected_staff_count = serializers.IntegerField(
+        min_value=1,
+        help_text="Expected number of staff members"
+    )
+    staff_categories = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        help_text="Types of staff roles in the organization"
+    )
+    
+    # Shift Management
+    shift_patterns = serializers.JSONField(
+        default=dict,
+        help_text="Standard shift patterns and schedules"
+    )
+    shift_approval_required = serializers.BooleanField(
+        default=True,
+        help_text="Whether shifts require manager approval"
+    )
+    allow_shift_swapping = serializers.BooleanField(
+        default=True,
+        help_text="Whether staff can swap shifts"
+    )
+    
+    # Location and Venue Management
+    venue_types = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        help_text="Types of venues serviced"
+    )
+    gps_tracking_required = serializers.BooleanField(
+        default=True,
+        help_text="Whether GPS tracking is required for shifts"
+    )
+    
+    # Payment Configuration
+    default_pay_rates = serializers.JSONField(
+        default=dict,
+        help_text="Default pay rates for different roles"
+    )
+    payment_frequency = serializers.ChoiceField(
+        choices=[
+            ('weekly', 'Weekly'),
+            ('fortnightly', 'Fortnightly'),
+            ('monthly', 'Monthly'),
+        ],
+        default='weekly'
+    )
+    
+    # Qualification Requirements
+    required_licenses = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        help_text="Required licenses for staff (e.g., SIA licenses)"
+    )
+    required_certifications = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        required=False,
+        default=list,
+        help_text="Additional required certifications"
+    )
+
+    def validate(self, data):
+        """Validate staff configuration"""
+        errors = {}
+
+        # Validate staff count
+        expected_count = data.get('expected_staff_count')
+        if expected_count and expected_count > 10000:
+            errors['expected_staff_count'] = "Expected staff count seems unreasonably high"
+
+        # Validate staff categories
+        staff_categories = data.get('staff_categories', [])
+        if not staff_categories:
+            errors['staff_categories'] = "At least one staff category must be specified"
+
+        # Validate venue types
+        venue_types = data.get('venue_types', [])
+        if not venue_types:
+            errors['venue_types'] = "At least one venue type must be specified"
+
+        # Validate pay rates structure
+        pay_rates = data.get('default_pay_rates', {})
+        if pay_rates:
+            for role, rate in pay_rates.items():
+                try:
+                    float_rate = float(rate)
+                    if float_rate < 0:
+                        errors['default_pay_rates'] = f"Pay rate for {role} cannot be negative"
+                except (ValueError, TypeError):
+                    errors['default_pay_rates'] = f"Invalid pay rate for {role}"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+class IntegrationsSerializer(serializers.Serializer):
+    """
+    Serializer for third-party integrations configuration step.
+    Handles external service integrations.
+    """
+    # Deputy Integration
+    deputy_enabled = serializers.BooleanField(default=False)
+    deputy_api_key = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        style={'input_type': 'password'},
+        help_text="Deputy API key for workforce management integration"
+    )
+    deputy_endpoint = serializers.URLField(
+        required=False,
+        allow_blank=True,
+        help_text="Deputy API endpoint URL"
+    )
+    
+    # Payroll Integration
+    payroll_system = serializers.ChoiceField(
+        choices=[
+            ('none', 'No Integration'),
+            ('xero', 'Xero'),
+            ('quickbooks', 'QuickBooks'),
+            ('sage', 'Sage'),
+            ('custom', 'Custom System'),
+        ],
+        default='none'
+    )
+    payroll_credentials = serializers.JSONField(
+        default=dict,
+        style={'base_template': 'textarea.html'},
+        help_text="Payroll system credentials (encrypted)"
+    )
+    
+    # Accounting Integration
+    accounting_system = serializers.ChoiceField(
+        choices=[
+            ('none', 'No Integration'),
+            ('xero', 'Xero'),
+            ('quickbooks', 'QuickBooks'),
+            ('sage', 'Sage'),
+            ('custom', 'Custom System'),
+        ],
+        default='none'
+    )
+    accounting_credentials = serializers.JSONField(
+        default=dict,
+        style={'base_template': 'textarea.html'},
+        help_text="Accounting system credentials (encrypted)"
+    )
+    
+    # Communication Integration
+    communication_platform = serializers.ChoiceField(
+        choices=[
+            ('none', 'No Integration'),
+            ('slack', 'Slack'),
+            ('teams', 'Microsoft Teams'),
+            ('whatsapp', 'WhatsApp Business'),
+            ('custom', 'Custom System'),
+        ],
+        default='none'
+    )
+    communication_credentials = serializers.JSONField(
+        default=dict,
+        help_text="Communication platform credentials"
+    )
+    
+    # Notification Settings
+    email_notifications_enabled = serializers.BooleanField(default=True)
+    sms_notifications_enabled = serializers.BooleanField(default=False)
+    push_notifications_enabled = serializers.BooleanField(default=True)
+
+    def validate(self, data):
+        """Validate integrations configuration"""
+        errors = {}
+
+        # Validate Deputy integration
+        if data.get('deputy_enabled'):
+            if not data.get('deputy_api_key'):
+                errors['deputy_api_key'] = "API key is required when Deputy integration is enabled"
+            if not data.get('deputy_endpoint'):
+                errors['deputy_endpoint'] = "Endpoint URL is required when Deputy integration is enabled"
+
+        # Validate payroll integration
+        payroll_system = data.get('payroll_system')
+        if payroll_system and payroll_system != 'none':
+            payroll_creds = data.get('payroll_credentials', {})
+            if not payroll_creds:
+                errors['payroll_credentials'] = "Credentials are required for payroll system integration"
+
+        # Validate accounting integration
+        accounting_system = data.get('accounting_system')
+        if accounting_system and accounting_system != 'none':
+            accounting_creds = data.get('accounting_credentials', {})
+            if not accounting_creds:
+                errors['accounting_credentials'] = "Credentials are required for accounting system integration"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
+
+
+class CompanyIntegrationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for individual company integrations.
+    Manages specific third-party service configurations.
+    """
+    integration_type_display = serializers.CharField(source='get_integration_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    health_status_display = serializers.CharField(source='get_health_status_display', read_only=True)
+    last_sync_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CompanyIntegration
+        fields = [
+            'id', 'company', 'integration_type', 'name', 'description',
+            'configuration', 'status', 'is_enabled', 'last_sync_at',
+            'last_health_check', 'health_status', 'last_error', 'error_count',
+            'sync_frequency', 'auto_sync_enabled', 'created_at', 'updated_at',
+            'configured_by',
+            # Display fields
+            'integration_type_display', 'status_display', 'health_status_display',
+            'last_sync_display'
+        ]
+        read_only_fields = [
+            'id', 'created_at', 'updated_at', 'last_sync_at', 'last_health_check',
+            'health_status', 'last_error', 'error_count', 'integration_type_display',
+            'status_display', 'health_status_display', 'last_sync_display'
+        ]
+
+    def get_last_sync_display(self, obj):
+        """Human-readable last sync time"""
+        if not obj.last_sync_at:
+            return "Never"
+        
+        from django.utils import timezone
+        from django.utils.timesince import timesince
+        
+        return f"{timesince(obj.last_sync_at, timezone.now())} ago"
+
+    def validate(self, data):
+        """Validate integration configuration"""
+        errors = {}
+
+        # Validate configuration based on integration type
+        integration_type = data.get('integration_type')
+        configuration = data.get('configuration', {})
+
+        if integration_type == 'deputy' and not configuration.get('api_key'):
+            errors['configuration'] = "API key is required for Deputy integration"
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
         return data

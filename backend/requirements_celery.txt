@@ -1,0 +1,14 @@
+# Celery and related dependencies for async report processing
+celery[redis]==5.3.4
+redis==5.0.1
+django-celery-beat==2.5.0
+django-celery-results==2.5.0
+django-redis==5.4.0
+kombu==5.3.4
+
+# Additional dependencies for enhanced functionality
+flower==2.0.1        # Celery monitoring tool
+billiard==4.2.0      # Process pool implementation used by Celery
+
+# Email backend for notifications (optional)
+django-anymail[mailgun]==10.2  # For production email backends

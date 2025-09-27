@@ -45,14 +45,24 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   // Get the selected key based on current location
   const getSelectedKey = (): string => {
     const path = location.pathname;
-    
+
     // Handle exact matches first
     if (path === '/') return '/';
     if (path === '/dashboard') return '/';
-    
+
     // Handle staff-shifts specifically
     if (path === '/staff-shifts') return '/staff-shifts';
-    
+
+    // Handle leave management routes - all consolidated under /leave
+    if (path.startsWith('/leave')) return '/leave';
+
+    // Handle compliance routes
+    if (path.startsWith('/compliance')) return '/compliance';
+
+    // Handle reports routes
+    if (path.startsWith('/reports')) return '/reports';
+    if (path.startsWith('/admin/reports')) return '/reports';
+
     // Handle admin routes
     if (path.startsWith('/admin/staff')) return '/admin/staff';
     if (path.startsWith('/admin/scheduling')) return '/admin/scheduling';
@@ -60,14 +70,15 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     if (path.startsWith('/admin/recruitment')) return '/admin/recruitment';
     if (path.startsWith('/admin/invoices')) return '/admin/invoices';
     if (path.startsWith('/admin/deputy')) return '/admin/deputy';
+    if (path.startsWith('/admin/compliance-settings')) return '/admin/compliance-settings';
     if (path.startsWith('/admin/settings')) return '/admin/settings';
-    
+
     // Handle other routes
     if (path.startsWith('/shifts/exchange')) return '/shifts/exchange';
     if (path.startsWith('/shifts')) return '/shifts';
     if (path.startsWith('/invoices')) return '/invoices';
     if (path.startsWith('/approvals')) return '/approvals';
-    
+
     // Default fallback
     return path;
   };
@@ -80,7 +91,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         name: 'Dashboard',
         url: '/',
         key: '/',
-        icon: 'ViewDashboard',
+        icon: 'Tiles',
         isExpanded: location.pathname === '/'
       }
     ];
@@ -107,6 +118,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         key: '/invoices',
         icon: 'PaymentCard',
         isExpanded: location.pathname.startsWith('/invoices')
+      },
+      {
+        name: 'Leave Management',
+        url: '/leave',
+        key: '/leave',
+        icon: 'Calendar',
+        isExpanded: location.pathname.startsWith('/leave')
       }
     ];
 
@@ -123,8 +141,15 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         name: 'Approvals',
         url: '/approvals',
         key: '/approvals',
-        icon: 'Checkmark',
+        icon: 'ToDoLogoOutline',
         isExpanded: location.pathname.startsWith('/approvals')
+      },
+      {
+        name: 'Compliance',
+        url: '/compliance',
+        key: '/compliance',
+        icon: 'ComplianceAudit',
+        isExpanded: location.pathname.startsWith('/compliance')
       }
     ];
 
@@ -148,7 +173,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         name: 'Venues',
         url: '/admin/venues',
         key: '/admin/venues',
-        icon: 'POI',
+        icon: 'MapPin',
         isExpanded: location.pathname.startsWith('/admin/venues')
       },
       {
@@ -157,6 +182,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         key: '/admin/recruitment',
         icon: 'AddFriend',
         isExpanded: location.pathname.startsWith('/admin/recruitment')
+      },
+      {
+        name: 'Reports & Analytics',
+        url: '/reports',
+        key: '/reports',
+        icon: 'ReportLock',
+        isExpanded: location.pathname.startsWith('/reports') || location.pathname.startsWith('/admin/reports')
       },
       {
         name: 'Invoices',
@@ -337,10 +369,17 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           <i className="ms-Icon ms-Icon--Calendar" />
           <div className="text-xs">Shifts</div>
         </Link>
-        <Link to="/shifts/exchange" className="p-3 text-center">
-          <i className="ms-Icon ms-Icon--SwitcherStartEnd" />
-          <div className="text-xs">Exchange</div>
-        </Link>
+        {(isUserRole(UserRole.MANAGER) || isUserRole(UserRole.ADMIN)) ? (
+          <Link to="/leave/team-overview" className="p-3 text-center">
+            <i className="ms-Icon ms-Icon--PeopleAlert" />
+            <div className="text-xs">Team</div>
+          </Link>
+        ) : (
+          <Link to="/shifts/exchange" className="p-3 text-center">
+            <i className="ms-Icon ms-Icon--SwitcherStartEnd" />
+            <div className="text-xs">Exchange</div>
+          </Link>
+        )}
         <Link to="/invoices" className="p-3 text-center">
           <i className="ms-Icon ms-Icon--PaymentCard" />
           <div className="text-xs">Invoices</div>

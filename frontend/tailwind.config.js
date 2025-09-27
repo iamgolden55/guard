@@ -78,10 +78,157 @@ module.exports = {
             height: "0",
           },
         },
+        // Onboarding-specific animations
+        "slide-in-right": {
+          "0%": {
+            opacity: "0",
+            transform: "translateX(100px)",
+          },
+          "100%": {
+            opacity: "1",
+            transform: "translateX(0)",
+          },
+        },
+        "slide-out-left": {
+          "0%": {
+            opacity: "1",
+            transform: "translateX(0)",
+          },
+          "100%": {
+            opacity: "0",
+            transform: "translateX(-100px)",
+          },
+        },
+        "fade-in": {
+          "0%": {
+            opacity: "0",
+            transform: "translateY(10px)",
+          },
+          "100%": {
+            opacity: "1",
+            transform: "translateY(0)",
+          },
+        },
+        "fade-out": {
+          "0%": {
+            opacity: "1",
+            transform: "translateY(0)",
+          },
+          "100%": {
+            opacity: "0",
+            transform: "translateY(-10px)",
+          },
+        },
+        "scale-in": {
+          "0%": {
+            opacity: "0",
+            transform: "scale(0.95)",
+          },
+          "100%": {
+            opacity: "1",
+            transform: "scale(1)",
+          },
+        },
+        "scale-out": {
+          "0%": {
+            opacity: "1",
+            transform: "scale(1)",
+          },
+          "100%": {
+            opacity: "0",
+            transform: "scale(0.95)",
+          },
+        },
+        "progress-fill": {
+          "0%": {
+            width: "0%",
+          },
+          "100%": {
+            width: "100%",
+          },
+        },
+        "shimmer": {
+          "0%": {
+            transform: "translateX(-100%)",
+          },
+          "100%": {
+            transform: "translateX(100%)",
+          },
+        },
+        "shake": {
+          "0%, 100%": {
+            transform: "translateX(0)",
+          },
+          "10%, 30%, 50%, 70%, 90%": {
+            transform: "translateX(-4px)",
+          },
+          "20%, 40%, 60%, 80%": {
+            transform: "translateX(4px)",
+          },
+        },
+        "bounce-subtle": {
+          "0%, 100%": {
+            transform: "translateY(0)",
+          },
+          "50%": {
+            transform: "translateY(-4px)",
+          },
+        },
+        "pulse-glow": {
+          "0%, 100%": {
+            boxShadow: "0 0 0 0 rgba(59, 130, 246, 0.4)",
+          },
+          "50%": {
+            boxShadow: "0 0 0 8px rgba(59, 130, 246, 0)",
+          },
+        },
+        "checkmark-draw": {
+          "0%": {
+            strokeDashoffset: "24",
+          },
+          "100%": {
+            strokeDashoffset: "0",
+          },
+        },
+        "rotate-slow": {
+          "0%": {
+            transform: "rotate(0deg)",
+          },
+          "100%": {
+            transform: "rotate(360deg)",
+          },
+        },
+        "float": {
+          "0%, 100%": {
+            transform: "translateY(0px)",
+          },
+          "50%": {
+            transform: "translateY(-4px)",
+          },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        // Onboarding animations
+        "slide-in-right": "slide-in-right 0.4s ease-out",
+        "slide-out-left": "slide-out-left 0.3s ease-in",
+        "fade-in": "fade-in 0.3s ease-out",
+        "fade-out": "fade-out 0.2s ease-in",
+        "scale-in": "scale-in 0.3s ease-out",
+        "scale-out": "scale-out 0.2s ease-in",
+        "progress-fill": "progress-fill 0.8s ease-in-out",
+        "shimmer": "shimmer 1.5s linear infinite",
+        "shake": "shake 0.4s ease-in-out",
+        "bounce-subtle": "bounce-subtle 1s ease-in-out infinite",
+        "pulse-glow": "pulse-glow 1s ease-in-out infinite",
+        "checkmark-draw": "checkmark-draw 0.6s ease-out",
+        "rotate-slow": "rotate-slow 2s linear infinite",
+        "float": "float 2s ease-in-out infinite",
+        // Responsive animations (shorter for mobile)
+        "slide-in-right-mobile": "slide-in-right 0.2s ease-out",
+        "fade-in-mobile": "fade-in 0.15s ease-out",
+        "scale-in-mobile": "scale-in 0.2s ease-out",
       },
       container: {
         center: true,

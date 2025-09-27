@@ -1,0 +1,140 @@
+{
+  "project": "Legal Compliance Reporting System",
+  "project_id": "SSMS-COMPLIANCE-2025",
+  "created": "2025-01-16T00:00:00Z",
+  "last_updated": "2025-01-16T00:00:00Z",
+  "orchestrator": "head_agent",
+  "priority": "high",
+  "description": "Implementation of comprehensive legal compliance reporting with working hours regulations, violation tracking, and automated monitoring",
+  
+  "phases": {
+    "Phase 1": {
+      "name": "Core Infrastructure",
+      "description": "Database models, backend infrastructure, and core APIs",
+      "target_weeks": "1-2",
+      "status": "in_progress",
+      "progress_percentage": 0,
+      "agents_assigned": ["django-backend-expert", "django-orm-expert", "django-api-developer"],
+      "deliverables": [
+        "WorkingHoursRegulation model with country-specific rules",
+        "ComplianceProfile model for organization settings", 
+        "ComplianceViolation tracking system",
+        "Optimized database queries and indexes",
+        "REST API endpoints for compliance management"
+      ]
+    },
+    "Phase 2": {
+      "name": "Configuration & Frontend Foundation",
+      "description": "API documentation, React components, and state management",
+      "target_weeks": "3-4", 
+      "status": "not_started",
+      "progress_percentage": 0,
+      "dependencies": ["Phase 1"],
+      "agents_assigned": ["api-architect", "react-component-architect", "react-state-manager"]
+    },
+    "Phase 3": {
+      "name": "UI Implementation",
+      "description": "Frontend styling, responsive design, and user experience",
+      "target_weeks": "5-6",
+      "status": "not_started", 
+      "progress_percentage": 0,
+      "dependencies": ["Phase 2"],
+      "agents_assigned": ["frontend-developer"]
+    },
+    "Phase 4": {
+      "name": "Optimization & Quality Assurance",
+      "description": "Performance optimization, code review, and documentation",
+      "target_weeks": "7-8",
+      "status": "not_started",
+      "progress_percentage": 0, 
+      "dependencies": ["Phase 3"],
+      "agents_assigned": ["performance-optimizer", "code-reviewer", "documentation-specialist"]
+    }
+  },
+
+  "compliance_requirements": {
+    "supported_countries": {
+      "uk": {
+        "standard_weekly_hours": 40,
+        "overtime_threshold": 40,
+        "overtime_multiplier": 1.5,
+        "max_weekly_hours": 48,
+        "min_rest_between_shifts": 11,
+        "max_consecutive_days": 6
+      },
+      "eu": {
+        "standard_weekly_hours": 40,
+        "overtime_threshold": 40, 
+        "overtime_multiplier": 1.25,
+        "max_weekly_hours": 48,
+        "min_rest_between_shifts": 11,
+        "max_consecutive_days": 6
+      },
+      "us": {
+        "standard_weekly_hours": 40,
+        "overtime_threshold": 40,
+        "overtime_multiplier": 1.5,
+        "max_weekly_hours": null,
+        "min_rest_between_shifts": null,
+        "max_consecutive_days": null
+      }
+    },
+    "violation_types": [
+      "overtime_exceeded",
+      "insufficient_rest",
+      "too_many_consecutive_days", 
+      "max_hours_exceeded",
+      "break_requirements_violated"
+    ]
+  },
+
+  "technical_requirements": {
+    "backend": {
+      "models_to_create": [
+        "WorkingHoursRegulation",
+        "ComplianceProfile", 
+        "ComplianceViolation",
+        "WorkingHoursMetrics"
+      ],
+      "api_endpoints": [
+        "/api/v1/compliance/settings/",
+        "/api/v1/compliance/regulations/",
+        "/api/v1/reports/compliance/", 
+        "/api/v1/reports/violations/",
+        "/api/v1/reports/working-hours/"
+      ]
+    },
+    "frontend": {
+      "components_to_create": [
+        "ComplianceSettings.tsx",
+        "ComplianceMonitor.tsx", 
+        "ViolationsList.tsx",
+        "WorkingHoursChart.tsx",
+        "ComplianceDashboard.tsx"
+      ],
+      "pages_to_create": [
+        "ComplianceReports.tsx",
+        "WorkingHoursAnalysis.tsx"
+      ]
+    }
+  },
+
+  "current_blockers": [],
+  "critical_path": [
+    "WorkingHoursRegulation model → API endpoints → Frontend components → Dashboard integration"
+  ],
+  
+  "success_metrics": {
+    "phase_1_targets": {
+      "model_creation_complete": true,
+      "api_endpoints_functional": true, 
+      "database_performance": "< 100ms query time",
+      "test_coverage": "> 90%"
+    },
+    "phase_2_targets": {
+      "component_rendering": "< 100ms",
+      "state_management_efficiency": "optimized",
+      "api_integration_success": "100%"
+    }
+  }
+}
