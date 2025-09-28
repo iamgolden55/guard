@@ -104,6 +104,7 @@ class ProfileService {
       if (data.emergencyContact) updatedProfile.emergencyContact = data.emergencyContact;
       if (data.bankDetails) updatedProfile.bankDetails = data.bankDetails;
       if (data.nationalInsuranceNumber) updatedProfile.nationalInsuranceNumber = data.nationalInsuranceNumber;
+      if (data.dateOfBirth) updatedProfile.dateOfBirth = data.dateOfBirth;
 
       // Update the user in localStorage for consistency
       if (data.firstName || data.lastName || data.email) {
@@ -130,6 +131,33 @@ class ProfileService {
     }
 
     const response = await api.patch<StaffProfile>('/profiles/me', data);
+
+    // Update localStorage to keep auth context in sync
+    if (data.firstName || data.lastName || data.email) {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        try {
+          const currentUser = JSON.parse(userStr);
+          const updatedUser = {
+            ...currentUser,
+            firstName: data.firstName || currentUser.firstName,
+            lastName: data.lastName || currentUser.lastName,
+            email: data.email || currentUser.email,
+            // Also update snake_case versions for compatibility
+            first_name: data.firstName || currentUser.first_name,
+            last_name: data.lastName || currentUser.last_name,
+          };
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+
+          // Trigger auth context refresh to update header immediately
+          // Note: This creates a circular dependency, so we'll use a different approach
+          console.log('User data updated in localStorage:', updatedUser);
+        } catch (error) {
+          console.error('Failed to update user in localStorage:', error);
+        }
+      }
+    }
+
     return response.data;
   }
 

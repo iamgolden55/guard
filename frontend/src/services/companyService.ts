@@ -13,7 +13,7 @@ import {
  * Service for managing company-related API calls in multi-tenant environment
  */
 class CompanyService {
-  private readonly baseUrl = '/api/v1/companies';
+  private readonly baseUrl = '/companies';
 
   /**
    * Get current company context (company + user role + permissions + limits)

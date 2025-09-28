@@ -557,3 +557,31 @@ export interface LicenseConfig {
   validityPeriod: number; // months
   reminderDays: number;
 }
+
+// Company Initiation Data for API submission
+export interface CompanyInitiationData {
+  company: {
+    name: string;
+    registration_number: string;
+    country_code: string; // ISO code like 'GBR'
+    city: string;
+    postal_code: string;
+    address_line_1: string;
+    billing_email: string;
+    primary_contact_name: string;
+    primary_contact_email: string;
+    primary_contact_phone: string;
+    industry_type: string;
+    business_type: string;
+    founded_year: number;
+    // Optional fields
+    trading_name?: string;
+    website_url?: string;
+    description?: string;
+    tax_id?: string;
+    state_province?: string;
+    address_line_2?: string;
+    subscription_tier?: string;
+    company_size?: string;
+  };
+}

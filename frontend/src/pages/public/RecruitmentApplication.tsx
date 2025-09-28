@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   Stack,
   Text,
@@ -49,7 +50,9 @@ const certificationOptions = [
 ];
 
 const RecruitmentApplication: React.FC = () => {
+  const { companySlug } = useParams<{ companySlug?: string }>();
   const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
+  const [companyInfo, setCompanyInfo] = useState<{ name: string; description?: string; logo?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -105,18 +108,37 @@ const RecruitmentApplication: React.FC = () => {
   const [termsAccepted, setTermsAccepted] = useState(false);
 
   useEffect(() => {
-    loadEmploymentTypes();
-  }, []);
+    loadData();
+  }, [companySlug]);
 
-  const loadEmploymentTypes = async () => {
+  const loadData = async () => {
     try {
-      const types = await employmentTypeService.getActiveEmploymentTypes();
-      // Handle both array and paginated response formats
-      const employmentTypesArray = Array.isArray(types) ? types : (types?.results || []);
-      setEmploymentTypes(employmentTypesArray);
-    } catch (err) {
-      setError('Failed to load employment types');
-      console.error('Error loading employment types:', err);
+      setLoading(true);
+      setError(null);
+
+      if (companySlug) {
+        // Load company-specific data
+        const [employmentTypesData, companyData] = await Promise.all([
+          recruitmentService.getCompanyEmploymentTypes(companySlug),
+          recruitmentService.getCompanyInfo(companySlug)
+        ]);
+
+        setEmploymentTypes(employmentTypesData);
+        setCompanyInfo(companyData);
+      } else {
+        // Load general employment types (fallback for legacy /recruitment route)
+        const types = await employmentTypeService.getActiveEmploymentTypes();
+        const employmentTypesArray = Array.isArray(types) ? types : (types?.results || []);
+        setEmploymentTypes(employmentTypesArray);
+        setCompanyInfo({ name: 'Mead Security Limited' }); // Default company name
+      }
+    } catch (err: any) {
+      console.error('Error loading data:', err);
+      if (err.response?.status === 404) {
+        setError('Company not found or no longer accepting applications');
+      } else {
+        setError('Failed to load application form');
+      }
     } finally {
       setLoading(false);
     }
@@ -197,8 +219,12 @@ const RecruitmentApplication: React.FC = () => {
 
       // Prepare submission data (remove confirmEmail)
       const { confirmEmail, ...submissionData } = formData;
-      
-      const result = await recruitmentService.submitApplication(submissionData);
+
+      // Use company-specific endpoint if company slug is available
+      const result = companySlug
+        ? await recruitmentService.submitCompanyApplication(companySlug, submissionData)
+        : await recruitmentService.submitApplication(submissionData);
+
       setSubmitted(true);
       
     } catch (err: any) {
@@ -271,8 +297,8 @@ const RecruitmentApplication: React.FC = () => {
             email shortly at {formData.email}.
           </Text>
           <Text>
-            Our HR team will review your application and contact you within 5-7 business days. 
-            If you have any questions, please contact us at support@meadsecurity.co.uk.
+            Our HR team will review your application and contact you within 5-7 business days.
+            If you have any questions, please contact us at {companyInfo?.contact_email || 'our support team'}.
           </Text>
         </Stack>
       </Stack>
@@ -290,11 +316,16 @@ const RecruitmentApplication: React.FC = () => {
         {/* Header */}
         <Stack tokens={sectionTokens}>
           <Text variant="xxLarge" style={{ fontWeight: 'bold', color: '#0078d4' }}>
-            Mead Security Limited
+            {companyInfo?.name || 'Security Company'}
           </Text>
           <Text variant="xLarge">Recruitment Questionnaire</Text>
+          {companyInfo?.description && (
+            <Text style={{ fontStyle: 'italic', color: '#666' }}>
+              {companyInfo.description}
+            </Text>
+          )}
           <Text>
-            Thank you for your interest in joining our security team. Please complete all sections 
+            Thank you for your interest in joining our security team. Please complete all sections
             of this application form. All fields marked with * are required.
           </Text>
         </Stack>
@@ -708,7 +739,7 @@ const RecruitmentApplication: React.FC = () => {
         >
           <Stack tokens={sectionTokens}>
             <Text variant="medium" style={{ fontWeight: 'semibold' }}>
-              Mead Security Limited - Terms & Conditions
+              {companyInfo?.name || 'Security Company'} - Terms & Conditions
             </Text>
             
             <Text>

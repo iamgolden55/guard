@@ -23,6 +23,7 @@ const VenueManagement = lazy(() => import('./pages/admin/VenueManagement'));
 const DeputyIntegration = lazy(() => import('./pages/admin/DeputyIntegration'));
 const RecruitmentManagement = lazy(() => import('./pages/admin/RecruitmentManagement'));
 const RecruitmentApplication = lazy(() => import('./pages/public/RecruitmentApplication'));
+const EmploymentTypesManagement = lazy(() => import('./pages/admin/EmploymentTypesManagement'));
 const Reports = lazy(() => import('./pages/admin/Reports'));
 const ReportsPage = lazy(() => import('./pages/reports/ReportsPage'));
 const ComplianceSettings = lazy(() => import('./components/compliance/ComplianceSettings'));
@@ -56,6 +57,7 @@ const Router: React.FC = () => {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/unauthorized" element={<UnauthorizedPage />} />
       <Route path="/recruitment" element={<RecruitmentApplication />} />
+      <Route path="/apply/:companySlug" element={<RecruitmentApplication />} />
 
       {/* Onboarding Routes - Protected but bypassed by OnboardingGuard */}
       <Route
@@ -154,6 +156,14 @@ const Router: React.FC = () => {
           element={
             <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading recruitment...</span></div>}>
               <RecruitmentManagement />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/admin/employment-types"
+          element={
+            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading employment types...</span></div>}>
+              <EmploymentTypesManagement />
             </Suspense>
           }
         />

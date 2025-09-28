@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator, MinValueValidator, MaxValueValidator
 from django.utils import timezone
@@ -60,6 +60,13 @@ class SecurityCompany(models.Model):
     name = models.CharField(
         max_length=255,
         help_text="Official company name"
+    )
+    slug = models.SlugField(
+        max_length=100,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="URL-friendly identifier for company recruitment pages"
     )
     trading_name = models.CharField(
         max_length=255,
@@ -242,6 +249,21 @@ class SecurityCompany(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_subscription_tier_display()})"
+
+    def save(self, *args, **kwargs):
+        """Auto-generate slug for new companies"""
+        if not self.slug:
+            from django.utils.text import slugify
+            base_slug = slugify(self.name)
+            slug = base_slug
+            counter = 1
+
+            while SecurityCompany.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+
+            self.slug = slug
+        super().save(*args, **kwargs)
 
     def get_current_staff_count(self):
         """Get current number of staff members"""
@@ -2655,6 +2677,14 @@ class QualificationReminder(models.Model):
         return f"{self.staff_user.username} - {self.get_qualification_type_display()} expires on {self.expiry_date}"
 
 class SystemSettings(models.Model):
+    # Company relationship for multi-tenancy
+    company = models.OneToOneField(
+        SecurityCompany,
+        on_delete=models.CASCADE,
+        related_name='settings',
+        null=True,  # Temporary for migration - will be changed to NOT NULL after migration
+        help_text="Company that owns these settings"
+    )
     company_name = models.CharField(max_length=255, default="Mead Security")
     support_email = models.EmailField(max_length=255, default="support@meadsecurity.co.uk")
     support_phone = models.CharField(max_length=50, default="+44 1234 567890")
@@ -2695,25 +2725,63 @@ class SystemSettings(models.Model):
         return f"System Settings"
     
     @classmethod
-    def get_settings(cls):
-        """Get the system settings or create default if none exist"""
-        # Ensure default value for the new field is set if creating the instance
-        settings, created = cls.objects.get_or_create(
-            pk=1,
-            defaults={
-                'special_event_pay_rate': 18.00 # Ensure this matches the field's default
-            }
-        )
-        # If instance already existed but lacks the new field (e.g., old data), set it.
-        if not created and settings.special_event_pay_rate is None:
-             settings.special_event_pay_rate = 18.00
-             settings.save()
-             
-        return settings
+    def get_settings(cls, company=None):
+        """Get the system settings for a company or create default if none exist"""
+        if not company:
+            # Fallback to singleton behavior for backward compatibility
+            try:
+                settings = cls.objects.get(pk=1)
+                return settings
+            except cls.DoesNotExist:
+                # Create new singleton if it doesn't exist
+                settings = cls.objects.create(
+                    pk=1,
+                    special_event_pay_rate=18.00
+                )
+                return settings
+
+        # Use the OneToOne relationship to get settings for the specific company
+        try:
+            return company.settings
+        except cls.DoesNotExist:
+            # Create settings for the company
+            settings = cls.objects.create(
+                company=company,
+                company_name=company.name,
+                support_email=f'support@{company.name.lower().replace(" ", "")}.com',
+                support_phone='+44 1234 567890',
+                default_hourly_rate=15.50,
+                special_event_pay_rate=18.00,
+                default_payment_terms='Net 30',
+                invoice_prefix=f'{company.name[:3].upper()}-',
+                automatic_invoicing=True,
+                email_notifications=True,
+                sms_notifications=True,
+                shift_reminders=True,
+                invoice_reminders=True,
+                report_generation=False,
+                require_signatures=True,
+                require_manager_approval=True,
+                require_shift_photos=False,
+                session_timeout=30,
+                allow_shift_exchange=True,
+                auto_checkout_grace_period=30,
+                auto_checkout_force_timeout=720,
+                auto_checkout_enabled=True
+            )
+            return settings
 
 
 class EmploymentType(models.Model):
-    name = models.CharField(max_length=100, unique=True, help_text="Employment type name (e.g., 'Contract Workers', 'Temporary Staff')")
+    # Company relationship for multi-tenancy
+    company = models.ForeignKey(
+        SecurityCompany,
+        on_delete=models.CASCADE,
+        related_name='employment_types',
+        null=True,  # Temporary for migration - will be changed to NOT NULL after migration
+        help_text="Company that owns this employment type"
+    )
+    name = models.CharField(max_length=100, help_text="Employment type name (e.g., 'Contract Workers', 'Temporary Staff')")
     description = models.TextField(help_text="Description of this employment type")
     is_active = models.BooleanField(default=True, help_text="Whether this employment type is currently available")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -2722,6 +2790,8 @@ class EmploymentType(models.Model):
     class Meta:
         db_table = 'employment_types'
         ordering = ['name']
+        # Names should be unique per company, not globally
+        unique_together = [['company', 'name']]
 
     def __str__(self):
         return self.name
@@ -2830,89 +2900,143 @@ class RecruitmentApplication(models.Model):
         self.save()
     
     def convert_to_user(self, admin_user):
-        """Convert approved application to a User and StaffProfile"""
+        """Convert approved application to a User and StaffProfile with proper multi-tenant relationships"""
+        # Validation checks
         if self.status != 'approved':
-            raise ValueError("Can only convert approved applications")
-        
+            raise ValueError("Only approved applications can be converted to users")
+
         if self.converted_to_user:
-            raise ValueError("Application has already been converted")
-        
-        # Create user account
-        username = self.email.split('@')[0]
+            raise ValueError("Application has already been converted to a user")
+
+        # Get company from employment type with validation
+        if not self.employment_type:
+            raise ValueError("Application has no employment type assigned")
+
+        company = self.employment_type.company
+        if not company or not company.is_active:
+            raise ValueError("Employment type has no active company associated")
+
+        # Generate unique username
+        base_username = self.email.split('@')[0].lower()
+        username = base_username
         counter = 1
-        original_username = username
-        
-        # Ensure unique username
+
         while User.objects.filter(username=username).exists():
-            username = f"{original_username}{counter}"
+            username = f"{base_username}{counter}"
             counter += 1
-        
-        # Create user
-        user = User.objects.create_user(
-            username=username,
-            email=self.email,
-            first_name=self.full_name.split()[0],
-            last_name=' '.join(self.full_name.split()[1:]) if len(self.full_name.split()) > 1 else '',
-            role='staff'
-        )
-        
-        # Create staff profile
-        staff_profile = StaffProfile.objects.create(
-            user=user,
-            phone_number=self.phone_number,
-            date_of_birth=self.date_of_birth,
-            national_insurance_number=None,  # Will be filled during onboarding
-            street=self.home_address,
-            city='',  # Will need to be filled later
-            postal_code=self.postcode,
-            country='UK',
-            is_approved=True  # Pre-approved since application was approved
-        )
-        
-        # Create SIA License if applicable
-        if self.has_sia_licence and self.sia_licence_number:
-            # Map recruitment form license types to SIA license types
-            licence_type_mapping = {
-                'door_supervisor': 'ds',
-                'security_guard': 'sg',
-                'cctv': 'cctv',
-                'close_protection': 'cp',
-                'dog_handler': 'k9',
-                'vehicle_security': 'vs',
-                'key_holding': 'key'
-            }
-            
-            for licence_type in self.licence_types:
-                # Convert long format to short format
-                short_licence_type = licence_type_mapping.get(licence_type, licence_type)
-                
-                SIALicense.objects.create(
-                    staff_profile=staff_profile,
-                    license_number=self.sia_licence_number,
-                    license_type=short_licence_type,
-                    issue_date=timezone.now().date(),  # Will need to be updated
-                    expiry_date=self.licence_expiry_date,
-                    status='valid',
-                    document_url=''  # Will need to be uploaded later
+
+        # Check for email conflicts
+        if User.objects.filter(email=self.email).exists():
+            raise ValueError(f"A user with email {self.email} already exists")
+
+        try:
+            with transaction.atomic():
+                # Create user
+                user = User.objects.create_user(
+                    username=username,
+                    email=self.email,
+                    first_name=self.full_name.split()[0] if self.full_name else '',
+                    last_name=' '.join(self.full_name.split()[1:]) if len(self.full_name.split()) > 1 else '',
+                    role='staff'
                 )
-        
-        # Create qualifications
-        for cert in self.certifications:
-            if cert != 'other':
-                SecurityQualification.objects.create(
-                    staff_profile=staff_profile,
-                    qualification_type=cert,
-                    provider='Unknown',  # Will need to be updated
-                    certificate_number='',  # Will need to be updated
-                    issue_date=timezone.now().date(),
-                    document_url=''  # Will need to be uploaded later
+
+                # Create staff profile with employment type
+                staff_profile = StaffProfile.objects.create(
+                    user=user,
+                    employment_type=self.employment_type,  # FIX: Added employment type
+                    phone_number=self.phone_number,
+                    date_of_birth=self.date_of_birth,
+                    national_insurance_number=None,  # Will be filled during onboarding
+                    street=self.home_address,
+                    city='',  # Will need to be filled later
+                    postal_code=self.postcode,
+                    country='UK',
+                    is_approved=True  # Pre-approved since application was approved
                 )
-        
-        # Link the converted user
-        self.converted_to_user = user
-        self.save()
-        
-        return user
+
+                # FIX: Create UserCompanyMembership for multi-tenant access
+                UserCompanyMembership.objects.create(
+                    user=user,
+                    company=company,
+                    role='staff',
+                    is_owner=False,
+                    is_active=True,
+                    invited_by=admin_user,
+                    invitation_status='accepted',
+                    joined_at=timezone.now()
+                )
+
+                # Create SIA License if applicable (with duplicate handling)
+                if self.has_sia_licence and self.sia_licence_number:
+                    licence_type_mapping = {
+                        'door_supervisor': 'ds',
+                        'security_guard': 'sg',
+                        'cctv': 'cctv',
+                        'close_protection': 'cp',
+                        'dog_handler': 'k9',
+                        'vehicle_security': 'vs',
+                        'key_holding': 'key'
+                    }
+
+                    for licence_type in self.licence_types:
+                        short_licence_type = licence_type_mapping.get(licence_type, licence_type)
+
+                        # Check if a license with this number already exists
+                        existing_license = SIALicense.objects.filter(
+                            license_number=self.sia_licence_number
+                        ).first()
+
+                        if existing_license:
+                            # Skip creating the license if it already exists (SIA licenses are government-issued and unique)
+                            logger.info(
+                                f"SIA license number {self.sia_licence_number} already exists. "
+                                f"Skipping license creation for user {user.email} from recruitment application {self.id}"
+                            )
+                            continue  # Skip to next license type
+
+                        try:
+                            SIALicense.objects.create(
+                                staff_profile=staff_profile,
+                                license_number=self.sia_licence_number,
+                                license_type=short_licence_type,
+                                issue_date=timezone.now().date(),
+                                expiry_date=self.licence_expiry_date,
+                                status='valid',
+                                document_url=''
+                            )
+                            logger.info(
+                                f"Created SIA license {self.sia_licence_number} ({short_licence_type}) "
+                                f"for user {user.email} from recruitment application {self.id}"
+                            )
+                        except Exception as license_error:
+                            logger.error(
+                                f"Failed to create SIA license for recruitment application {self.id}: "
+                                f"{str(license_error)}. Skipping this license type: {short_licence_type}"
+                            )
+                            # Continue with other license types rather than failing the entire conversion
+
+                # Create qualifications (existing logic)
+                for cert in self.certifications:
+                    if cert and cert != 'other':
+                        SecurityQualification.objects.create(
+                            staff_profile=staff_profile,
+                            qualification_type=cert,
+                            provider='Unknown',
+                            certificate_number='',
+                            issue_date=timezone.now().date(),
+                            document_url=''
+                        )
+
+                # Link the converted user
+                self.converted_to_user = user
+                self.save()
+
+                return user
+
+        except Exception as e:
+            # Transaction will automatically rollback
+            logger.error(f"Failed to convert recruitment application {self.id} to user: {str(e)}", exc_info=True)
+            raise ValueError(f"Failed to convert application to user: {str(e)}")
 
 
 class EnforcementVisit(models.Model):

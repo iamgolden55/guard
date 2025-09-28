@@ -6,8 +6,11 @@ import {
   CompanyContextResponse,
   RegionalComplianceConfig,
   OnboardingResponse,
-  ValidationError
+  ValidationError,
+  CompanyInitiationData,
+  CompanyInfoData
 } from '../types';
+import { mapCountryNameToCode } from '../utils/countryMapping';
 
 /**
  * Service for managing onboarding API calls
@@ -16,14 +19,79 @@ class OnboardingService {
   private readonly baseUrl = '/onboarding';
 
   /**
-   * Initialize a new onboarding session
+   * Initialize a new onboarding session with company data
    */
-  async initiateOnboarding(): Promise<{ sessionId: string; progress: OnboardingProgress }> {
+  /**
+   * Map frontend industry values to backend industry values
+   */
+  private mapIndustryType(frontendIndustry: string): string {
+    const industryMapping: Record<string, string> = {
+      'Security Services': 'corporate',
+      'Event Security': 'events',
+      'Corporate Security': 'corporate',
+      'Retail Security': 'retail',
+      'Hospitality Security': 'hospitality',
+      'Construction Security': 'construction',
+      'Transport Security': 'transport',
+      'Healthcare Security': 'healthcare',
+      'Education Security': 'education',
+      'Other': 'mixed'
+    };
+
+    return industryMapping[frontendIndustry] || 'corporate';
+  }
+
+  async initiateOnboarding(companyData: CompanyInfoData): Promise<{ sessionId: string; progress: OnboardingProgress; onboarding?: any }> {
     try {
-      const response = await api.post(`${this.baseUrl}/initiate/`);
+      // Convert frontend company data to API format
+      const payload: CompanyInitiationData = {
+        company: {
+          // Required fields
+          name: companyData.companyName,
+          registration_number: companyData.registrationNumber,
+          country_code: mapCountryNameToCode(companyData.address?.country || ''),
+          city: companyData.address?.city || '',
+          postal_code: companyData.address?.postalCode || '',
+          address_line_1: companyData.address?.street || '',
+          billing_email: companyData.primaryContact?.email || '',
+          primary_contact_name: `${companyData.primaryContact?.firstName || ''} ${companyData.primaryContact?.lastName || ''}`.trim(),
+          primary_contact_email: companyData.primaryContact?.email || '',
+          primary_contact_phone: companyData.primaryContact?.phone || '',
+          industry_type: this.mapIndustryType(companyData.industry || 'Security Services'),
+          business_type: companyData.businessType || 'private_limited',
+          founded_year: companyData.foundedYear || new Date().getFullYear(),
+
+          // Optional fields with defaults
+          trading_name: companyData.companyName, // Use company name as default
+          website_url: companyData.websiteUrl || '',
+          description: companyData.description || '',
+          state_province: companyData.address?.state || '',
+          subscription_tier: 'professional',
+          company_size: 'medium'
+        }
+      };
+
+      const response = await api.post(`${this.baseUrl}/initiate/`, payload);
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to initiate onboarding:', error);
+
+      // Extract specific error message from backend
+      if (error.response?.data?.message) {
+        // If there are specific field errors, show them
+        if (error.response.data.errors) {
+          const fieldErrors = Object.entries(error.response.data.errors)
+            .map(([field, messages]: [string, any]) => {
+              const errorMessages = Array.isArray(messages) ? messages : [messages];
+              return `${field}: ${errorMessages.join(', ')}`;
+            })
+            .join('; ');
+          throw new Error(`${error.response.data.message}: ${fieldErrors}`);
+        } else {
+          throw new Error(error.response.data.message);
+        }
+      }
+
       throw new Error('Failed to start onboarding process');
     }
   }
@@ -100,10 +168,39 @@ class OnboardingService {
    */
   async saveRegionalSetup(data: OnboardingWizardData['regionalCompliance'], sessionId?: string): Promise<OnboardingResponse> {
     try {
+      // Map frontend data structure to backend format
       const payload = {
-        ...data,
+        operating_regions: data.operatingRegions,
+        primary_jurisdiction: data.operatingRegions.includes(data.primaryRegion)
+          ? data.primaryRegion
+          : data.operatingRegions[0], // Use first region if primaryRegion not in operatingRegions
+        regulatory_requirements: {
+          workingHoursRegulation: data.complianceProfile.workingHoursRegulation,
+          overtimeRules: data.complianceProfile.overtimeRules,
+          breakRequirements: data.complianceProfile.breakRequirements,
+          holidayEntitlements: data.complianceProfile.holidayEntitlements,
+          leaveRequirements: data.complianceProfile.leaveRequirements,
+          healthSafetyStandards: data.complianceProfile.healthSafetyStandards?.join(', ') || '',
+          dataProtectionLevel: data.dataProtectionLevel
+        },
+        compliance_certifications: data.specialRequirements || [],
+        standard_working_hours: {
+          default: "09:00-17:00", // Default working hours
+          ...this.parseWorkingHours(data.complianceProfile.workingHoursRegulation)
+        },
+        overtime_policies: {
+          rules: data.complianceProfile.overtimeRules,
+          rate: "1.5x", // Default overtime rate
+          maxHours: 48 // Default max hours per week
+        },
+        break_requirements: {
+          requirements: data.complianceProfile.breakRequirements,
+          lunch: "30min",
+          breaks: "15min every 4h"
+        },
         session_id: sessionId
       };
+
       const response = await api.put(`${this.baseUrl}/regional-setup/`, payload);
       return response.data;
     } catch (error) {
@@ -113,20 +210,124 @@ class OnboardingService {
   }
 
   /**
+   * Helper method to parse working hours regulation into structured format
+   */
+  private parseWorkingHours(regulation: string): Record<string, string> {
+    // This could be enhanced to parse different regulations
+    // For now, return default structure
+    return {
+      monday: "09:00-17:00",
+      tuesday: "09:00-17:00",
+      wednesday: "09:00-17:00",
+      thursday: "09:00-17:00",
+      friday: "09:00-17:00"
+    };
+  }
+
+  /**
    * Save staff operations configuration (Step 3)
    */
   async saveStaffConfiguration(data: OnboardingWizardData['staffOperations'], sessionId?: string): Promise<OnboardingResponse> {
     try {
+      // Transform frontend data to backend format
       const payload = {
-        ...data,
+        // Required fields
+        expected_staff_count: this.getExpectedStaffCount(data.staffSize),
+        staff_categories: this.getStaffCategories(),
+        venue_types: this.getVenueTypes(),
+
+        // Shift management
+        shift_patterns: {
+          maxConcurrentShifts: data.operationalCapacity?.maxConcurrentShifts || 5,
+          peakHoursCapacity: data.operationalCapacity?.peakHoursCapacity || 10,
+          emergencyStaffing: data.operationalCapacity?.emergencyStaffing || 3,
+          specialEventCapacity: data.operationalCapacity?.specialEventCapacity || 15
+        },
+        shift_approval_required: true,
+        allow_shift_swapping: true,
+        gps_tracking_required: true,
+
+        // Payment configuration
+        default_pay_rates: {
+          staff: 12.50,
+          supervisor: 15.00,
+          manager: 18.00
+        },
+        payment_frequency: 'weekly',
+
+        // Qualification requirements
+        required_licenses: ['SIA License'],
+        required_certifications: [],
+
+        // Growth projections for reference
+        growth_projections: {
+          sixMonths: data.expectedGrowth?.sixMonths || 0,
+          oneYear: data.expectedGrowth?.oneYear || 0,
+          twoYears: data.expectedGrowth?.twoYears || 0
+        },
+
         session_id: sessionId
       };
-      const response = await api.put(`${this.baseUrl}/staff-configuration/`, payload);
+
+      const response = await api.put(`${this.baseUrl}/staff-config/`, payload);
       return response.data;
     } catch (error) {
       console.error('Failed to save staff configuration:', error);
       throw new Error('Failed to save staff operations settings');
     }
+  }
+
+  /**
+   * Map staff size to expected count
+   */
+  private getExpectedStaffCount(staffSize?: string): number {
+    switch (staffSize) {
+      case '1-10':
+      case 'small':
+        return 5;
+      case '11-50':
+      case 'medium':
+        return 25;
+      case '51-200':
+      case 'large':
+        return 100;
+      case '200+':
+      case 'enterprise':
+        return 300;
+      default:
+        return 10;
+    }
+  }
+
+  /**
+   * Get default staff categories for security companies
+   */
+  private getStaffCategories(): string[] {
+    return [
+      'Security Officer',
+      'Supervisor',
+      'Manager',
+      'Door Supervisor',
+      'CCTV Operator',
+      'Mobile Patrol',
+      'Event Security'
+    ];
+  }
+
+  /**
+   * Get default venue types for security companies
+   */
+  private getVenueTypes(): string[] {
+    return [
+      'Corporate Offices',
+      'Retail Stores',
+      'Restaurants/Bars',
+      'Events/Concerts',
+      'Construction Sites',
+      'Residential Buildings',
+      'Healthcare Facilities',
+      'Educational Institutions'
+    ];
   }
 
   /**
@@ -485,6 +686,35 @@ class OnboardingService {
     }
 
     return errors;
+  }
+
+  /**
+   * Get available regions for compliance setup
+   */
+  async getAvailableRegions(): Promise<{ id: string; name: string; countryCode: string }[]> {
+    try {
+      // For now, return a hardcoded list of common UK regions
+      // This could be extended to fetch from an API endpoint
+      return [
+        { id: 'uk', name: 'United Kingdom', countryCode: 'GB' },
+        { id: 'england', name: 'England', countryCode: 'GB' },
+        { id: 'scotland', name: 'Scotland', countryCode: 'GB' },
+        { id: 'wales', name: 'Wales', countryCode: 'GB' },
+        { id: 'northern-ireland', name: 'Northern Ireland', countryCode: 'GB' },
+        { id: 'london', name: 'Greater London', countryCode: 'GB' },
+        { id: 'manchester', name: 'Greater Manchester', countryCode: 'GB' },
+        { id: 'birmingham', name: 'West Midlands', countryCode: 'GB' },
+        { id: 'glasgow', name: 'Glasgow', countryCode: 'GB' },
+        { id: 'edinburgh', name: 'Edinburgh', countryCode: 'GB' }
+      ];
+    } catch (error) {
+      console.error('Failed to get available regions:', error);
+      // Return default UK regions as fallback
+      return [
+        { id: 'uk', name: 'United Kingdom', countryCode: 'GB' },
+        { id: 'england', name: 'England', countryCode: 'GB' }
+      ];
+    }
   }
 
   // Legacy function aliases for compatibility

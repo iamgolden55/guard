@@ -13,7 +13,7 @@ from .views import (
     ShiftExchangeViewSet, OpenShiftRequestViewSet, InvoiceViewSet, InvoiceItemViewSet, PayRateViewSet,
     DeputyConfigViewSet, DeputyEmployeeViewSet, DeputyTimesheetViewSet,
     ShiftTemplateViewSet, DeputyConfigView, SystemSettingsView,
-    my_profile, update_my_user,
+    my_profile, update_my_user, change_password,
     FileUploadView, payroll_preview, payroll_generate,
     EmploymentTypeViewSet, RecruitmentApplicationViewSet, RecruitmentApplicationPublicViewSet,
     # Compliance system views
@@ -24,7 +24,9 @@ from .views import (
     # Reporting system views
     ReportTemplateViewSet, ReportJobViewSet, ReportMetricsViewSet, ExportViewSet, ReportTypesViewSet,
     # Onboarding system views
-    OnboardingViewSet, CompaniesViewSet
+    OnboardingViewSet, CompaniesViewSet,
+    # Company recruitment views
+    CompanyRecruitmentViewSet
 )
 
 router = DefaultRouter()
@@ -71,6 +73,8 @@ router.register('exports', ExportViewSet, basename='exports')
 # Onboarding system endpoints
 router.register('onboarding', OnboardingViewSet, basename='onboarding')
 router.register('companies', CompaniesViewSet, basename='companies')
+# Company recruitment endpoints
+router.register('company-recruitment', CompanyRecruitmentViewSet, basename='company-recruitment')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -82,6 +86,7 @@ urlpatterns = [
     path('settings/', SystemSettingsView.as_view(), name='system-settings'),
     path('profiles/me', my_profile, name='my-profile'),
     path('users/me', update_my_user, name='update-my-user'),
+    path('accounts/change-password/', change_password, name='change-password'),
     path('upload/', FileUploadView.as_view(), name='file-upload'),
     path('admin/payroll/preview/', payroll_preview, name='payroll-preview'),
     path('admin/payroll/generate/', payroll_generate, name='payroll-generate'),

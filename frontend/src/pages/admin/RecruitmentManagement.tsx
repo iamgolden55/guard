@@ -31,11 +31,13 @@ import {
   Persona,
   PersonaSize,
   ConstrainMode,
-  CheckboxVisibility
+  CheckboxVisibility,
+  IconButton
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
 import { recruitmentService, RecruitmentApplication, ApplicationFilters } from '../../services/recruitmentService';
 import { employmentTypeService, EmploymentType } from '../../services/employmentTypeService';
+import companyService from '../../services/companyService';
 import ApplicationCard from '../../components/ApplicationCard';
 import useIsMobile from '../../hooks/useIsMobile';
 
@@ -68,6 +70,8 @@ const RecruitmentManagement: React.FC = () => {
   // Form states
   const [adminNotes, setAdminNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [companySlug, setCompanySlug] = useState<string | null>(null);
+  const [recruitmentUrl, setRecruitmentUrl] = useState<string>('');
 
   useEffect(() => {
     loadData();
@@ -76,7 +80,7 @@ const RecruitmentManagement: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [applicationsData, employmentTypesData] = await Promise.all([
+      const [applicationsData, employmentTypesData, companyData] = await Promise.all([
         recruitmentService.getApplications(filters).catch(err => {
           console.error('Applications fetch error:', err);
           console.error('Full error:', err.response?.data || err);
@@ -86,6 +90,10 @@ const RecruitmentManagement: React.FC = () => {
           console.error('Employment types fetch error:', err);
           console.error('Full error:', err.response?.data || err);
           return [];
+        }),
+        companyService.getCurrentCompanyContext().catch(err => {
+          console.error('Company fetch error:', err);
+          return null;
         })
       ]);
       
@@ -94,7 +102,20 @@ const RecruitmentManagement: React.FC = () => {
       
       console.log('Applications loaded:', applications);
       console.log('Employment types loaded:', employmentTypes);
-      
+      console.log('Company data loaded:', companyData);
+
+      // Process company data and generate recruitment URL
+      if (companyData?.company?.slug) {
+        const slug = companyData.company.slug;
+        setCompanySlug(slug);
+        const baseUrl = window.location.origin;
+        const url = `${baseUrl}/apply/${slug}`;
+        setRecruitmentUrl(url);
+        console.log('Setting recruitment URL:', url);
+      } else {
+        console.log('No company slug found in data:', companyData);
+      }
+
       setApplications(applications);
       setEmploymentTypes(employmentTypes);
     } catch (err) {
@@ -108,6 +129,15 @@ const RecruitmentManagement: React.FC = () => {
   const showSuccess = (message: string) => {
     setSuccessMessage(message);
     setTimeout(() => setSuccessMessage(null), 5000);
+  };
+
+  const copyRecruitmentUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(recruitmentUrl);
+      showSuccess('Recruitment URL copied to clipboard!');
+    } catch (err) {
+      setError('Failed to copy URL to clipboard');
+    }
   };
 
   const handleApprove = async () => {
@@ -364,6 +394,71 @@ const RecruitmentManagement: React.FC = () => {
             Total: {applications.length} applications
           </Text>
         </Stack>
+
+        {/* Recruitment Link Section */}
+        {recruitmentUrl && (
+          <Stack tokens={{ childrenGap: 12 }} styles={{
+            root: {
+              backgroundColor: '#f3f2f1',
+              padding: '16px',
+              borderRadius: '8px',
+              border: '1px solid #edebe9'
+            }
+          }}>
+            <Text variant="large" style={{ fontWeight: 600 }}>
+              Company Recruitment Link
+            </Text>
+            <Text variant="medium" style={{ color: '#666' }}>
+              Share this unique link with candidates to apply for positions at your company.
+              Only employment types for your company will be shown.
+            </Text>
+            <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
+              <TextField
+                value={recruitmentUrl}
+                readOnly
+                style={{ flex: 1 }}
+                styles={{
+                  root: { maxWidth: isMobile ? '100%' : '500px' },
+                  fieldGroup: { backgroundColor: 'white' }
+                }}
+              />
+              <TooltipHost content="Copy recruitment URL">
+                <IconButton
+                  iconProps={{ iconName: 'Copy' }}
+                  title="Copy URL"
+                  onClick={copyRecruitmentUrl}
+                  styles={{
+                    root: {
+                      backgroundColor: '#0078d4',
+                      color: 'white',
+                      borderRadius: '4px'
+                    },
+                    rootHovered: {
+                      backgroundColor: '#106ebe'
+                    }
+                  }}
+                />
+              </TooltipHost>
+              <TooltipHost content="Open recruitment page">
+                <IconButton
+                  iconProps={{ iconName: 'NavigateExternalInline' }}
+                  title="Open URL"
+                  onClick={() => window.open(recruitmentUrl, '_blank')}
+                  styles={{
+                    root: {
+                      backgroundColor: '#107c10',
+                      color: 'white',
+                      borderRadius: '4px'
+                    },
+                    rootHovered: {
+                      backgroundColor: '#0e6f0e'
+                    }
+                  }}
+                />
+              </TooltipHost>
+            </Stack>
+          </Stack>
+        )}
 
         {error && (
           <MessageBar

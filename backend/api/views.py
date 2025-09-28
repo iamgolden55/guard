@@ -13,7 +13,7 @@ from .compliance_performance_guide import CompliancePerformanceGuide
 from rest_framework import viewsets, status, serializers, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -22,7 +22,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
-from django.db import models
+from django.db import models, IntegrityError
 import os
 
 from .models import (
@@ -245,17 +245,39 @@ class UserViewSet(viewsets.ModelViewSet):
             permission_classes = [IsAuthenticated]
         return [permission() for permission in permission_classes]
     
+    def get_user_company(self, request):
+        """Get the user's current company context"""
+        # For now, get the first active company membership where user is owner/admin/manager
+        membership = request.user.company_memberships.filter(
+            is_active=True,
+            role__in=['owner', 'admin', 'manager']
+        ).select_related('company').first()
+
+        if not membership:
+            return None
+        return membership.company
+
     def get_queryset(self):
         """
-        Limit staff users to only see their own user details.
-        Managers and admins can see all users.
+        Filter users based on role and company context.
+        Users can only see other users from their own company.
         """
         user = self.request.user
-        
-        # Admin and managers can see all users
+
         if user.role in ['admin', 'manager']:
-            return User.objects.all()
-        
+            # Admin and managers can see users from their company only
+            company = self.get_user_company(self.request)
+            if not company:
+                # No company context, return only the user themselves
+                return User.objects.filter(id=user.id)
+
+            # Get all users who are members of the same company
+            company_user_ids = company.memberships.filter(
+                is_active=True
+            ).values_list('user_id', flat=True)
+
+            return User.objects.filter(id__in=company_user_ids)
+
         # Staff can only see their own user
         return User.objects.filter(id=user.id)
     
@@ -698,11 +720,28 @@ class VenueViewSet(viewsets.ModelViewSet):
             permission_classes = [IsAuthenticated]
         return [permission() for permission in permission_classes]
     
+    def get_user_company(self, request):
+        """Get the user's current company context"""
+        # For now, get the first active company membership where user is owner/admin/manager
+        membership = request.user.company_memberships.filter(
+            is_active=True,
+            role__in=['owner', 'admin', 'manager']
+        ).select_related('company').first()
+
+        if not membership:
+            return None
+        return membership.company
+
     def get_queryset(self):
         """
-        Return all venues for any authenticated user.
+        Return venues for the user's company only.
         """
-        return Venue.objects.all()
+        company = self.get_user_company(self.request)
+        if not company:
+            # No company context, return empty queryset
+            return Venue.objects.none()
+
+        return Venue.objects.filter(company=company)
     
     def create(self, request, *args, **kwargs):
         # Only admin users can create venues
@@ -830,11 +869,33 @@ class ShiftViewSet(viewsets.ModelViewSet):
             return FrontendShiftSerializer
         return ShiftSerializer
     
+    def get_user_company(self, request):
+        """Get the user's current company context"""
+        # For now, get the first active company membership where user is owner/admin/manager
+        membership = request.user.company_memberships.filter(
+            is_active=True,
+            role__in=['owner', 'admin', 'manager']
+        ).select_related('company').first()
+
+        if not membership:
+            return None
+        return membership.company
+
     def get_queryset(self):
         """
-        Filter shifts based on query parameters
+        Filter shifts based on company context and query parameters
         """
-        queryset = Shift.objects.all()
+        # First filter by company context
+        company = self.get_user_company(self.request)
+        if not company:
+            # No company context, return shifts for staff user only
+            if self.request.user.role == 'staff':
+                queryset = Shift.objects.filter(staff_user=self.request.user)
+            else:
+                queryset = Shift.objects.none()
+        else:
+            # Filter shifts to only include venues from the user's company
+            queryset = Shift.objects.filter(venue__company=company)
         
         # Filter by staff_user if provided
         staff_user_id = self.request.query_params.get('staff_user', None)
@@ -1708,17 +1769,42 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = Invoice.objects.all()
     serializer_class = InvoiceSerializer
-    
+
+    def get_user_company(self, request):
+        """Get the user's current company context"""
+        # For now, get the first active company membership where user is owner/admin/manager
+        membership = request.user.company_memberships.filter(
+            is_active=True,
+            role__in=['owner', 'admin', 'manager']
+        ).select_related('company').first()
+
+        if not membership:
+            return None
+        return membership.company
+
     def get_queryset(self):
-        """Filter invoices to only show those belonging to the requesting user"""
-        if self.request.user.role == 'staff':
-            return Invoice.objects.filter(staff_user=self.request.user)
-        elif self.request.user.role in ['manager', 'admin']:
-            # Managers and admins can see all invoices
-            return Invoice.objects.all()
+        """Filter invoices based on user role and company context"""
+        user = self.request.user
+
+        if user.role == 'staff':
+            # Staff can only see their own invoices
+            return Invoice.objects.filter(staff_user=user)
+        elif user.role in ['manager', 'admin']:
+            # Managers and admins can see invoices for their company only
+            company = self.get_user_company(self.request)
+            if not company:
+                # No company context, return empty queryset
+                return Invoice.objects.none()
+
+            # Filter invoices to only include staff from the same company
+            company_staff_ids = company.memberships.filter(
+                is_active=True
+            ).values_list('user_id', flat=True)
+
+            return Invoice.objects.filter(staff_user_id__in=company_staff_ids)
         else:
             # Default to only user's own invoices
-            return Invoice.objects.filter(staff_user=self.request.user)
+            return Invoice.objects.filter(staff_user=user)
     
     @action(detail=False, methods=['post'])
     def generate(self, request):
@@ -2078,18 +2164,44 @@ class DeputyTimesheetViewSet(viewsets.ModelViewSet):
 
 class SystemSettingsView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
-    
+
+    def get_user_company(self, request):
+        """Get the user's current company context"""
+        # For now, get the first active company membership where user is owner/admin
+        membership = request.user.company_memberships.filter(
+            is_active=True,
+            role__in=['owner', 'admin']
+        ).select_related('company').first()
+
+        if not membership:
+            return None
+        return membership.company
+
     def get(self, request):
-        """Get the system settings"""
-        settings = SystemSettings.get_settings()
+        """Get the system settings for the user's company"""
+        company = self.get_user_company(request)
+        if not company:
+            return Response(
+                {'error': 'No company context found'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        settings = SystemSettings.get_settings(company)
         serializer = SystemSettingsSerializer(settings)
         return Response(serializer.data)
-    
+
     def put(self, request):
-        """Update the system settings"""
-        settings = SystemSettings.get_settings()
+        """Update the system settings for the user's company"""
+        company = self.get_user_company(request)
+        if not company:
+            return Response(
+                {'error': 'No company context found'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        settings = SystemSettings.get_settings(company)
         serializer = SystemSettingsSerializer(settings, data=request.data, partial=True)
-        
+
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -2100,16 +2212,294 @@ class SystemSettingsView(APIView):
 def my_profile(request):
     try:
         profile = StaffProfile.objects.get(user=request.user)
+        # User has a staff profile, handle normally
+        if request.method == 'GET':
+            serializer = StaffProfileSerializer(profile)
+            return Response(serializer.data)
+        elif request.method == 'PATCH':
+            # List of fields that can't be updated by staff users
+            IMMUTABLE_FIELDS = ['national_insurance_number', 'date_of_birth']
+
+            # Separate user fields from profile fields
+            user_fields = ['firstName', 'lastName', 'email']
+            user_data = {}
+            profile_data = request.data.copy()
+
+            # Extract user fields and convert to snake_case
+            for field in user_fields:
+                if field in profile_data:
+                    if field == 'firstName':
+                        user_data['first_name'] = profile_data.pop(field)
+                    elif field == 'lastName':
+                        user_data['last_name'] = profile_data.pop(field)
+                    elif field == 'email':
+                        user_data['email'] = profile_data.pop(field)
+
+            # Update user fields if any were provided
+            if user_data:
+                for field, value in user_data.items():
+                    setattr(request.user, field, value)
+                request.user.save()
+
+            # Check if user is trying to update immutable fields
+            for field in IMMUTABLE_FIELDS:
+                if field in profile_data and getattr(profile, field) != profile_data[field]:
+                    # If admin or manager, allow the update
+                    if request.user.role in ['admin', 'manager']:
+                        pass  # Allow admins and managers to update immutable fields
+                    else:
+                        # For staff users, remove immutable fields from request data
+                        profile_data.pop(field)
+
+            # Update profile fields if any remain
+            if profile_data:
+                serializer = StaffProfileSerializer(profile, data=profile_data, partial=True, context={'request': request})
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
+
+            # Return updated profile data
+            updated_serializer = StaffProfileSerializer(profile, context={'request': request})
+            return Response(updated_serializer.data)
     except StaffProfile.DoesNotExist:
-        return Response({'detail': 'Profile not found.'}, status=status.HTTP_404_NOT_FOUND)
-    if request.method == 'GET':
-        serializer = StaffProfileSerializer(profile)
-        return Response(serializer.data)
-    elif request.method == 'PATCH':
-        serializer = StaffProfileSerializer(profile, data=request.data, partial=True, context={'request': request})
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+        # User doesn't have a staff profile (likely admin/owner)
+        user = request.user
+
+        if request.method == 'GET':
+            # Get company information to populate contact details
+            try:
+                membership = user.company_memberships.filter(
+                    is_active=True,
+                    role__in=['owner', 'admin', 'manager']
+                ).select_related('company').first()
+
+                if membership and membership.company:
+                    company = membership.company
+                    # Prioritize user's actual name over company contact name
+                    first_name = user.first_name or ''
+                    last_name = user.last_name or ''
+
+                    # Only fall back to company contact name if user names are empty
+                    if not first_name and not last_name and company.primary_contact_name:
+                        contact_name_parts = company.primary_contact_name.split(' ', 1)
+                        first_name = contact_name_parts[0] if contact_name_parts else ''
+                        last_name = contact_name_parts[1] if len(contact_name_parts) > 1 else ''
+
+                    # Use company contact details, fallback to user details
+                    phone_number = company.primary_contact_phone or ''
+                    email = company.primary_contact_email or user.email
+
+                    # Use company address
+                    address = {
+                        'street': company.address_line_1 or '',
+                        'city': company.city or '',
+                        'postalCode': company.postal_code or '',
+                        'country': company.state_province or ''
+                    }
+                else:
+                    # Fallback if no company found
+                    first_name = user.first_name
+                    last_name = user.last_name
+                    phone_number = ''
+                    email = user.email
+                    address = {'street': '', 'city': '', 'postalCode': '', 'country': ''}
+            except Exception as e:
+                # Fallback in case of any errors
+                first_name = user.first_name
+                last_name = user.last_name
+                phone_number = ''
+                email = user.email
+                address = {'street': '', 'city': '', 'postalCode': '', 'country': ''}
+
+            # Create a profile response for admin users with company contact info
+            admin_profile_data = {
+                'id': user.id,
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': email,
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'role': user.role,
+                    'is_active': user.is_active
+                },
+                'username': user.username,
+                'email': email,
+                'firstName': first_name,
+                'lastName': last_name,
+                'role': user.role,
+                'isActive': user.is_active,
+                'phoneNumber': phone_number,
+                'dateOfBirth': '',
+                'nationalInsuranceNumber': '',
+                'address': address,
+                'siaLicenses': [],
+                'bankDetails': {
+                    'accountName': '',
+                    'accountNumber': '',
+                    'sortCode': '',
+                    'bankName': ''
+                },
+                'emergencyContact': {
+                    'name': '',
+                    'relationship': '',
+                    'phoneNumber': ''
+                },
+                'profileImageUrl': None,
+                'availableDays': [],
+                'preferredVenues': [],
+                'notes': '',
+                'isApproved': True,  # Admin users are always approved
+                'securityRoles': getattr(user, 'security_roles', [])
+            }
+            return Response(admin_profile_data)
+        elif request.method == 'PATCH':
+            # For admin users, allow updating user fields and company contact info
+            allowed_user_fields = ['firstName', 'lastName', 'email']
+            allowed_company_fields = ['phoneNumber', 'address']
+            # Note: emergencyContact, bankDetails, dateOfBirth, nationalInsuranceNumber, and notes
+            # are accepted for form compatibility but not stored for admin users
+
+            user_updates = {}
+            company_updates = {}
+
+            # Handle user field updates
+            for field in allowed_user_fields:
+                if field in request.data:
+                    if field == 'firstName':
+                        user_updates['first_name'] = request.data[field]
+                    elif field == 'lastName':
+                        user_updates['last_name'] = request.data[field]
+                    elif field == 'email':
+                        user_updates['email'] = request.data[field]
+
+            # Handle company contact field updates
+            for field in allowed_company_fields:
+                if field in request.data:
+                    if field == 'phoneNumber':
+                        company_updates['primary_contact_phone'] = request.data[field]
+                    elif field == 'address' and isinstance(request.data[field], dict):
+                        address_data = request.data[field]
+                        if 'street' in address_data:
+                            company_updates['address_line_1'] = address_data['street']
+                        if 'city' in address_data:
+                            company_updates['city'] = address_data['city']
+                        if 'postalCode' in address_data:
+                            company_updates['postal_code'] = address_data['postalCode']
+                        if 'country' in address_data:
+                            company_updates['state_province'] = address_data['country']
+
+            # Accept but ignore fields that don't apply to admin users
+            ignored_fields = ['emergencyContact', 'bankDetails', 'dateOfBirth', 'nationalInsuranceNumber', 'notes']
+            for field in ignored_fields:
+                if field in request.data:
+                    # Accept the field to prevent form errors, but don't store it
+                    pass
+
+            # Apply user updates
+            if user_updates:
+                for field, value in user_updates.items():
+                    setattr(user, field, value)
+                user.save()
+
+            # Apply company updates
+            if company_updates:
+                try:
+                    membership = user.company_memberships.filter(
+                        is_active=True,
+                        role__in=['owner', 'admin', 'manager']
+                    ).select_related('company').first()
+
+                    if membership and membership.company:
+                        company = membership.company
+
+                        # Update contact name if first/last name changed
+                        if 'first_name' in user_updates or 'last_name' in user_updates:
+                            company.primary_contact_name = f"{user.first_name} {user.last_name}".strip()
+
+                        # Update other company fields
+                        for field, value in company_updates.items():
+                            setattr(company, field, value)
+
+                        company.save()
+                except Exception as e:
+                    # Log error but don't fail the request
+                    pass
+
+            # Return updated admin profile data (reuse the GET logic)
+            try:
+                membership = user.company_memberships.filter(
+                    is_active=True,
+                    role__in=['owner', 'admin', 'manager']
+                ).select_related('company').first()
+
+                if membership and membership.company:
+                    company = membership.company
+                    contact_name_parts = (company.primary_contact_name or '').split(' ', 1)
+                    first_name = contact_name_parts[0] if contact_name_parts else user.first_name
+                    last_name = contact_name_parts[1] if len(contact_name_parts) > 1 else user.last_name
+                    phone_number = company.primary_contact_phone or ''
+                    email = company.primary_contact_email or user.email
+                    address = {
+                        'street': company.address_line_1 or '',
+                        'city': company.city or '',
+                        'postalCode': company.postal_code or '',
+                        'country': company.state_province or ''
+                    }
+                else:
+                    first_name = user.first_name
+                    last_name = user.last_name
+                    phone_number = ''
+                    email = user.email
+                    address = {'street': '', 'city': '', 'postalCode': '', 'country': ''}
+            except Exception as e:
+                first_name = user.first_name
+                last_name = user.last_name
+                phone_number = ''
+                email = user.email
+                address = {'street': '', 'city': '', 'postalCode': '', 'country': ''}
+
+            updated_profile_data = {
+                'id': user.id,
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': email,
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'role': user.role,
+                    'is_active': user.is_active
+                },
+                'username': user.username,
+                'email': email,
+                'firstName': first_name,
+                'lastName': last_name,
+                'role': user.role,
+                'isActive': user.is_active,
+                'phoneNumber': phone_number,
+                'dateOfBirth': '',
+                'nationalInsuranceNumber': '',
+                'address': address,
+                'siaLicenses': [],
+                'bankDetails': {
+                    'accountName': '',
+                    'accountNumber': '',
+                    'sortCode': '',
+                    'bankName': ''
+                },
+                'emergencyContact': {
+                    'name': '',
+                    'relationship': '',
+                    'phoneNumber': ''
+                },
+                'profileImageUrl': None,
+                'availableDays': [],
+                'preferredVenues': [],
+                'notes': '',
+                'isApproved': True,
+                'securityRoles': getattr(user, 'security_roles', [])
+            }
+            return Response(updated_profile_data)
+
     return None
 
 
@@ -2122,6 +2512,54 @@ def update_my_user(request):
         user.save()
     serializer = UserSerializer(user)
     return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    """
+    Change user password endpoint.
+    Expects: current_password, new_password
+    """
+    user = request.user
+    current_password = request.data.get('current_password')
+    new_password = request.data.get('new_password')
+
+    if not current_password or not new_password:
+        return Response({
+            'detail': 'Both current_password and new_password are required.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Verify current password
+    if not user.check_password(current_password):
+        return Response({
+            'detail': 'Current password is incorrect.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Validate new password strength (basic validation)
+    if len(new_password) < 8:
+        return Response({
+            'detail': 'New password must be at least 8 characters long.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Set new password
+    user.set_password(new_password)
+
+    # Update password_last_changed if user has a staff profile
+    try:
+        if hasattr(user, 'profile') and user.profile:
+            from django.utils import timezone
+            user.profile.password_last_changed = timezone.now()
+            user.profile.save()
+    except:
+        # If user doesn't have a profile (like admin users), that's okay
+        pass
+
+    user.save()
+
+    return Response({
+        'detail': 'Password changed successfully.'
+    }, status=status.HTTP_200_OK)
 
 class FileUploadView(APIView):
     permission_classes = [IsAuthenticated]
@@ -2153,6 +2591,27 @@ class EmploymentTypeViewSet(viewsets.ModelViewSet):
     queryset = EmploymentType.objects.all()
     serializer_class = EmploymentTypeSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_user_company(self, request):
+        """Get the user's current company context"""
+        # For now, get the first active company membership where user is owner/admin/manager
+        membership = request.user.company_memberships.filter(
+            is_active=True,
+            role__in=['owner', 'admin', 'manager']
+        ).select_related('company').first()
+
+        if not membership:
+            return None
+        return membership.company
+
+    def get_queryset(self):
+        """Filter employment types by company context"""
+        company = self.get_user_company(self.request)
+        if not company:
+            # No company context, return empty queryset
+            return EmploymentType.objects.none()
+
+        return EmploymentType.objects.filter(company=company)
     
     def get_permissions(self):
         """
@@ -2167,19 +2626,22 @@ class EmploymentTypeViewSet(viewsets.ModelViewSet):
             permission_classes = [IsAuthenticated]
         return [permission() for permission in permission_classes]
     
-    def get_queryset(self):
-        """
-        Return active employment types by default.
-        Admins can see all employment types.
-        """
-        if self.request.user.role == 'admin':
-            return EmploymentType.objects.all()
-        return EmploymentType.objects.filter(is_active=True)
-    
+    def perform_create(self, serializer):
+        """Set the company when creating a new employment type"""
+        company = self.get_user_company(self.request)
+        if not company:
+            raise ValidationError('No company context found')
+        serializer.save(company=company)
+
     @action(detail=False, methods=['get'], url_path='active')
     def active(self, request):
-        """Get only active employment types"""
-        active_types = EmploymentType.objects.filter(is_active=True)
+        """Get only active employment types for the user's company"""
+        company = self.get_user_company(request)
+        if not company:
+            # For public recruitment form, return empty list if no company context
+            return Response([])
+
+        active_types = EmploymentType.objects.filter(company=company, is_active=True)
         serializer = self.get_serializer(active_types, many=True)
         return Response(serializer.data)
 
@@ -2202,11 +2664,27 @@ class RecruitmentApplicationViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         return [IsAdminUser()]
     
+    def get_user_company(self, request):
+        """Get the user's current company context"""
+        membership = request.user.company_memberships.filter(
+            is_active=True,
+            role__in=['owner', 'admin', 'manager']
+        ).select_related('company').first()
+        return membership.company if membership else None
+
     def get_queryset(self):
         """
-        Filter applications based on query parameters.
+        Filter applications based on query parameters and company context.
         """
-        queryset = RecruitmentApplication.objects.all()
+        # Filter by company context first
+        company = self.get_user_company(self.request)
+        if not company:
+            return RecruitmentApplication.objects.none()
+
+        # Base queryset filtered by company through employment_type relationship
+        queryset = RecruitmentApplication.objects.filter(
+            employment_type__company=company
+        ).select_related('employment_type', 'reviewed_by', 'converted_to_user')
         
         # Filter by status
         status_filter = self.request.query_params.get('status', None)
@@ -2263,18 +2741,41 @@ class RecruitmentApplicationViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'], url_path='convert-to-user')
     def convert_to_user(self, request, pk=None):
-        """Convert approved application to user account"""
+        """Convert approved application to user account with enhanced error handling"""
         application = self.get_object()
-        
+
         try:
             user = application.convert_to_user(request.user)
+
+            # Log successful conversion
+            logger.info(f"Successfully converted recruitment application {pk} to user {user.id} by {request.user.username}")
+
             return Response({
                 'message': 'Application converted to user account successfully',
                 'user': UserSerializer(user).data,
                 'application': RecruitmentApplicationSerializer(application).data
             })
+
         except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            # Business logic errors - safe to expose
+            logger.warning(f"Conversion validation failed for application {pk}: {str(e)}")
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except IntegrityError as e:
+            # Database constraint violations
+            logger.error(f"Database integrity error converting application {pk}: {str(e)}", exc_info=True)
+            return Response({
+                'error': 'Data conflict during conversion. Please check for duplicate users.'
+            }, status=status.HTTP_409_CONFLICT)
+
+        except Exception as e:
+            # Unexpected errors - log details but return generic message
+            logger.error(f"Unexpected error converting application {pk} to user: {str(e)}", exc_info=True)
+            return Response({
+                'error': 'Internal error during conversion. Please try again or contact support.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['get'], url_path='stats')
     def stats(self, request):
@@ -2323,6 +2824,129 @@ class RecruitmentApplicationPublicViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CompanyRecruitmentViewSet(viewsets.ViewSet):
+    """
+    Company-specific recruitment endpoints.
+    Provides company context for recruitment applications.
+    """
+    permission_classes = [AllowAny]
+
+    def get_company_from_slug(self, company_slug):
+        """Get company by slug"""
+        try:
+            return SecurityCompany.objects.get(slug=company_slug, is_active=True)
+        except SecurityCompany.DoesNotExist:
+            return None
+
+    @action(detail=False, methods=['get'], url_path='employment-types/(?P<company_slug>[^/.]+)')
+    def employment_types(self, request, company_slug=None):
+        """
+        GET /api/v1/recruitment/employment-types/{company_slug}/
+        Get active employment types for a specific company.
+        """
+        company = self.get_company_from_slug(company_slug)
+        if not company:
+            return Response({
+                'error': 'Company not found or inactive'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        employment_types = EmploymentType.objects.filter(
+            company=company,
+            is_active=True
+        ).values('id', 'name', 'description')
+
+        return Response({
+            'company': {
+                'name': company.name,
+                'slug': company.slug
+            },
+            'employment_types': list(employment_types)
+        })
+
+    @action(detail=False, methods=['post'], url_path='apply/(?P<company_slug>[^/.]+)')
+    def apply(self, request, company_slug=None):
+        """
+        POST /api/v1/company-recruitment/apply/{company_slug}/
+        Submit a recruitment application for a specific company.
+        """
+        logger.info(f"Recruitment application submission started for company: {company_slug}")
+
+        company = self.get_company_from_slug(company_slug)
+        if not company:
+            logger.error(f"Company not found or inactive: {company_slug}")
+            return Response({
+                'error': 'Company not found or inactive'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Validate that the employment type is provided and belongs to this company
+        employment_type_id = request.data.get('employment_type')
+        if not employment_type_id:
+            logger.error(f"No employment type provided in recruitment application for company {company.slug}")
+            return Response({
+                'error': 'Employment type is required for recruitment applications'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            employment_type = EmploymentType.objects.get(
+                id=employment_type_id,
+                company=company,
+                is_active=True
+            )
+            logger.info(f"Valid employment type {employment_type_id} found for company {company.slug}")
+        except EmploymentType.DoesNotExist:
+            logger.error(f"Invalid employment type {employment_type_id} for company {company.slug}")
+            return Response({
+                'error': 'Invalid employment type for this company'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create the application
+        logger.info(f"Creating recruitment application with data: {list(request.data.keys())}")
+        serializer = RecruitmentApplicationPublicSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                application = serializer.save()
+                logger.info(f"Recruitment application {application.id} created successfully for {application.email}")
+
+                return Response({
+                    'message': 'Application submitted successfully',
+                    'application_id': application.id,
+                    'email': application.email,
+                    'company': company.name
+                }, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                logger.error(f"Failed to save recruitment application: {str(e)}")
+                return Response({
+                    'error': 'Failed to save application. Please try again.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            logger.error(f"Recruitment application validation failed: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'], url_path='info/(?P<company_slug>[^/.]+)')
+    def company_info(self, request, company_slug=None):
+        """
+        GET /api/v1/recruitment/info/{company_slug}/
+        Get basic company information for recruitment page.
+        """
+        company = self.get_company_from_slug(company_slug)
+        if not company:
+            return Response({
+                'error': 'Company not found or inactive'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            'company': {
+                'name': company.name,
+                'slug': company.slug,
+                'trading_name': company.trading_name,
+                'city': company.city,
+                'state_province': company.state_province,
+                'country_code': company.country_code,
+                'contact_email': company.primary_contact_email
+            }
+        })
 
 
 # =============================================================================
@@ -4958,7 +5582,12 @@ class OnboardingViewSet(viewsets.ViewSet):
                 company=company,
                 session_id=request.session.session_key or str(uuid.uuid4())
             )
+
+            # Mark Step 1 (company info) as completed since we just created the company
+            onboarding.company_info_completed = True
+            onboarding.current_step = 2  # Move to step 2
             onboarding.update_session_activity()
+            onboarding.save()
 
             serializer = CompanyOnboardingSerializer(onboarding)
             return Response({
@@ -4979,7 +5608,36 @@ class OnboardingViewSet(viewsets.ViewSet):
         """
         GET /api/v1/onboarding/progress/
         Get current onboarding progress.
+        For staff users, onboarding is automatically considered complete.
         """
+        # Staff users don't need onboarding - they join existing companies
+        if request.user.role == 'staff':
+            return Response({
+                'status': 'success',
+                'onboarding': {
+                    'current_step': 5,  # Final step
+                    'total_steps': 5,
+                    'is_completed': True,
+                    'created_at': None,
+                    'updated_at': None,
+                    'session_id': None,
+                    'time_spent_minutes': 0,
+                    'last_step_accessed': 5,
+                    'company_info_completed': True,
+                    'staff_setup_completed': True,
+                    'integrations_completed': True,
+                    'regional_setup_completed': True,
+                    'finalization_completed': True,
+                    'step_data': {},
+                    'validation_errors': {},
+                    'estimated_time_remaining': 0,
+                    'completed_at': None,
+                    'completed_by': None,
+                    'company': None
+                }
+            })
+
+        # For admin/manager/owner users, check actual onboarding progress
         company = self.get_user_company(request)
         if not company:
             return Response({

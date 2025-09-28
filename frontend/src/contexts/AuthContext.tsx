@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode, useRef, useCallback } from 'react';
-import type { AuthState, User, OnboardingStatus } from '../types';
+import type { AuthState, User, OnboardingStatus, CompanyMembership } from '../types';
 import { authService } from '../services';
 import onboardingService from '../services/onboardingService';
+import companyService from '../services/companyService';
+import api from '../services/api';
 
 // Define the context value structure
 interface AuthContextValue {
@@ -17,6 +19,7 @@ interface AuthContextValue {
   logout: () => void;
   isUserRole: (role: string) => boolean;
   refreshUserToken: () => Promise<boolean>;
+  refreshUserData: () => void;
   updateOnboardingStatus: (status: Partial<OnboardingStatus>) => void;
   completeOnboarding: (companyId: string) => void;
 }
@@ -35,7 +38,8 @@ const initialAuthState: AuthState = {
     currentStep: null, // null = not loaded, number = actual step
     completedSteps: [],
     hasCompany: false
-  }
+  },
+  currentMembership: null
 };
 
 // Create context with undefined as default value
@@ -59,10 +63,11 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const onboardingFetchedRef = useRef(false); // Track if we've already successfully fetched onboarding
 
   // Function to fetch onboarding status
-  const fetchOnboardingStatus = useCallback(async (overrideToken?: string): Promise<OnboardingStatus> => {
+  const fetchOnboardingStatus = useCallback(async (overrideToken?: string, user?: any): Promise<OnboardingStatus> => {
     // Get current auth state to avoid stale closure
     const currentToken = overrideToken || localStorage.getItem('token');
     const isAuthenticated = overrideToken ? true : !!currentToken;
+    const currentUser = user || authState.user;
 
     // Set loading state before fetch (only if not using override token which means we're in login flow)
     if (!overrideToken) {
@@ -77,6 +82,17 @@ function AuthProvider({ children }: { children: ReactNode }) {
           currentStep: 1,
           completedSteps: [],
           hasCompany: false
+        };
+      }
+
+      // Staff users don't need onboarding - they join existing companies
+      if (currentUser?.role === 'staff') {
+        console.log('AuthContext: Staff user detected, skipping onboarding API call');
+        return {
+          isCompleted: true,
+          currentStep: 5,
+          completedSteps: [1, 2, 3, 4, 5],
+          hasCompany: true
         };
       }
 
@@ -307,7 +323,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
         const validatedUser = await authService.getUserProfile();
 
         // Fetch onboarding status using the current token
-        const onboardingStatus = await fetchOnboardingStatus(token);
+        const onboardingStatus = await fetchOnboardingStatus(token, validatedUser);
 
         setAuthState(prev => ({
           ...prev,
@@ -357,7 +373,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
             const validatedUser = await authService.getUserProfile();
 
             // Fetch onboarding status with refreshed token
-            const onboardingStatus = await fetchOnboardingStatus();
+            const onboardingStatus = await fetchOnboardingStatus(undefined, validatedUser);
 
             setAuthState(prev => ({
               ...prev,
@@ -402,6 +418,39 @@ function AuthProvider({ children }: { children: ReactNode }) {
     initializeAuth();
   }, [refreshUserToken]); // Only run on mount
 
+  // Function to fetch current company membership
+  const fetchCompanyMembership = async (token: string): Promise<CompanyMembership | null> => {
+    try {
+      // Temporarily set the token for the API call
+      const originalToken = api.defaults.headers.common['Authorization'];
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+      const response = await companyService.getCurrentCompanyContext();
+
+      // Restore original token
+      if (originalToken) {
+        api.defaults.headers.common['Authorization'] = originalToken;
+      } else {
+        delete api.defaults.headers.common['Authorization'];
+      }
+
+      if (response.membership) {
+        return {
+          id: response.membership.id,
+          role: response.membership.role,
+          isOwner: response.membership.is_owner,
+          isActive: response.membership.is_active,
+          companyId: response.membership.company,
+          companyName: response.membership.company_name
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Failed to fetch company membership:', error);
+      return null;
+    }
+  };
+
   // Login function
   const login = async (username: string, password: string) => {
     isLoggingInRef.current = true; // Prevent token validation useEffect from interfering
@@ -411,7 +460,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
       const response = await authService.login({ username, password });
 
       // Fetch onboarding status for the logged in user using the new token
-      const onboardingStatus = await fetchOnboardingStatus(response.access);
+      const onboardingStatus = await fetchOnboardingStatus(response.access, response.user);
+      // Fetch company membership
+      const companyMembership = await fetchCompanyMembership(response.access);
 
       // Set refs earlier and prevent validation effect immediately
       onboardingFetchedRef.current = true; // Prevent validation effect immediately
@@ -424,7 +475,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
         isLoading: false,
         onboardingLoading: false,
         error: null,
-        onboarding: onboardingStatus
+        onboarding: onboardingStatus,
+        currentMembership: companyMembership
       };
 
       // Set state without token first
@@ -491,13 +543,59 @@ function AuthProvider({ children }: { children: ReactNode }) {
         currentStep: null, // null = not loaded
         completedSteps: [],
         hasCompany: false
-      }
+      },
+      currentMembership: null
     });
   };
 
-  // Role check utility
+  // Refresh user data from localStorage (useful after profile updates)
+  const refreshUserData = () => {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        let user = JSON.parse(userStr);
+        // Make sure firstName and lastName exist and are properly formatted
+        if (user) {
+          // If we have snake_case fields but no camelCase ones, create the camelCase ones
+          if (user.first_name !== undefined && user.firstName === undefined) {
+            user.firstName = user.first_name;
+          }
+          if (user.last_name !== undefined && user.lastName === undefined) {
+            user.lastName = user.last_name;
+          }
+          // Ensure firstName and lastName aren't undefined
+          user.firstName = user.firstName || '';
+          user.lastName = user.lastName || '';
+        }
+
+        // Update the auth state with the refreshed user data
+        setAuthState(prevState => ({
+          ...prevState,
+          user: user
+        }));
+      } catch (error) {
+        console.error('Failed to refresh user data from localStorage:', error);
+      }
+    }
+  };
+
+  // Role check utility - checks company membership role, not user role
   const isUserRole = (role: string): boolean => {
-    return authState.user?.role.toLowerCase() === role.toLowerCase();
+    if (!authState.currentMembership) {
+      // Fallback to user role if no company membership (shouldn't happen in normal flow)
+      return authState.user?.role.toLowerCase() === role.toLowerCase();
+    }
+
+    // Check company membership role
+    const membershipRole = authState.currentMembership.role.toLowerCase();
+    const targetRole = role.toLowerCase();
+
+    // Map owner role to admin for dashboard purposes
+    if (membershipRole === 'owner' && targetRole === 'admin') {
+      return true;
+    }
+
+    return membershipRole === targetRole;
   };
 
   const value: AuthContextValue = {
@@ -507,6 +605,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     isUserRole,
     refreshUserToken,
+    refreshUserData,
     updateOnboardingStatus,
     completeOnboarding
   };

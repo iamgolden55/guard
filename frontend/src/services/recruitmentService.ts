@@ -162,12 +162,37 @@ export const recruitmentService = {
   },
 
   // Public endpoint
-  async submitApplication(data: RecruitmentApplicationRequest): Promise<{ 
-    message: string; 
-    application_id: number; 
-    email: string; 
+  async submitApplication(data: RecruitmentApplicationRequest): Promise<{
+    message: string;
+    application_id: number;
+    email: string;
   }> {
     const response = await api.post('/recruitment-apply/', data);
+    return response.data;
+  },
+
+  // Company-specific public endpoints
+  async getCompanyEmploymentTypes(companySlug: string): Promise<EmploymentType[]> {
+    const response = await api.get(`/company-recruitment/employment-types/${companySlug}/`);
+    return response.data?.employment_types || [];
+  },
+
+  async getCompanyInfo(companySlug: string): Promise<{
+    name: string;
+    description?: string;
+    logo?: string;
+    contact_email?: string;
+  }> {
+    const response = await api.get(`/company-recruitment/info/${companySlug}/`);
+    return response.data?.company || {};
+  },
+
+  async submitCompanyApplication(companySlug: string, data: RecruitmentApplicationRequest): Promise<{
+    message: string;
+    application_id: number;
+    email: string;
+  }> {
+    const response = await api.post(`/company-recruitment/apply/${companySlug}/`, data);
     return response.data;
   }
 };

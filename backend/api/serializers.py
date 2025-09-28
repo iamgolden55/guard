@@ -135,6 +135,13 @@ class StaffProfileSerializer(serializers.ModelSerializer):
     siaLicenses = serializers.SerializerMethodField()
     isApproved = serializers.ReadOnlyField(source='is_approved')
     employmentType = serializers.IntegerField(source='employment_type_id', required=False, allow_null=True)
+
+    # Add direct access to user fields for frontend compatibility
+    firstName = serializers.CharField(source='user.first_name', read_only=True)
+    lastName = serializers.CharField(source='user.last_name', read_only=True)
+    email = serializers.EmailField(source='user.email', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
+    role = serializers.CharField(source='user.role', read_only=True)
     
     def get_siaLicenses(self, obj):
         """Return SIA licenses in camelCase format for frontend compatibility"""
@@ -158,9 +165,10 @@ class StaffProfileSerializer(serializers.ModelSerializer):
             'street', 'city', 'postal_code', 'country', 'profile_image_url', 'notes',
             'password_last_changed', 'is_approved', 'created_at', 'updated_at',
             'emergency_contacts', 'bank_details', 'sia_licenses', 'availability',
-            'security_roles', 'securityRoles', 'siaLicenses', 'isApproved', 'employmentType'
+            'security_roles', 'securityRoles', 'siaLicenses', 'isApproved', 'employmentType',
+            'firstName', 'lastName', 'email', 'username', 'role'
         )
-        read_only_fields = ('created_at', 'updated_at', 'password_last_changed', 'security_roles', 'securityRoles', 'siaLicenses', 'isApproved')
+        read_only_fields = ('created_at', 'updated_at', 'password_last_changed', 'security_roles', 'securityRoles', 'siaLicenses', 'isApproved', 'firstName', 'lastName', 'email', 'username', 'role')
 
 class VenueSerializer(serializers.ModelSerializer):
     class Meta:
@@ -1512,7 +1520,7 @@ class SecurityCompanySerializer(serializers.ModelSerializer):
     class Meta:
         model = SecurityCompany
         fields = [
-            'id', 'name', 'trading_name', 'registration_number', 'tax_id',
+            'id', 'name', 'slug', 'trading_name', 'registration_number', 'tax_id',
             'country_code', 'state_province', 'city', 'postal_code',
             'address_line_1', 'address_line_2', 'industry_type', 'company_size',
             'staff_capacity', 'venue_capacity', 'subscription_tier',

@@ -13,6 +13,7 @@ import holidayService from './holidayService';
 import reportService from './reportService';
 import onboardingService from './onboardingService';
 import companyService from './companyService';
+import { employmentTypeService } from './employmentTypeService';
 
 export {
   api,
@@ -29,5 +30,6 @@ export {
   holidayService,
   reportService,
   onboardingService,
-  companyService
+  companyService,
+  employmentTypeService
 };

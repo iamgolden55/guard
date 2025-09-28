@@ -73,6 +73,7 @@ export interface ProfileUpdateRequest {
   emergencyContact?: EmergencyContact;
   bankDetails?: BankDetails;
   nationalInsuranceNumber?: string;
+  dateOfBirth?: string;
   password?: string;
   currentPassword?: string;
 }

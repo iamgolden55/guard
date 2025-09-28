@@ -383,78 +383,28 @@ const OnboardingWizard: React.FC = () => {
             // No existing company - initiate onboarding to create one
             console.log('Initiating onboarding with company data...');
 
-            // Convert company info to the format expected by the API
-            // Map country names to ISO codes
-            const countryMapping: Record<string, string> = {
-              'United Kingdom': 'GBR',
-              'Ireland': 'IRL',
-              'United States': 'USA',
-              'Canada': 'CAN',
-              'Australia': 'AUS',
-              'New Zealand': 'NZL'
-            };
+            try {
+              // Use the updated service method with company data
+              response = await onboardingService.initiateOnboarding(wizardData.companyInfo as CompanyInfoData);
 
-            const companyData = {
-              company: {
-                // Required fields from SecurityCompany model
-                name: wizardData.companyInfo?.companyName || '',
-                registration_number: wizardData.companyInfo?.registrationNumber || '',
-                country_code: countryMapping[wizardData.companyInfo?.address?.country || ''] || 'GBR',
-                city: wizardData.companyInfo?.address?.city || '',
-                postal_code: wizardData.companyInfo?.address?.postalCode || '',
-                address_line_1: wizardData.companyInfo?.address?.street || '',
-                industry_type: wizardData.companyInfo?.industry || 'corporate',
-                company_size: 'medium', // Default
-                billing_email: wizardData.companyInfo?.primaryContact?.email || '',
-                primary_contact_name: `${wizardData.companyInfo?.primaryContact?.firstName || ''} ${wizardData.companyInfo?.primaryContact?.lastName || ''}`.trim(),
-                primary_contact_email: wizardData.companyInfo?.primaryContact?.email || '',
-                primary_contact_phone: wizardData.companyInfo?.primaryContact?.phone || '',
-
-                // Optional fields (with defaults or from form)
-                trading_name: wizardData.companyInfo?.companyName || '', // Use company name as default
-                tax_id: '', // Not collected in form yet
-                state_province: wizardData.companyInfo?.address?.state || '',
-                address_line_2: '', // Not collected in form yet
-                subscription_tier: 'professional',
-
-                // Additional fields from form
-                website_url: wizardData.companyInfo?.websiteUrl || '',
-                description: wizardData.companyInfo?.description || '',
-                founded_year: wizardData.companyInfo?.foundedYear || new Date().getFullYear(),
-                business_type: wizardData.companyInfo?.businessType || 'private_limited'
+              // Store company ID for future use
+              if (response.onboarding?.company) {
+                onboardingService.updateProgress(1, [1], response.onboarding.company, false);
               }
-            };
-
-            // Call initiate with company data
-            const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
-            const initiateResponse = await fetch(`${API_BASE_URL}/onboarding/initiate/`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-              },
-              body: JSON.stringify(companyData)
-            });
-
-            if (!initiateResponse.ok) {
-              const errorData = await initiateResponse.json().catch(() => ({}));
-
+            } catch (error: any) {
               // Handle case where user already has completed onboarding
-              if (initiateResponse.status === 400 && errorData.message?.includes('completed company onboarding')) {
+              if (error.message?.includes('completed company onboarding') ||
+                  error.response?.status === 400) {
                 console.log('User already has completed onboarding, redirecting to dashboard...');
+                const errorData = error.response?.data || {};
                 completeOnboarding(errorData.companyId || 'existing');
                 navigate('/dashboard');
                 return;
               }
-
-              throw new Error(`Failed to initiate onboarding: ${initiateResponse.status}`);
-            }
-
-            response = await initiateResponse.json();
-
-            // Store company ID for future use
-            if (response.onboarding?.company) {
-              onboardingService.updateProgress(1, [1], response.onboarding.company, false);
+              // Set the specific error message from the service
+              setGlobalError(error.message);
+              setIsLoading(false);
+              return;
             }
           } else {
             // Company already exists, update company info
@@ -471,7 +421,8 @@ const OnboardingWizard: React.FC = () => {
           response = await onboardingService.submitIntegrationsSetup(wizardData.integrationsSetup as IntegrationsSetupData);
           break;
         case 5:
-          response = await onboardingService.finalizeOnboarding(wizardData.accountFinalization as AccountFinalizationData);
+          // For step 5, complete the entire onboarding process
+          response = await onboardingService.completeOnboarding(wizardData as OnboardingWizardData);
           break;
       }
 
@@ -501,9 +452,11 @@ const OnboardingWizard: React.FC = () => {
           setValidationErrors(response.errors);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Step submission error:', error);
-      setGlobalError('An unexpected error occurred. Please try again.');
+      // Use the specific error message from the service if available
+      const errorMessage = error.message || 'An unexpected error occurred. Please try again.';
+      setGlobalError(errorMessage);
     } finally {
       setIsLoading(false);
     }

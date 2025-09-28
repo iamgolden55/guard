@@ -14,6 +14,15 @@ export enum UserRole {
   ADMIN = 'admin'
 }
 
+export interface CompanyMembership {
+  id: string;
+  role: string;
+  isOwner: boolean;
+  isActive: boolean;
+  companyId: string;
+  companyName: string;
+}
+
 export interface AuthState {
   user: User | null;
   token: string | null;
@@ -23,6 +32,7 @@ export interface AuthState {
   onboardingLoading: boolean;
   error: string | null;
   onboarding: OnboardingStatus;
+  currentMembership: CompanyMembership | null;
 }
 
 export interface OnboardingStatus {

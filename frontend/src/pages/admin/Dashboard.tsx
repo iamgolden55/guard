@@ -8,12 +8,15 @@ import {
   Spinner,
   SpinnerSize,
   Pivot,
-  PivotItem
+  PivotItem,
+  MessageBar,
+  MessageBarType,
+  DefaultButton
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
 import { Card, BulkPayrollGeneration, SwipeableTabs } from '../../components';
 import { useAuth } from '../../contexts/AuthContext';
-import { shiftService, invoiceService, deputyService, venueService } from '../../services';
+import { shiftService, invoiceService, deputyService, venueService, employmentTypeService } from '../../services';
 import api from '../../services/api';
 import type { DeputyStatus, User, Venue, Shift, Invoice } from '../../types';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -69,6 +72,8 @@ const AdminDashboard: React.FC = () => {
     venueCount: 0
   });
   const [deputyStatus, setDeputyStatus] = useState<DeputyStatus | null>(null);
+  const [employmentTypes, setEmploymentTypes] = useState<any[]>([]);
+  const [showEmploymentTypePrompt, setShowEmploymentTypePrompt] = useState(false);
 
   // Load dashboard data
   useEffect(() => {
@@ -82,13 +87,15 @@ const AdminDashboard: React.FC = () => {
           invoicesResult,
           deputyStatusDataResult,
           usersResult, // Fetch the full user list
-          venuesResult // Fetch the full venue list
+          venuesResult, // Fetch the full venue list
+          employmentTypesResult // Fetch employment types
         ] = await Promise.allSettled([
           shiftService.getShifts(),
           invoiceService.getInvoices(),
           deputyService.getDeputyStatus(),
           api.get<User[]>('/users/'), // Use api.get to fetch users
-          venueService.getAllVenues() // Use venueService to fetch venues
+          venueService.getAllVenues(), // Use venueService to fetch venues
+          employmentTypeService.getEmploymentTypes() // Check employment types
         ]);
 
         // Process shifts - Assuming shiftService returns Shift[] directly
@@ -149,6 +156,16 @@ const AdminDashboard: React.FC = () => {
              console.error('Failed to load venue data:', venuesResult.reason);
              // Keep venueCount as 0 or set to specific error indicator if needed
         }
+
+        // Process employment types to check if setup is needed
+        let employmentTypesData: any[] = [];
+        if (employmentTypesResult.status === 'fulfilled') {
+          employmentTypesData = Array.isArray(employmentTypesResult.value) ? employmentTypesResult.value : [];
+        } else {
+          console.error('Failed to load employment types:', employmentTypesResult.reason);
+        }
+        setEmploymentTypes(employmentTypesData);
+        setShowEmploymentTypePrompt(employmentTypesData.length === 0);
 
         // Set stats
         setStats({
@@ -243,6 +260,29 @@ const AdminDashboard: React.FC = () => {
             />
           </div>
         </Stack>
+
+        {/* Employment Type Setup Prompt */}
+        {showEmploymentTypePrompt && (
+          <MessageBar
+            messageBarType={MessageBarType.warning}
+            actions={
+              <div>
+                <PrimaryButton
+                  text="Setup Employment Types"
+                  onClick={() => navigate('/admin/employment-types')}
+                  style={{ marginRight: 8 }}
+                />
+                <DefaultButton
+                  text="Dismiss"
+                  onClick={() => setShowEmploymentTypePrompt(false)}
+                />
+              </div>
+            }
+          >
+            <strong>Employment Types Required:</strong> Before generating recruitment links, you need to set up employment types for your company.
+            This will define the job categories candidates can apply for.
+          </MessageBar>
+        )}
 
         {/* Main dashboard content */}
         <Stack tokens={{ childrenGap: 16 }}>

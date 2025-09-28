@@ -29,6 +29,7 @@ import { useFormik } from 'formik';
 import { Card } from '../../components';
 import { MainLayout } from '../../layouts';
 import { profileService } from '../../services';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   type StaffProfile,
   type SIALicense,
@@ -101,6 +102,7 @@ const styles = mergeStyleSets({
 });
 
 const ProfilePage: React.FC = () => {
+  const { refreshUserData } = useAuth();
   const [profile, setProfile] = useState<StaffProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,10 +131,13 @@ const ProfilePage: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      console.log('Loading profile data...');
 
       const profileData = await profileService.getProfile();
+      console.log('Received profile data:', profileData);
       setProfile(profileData);
       setSiaLicenses(profileData.siaLicenses || []);
+      console.log('Profile state updated with:', profileData);
 
     } catch (error) {
       console.error('Failed to load profile data:', error);
@@ -223,8 +228,9 @@ const ProfilePage: React.FC = () => {
     firstName: Yup.string().required('First name is required'),
     lastName: Yup.string().required('Last name is required'),
     email: Yup.string().email('Invalid email format').required('Email is required'),
-    nationalInsuranceNumber: Yup.string().required('National Insurance Number is required'),
-    dateOfBirth: Yup.date().required('Date of birth is required'),
+    // Note: nationalInsuranceNumber and dateOfBirth are not validated since they cannot be updated
+    nationalInsuranceNumber: Yup.string(),
+    dateOfBirth: Yup.date(),
   });
 
   // Contact information form validation schema
@@ -286,23 +292,39 @@ const ProfilePage: React.FC = () => {
       try {
         setError(null);
 
-        await profileService.updateProfile({
+        console.log('Submitting profile update with values:', {
           firstName: values.firstName,
           lastName: values.lastName,
           email: values.email,
           nationalInsuranceNumber: values.nationalInsuranceNumber,
+          dateOfBirth: values.dateOfBirth ? values.dateOfBirth.toISOString().split('T')[0] : undefined,
         });
 
+        const updateResponse = await profileService.updateProfile({
+          firstName: values.firstName,
+          lastName: values.lastName,
+          email: values.email,
+          nationalInsuranceNumber: values.nationalInsuranceNumber,
+          dateOfBirth: values.dateOfBirth ? values.dateOfBirth.toISOString().split('T')[0] : undefined,
+        });
+        console.log('Update response:', updateResponse);
+
         // Reload profile data to get updated information
+        console.log('Reloading profile data after update...');
         await loadProfileData();
 
-        setIsEditingPersonal(false);
-        setSuccessMessage('Personal information updated successfully');
+        // Refresh auth context to update header immediately
+        refreshUserData();
 
-        // Clear success message after 3 seconds
+        // The forms will auto-refresh due to enableReinitialize: true
+
+        setIsEditingPersonal(false);
+        setSuccessMessage('Personal information updated successfully (Note: Date of birth and National Insurance Number cannot be changed for security reasons)');
+
+        // Clear success message after 5 seconds
         setTimeout(() => {
           setSuccessMessage(null);
-        }, 3000);
+        }, 5000);
 
       } catch (error) {
         console.error('Failed to update personal information:', error);
@@ -668,6 +690,7 @@ const ProfilePage: React.FC = () => {
                                   ? personalInfoFormik.errors.nationalInsuranceNumber
                                   : undefined
                               }
+                              description="Note: This field cannot be updated for security reasons."
                               required
                             />
 
@@ -686,6 +709,9 @@ const ProfilePage: React.FC = () => {
                               }}
                               maxDate={new Date()}
                             />
+                            <Text variant="small" style={{ color: '#666', marginTop: '-12px' }}>
+                              Note: This field cannot be updated for security reasons.
+                            </Text>
 
                             <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 8 }}>
                               <DefaultButton

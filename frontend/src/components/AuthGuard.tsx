@@ -74,6 +74,12 @@ const AuthGuard: React.FC<AuthGuardProps> = ({
 
   // Check onboarding requirements
   if (requireOnboarding) {
+    // Staff users don't need onboarding - they join existing companies
+    if (authState.user?.role === 'staff') {
+      console.log('AuthGuard: Staff user detected, bypassing onboarding checks');
+      return children ? <>{children}</> : <Outlet />;
+    }
+
     // Allow access to onboarding routes themselves
     if (location.pathname.startsWith('/onboarding')) {
       return children ? <>{children}</> : <Outlet />;

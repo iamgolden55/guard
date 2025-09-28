@@ -16,13 +16,15 @@ import {
   SelectionMode,
   PrimaryButton
 } from '@fluentui/react';
-import type {
-  OnboardingWizardData,
-  AccountFinalizationData,
+import {
   AdminRole,
   PlanType,
   BillingCycle,
-  PaymentType,
+  PaymentType
+} from '../../../types/onboarding';
+import type {
+  OnboardingWizardData,
+  AccountFinalizationData,
   AdminUser,
   ValidationError
 } from '../../../types/onboarding';
