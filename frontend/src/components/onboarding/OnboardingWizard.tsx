@@ -397,7 +397,7 @@ const OnboardingWizard: React.FC = () => {
                   error.response?.status === 400) {
                 console.log('User already has completed onboarding, redirecting to dashboard...');
                 const errorData = error.response?.data || {};
-                completeOnboarding(errorData.companyId || 'existing');
+                await completeOnboarding(errorData.companyId || 'existing');
                 navigate('/dashboard');
                 return;
               }
@@ -439,11 +439,11 @@ const OnboardingWizard: React.FC = () => {
         if (currentStep < 5) {
           setCurrentStep(currentStep + 1);
         } else {
-          // Onboarding complete - mark as completed in AuthContext
+          // Onboarding complete - mark as completed in AuthContext and refresh company membership
           const companyId = response?.onboarding?.company || 'temp-company-id';
-          completeOnboarding(companyId);
+          await completeOnboarding(companyId);
 
-          // Redirect to dashboard
+          // Redirect to dashboard after company membership is refreshed
           navigate('/dashboard');
         }
       } else {

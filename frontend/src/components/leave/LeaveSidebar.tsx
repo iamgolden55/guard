@@ -9,6 +9,7 @@ interface NavigationItem {
   label: string;
   path: string;
   icon: string;
+  iconColor?: string; // Tasteful color for each icon
   roles: UserRole[];
   description?: string;
 }
@@ -27,6 +28,7 @@ const LeaveSidebar: React.FC = () => {
           label: 'Dashboard',
           path: '/leave',
           icon: 'ViewDashboard',
+          iconColor: '#d13438', // Muted red
           roles: [UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN],
           description: 'Leave overview and summary'
         }
@@ -40,6 +42,7 @@ const LeaveSidebar: React.FC = () => {
           label: 'Request Leave',
           path: '/leave/request',
           icon: 'Add',
+          iconColor: '#107c10', // Green
           roles: [UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN],
           description: 'Submit new leave request'
         },
@@ -48,6 +51,7 @@ const LeaveSidebar: React.FC = () => {
           label: 'My Balance',
           path: '/leave/balance',
           icon: 'TimeEntry',
+          iconColor: '#018574', // Teal
           roles: [UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN],
           description: 'View leave balances'
         },
@@ -56,6 +60,7 @@ const LeaveSidebar: React.FC = () => {
           label: 'Leave History',
           path: '/leave/history',
           icon: 'History',
+          iconColor: '#986f0b', // Gold
           roles: [UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN],
           description: 'View past leave requests'
         }
@@ -69,6 +74,7 @@ const LeaveSidebar: React.FC = () => {
           label: 'Team Approvals',
           path: '/leave/approvals',
           icon: 'CalendarReply',
+          iconColor: '#8764b8', // Purple
           roles: [UserRole.MANAGER, UserRole.ADMIN],
           description: 'Approve team leave requests'
         },
@@ -77,6 +83,7 @@ const LeaveSidebar: React.FC = () => {
           label: 'Team Calendar',
           path: '/leave/calendar',
           icon: 'CalendarWorkWeek',
+          iconColor: '#c239b3', // Purple
           roles: [UserRole.MANAGER, UserRole.ADMIN],
           description: 'View team leave calendar'
         },
@@ -85,6 +92,7 @@ const LeaveSidebar: React.FC = () => {
           label: 'Team Overview',
           path: '/leave/team-overview',
           icon: 'People',
+          iconColor: '#8764b8', // Purple
           roles: [UserRole.MANAGER, UserRole.ADMIN],
           description: 'Team leave statistics'
         }
@@ -98,6 +106,7 @@ const LeaveSidebar: React.FC = () => {
           label: 'Leave Policies',
           path: '/leave/policies',
           icon: 'DocumentManagement',
+          iconColor: '#0078d4', // Blue
           roles: [UserRole.ADMIN],
           description: 'Manage leave policies'
         },
@@ -106,6 +115,7 @@ const LeaveSidebar: React.FC = () => {
           label: 'Leave Reports',
           path: '/leave/reports',
           icon: 'BarChart4',
+          iconColor: '#498205', // Green
           roles: [UserRole.ADMIN],
           description: 'Generate leave reports'
         },
@@ -114,6 +124,7 @@ const LeaveSidebar: React.FC = () => {
           label: 'System Settings',
           path: '/leave/settings',
           icon: 'Settings',
+          iconColor: '#605e5c', // Gray
           roles: [UserRole.ADMIN],
           description: 'Configure leave system'
         }
@@ -162,10 +173,10 @@ const LeaveSidebar: React.FC = () => {
             />
           </Link>
 
-          <div className="p-2 bg-blue-100 rounded-lg">
+          <div className="p-2 bg-red-50 rounded-lg">
             <Icon
               iconName="Calendar"
-              className="text-blue-600"
+              className="text-red-600"
               style={{ fontSize: '20px' }}
             />
           </div>
@@ -181,9 +192,9 @@ const LeaveSidebar: React.FC = () => {
       </div>
 
       {/* User Info */}
-      <div className="p-4 bg-blue-50 border-b border-gray-200">
+      <div className="p-4 bg-gray-50 border-b border-gray-200">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+          <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center">
             <Text variant="small" className="text-white font-semibold">
               {userDisplayName.charAt(0).toUpperCase()}
             </Text>
@@ -192,7 +203,7 @@ const LeaveSidebar: React.FC = () => {
             <Text variant="medium" className="font-semibold text-gray-900 truncate">
               {userDisplayName}
             </Text>
-            <Text variant="small" className="text-blue-700 uppercase tracking-wide">
+            <Text variant="small" className="text-gray-600 uppercase tracking-wide">
               {userRole}
             </Text>
           </div>
@@ -211,56 +222,55 @@ const LeaveSidebar: React.FC = () => {
 
             return (
               <div key={section.title}>
-                <Text 
-                  variant="small" 
+                <Text
+                  variant="small"
                   className="font-semibold text-gray-500 uppercase tracking-wide mb-3 block px-2"
+                  style={{ fontSize: '11px', letterSpacing: '0.05em' }}
                 >
                   {section.title}
                 </Text>
                 <div className="space-y-1">
                   {accessibleItems.map((item) => {
                     const active = isActive(item.path);
-                    
+
                     return (
                       <Link
                         key={item.id}
                         to={item.path}
                         className={`
-                          group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ease-out
-                          ${active 
-                            ? 'bg-blue-100 text-blue-700 shadow-sm border-l-4 border-blue-500' 
-                            : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 hover:shadow-sm'
+                          ${active ? 'leave-nav-active ' : ''}group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200 ease-out
+                          ${active
+                            ? 'bg-red-50 text-gray-900 shadow-sm border-l-3 border-red-600'
+                            : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
                           }
                         `}
+                        style={{ minHeight: '42px' }}
                       >
-                        <Icon 
+                        <Icon
                           iconName={item.icon}
-                          className={`
-                            mr-3 flex-shrink-0 transition-colors duration-200
-                            ${active ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}
-                          `}
-                          style={{ fontSize: '16px' }}
+                          className="mr-3 flex-shrink-0 transition-all duration-200"
+                          style={{
+                            fontSize: '20px',
+                            color: active ? '#cb2431' : (item.iconColor || '#605e5c')
+                          }}
                         />
                         <div className="flex-1 min-w-0">
-                          <div className={`
-                            font-medium transition-colors duration-200
-                            ${active ? 'text-blue-700' : 'text-gray-900'}
-                          `}>
+                          <div className="font-medium text-gray-900" style={{ fontSize: '14px' }}>
                             {item.label}
                           </div>
                           {item.description && (
                             <div className={`
                               text-xs mt-0.5 transition-colors duration-200
-                              ${active ? 'text-blue-600' : 'text-gray-500'}
+                              ${active ? 'text-red-600' : 'text-gray-500'}
                             `}>
                               {item.description}
                             </div>
                           )}
                         </div>
-                        
+
                         {/* Active indicator */}
                         {active && (
-                          <div className="w-2 h-2 bg-blue-500 rounded-full ml-2" />
+                          <div className="w-2 h-2 bg-red-600 rounded-full ml-2" />
                         )}
                       </Link>
                     );

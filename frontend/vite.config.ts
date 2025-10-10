@@ -8,6 +8,18 @@ export default defineConfig({
 		port: 3000,
 		open: true,
 		host: true,
+		proxy: {
+			'/api': {
+				target: 'http://localhost:8000',
+				changeOrigin: true,
+				secure: false,
+			},
+			'/ws': {
+				target: 'ws://localhost:8000',
+				ws: true,
+				changeOrigin: true,
+			}
+		}
 	},
 	define: {
 		// This makes process.env.REACT_APP_* available in the client code

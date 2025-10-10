@@ -30,7 +30,8 @@ import {
   Filler
 } from 'chart.js';
 import { Bar, Line, Doughnut, Radar } from 'react-chartjs-2';
-import { LeaveStatistics, LeaveType } from '../../types/leave';
+import { LeaveStatistics, LeaveType, LeaveRequestFilterOptions } from '../../types/leave';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Register Chart.js components
 ChartJS.register(
@@ -50,6 +51,7 @@ interface LeaveAnalyticsDashboardProps {
   statistics: LeaveStatistics | null;
   leaveTypes: LeaveType[];
   isLoading?: boolean;
+  filters?: LeaveRequestFilterOptions;
   onRefresh?: () => void;
   onExport?: (format: 'csv' | 'pdf') => void;
   className?: string;
@@ -65,16 +67,59 @@ const stackTokens: IStackTokens = {
   padding: 16,
 };
 
+interface AnalyticsData {
+  period: {
+    year: number;
+    start_date?: string;
+    end_date?: string;
+  };
+  summary: {
+    total_requests: number;
+    approved_requests: number;
+    pending_requests: number;
+    rejected_requests: number;
+    total_days_taken: number;
+    average_days_per_request: number;
+    approval_rate: number;
+  };
+  leave_types_breakdown: Array<{
+    leave_type: string;
+    code: string;
+    color_code: string;
+    request_count: number;
+    total_days: number;
+    average_days: number;
+    percentage: number;
+  }>;
+  monthly_trends: Array<{
+    month: number;
+    month_name: string;
+    total_requests: number;
+    approved: number;
+    rejected: number;
+    total_days: number;
+  }>;
+  popular_leave_months: Array<{
+    month: number;
+    month_name: string;
+    request_count: number;
+  }>;
+}
+
 const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
   statistics,
   leaveTypes,
   isLoading = false,
+  filters = {},
   onRefresh,
   onExport,
   className = ''
 }) => {
+  const { authState } = useAuth();
   const [selectedPeriod, setSelectedPeriod] = useState<string>('current_year');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
+  const [isFetchingAnalytics, setIsFetchingAnalytics] = useState(false);
   const [dateRange, setDateRange] = useState<{
     startDate: Date | null;
     endDate: Date | null;
@@ -82,6 +127,59 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
     startDate: new Date(new Date().getFullYear(), 0, 1),
     endDate: new Date()
   });
+
+  // Fetch analytics data with filters
+  const fetchAnalytics = async () => {
+    if (!authState.token) return;
+
+    setIsFetchingAnalytics(true);
+    try {
+      const year = new Date().getFullYear();
+
+      // Build query parameters from filters
+      const params = new URLSearchParams();
+      params.append('year', year.toString());
+
+      if (filters.start_date) {
+        params.append('start_date', filters.start_date);
+      }
+      if (filters.end_date) {
+        params.append('end_date', filters.end_date);
+      }
+      if (filters.leave_type && filters.leave_type.length > 0) {
+        filters.leave_type.forEach(id => params.append('leave_type', id.toString()));
+      }
+      if (filters.status && filters.status.length > 0) {
+        filters.status.forEach(status => params.append('status', status));
+      }
+      if (filters.department && filters.department.length > 0) {
+        filters.department.forEach(dept => params.append('department', dept));
+      }
+
+      const response = await fetch(`/api/v1/leave/reports/analytics/?${params.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${authState.token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch analytics');
+      }
+
+      const data = await response.json();
+      setAnalyticsData(data);
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+    } finally {
+      setIsFetchingAnalytics(false);
+    }
+  };
+
+  // Fetch analytics on mount and when filters change
+  useEffect(() => {
+    fetchAnalytics();
+  }, [authState.token, filters]);
 
   // Dropdown options
   const periodOptions: IDropdownOption[] = [
@@ -109,17 +207,41 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
     light: '#f3f2f1'
   };
 
-  // Generate sample data for demonstration (replace with real data)
-  const generateSampleData = () => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // Transform analytics data to chart format
+  const transformAnalyticsToChartData = () => {
+    if (!analyticsData) {
+      return {
+        monthlyTrends: { labels: [], datasets: [] },
+        leaveTypeDistribution: { labels: [], datasets: [] },
+        departmentComparison: { labels: [], datasets: [] },
+        utilizationTrends: { labels: [], datasets: [] }
+      };
+    }
+
+    // Monthly Trends Chart
+    const monthlyLabels = analyticsData.monthly_trends.map(m => m.month_name.substring(0, 3));
+    const monthlyApproved = analyticsData.monthly_trends.map(m => m.approved);
+    const monthlyRejected = analyticsData.monthly_trends.map(m => m.rejected);
+
+    // Leave Type Distribution
+    const leaveTypeLabels = analyticsData.leave_types_breakdown.map(lt => lt.leave_type);
+    const leaveTypeData = analyticsData.leave_types_breakdown.map(lt => lt.request_count);
+    const leaveTypeColors = analyticsData.leave_types_breakdown.map(lt => lt.color_code || chartColors.primary);
+
+    // Utilization Trends (calculate from monthly data)
+    const utilizationData = analyticsData.monthly_trends.map(m => {
+      const total = m.total_requests;
+      const approved = m.approved;
+      return total > 0 ? Math.round((approved / total) * 100) : 0;
+    });
 
     return {
       monthlyTrends: {
-        labels: months.slice(0, new Date().getMonth() + 1),
+        labels: monthlyLabels,
         datasets: [
           {
             label: 'Approved Requests',
-            data: [15, 18, 22, 19, 24, 21, 28, 25, 23, 20, 19, 17].slice(0, new Date().getMonth() + 1),
+            data: monthlyApproved,
             backgroundColor: chartColors.primary,
             borderColor: chartColors.primary,
             tension: 0.4,
@@ -127,7 +249,7 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
           },
           {
             label: 'Rejected Requests',
-            data: [2, 3, 1, 4, 2, 3, 1, 2, 3, 2, 1, 2].slice(0, new Date().getMonth() + 1),
+            data: monthlyRejected,
             backgroundColor: chartColors.danger,
             borderColor: chartColors.danger,
             tension: 0.4,
@@ -136,17 +258,11 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
         ]
       },
       leaveTypeDistribution: {
-        labels: leaveTypes.map(lt => lt.name),
+        labels: leaveTypeLabels,
         datasets: [
           {
-            data: [45, 25, 15, 10, 5], // Sample data
-            backgroundColor: [
-              chartColors.primary,
-              chartColors.secondary,
-              chartColors.warning,
-              chartColors.danger,
-              chartColors.info
-            ],
+            data: leaveTypeData,
+            backgroundColor: leaveTypeColors,
             borderWidth: 2,
             borderColor: '#fff'
           }
@@ -157,14 +273,14 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
         datasets: [
           {
             label: 'Leave Days Taken',
-            data: [120, 85, 45, 95],
+            data: [120, 85, 45, 95], // TODO: Get real department data
             backgroundColor: chartColors.primary,
             borderColor: chartColors.primary,
             borderWidth: 1
           },
           {
             label: 'Leave Days Remaining',
-            data: [80, 115, 155, 105],
+            data: [80, 115, 155, 105], // TODO: Get real department data
             backgroundColor: chartColors.secondary,
             borderColor: chartColors.secondary,
             borderWidth: 1
@@ -172,11 +288,11 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
         ]
       },
       utilizationTrends: {
-        labels: months.slice(0, new Date().getMonth() + 1),
+        labels: monthlyLabels,
         datasets: [
           {
-            label: 'Leave Utilization %',
-            data: [65, 70, 78, 72, 85, 80, 88, 82, 79, 75, 73, 68].slice(0, new Date().getMonth() + 1),
+            label: 'Approval Rate %',
+            data: utilizationData,
             backgroundColor: 'rgba(0, 120, 212, 0.1)',
             borderColor: chartColors.primary,
             pointBackgroundColor: chartColors.primary,
@@ -190,7 +306,7 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
     };
   };
 
-  const chartData = useMemo(() => generateSampleData(), [leaveTypes]);
+  const chartData = useMemo(() => transformAnalyticsToChartData(), [analyticsData]);
 
   // Chart options
   const commonChartOptions = {
@@ -314,10 +430,10 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
                 <Icon iconName="FileRequest" styles={{ root: { color: chartColors.primary } }} />
               </Stack>
               <Text variant="xxLarge" styles={{ root: { fontWeight: 600, color: chartColors.primary } }}>
-                {statistics?.total_requests || 247}
+                {analyticsData?.summary.total_requests || statistics?.total_requests || 0}
               </Text>
-              <Text variant="small" styles={{ root: { color: '#107c10' } }}>
-                ↑ 12% vs last month
+              <Text variant="small" styles={{ root: { color: '#666' } }}>
+                All time requests
               </Text>
             </Stack>
           </div>
@@ -331,10 +447,10 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
                 <Icon iconName="CheckMark" styles={{ root: { color: chartColors.secondary } }} />
               </Stack>
               <Text variant="xxLarge" styles={{ root: { fontWeight: 600, color: chartColors.secondary } }}>
-                94.2%
+                {analyticsData?.summary.approval_rate ? `${analyticsData.summary.approval_rate.toFixed(1)}%` : '0%'}
               </Text>
-              <Text variant="small" styles={{ root: { color: '#107c10' } }}>
-                ↑ 2.1% vs last month
+              <Text variant="small" styles={{ root: { color: '#666' } }}>
+                Of all requests
               </Text>
             </Stack>
           </div>
@@ -348,10 +464,10 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
                 <Icon iconName="Calendar" styles={{ root: { color: chartColors.warning } }} />
               </Stack>
               <Text variant="xxLarge" styles={{ root: { fontWeight: 600, color: chartColors.warning } }}>
-                {statistics?.average_days_per_request || '3.2'}
+                {analyticsData?.summary.average_days_per_request?.toFixed(1) || statistics?.average_days_per_request || '0'}
               </Text>
-              <Text variant="small" styles={{ root: { color: '#d13438' } }}>
-                ↓ 0.3 vs last month
+              <Text variant="small" styles={{ root: { color: '#666' } }}>
+                Average per request
               </Text>
             </Stack>
           </div>
@@ -365,10 +481,12 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
                 <Icon iconName="TrendingUp" styles={{ root: { color: chartColors.info } }} />
               </Stack>
               <Text variant="xxLarge" styles={{ root: { fontWeight: 600, color: chartColors.info } }}>
-                July
+                {analyticsData?.popular_leave_months?.[0]?.month_name || statistics?.busiest_leave_period?.month ?
+                  new Date(0, (statistics?.busiest_leave_period?.month || 1) - 1).toLocaleString('default', { month: 'long' }) :
+                  'N/A'}
               </Text>
               <Text variant="small" styles={{ root: { color: '#666' } }}>
-                28 requests
+                {analyticsData?.popular_leave_months?.[0]?.request_count || statistics?.busiest_leave_period?.request_count || 0} requests
               </Text>
             </Stack>
           </div>
@@ -436,7 +554,29 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
                     Leave Type Statistics
                   </Text>
                   <Stack tokens={{ childrenGap: 12 }}>
-                    {leaveTypes.slice(0, 5).map((type, index) => (
+                    {analyticsData?.leave_types_breakdown.slice(0, 5).map((type) => (
+                      <Stack key={type.code} horizontal horizontalAlign="space-between" verticalAlign="center">
+                        <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
+                          <div
+                            style={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: '50%',
+                              backgroundColor: type.color_code || chartColors.primary
+                            }}
+                          />
+                          <Text variant="medium">{type.leave_type}</Text>
+                        </Stack>
+                        <Stack horizontalAlign="end">
+                          <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>
+                            {type.percentage.toFixed(0)}%
+                          </Text>
+                          <Text variant="small" styles={{ root: { color: '#666' } }}>
+                            {type.request_count} requests
+                          </Text>
+                        </Stack>
+                      </Stack>
+                    )) || leaveTypes.slice(0, 5).map((type, index) => (
                       <Stack key={type.id} horizontal horizontalAlign="space-between" verticalAlign="center">
                         <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
                           <div
@@ -451,10 +591,10 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
                         </Stack>
                         <Stack horizontalAlign="end">
                           <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>
-                            {[45, 25, 15, 10, 5][index] || 0}%
+                            0%
                           </Text>
                           <Text variant="small" styles={{ root: { color: '#666' } }}>
-                            {[112, 62, 37, 25, 12][index] || 0} requests
+                            0 requests
                           </Text>
                         </Stack>
                       </Stack>

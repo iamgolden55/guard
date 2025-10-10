@@ -174,6 +174,7 @@ export interface LeaveRequestFormData {
   leave_type_id: number;
   start_date: string;
   end_date: string;
+  days_requested: number;
   reason: string;
   supporting_documents?: File[];
 }

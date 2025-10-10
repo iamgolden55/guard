@@ -1,7 +1,6 @@
 import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { initializeIcons, ThemeProvider, registerIcons } from '@fluentui/react';
-import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './components/shared/ToastNotificationSystem';
@@ -39,15 +38,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={redTheme}>
-        <FluentProvider theme={webLightTheme}>
-          <BrowserRouter>
-            <AuthProvider>
-              <ToastProvider>
-                <Router />
-              </ToastProvider>
-            </AuthProvider>
-          </BrowserRouter>
-        </FluentProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <ToastProvider>
+              <Router />
+            </ToastProvider>
+          </AuthProvider>
+        </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>
   );

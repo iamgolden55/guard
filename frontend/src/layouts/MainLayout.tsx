@@ -216,19 +216,44 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     // Combine links based on user role
     let navLinks = [...commonLinks];
 
-    if (authState.user) {
-      // Always add staff links for all authenticated users
-      navLinks = [...navLinks, ...staffLinks];
+    if (authState.user && authState.currentMembership) {
+      // CRITICAL SECURITY: Get role from BOTH user and membership for safety
+      const userRole = authState.user.role.toLowerCase();
+      const membershipRole = authState.currentMembership.role.toLowerCase();
+      const effectiveRole = membershipRole === 'owner' ? 'admin' : membershipRole;
 
-      // Add manager links for managers and admins
-      if (isUserRole(UserRole.MANAGER) || isUserRole(UserRole.ADMIN)) {
-        navLinks = [...navLinks, ...managerLinks];
-      }
+      // DEBUG: Log role information
+      console.log('MainLayout - Sidebar Navigation Roles:', {
+        userRole,
+        membershipRole,
+        effectiveRole,
+        username: authState.user.username,
+        timestamp: new Date().toISOString()
+      });
 
-      // Add admin links only for admins
-      if (isUserRole(UserRole.ADMIN)) {
-        navLinks = [...navLinks, ...adminLinks];
+      // SECURITY: Explicit role-based menu rendering
+      // CRITICAL: Check userRole FIRST - staff users ALWAYS get staff menu only
+      if (userRole === 'staff') {
+        // Staff users ONLY see staff links, regardless of membership role
+        console.log('MainLayout - Rendering STAFF menu (staff only) - userRole override');
+        navLinks = [...navLinks, ...staffLinks];
+      } else if (effectiveRole === 'manager') {
+        // Managers see staff + manager links
+        console.log('MainLayout - Rendering MANAGER menu (staff + manager)');
+        navLinks = [...navLinks, ...staffLinks, ...managerLinks];
+      } else if (effectiveRole === 'admin') {
+        // Admins see all links
+        console.log('MainLayout - Rendering ADMIN menu (staff + manager + admin)');
+        navLinks = [...navLinks, ...staffLinks, ...managerLinks, ...adminLinks];
+      } else {
+        // Fallback: only show common links
+        console.warn('MainLayout - Unknown role combination, showing only common links:', { userRole, effectiveRole });
       }
+    } else {
+      console.warn('MainLayout - User or membership not loaded yet', {
+        hasUser: !!authState.user,
+        hasMembership: !!authState.currentMembership
+      });
     }
 
     return [{ links: navLinks }];
@@ -272,56 +297,87 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <header
-        className="p-2 flex justify-between items-center shadow-md"
-        style={{ backgroundColor: theme.palette.themePrimary }}
+        style={{
+          backgroundColor: theme.palette.themePrimary,
+          padding: '8px 16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          boxShadow: theme.effects.elevation4
+        }}
       >
-        <div className="flex items-center">
+        <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
           {/* Mobile menu button */}
           <button
-            className="md:hidden text-white p-2"
+            style={{
+              display: 'none',
+              color: theme.palette.white,
+              padding: '8px',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '20px'
+            }}
+            className="md:block"
             onClick={toggleMobileNav}
           >
             ☰
           </button>
 
-          <Link to="/" className="text-white text-xl font-bold ml-2">
+          <Link
+            to="/"
+            style={{
+              color: theme.palette.white,
+              fontSize: '20px',
+              fontWeight: 'bold',
+              textDecoration: 'none'
+            }}
+          >
             Security Staff Portal
           </Link>
-        </div>
+        </Stack>
 
         {/* Command bar for user menu */}
-        <div className="flex items-center">
-          <CommandBar
-            items={commandBarItems}
-            ariaLabel="User menu"
-            styles={{
-              root: {
-                backgroundColor: 'transparent',
-                padding: 0
-              }
-            }}
-          />
-        </div>
+        <CommandBar
+          items={commandBarItems}
+          ariaLabel="User menu"
+          styles={{
+            root: {
+              backgroundColor: 'transparent',
+              padding: 0
+            }
+          }}
+        />
       </header>
 
-      <div className="flex flex-1 min-h-0">
+      <Stack horizontal styles={{ root: { flex: 1, minHeight: 0 } }}>
         {/* Sidebar - hidden on mobile unless toggled */}
         <aside
-          className={`bg-gray-100 shadow-md md:block ${isMobileNavOpen ? 'block absolute z-10 h-full' : 'hidden'}`}
-          style={{ width: 250, minWidth: 250 }}
+          className={`md:block ${isMobileNavOpen ? 'block absolute z-10 h-full' : 'hidden'}`}
+          style={{
+            width: 250,
+            minWidth: 250,
+            backgroundColor: theme.palette.neutralLighter,
+            boxShadow: theme.effects.elevation4
+          }}
         >
-          <div className="p-4 border-b">
-            <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 10 }}>
-              <Persona
-                size={PersonaSize.size40}
-                text={userDisplayName}
-                secondaryText={authState.user?.role}
-              />
-            </Stack>
-          </div>
+          <Stack
+            styles={{
+              root: {
+                padding: 16,
+                borderBottom: `1px solid ${theme.palette.neutralLight}`
+              }
+            }}
+          >
+            <Persona
+              size={PersonaSize.size40}
+              text={userDisplayName}
+              secondaryText={authState.user?.role}
+            />
+          </Stack>
 
           <Nav
             groups={getNavItems()}
@@ -333,16 +389,21 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                 boxSizing: 'border-box',
                 overflowY: 'auto'
               },
+              navItems: {
+                margin: '4px 0'
+              },
               link: {
+                height: 42,
+                lineHeight: 42,
                 selectors: {
                   '&.is-selected': {
-                    backgroundColor: theme.palette.themePrimary + '20', // 20% opacity
-                    color: theme.palette.themePrimary,
-                    fontWeight: '600',
-                    borderRight: `3px solid ${theme.palette.themePrimary}`
+                    backgroundColor: theme.palette.themePrimary + '15',
+                    color: theme.palette.neutralPrimary,
+                    fontWeight: 600,
+                    borderLeft: `3px solid ${theme.palette.themePrimary}`
                   },
                   '&.is-selected::after': {
-                    borderRight: `3px solid ${theme.palette.themePrimary}`
+                    borderLeft: 'none'
                   }
                 }
               }
@@ -352,43 +413,69 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         </aside>
 
         {/* Main content area */}
-        <main className="flex-1 overflow-auto p-2 min-h-0 bg-gray-50">
-          <div className="min-h-full">
+        <main
+          style={{
+            flex: 1,
+            overflow: 'auto',
+            padding: 8,
+            minHeight: 0,
+            backgroundColor: theme.palette.neutralLighterAlt
+          }}
+        >
+          <Stack styles={{ root: { minHeight: '100%' } }}>
             {children}
-          </div>
+          </Stack>
         </main>
-      </div>
+      </Stack>
 
       {/* Mobile bottom navigation */}
-      <div className="md:hidden bg-gray-100 border-t flex justify-around">
-        <Link to="/" className="p-3 text-center">
+      <Stack
+        horizontal
+        horizontalAlign="space-around"
+        className="md:hidden"
+        styles={{
+          root: {
+            backgroundColor: theme.palette.neutralLighter,
+            borderTop: `1px solid ${theme.palette.neutralLight}`,
+            padding: 0
+          }
+        }}
+      >
+        <Link to="/" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
           <i className="ms-Icon ms-Icon--ViewDashboard" />
-          <div className="text-xs">Home</div>
+          <div style={{ fontSize: 12 }}>Home</div>
         </Link>
-        <Link to="/shifts" className="p-3 text-center">
+        <Link to="/shifts" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
           <i className="ms-Icon ms-Icon--Calendar" />
-          <div className="text-xs">Shifts</div>
+          <div style={{ fontSize: 12 }}>Shifts</div>
         </Link>
-        {(isUserRole(UserRole.MANAGER) || isUserRole(UserRole.ADMIN)) ? (
-          <Link to="/leave/team-overview" className="p-3 text-center">
-            <i className="ms-Icon ms-Icon--PeopleAlert" />
-            <div className="text-xs">Team</div>
-          </Link>
-        ) : (
-          <Link to="/shifts/exchange" className="p-3 text-center">
-            <i className="ms-Icon ms-Icon--SwitcherStartEnd" />
-            <div className="text-xs">Exchange</div>
-          </Link>
-        )}
-        <Link to="/invoices" className="p-3 text-center">
+        {(() => {
+          // SECURITY: Explicit role check for mobile navigation
+          if (!authState.user || !authState.currentMembership) return null;
+          const membershipRole = authState.currentMembership.role.toLowerCase();
+          const effectiveRole = membershipRole === 'owner' ? 'admin' : membershipRole;
+
+          return (effectiveRole === 'manager' || effectiveRole === 'admin') ? (
+            <Link to="/leave/team-overview" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
+              <i className="ms-Icon ms-Icon--PeopleAlert" />
+              <div style={{ fontSize: 12 }}>Team</div>
+            </Link>
+          ) : (
+            <Link to="/shifts/exchange" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
+              <i className="ms-Icon ms-Icon--SwitcherStartEnd" />
+              <div style={{ fontSize: 12 }}>Exchange</div>
+            </Link>
+          );
+        })()}
+        <Link to="/invoices" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
           <i className="ms-Icon ms-Icon--PaymentCard" />
-          <div className="text-xs">Invoices</div>
+          <div style={{ fontSize: 12 }}>Invoices</div>
         </Link>
-        <Link to="/profile" className="p-3 text-center">
+        <Link to="/profile" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
           <i className="ms-Icon ms-Icon--Contact" />
-          <div className="text-xs">Profile</div>
+          <div style={{ fontSize: 12 }}>Profile</div>
         </Link>
-      </div>
+      </Stack>
     </div>
   );
 };

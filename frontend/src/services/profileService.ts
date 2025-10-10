@@ -82,6 +82,10 @@ class ProfileService {
     }
 
     const response = await api.get<StaffProfile>('/profiles/me');
+    console.log('[PROFILE SERVICE] API Response:', response.data);
+    console.log('[PROFILE SERVICE] Phone Number:', response.data.phoneNumber);
+    console.log('[PROFILE SERVICE] Address:', response.data.address);
+    console.log('[PROFILE SERVICE] Emergency Contact:', response.data.emergencyContact);
     return response.data;
   }
 

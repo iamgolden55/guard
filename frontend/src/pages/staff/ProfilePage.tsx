@@ -157,6 +157,36 @@ const ProfilePage: React.FC = () => {
     });
   };
 
+  // Format relative time (e.g., "just now", "2 hours ago", "1 week ago")
+  const formatRelativeTime = (dateString: string | null | undefined): string => {
+    if (!dateString) return 'N/A';
+
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+    const diffWeek = Math.floor(diffDay / 7);
+    const diffMonth = Math.floor(diffDay / 30);
+    const diffYear = Math.floor(diffDay / 365);
+
+    if (diffSec < 60) return 'just now';
+    if (diffMin < 2) return '1 minute ago';
+    if (diffMin < 60) return `${diffMin} minutes ago`;
+    if (diffHour < 2) return '1 hour ago';
+    if (diffHour < 24) return `${diffHour} hours ago`;
+    if (diffDay < 2) return '1 day ago';
+    if (diffDay < 7) return `${diffDay} days ago`;
+    if (diffWeek < 2) return '1 week ago';
+    if (diffWeek < 4) return `${diffWeek} weeks ago`;
+    if (diffMonth < 2) return '1 month ago';
+    if (diffMonth < 12) return `${diffMonth} months ago`;
+    if (diffYear < 2) return '1 year ago';
+    return `${diffYear} years ago`;
+  };
+
   // Check if a license is expired or about to expire
   const getLicenseStatus = (expiryDate: string) => {
     const now = new Date();
@@ -240,9 +270,22 @@ const ProfilePage: React.FC = () => {
     city: Yup.string().required('City is required'),
     postalCode: Yup.string().required('Postal code is required'),
     country: Yup.string().required('Country is required'),
-    emergencyName: Yup.string().required('Emergency contact name is required'),
-    emergencyRelationship: Yup.string().required('Relationship is required'),
-    emergencyPhone: Yup.string().required('Emergency contact phone is required'),
+    // Emergency contact fields are optional for admin users
+    emergencyName: Yup.string().when([], {
+      is: () => profile?.role === 'admin',
+      then: (schema) => schema.notRequired(),
+      otherwise: (schema) => schema.required('Emergency contact name is required')
+    }),
+    emergencyRelationship: Yup.string().when([], {
+      is: () => profile?.role === 'admin',
+      then: (schema) => schema.notRequired(),
+      otherwise: (schema) => schema.required('Relationship is required')
+    }),
+    emergencyPhone: Yup.string().when([], {
+      is: () => profile?.role === 'admin',
+      then: (schema) => schema.notRequired(),
+      otherwise: (schema) => schema.required('Emergency contact phone is required')
+    }),
   });
 
   // Bank details form validation schema
@@ -852,6 +895,11 @@ const ProfilePage: React.FC = () => {
                             />
 
                             <Text variant="mediumPlus">Emergency Contact</Text>
+                            {profile?.role === 'admin' && (
+                              <MessageBar messageBarType={MessageBarType.info} isMultiline={false} styles={{ root: { marginBottom: '12px' } }}>
+                                Emergency contact information is not available for admin users.
+                              </MessageBar>
+                            )}
                             <TextField
                               label="Name"
                               name="emergencyName"
@@ -863,7 +911,8 @@ const ProfilePage: React.FC = () => {
                                   ? contactInfoFormik.errors.emergencyName
                                   : undefined
                               }
-                              required
+                              required={profile?.role !== 'admin'}
+                              disabled={profile?.role === 'admin'}
                             />
 
                             <div className={styles.formRow}>
@@ -879,7 +928,8 @@ const ProfilePage: React.FC = () => {
                                       ? contactInfoFormik.errors.emergencyRelationship
                                       : undefined
                                   }
-                                  required
+                                  required={profile?.role !== 'admin'}
+                                  disabled={profile?.role === 'admin'}
                                 />
                               </div>
                               <div className={styles.formColumn}>
@@ -894,7 +944,8 @@ const ProfilePage: React.FC = () => {
                                       ? contactInfoFormik.errors.emergencyPhone
                                       : undefined
                                   }
-                                  required
+                                  required={profile?.role !== 'admin'}
+                                  disabled={profile?.role === 'admin'}
                                 />
                               </div>
                             </div>
@@ -1246,7 +1297,7 @@ const ProfilePage: React.FC = () => {
                         </form>
                       ) : (
                         <Stack tokens={{ childrenGap: 16 }}>
-                          <Text>Your password was last changed on {profile?.passwordLastChanged || 'N/A'}</Text>
+                          <Text>Your password was last changed {formatRelativeTime(profile?.passwordLastChanged)}</Text>
                           <Text>
                             For security reasons, it's recommended to change your password regularly. Your password should be strong and include:
                           </Text>

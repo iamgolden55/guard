@@ -547,23 +547,48 @@ const LeaveApprovalDashboard: React.FC<LeaveApprovalDashboardProps> = ({
     {
       key: 'urgency',
       name: 'Priority',
-      minWidth: 80,
-      maxWidth: 100,
+      minWidth: 100,
+      maxWidth: 120,
       isResizable: true,
       onRender: (item: PendingLeaveRequest) => {
-        const urgencyColor = {
-          low: '#107C10',
-          medium: '#FF8C00',
-          high: '#D13438'
+        const urgencyConfig = {
+          low: {
+            color: '#107C10',
+            bgColor: '#DFF6DD',
+            icon: 'Info'
+          },
+          medium: {
+            color: '#FF8C00',
+            bgColor: '#FFF4E5',
+            icon: 'Warning'
+          },
+          high: {
+            color: '#D13438',
+            bgColor: '#FDE7E9',
+            icon: 'WarningSolid'
+          }
         };
 
+        const config = urgencyConfig[item.urgency_level];
+
         return (
-          <div className="flex items-center gap-1">
+          <div
+            className="inline-flex items-center gap-1 px-2 py-1 rounded"
+            style={{
+              backgroundColor: config.bgColor
+            }}
+          >
             <Icon
-              iconName="Circle"
-              style={{ color: urgencyColor[item.urgency_level], fontSize: '8px' }}
+              iconName={config.icon}
+              style={{ color: config.color, fontSize: '12px' }}
             />
-            <Text variant="small" style={{ color: urgencyColor[item.urgency_level] }}>
+            <Text
+              variant="small"
+              style={{
+                color: config.color,
+                fontWeight: 600
+              }}
+            >
               {item.urgency_level.toUpperCase()}
             </Text>
           </div>
@@ -585,11 +610,11 @@ const LeaveApprovalDashboard: React.FC<LeaveApprovalDashboardProps> = ({
     {
       key: 'actions',
       name: 'Actions',
-      minWidth: 150,
-      maxWidth: 200,
-      isResizable: false,
+      minWidth: 200,
+      maxWidth: 250,
+      isResizable: true,
       onRender: (item: PendingLeaveRequest) => (
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <TooltipHost content="View Details">
             <DefaultButton
               iconProps={{ iconName: 'View' }}
@@ -598,6 +623,7 @@ const LeaveApprovalDashboard: React.FC<LeaveApprovalDashboardProps> = ({
                 setIsDetailsModalOpen(true);
               }}
               ariaLabel="View request details"
+              styles={{ root: { minWidth: '40px' } }}
             />
           </TooltipHost>
           <TooltipHost content="Quick Approve">
@@ -605,7 +631,21 @@ const LeaveApprovalDashboard: React.FC<LeaveApprovalDashboardProps> = ({
               iconProps={{ iconName: 'Accept' }}
               onClick={() => handleProcessRequest(item, 'approve')}
               ariaLabel="Approve request"
-              styles={{ root: { minWidth: '32px' } }}
+              styles={{
+                root: {
+                  minWidth: '40px',
+                  backgroundColor: '#107C10',
+                  borderColor: '#107C10'
+                },
+                rootHovered: {
+                  backgroundColor: '#0E6B0E',
+                  borderColor: '#0E6B0E'
+                },
+                rootPressed: {
+                  backgroundColor: '#0C5A0C',
+                  borderColor: '#0C5A0C'
+                }
+              }}
             />
           </TooltipHost>
           <TooltipHost content="Quick Reject">
@@ -613,7 +653,21 @@ const LeaveApprovalDashboard: React.FC<LeaveApprovalDashboardProps> = ({
               iconProps={{ iconName: 'Cancel' }}
               onClick={() => handleProcessRequest(item, 'reject')}
               ariaLabel="Reject request"
-              styles={{ root: { color: '#D13438', borderColor: '#D13438' } }}
+              styles={{
+                root: {
+                  minWidth: '40px',
+                  color: '#D13438',
+                  borderColor: '#D13438'
+                },
+                rootHovered: {
+                  backgroundColor: '#FFF0F0',
+                  borderColor: '#D13438'
+                },
+                rootPressed: {
+                  backgroundColor: '#FFE0E0',
+                  borderColor: '#D13438'
+                }
+              }}
             />
           </TooltipHost>
         </div>
@@ -786,18 +840,20 @@ const LeaveApprovalDashboard: React.FC<LeaveApprovalDashboardProps> = ({
       <CommandBar items={commandBarItems} farItems={farItems} />
 
       {/* Data Grid */}
-      <DetailsList
-        items={filteredData}
-        columns={columns}
-        setKey="set"
-        layoutMode={DetailsListLayoutMode.justified}
-        selection={selection}
-        selectionMode={SelectionMode.multiple}
-        selectionPreservedOnEmptyClick={true}
-        ariaLabelForSelectionColumn="Toggle selection"
-        ariaLabelForSelectAllCheckbox="Toggle selection for all items"
-        checkButtonAriaLabel="Row checkbox"
-      />
+      <div className="overflow-x-auto">
+        <DetailsList
+          items={filteredData}
+          columns={columns}
+          setKey="set"
+          layoutMode={DetailsListLayoutMode.justified}
+          selection={selection}
+          selectionMode={SelectionMode.multiple}
+          selectionPreservedOnEmptyClick={true}
+          ariaLabelForSelectionColumn="Toggle selection"
+          ariaLabelForSelectAllCheckbox="Toggle selection for all items"
+          checkButtonAriaLabel="Row checkbox"
+        />
+      </div>
 
       {/* Empty State */}
       {filteredData.length === 0 && !isLoading && (

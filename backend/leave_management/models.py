@@ -1187,3 +1187,43 @@ class LeaveEntitlement(TimestampedModel):
         )
 
         return carryover_amount
+
+
+class SystemConfig(TimestampedModel):
+    """
+    Model to store system-wide leave management configuration
+
+    Stores configuration as JSON to allow flexible schema changes
+    without database migrations. Each configuration type (accrual_settings,
+    notification_settings, etc.) is stored as a separate record.
+    """
+    config_key = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="Unique identifier for this configuration type"
+    )
+    config_data = models.JSONField(
+        default=dict,
+        help_text="Configuration data as JSON"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Description of what this configuration controls"
+    )
+    updated_by = models.ForeignKey(
+        'api.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='system_config_updates',
+        help_text="User who last updated this configuration"
+    )
+
+    class Meta:
+        db_table = 'leave_system_config'
+        verbose_name = 'System Configuration'
+        verbose_name_plural = 'System Configurations'
+        ordering = ['config_key']
+
+    def __str__(self):
+        return f"{self.config_key} (Updated: {self.updated_at.strftime('%Y-%m-%d %H:%M')})"

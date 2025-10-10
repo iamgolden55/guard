@@ -232,18 +232,58 @@ const Router: React.FC = () => {
 // Component that shows the appropriate dashboard based on user role
 // Authentication and onboarding checks are now handled by AuthGuard
 const DashboardRouter: React.FC = () => {
-  const { isUserRole } = useAuth();
+  const { authState } = useAuth();
 
-  // Check role and return appropriate dashboard
-  if (isUserRole(UserRole.ADMIN)) {
+  // CRITICAL: Wait for auth state to fully load before routing
+  if (authState.isLoading || !authState.user || !authState.currentMembership) {
+    console.log('DashboardRouter - Loading state:', {
+      isLoading: authState.isLoading,
+      hasUser: !!authState.user,
+      hasMembership: !!authState.currentMembership
+    });
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Get membership role (owner maps to admin)
+  const membershipRole = authState.currentMembership.role.toLowerCase();
+  const userRole = authState.user.role.toLowerCase();
+  const effectiveRole = membershipRole === 'owner' ? 'admin' : membershipRole;
+
+  // Log for debugging (remove after fix confirmed)
+  console.log('DashboardRouter - User role:', {
+    userRole: userRole,
+    membershipRole: membershipRole,
+    effectiveRole: effectiveRole,
+    isOwner: authState.currentMembership.isOwner
+  });
+
+  // CRITICAL SECURITY: Staff users must NEVER access admin dashboard
+  // Double-check both user.role and membership.role to prevent any bypass
+  if (userRole === 'staff') {
+    console.log('SECURITY: Staff user detected, forcing StaffDashboard');
+    return <StaffDashboard />;
+  }
+
+  // CRITICAL: Use direct role comparison
+  if (effectiveRole === UserRole.ADMIN.toLowerCase()) {
+    console.log('Rendering AdminDashboard');
     return <AdminDashboard />;
   }
 
-  if (isUserRole(UserRole.MANAGER)) {
+  if (effectiveRole === UserRole.MANAGER.toLowerCase()) {
+    console.log('Rendering ManagerDashboard');
     return <ManagerDashboard />;
   }
 
-  // Default to staff dashboard for any other role
+  // Default to staff dashboard for safety
+  console.log('Defaulting to StaffDashboard');
   return <StaffDashboard />;
 };
 

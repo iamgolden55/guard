@@ -72,6 +72,7 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string>('');
+  const [submitSuccess, setSubmitSuccess] = useState<string>('');
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
   const [workingDays, setWorkingDays] = useState<number>(0);
   const [balanceAfter, setBalanceAfter] = useState<string>('');
@@ -122,16 +123,36 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({
     loadInitialData();
   }, [editMode, initialData?.leave_type_id]);
 
-  // Calculate working days when dates change
-  const calculateWorkingDays = useCallback(async (startDate: string, endDate: string) => {
+  // Calculate working days when dates change (client-side calculation)
+  const calculateWorkingDays = useCallback((startDate: string, endDate: string) => {
     if (!startDate || !endDate) {
       setWorkingDays(0);
       return;
     }
 
     try {
-      const result = await leaveService.calculateWorkingDays(startDate, endDate);
-      setWorkingDays(result.working_days);
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      if (start > end) {
+        setWorkingDays(0);
+        return;
+      }
+
+      // Simple calculation: count days excluding weekends
+      let days = 0;
+      const current = new Date(start);
+
+      while (current <= end) {
+        const dayOfWeek = current.getDay();
+        // Count Monday (1) through Friday (5)
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+          days++;
+        }
+        current.setDate(current.getDate() + 1);
+      }
+
+      setWorkingDays(days);
     } catch (error) {
       console.error('Error calculating working days:', error);
       setWorkingDays(0);
@@ -140,21 +161,10 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({
 
   // Validate leave request in real-time
   const validateRequest = useCallback(async (formData: LeaveRequestFormData) => {
-    if (!formData.leave_type_id || !formData.start_date || !formData.end_date) {
-      setValidationWarnings([]);
-      setBalanceAfter('');
-      return;
-    }
-
-    try {
-      const validation = await leaveService.validateLeaveRequest(formData);
-      setValidationWarnings(validation.warnings);
-      setBalanceAfter(validation.balance_after);
-    } catch (error) {
-      console.error('Error validating request:', error);
-      setValidationWarnings([]);
-      setBalanceAfter('');
-    }
+    // Skip validation - not implemented in backend yet
+    // The backend will validate on submission
+    setValidationWarnings([]);
+    setBalanceAfter('');
   }, []);
 
   // Handle leave type selection
@@ -173,6 +183,7 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({
   const handleSubmit = async (values: FormValues) => {
     setIsSubmitting(true);
     setSubmitError('');
+    setSubmitSuccess('');
 
     try {
       // Convert FileList to File array
@@ -184,6 +195,7 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({
         leave_type_id: values.leave_type_id,
         start_date: values.start_date,
         end_date: values.end_date,
+        days_requested: workingDays,
         reason: values.reason,
         supporting_documents: files
       };
@@ -191,9 +203,16 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({
       let result;
       if (editMode && requestId) {
         result = await leaveService.updateLeaveRequest(requestId, requestData);
+        setSubmitSuccess('Leave request updated successfully! Your changes have been saved.');
       } else {
         result = await leaveService.createLeaveRequest(requestData);
+        setSubmitSuccess('Leave request submitted successfully! You can view it in your leave history.');
       }
+
+      // Auto-dismiss success message after 5 seconds
+      setTimeout(() => {
+        setSubmitSuccess('');
+      }, 5000);
 
       if (onSuccess) {
         onSuccess(result);
@@ -247,11 +266,23 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({
         </Text>
       </div>
 
+      {submitSuccess && (
+        <MessageBar
+          messageBarType={MessageBarType.success}
+          isMultiline
+          className="mb-4"
+          onDismiss={() => setSubmitSuccess('')}
+        >
+          {submitSuccess}
+        </MessageBar>
+      )}
+
       {submitError && (
         <MessageBar
           messageBarType={MessageBarType.error}
           isMultiline
           className="mb-4"
+          onDismiss={() => setSubmitError('')}
         >
           {submitError}
         </MessageBar>

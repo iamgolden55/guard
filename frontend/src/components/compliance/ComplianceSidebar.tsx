@@ -9,6 +9,7 @@ interface NavigationItem {
   label: string;
   path: string;
   icon: string;
+  iconColor?: string; // Tasteful color for each icon
   roles: UserRole[];
   description?: string;
 }
@@ -27,6 +28,7 @@ const ComplianceSidebar: React.FC = () => {
           label: 'Dashboard',
           path: '/compliance',
           icon: 'ViewDashboard',
+          iconColor: '#d13438', // Muted red
           roles: [UserRole.MANAGER, UserRole.ADMIN],
           description: 'Compliance overview and metrics'
         }
@@ -40,6 +42,7 @@ const ComplianceSidebar: React.FC = () => {
           label: 'Violations',
           path: '/compliance/violations',
           icon: 'Warning',
+          iconColor: '#ff8c00', // Orange
           roles: [UserRole.MANAGER, UserRole.ADMIN],
           description: 'View and manage violations'
         },
@@ -48,6 +51,7 @@ const ComplianceSidebar: React.FC = () => {
           label: 'Real-time Monitor',
           path: '/compliance/monitor',
           icon: 'Insights',
+          iconColor: '#0078d4', // Blue
           roles: [UserRole.MANAGER, UserRole.ADMIN],
           description: 'Live compliance monitoring'
         },
@@ -56,6 +60,7 @@ const ComplianceSidebar: React.FC = () => {
           label: 'Compliance Check',
           path: '/compliance/check',
           icon: 'Completed',
+          iconColor: '#107c10', // Green
           roles: [UserRole.MANAGER, UserRole.ADMIN],
           description: 'Run compliance checks'
         }
@@ -69,6 +74,7 @@ const ComplianceSidebar: React.FC = () => {
           label: 'Reports',
           path: '/compliance/reports',
           icon: 'BarChart4',
+          iconColor: '#498205', // Green
           roles: [UserRole.MANAGER, UserRole.ADMIN],
           description: 'Generate compliance reports'
         },
@@ -77,6 +83,7 @@ const ComplianceSidebar: React.FC = () => {
           label: 'Trends & Analytics',
           path: '/compliance/trends',
           icon: 'LineChart',
+          iconColor: '#8764b8', // Purple
           roles: [UserRole.MANAGER, UserRole.ADMIN],
           description: 'View compliance trends'
         },
@@ -85,6 +92,7 @@ const ComplianceSidebar: React.FC = () => {
           label: 'Working Hours',
           path: '/compliance/working-hours',
           icon: 'Clock',
+          iconColor: '#986f0b', // Gold
           roles: [UserRole.MANAGER, UserRole.ADMIN],
           description: 'Working hours compliance'
         }
@@ -98,6 +106,7 @@ const ComplianceSidebar: React.FC = () => {
           label: 'System Settings',
           path: '/compliance/settings',
           icon: 'Settings',
+          iconColor: '#605e5c', // Gray
           roles: [UserRole.ADMIN],
           description: 'Configure compliance system'
         },
@@ -106,6 +115,7 @@ const ComplianceSidebar: React.FC = () => {
           label: 'Compliance Profiles',
           path: '/compliance/profiles',
           icon: 'DocumentManagement',
+          iconColor: '#0078d4', // Blue
           roles: [UserRole.ADMIN],
           description: 'Manage compliance profiles'
         },
@@ -114,6 +124,7 @@ const ComplianceSidebar: React.FC = () => {
           label: 'Regulations',
           path: '/compliance/regulations',
           icon: 'ComplianceAudit',
+          iconColor: '#0078d4', // Blue
           roles: [UserRole.ADMIN],
           description: 'Manage working hours regulations'
         }
@@ -181,7 +192,7 @@ const ComplianceSidebar: React.FC = () => {
       </div>
 
       {/* User Info */}
-      <div className="p-4 bg-red-50 border-b border-gray-200">
+      <div className="p-4 bg-gray-50 border-b border-gray-200">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center">
             <Text variant="small" className="text-white font-semibold">
@@ -214,6 +225,7 @@ const ComplianceSidebar: React.FC = () => {
                 <Text
                   variant="small"
                   className="font-semibold text-gray-500 uppercase tracking-wide mb-3 block px-2"
+                  style={{ fontSize: '11px', letterSpacing: '0.05em' }}
                 >
                   {section.title}
                 </Text>
@@ -226,20 +238,21 @@ const ComplianceSidebar: React.FC = () => {
                         key={item.id}
                         to={item.path}
                         className={`
-                          group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ease-out
+                          group flex items-center px-3 py-3 font-medium rounded-lg transition-all duration-200 ease-out
                           ${active
                             ? 'bg-red-100 text-red-700 shadow-sm border-l-4 border-red-500'
                             : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 hover:shadow-sm'
                           }
                         `}
+                        style={{ minHeight: '42px', fontSize: '14px', lineHeight: '20px' }}
                       >
                         <Icon
                           iconName={item.icon}
-                          className={`
-                            mr-3 flex-shrink-0 transition-colors duration-200
-                            ${active ? 'text-red-600' : 'text-gray-400 group-hover:text-gray-600'}
-                          `}
-                          style={{ fontSize: '16px' }}
+                          className="mr-3 flex-shrink-0 transition-all duration-200"
+                          style={{
+                            fontSize: '20px',
+                            color: active ? '#cb2431' : (item.iconColor || '#605e5c')
+                          }}
                         />
                         <div className="flex-1 min-w-0">
                           <div className={`

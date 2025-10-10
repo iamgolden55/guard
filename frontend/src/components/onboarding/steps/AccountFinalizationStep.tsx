@@ -82,12 +82,44 @@ const AccountFinalizationStep: React.FC<AccountFinalizationStepProps> = ({
     { key: AdminRole.FINANCE_ADMIN, text: 'Finance Administrator', data: { description: 'Financial operations' } }
   ];
 
-  // Plan type options
+  // Plan type options - All include 30-day free trial
   const planTypeOptions: IDropdownOption[] = [
-    { key: PlanType.STARTER, text: 'Starter Plan', data: { price: '£29/month', description: 'Up to 25 staff' } },
-    { key: PlanType.PROFESSIONAL, text: 'Professional Plan', data: { price: '£79/month', description: 'Up to 100 staff' } },
-    { key: PlanType.ENTERPRISE, text: 'Enterprise Plan', data: { price: '£199/month', description: 'Unlimited staff' } },
-    { key: PlanType.CUSTOM, text: 'Custom Plan', data: { price: 'Contact us', description: 'Tailored solution' } }
+    {
+      key: PlanType.STARTER,
+      text: 'Starter Plan - FREE for 30 days',
+      data: {
+        price: 'Then £29/month',
+        description: 'Up to 25 staff',
+        trial: '30-day free trial included'
+      }
+    },
+    {
+      key: PlanType.PROFESSIONAL,
+      text: 'Professional Plan - FREE for 30 days',
+      data: {
+        price: 'Then £79/month',
+        description: 'Up to 100 staff • Recommended',
+        trial: '30-day free trial included'
+      }
+    },
+    {
+      key: PlanType.ENTERPRISE,
+      text: 'Enterprise Plan - FREE for 30 days',
+      data: {
+        price: 'Then £199/month',
+        description: 'Unlimited staff',
+        trial: '30-day free trial included'
+      }
+    },
+    {
+      key: PlanType.CUSTOM,
+      text: 'Custom Plan',
+      data: {
+        price: 'Contact us',
+        description: 'Tailored solution',
+        trial: 'Trial terms vary'
+      }
+    }
   ];
 
   // Billing cycle options
@@ -401,28 +433,224 @@ const AccountFinalizationStep: React.FC<AccountFinalizationStepProps> = ({
           Billing Information
         </Text>
 
+        {/* Simplified Trial Header */}
+        <div className="mb-8 text-center">
+          <div
+            className="inline-block mb-3 px-4 py-2 rounded-full"
+            style={{
+              background: '#f0f4ff',
+              border: '1px solid #e0e7ff'
+            }}
+          >
+            <Text style={{ color: '#4f46e5', fontSize: '13px', fontWeight: 600 }}>
+              🎉 30 days free trial • No credit card required
+            </Text>
+          </div>
+          <Text
+            variant="large"
+            style={{
+              display: 'block',
+              color: '#6b7280',
+              fontSize: '14px',
+              marginTop: '8px'
+            }}
+          >
+            Choose your plan — you won't be charged until after your trial ends
+          </Text>
+        </div>
+
+        {/* Plan Cards */}
+        <div style={{ marginBottom: '32px' }}>
+          <Text
+            style={{
+              fontSize: '13px',
+              fontWeight: 600,
+              color: '#374151',
+              marginBottom: '16px',
+              display: 'block'
+            }}
+          >
+            Select Plan *
+          </Text>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '16px'
+            }}
+          >
+            {/* Starter Plan */}
+            <div
+              onClick={() => updateBilling({ planType: PlanType.STARTER })}
+              style={{
+                padding: '20px',
+                borderRadius: '12px',
+                border: finalization.billingInfo?.planType === PlanType.STARTER
+                  ? '2px solid #4f46e5'
+                  : '2px solid #e5e7eb',
+                background: finalization.billingInfo?.planType === PlanType.STARTER
+                  ? '#faf5ff'
+                  : '#ffffff',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                position: 'relative'
+              }}
+            >
+              <div style={{ marginBottom: '12px' }}>
+                <Text style={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
+                  Starter
+                </Text>
+              </div>
+              <div style={{ marginBottom: '16px' }}>
+                <Text style={{ fontSize: '32px', fontWeight: 700, color: '#111827' }}>
+                  £29
+                </Text>
+                <Text style={{ fontSize: '14px', color: '#6b7280' }}>/month</Text>
+              </div>
+              <Text
+                style={{
+                  fontSize: '13px',
+                  color: '#6b7280',
+                  marginBottom: '16px',
+                  display: 'block'
+                }}
+              >
+                Up to 25 staff
+              </Text>
+              <div
+                style={{
+                  paddingTop: '16px',
+                  borderTop: '1px solid #e5e7eb'
+                }}
+              >
+                <Text style={{ fontSize: '12px', color: '#059669', fontWeight: 500 }}>
+                  ✓ 30-day free trial
+                </Text>
+              </div>
+            </div>
+
+            {/* Professional Plan */}
+            <div
+              onClick={() => updateBilling({ planType: PlanType.PROFESSIONAL })}
+              style={{
+                padding: '20px',
+                borderRadius: '12px',
+                border: finalization.billingInfo?.planType === PlanType.PROFESSIONAL
+                  ? '2px solid #4f46e5'
+                  : '2px solid #e5e7eb',
+                background: finalization.billingInfo?.planType === PlanType.PROFESSIONAL
+                  ? '#faf5ff'
+                  : '#ffffff',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                position: 'relative',
+                boxShadow: '0 4px 12px rgba(79, 70, 229, 0.15)'
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '-10px',
+                  right: '20px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: '#ffffff',
+                  padding: '4px 12px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}
+              >
+                Recommended
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <Text style={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
+                  Professional
+                </Text>
+              </div>
+              <div style={{ marginBottom: '16px' }}>
+                <Text style={{ fontSize: '32px', fontWeight: 700, color: '#111827' }}>
+                  £79
+                </Text>
+                <Text style={{ fontSize: '14px', color: '#6b7280' }}>/month</Text>
+              </div>
+              <Text
+                style={{
+                  fontSize: '13px',
+                  color: '#6b7280',
+                  marginBottom: '16px',
+                  display: 'block'
+                }}
+              >
+                Up to 100 staff
+              </Text>
+              <div
+                style={{
+                  paddingTop: '16px',
+                  borderTop: '1px solid #e5e7eb'
+                }}
+              >
+                <Text style={{ fontSize: '12px', color: '#059669', fontWeight: 500 }}>
+                  ✓ 30-day free trial
+                </Text>
+              </div>
+            </div>
+
+            {/* Enterprise Plan */}
+            <div
+              onClick={() => updateBilling({ planType: PlanType.ENTERPRISE })}
+              style={{
+                padding: '20px',
+                borderRadius: '12px',
+                border: finalization.billingInfo?.planType === PlanType.ENTERPRISE
+                  ? '2px solid #4f46e5'
+                  : '2px solid #e5e7eb',
+                background: finalization.billingInfo?.planType === PlanType.ENTERPRISE
+                  ? '#faf5ff'
+                  : '#ffffff',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                position: 'relative'
+              }}
+            >
+              <div style={{ marginBottom: '12px' }}>
+                <Text style={{ fontSize: '16px', fontWeight: 600, color: '#111827' }}>
+                  Enterprise
+                </Text>
+              </div>
+              <div style={{ marginBottom: '16px' }}>
+                <Text style={{ fontSize: '32px', fontWeight: 700, color: '#111827' }}>
+                  £199
+                </Text>
+                <Text style={{ fontSize: '14px', color: '#6b7280' }}>/month</Text>
+              </div>
+              <Text
+                style={{
+                  fontSize: '13px',
+                  color: '#6b7280',
+                  marginBottom: '16px',
+                  display: 'block'
+                }}
+              >
+                Unlimited staff
+              </Text>
+              <div
+                style={{
+                  paddingTop: '16px',
+                  borderTop: '1px solid #e5e7eb'
+                }}
+              >
+                <Text style={{ fontSize: '12px', color: '#059669', fontWeight: 500 }}>
+                  ✓ 30-day free trial
+                </Text>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="border rounded-lg p-6 space-y-6">
           <Stack horizontal tokens={{ childrenGap: 20 }}>
-            <Dropdown
-              label="Plan Type *"
-              selectedKey={finalization.billingInfo?.planType}
-              options={planTypeOptions}
-              onChange={(_, option) => updateBilling({
-                planType: option?.key as PlanType
-              })}
-              disabled={isLoading}
-              required
-              styles={{ root: { flex: 1 } }}
-              onRenderOption={(option) => (
-                <div>
-                  <div className="font-medium">{option?.text}</div>
-                  <div className="text-sm text-gray-600">
-                    {option?.data?.price} - {option?.data?.description}
-                  </div>
-                </div>
-              )}
-            />
-
             <Dropdown
               label="Billing Cycle *"
               selectedKey={finalization.billingInfo?.billingCycle}

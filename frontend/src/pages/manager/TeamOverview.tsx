@@ -27,6 +27,7 @@ import {
 import TeamMemberCard from '../../components/leave/TeamMemberCard';
 import TeamCalendarView from '../../components/leave/TeamCalendarView';
 import QuickApprovalWidget from '../../components/leave/QuickApprovalWidget';
+import TeamMemberDetailsPanel from '../../components/leave/TeamMemberDetailsPanel';
 
 interface TeamMemberData {
   user: User;
@@ -53,6 +54,14 @@ const TeamOverview: React.FC = () => {
   } | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [currentView, setCurrentView] = useState('overview');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  // Details panel state
+  const [isDetailsPanelOpen, setIsDetailsPanelOpen] = useState(false);
+  const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
 
   // Filter options
   const departmentOptions: IDropdownOption[] = [
@@ -84,9 +93,15 @@ const TeamOverview: React.FC = () => {
 
       // Process team members data
       const processedTeamMembers: TeamMemberData[] = teamOverviewData.team_members.map((member: any) => ({
-        user: member.user,
-        leaveBalances: member.leave_balances,
-        pendingRequests: member.pending_requests
+        user: {
+          id: member.id,
+          username: member.username,
+          email: member.email,
+          first_name: member.first_name,
+          last_name: member.last_name
+        },
+        leaveBalances: member.leave_balances || [],
+        pendingRequests: member.pending_requests || []
       }));
 
       setTeamMembers(processedTeamMembers);
@@ -132,6 +147,32 @@ const TeamOverview: React.FC = () => {
 
     return matchesSearch && matchesDepartment;
   });
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedDepartment]);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredTeamMembers.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedTeamMembers = filteredTeamMembers.slice(startIndex, endIndex);
+
+  // Handle page change
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      // Scroll to top of the team member list
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  // Handle items per page change
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1); // Reset to first page
+  };
 
   // Handle quick approval actions
   const handleQuickApprove = useCallback(async (requestId: number, comments?: string) => {
@@ -182,8 +223,8 @@ const TeamOverview: React.FC = () => {
 
   // Handle member detail view
   const handleViewMemberDetails = useCallback((userId: number) => {
-    // This could navigate to a detailed member view or open a modal
-    console.log('View details for user:', userId);
+    setSelectedMemberId(userId);
+    setIsDetailsPanelOpen(true);
   }, []);
 
   // Handle calendar date range change
@@ -339,9 +380,29 @@ const TeamOverview: React.FC = () => {
                 />
               </Stack>
 
+              {/* Pagination Info */}
+              {filteredTeamMembers.length > 0 && (
+                <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
+                  <Text variant="medium">
+                    Showing {startIndex + 1}-{Math.min(endIndex, filteredTeamMembers.length)} of {filteredTeamMembers.length} team members
+                  </Text>
+                  <Dropdown
+                    placeholder="Items per page"
+                    selectedKey={itemsPerPage}
+                    onChange={(_, option) => handleItemsPerPageChange(option?.key as number)}
+                    options={[
+                      { key: 10, text: '10 per page' },
+                      { key: 20, text: '20 per page' },
+                      { key: 50, text: '50 per page' }
+                    ]}
+                    styles={{ dropdown: { width: 150 } }}
+                  />
+                </Stack>
+              )}
+
               {/* Team Members Grid */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {filteredTeamMembers.map(member => (
+                {paginatedTeamMembers.map(member => (
                   <TeamMemberCard
                     key={member.user.id}
                     user={member.user}
@@ -353,6 +414,58 @@ const TeamOverview: React.FC = () => {
                   />
                 ))}
               </div>
+
+              {/* Pagination Controls */}
+              {filteredTeamMembers.length > itemsPerPage && (
+                <Stack horizontal horizontalAlign="center" tokens={{ childrenGap: 8 }} wrap>
+                  <DefaultButton
+                    text="Previous"
+                    iconProps={{ iconName: 'ChevronLeft' }}
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                  />
+
+                  {/* Page Numbers */}
+                  {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
+                    // Show first 3, last 3, and current page with neighbors
+                    const pageNum = i + 1;
+                    const shouldShow =
+                      pageNum <= 3 ||
+                      pageNum > totalPages - 3 ||
+                      Math.abs(pageNum - currentPage) <= 1;
+
+                    if (!shouldShow && (pageNum === 4 || pageNum === totalPages - 3)) {
+                      return <Text key={`ellipsis-${i}`} variant="medium">...</Text>;
+                    }
+
+                    if (!shouldShow) {
+                      return null;
+                    }
+
+                    return (
+                      <DefaultButton
+                        key={pageNum}
+                        text={pageNum.toString()}
+                        onClick={() => handlePageChange(pageNum)}
+                        styles={{
+                          root: {
+                            minWidth: 40,
+                            backgroundColor: currentPage === pageNum ? '#0078d4' : undefined,
+                            color: currentPage === pageNum ? '#fff' : undefined
+                          }
+                        }}
+                      />
+                    );
+                  })}
+
+                  <DefaultButton
+                    text="Next"
+                    iconProps={{ iconName: 'ChevronRight' }}
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                  />
+                </Stack>
+              )}
 
               {filteredTeamMembers.length === 0 && (
                 <Stack horizontalAlign="center" tokens={{ padding: 40 }}>
@@ -383,6 +496,23 @@ const TeamOverview: React.FC = () => {
           </PivotItem>
         </Pivot>
       </Stack>
+
+      {/* Team Member Details Panel */}
+      <TeamMemberDetailsPanel
+        isOpen={isDetailsPanelOpen}
+        onDismiss={() => {
+          setIsDetailsPanelOpen(false);
+          setSelectedMemberId(null);
+        }}
+        userId={selectedMemberId}
+        memberData={
+          selectedMemberId
+            ? teamMembers.find(m => m.user.id === selectedMemberId)
+            : undefined
+        }
+        onQuickApprove={handleQuickApprove}
+        onQuickReject={handleQuickReject}
+      />
     </div>
   );
 };

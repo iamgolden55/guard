@@ -13,11 +13,11 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { UserRole } from '../../types';
 import { leaveService } from '../../services';
-import type { 
-  LeaveBalanceResponse, 
-  LeaveRequest, 
-  LeaveRequestStatus 
+import type {
+  LeaveBalanceResponse,
+  LeaveRequest
 } from '../../types/leave';
+import { LeaveRequestStatus } from '../../types/leave';
 import LeaveBalanceWidget from '../../components/leave/LeaveBalanceWidget';
 
 interface LeaveDashboardProps {
@@ -242,13 +242,15 @@ const LeaveDashboard: React.FC<LeaveDashboardProps> = ({ refreshTrigger = 0 }) =
                     className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
                   >
                     <div className="flex items-center space-x-3">
-                      <div 
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: request.leave_type.color_code }}
-                      />
+                      {request.leave_type && (
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: request.leave_type.color_code }}
+                        />
+                      )}
                       <div>
                         <Text variant="medium" className="font-medium text-gray-900">
-                          {request.leave_type.name}
+                          {request.leave_type?.name || 'Unknown Leave Type'}
                         </Text>
                         <Text variant="small" className="text-gray-600">
                           {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
@@ -363,12 +365,14 @@ const LeaveDashboard: React.FC<LeaveDashboardProps> = ({ refreshTrigger = 0 }) =
                     className="p-3 rounded-lg border border-gray-200 bg-blue-50"
                   >
                     <div className="flex items-center space-x-2 mb-1">
-                      <div 
-                        className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: leave.leave_type.color_code }}
-                      />
+                      {leave.leave_type && (
+                        <div
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: leave.leave_type.color_code }}
+                        />
+                      )}
                       <Text variant="medium" className="font-medium text-gray-900">
-                        {leave.leave_type.name}
+                        {leave.leave_type?.name || 'Unknown Leave Type'}
                       </Text>
                     </div>
                     <Text variant="small" className="text-gray-600">

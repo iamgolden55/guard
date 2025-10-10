@@ -299,6 +299,110 @@ class SecurityCompany(models.Model):
 
         return 'active'
 
+    def get_trial_days_remaining(self):
+        """Get number of days remaining in trial period"""
+        if not self.is_trial or not self.trial_end_date:
+            return 0
+
+        now = timezone.now()
+        if now > self.trial_end_date:
+            return 0
+
+        delta = self.trial_end_date - now
+        return delta.days
+
+    def has_feature_access(self, feature_name):
+        """
+        Check if company has access to a specific feature based on trial status and subscription tier.
+
+        During trial: All features enabled
+        After trial: Features restricted to subscription tier
+        """
+        status = self.get_subscription_status()
+
+        # During active trial, all features are enabled
+        if status == 'trial_active':
+            return True
+
+        # Trial expired - restrict to tier features
+        if status == 'trial_expired':
+            return self._get_tier_features().get(feature_name, False)
+
+        # Paid subscription - restrict to tier features
+        if status == 'active':
+            return self._get_tier_features().get(feature_name, False)
+
+        # Subscription expired - no access
+        return False
+
+    def _get_tier_features(self):
+        """Get features allowed for current subscription tier"""
+        TIER_FEATURES = {
+            'starter': {
+                'basic_scheduling': True,
+                'staff_management': True,
+                'venue_management': True,
+                'shift_tracking': True,
+                'basic_reports': True,
+                'deputy_integration': False,
+                'advanced_reports': False,
+                'api_access': False,
+                'custom_branding': False,
+                'priority_support': False,
+                'leave_management': False,
+                'compliance_tracking': False,
+            },
+            'professional': {
+                'basic_scheduling': True,
+                'staff_management': True,
+                'venue_management': True,
+                'shift_tracking': True,
+                'basic_reports': True,
+                'deputy_integration': True,
+                'advanced_reports': True,
+                'api_access': False,
+                'custom_branding': False,
+                'priority_support': True,
+                'leave_management': True,
+                'compliance_tracking': True,
+            },
+            'enterprise': {
+                'basic_scheduling': True,
+                'staff_management': True,
+                'venue_management': True,
+                'shift_tracking': True,
+                'basic_reports': True,
+                'deputy_integration': True,
+                'advanced_reports': True,
+                'api_access': True,
+                'custom_branding': True,
+                'priority_support': True,
+                'leave_management': True,
+                'compliance_tracking': True,
+            },
+        }
+
+        return TIER_FEATURES.get(self.subscription_tier, TIER_FEATURES['starter'])
+
+    def get_feature_access_summary(self):
+        """Get summary of all feature access for this company"""
+        status = self.get_subscription_status()
+        tier_features = self._get_tier_features()
+
+        return {
+            'subscription_status': status,
+            'is_trial': self.is_trial,
+            'trial_days_remaining': self.get_trial_days_remaining(),
+            'subscription_tier': self.subscription_tier,
+            'features': tier_features if status != 'trial_active' else {
+                key: True for key in tier_features.keys()
+            },
+            'staff_capacity': self.staff_capacity,
+            'venue_capacity': self.venue_capacity,
+            'current_staff_count': self.get_current_staff_count(),
+            'current_venue_count': self.get_current_venue_count(),
+        }
+
 
 class UserCompanyMembership(models.Model):
     """
@@ -775,6 +879,7 @@ class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     last_login = models.DateTimeField(null=True, blank=True)
+    password_last_changed = models.DateTimeField(null=True, blank=True, help_text="Timestamp of last password change")
     groups = models.ManyToManyField(
         'auth.Group',
         related_name='api_user_set',
@@ -1088,7 +1193,7 @@ class Venue(models.Model):
     contact_name = models.CharField(max_length=255)
     contact_phone = models.CharField(max_length=20)
     contact_email = models.EmailField()
-    description = models.TextField(help_text="venue description")
+    description = models.TextField(blank=True, null=True, help_text="venue description")
     terms_and_conditions = models.TextField(help_text="venue terms and conditions")
     terms_version = models.CharField(max_length=50, null=True, blank=True, help_text="optional version identifier for terms")
     

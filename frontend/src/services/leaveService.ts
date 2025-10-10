@@ -177,21 +177,21 @@ export interface CreateBlackoutPeriodRequest {
 
 // Base API endpoints for leave management
 const LEAVE_ENDPOINTS = {
-  LEAVE_TYPES: '/leave/types',
-  LEAVE_POLICIES: '/leave/policies',
-  LEAVE_ENTITLEMENTS: '/leave/entitlements',
-  LEAVE_REQUESTS: '/leave/requests',
-  LEAVE_BALANCES: '/leave/balances',
-  LEAVE_APPROVALS: '/leave/approvals',
-  LEAVE_STATISTICS: '/leave/statistics',
-  LEAVE_CALENDAR: '/leave/calendar',
-  TEAM_OVERVIEW: '/leave/team/overview',
-  TEAM_BALANCES: '/leave/team/balances',
-  TEAM_CALENDAR: '/leave/team/calendar',
-  LEAVE_ANALYTICS: '/leave/analytics',
-  LEAVE_REPORTS: '/leave/reports',
-  LEAVE_SETTINGS: '/leave/settings',
-  BLACKOUT_PERIODS: '/leave/blackout-periods'
+  LEAVE_TYPES: '/leave/types/',
+  LEAVE_POLICIES: '/leave/policies/',
+  LEAVE_ENTITLEMENTS: '/leave/entitlements/',
+  LEAVE_REQUESTS: '/leave/requests/',
+  LEAVE_BALANCES: '/leave/balances/',
+  LEAVE_APPROVALS: '/leave/approvals/',
+  LEAVE_STATISTICS: '/leave/reports/statistics/',
+  LEAVE_CALENDAR: '/leave/calendar/',
+  TEAM_OVERVIEW: '/leave/team/overview/',
+  TEAM_BALANCES: '/leave/team/balances/',
+  TEAM_CALENDAR: '/leave/team/calendar/',
+  LEAVE_ANALYTICS: '/leave/reports/analytics/',
+  LEAVE_REPORTS: '/leave/reports/',
+  LEAVE_SETTINGS: '/leave/settings/',
+  BLACKOUT_PERIODS: '/leave/blackout-periods/'
 } as const;
 
 class LeaveService {
@@ -303,6 +303,7 @@ class LeaveService {
     formData.append('leave_type_id', requestData.leave_type_id.toString());
     formData.append('start_date', requestData.start_date);
     formData.append('end_date', requestData.end_date);
+    formData.append('days_requested', requestData.days_requested.toString());
     formData.append('reason', requestData.reason);
 
     // Add supporting documents if provided
@@ -383,6 +384,9 @@ class LeaveService {
     }
     if (requestData.start_date) formData.append('start_date', requestData.start_date);
     if (requestData.end_date) formData.append('end_date', requestData.end_date);
+    if (requestData.days_requested !== undefined) {
+      formData.append('days_requested', requestData.days_requested.toString());
+    }
     if (requestData.reason) formData.append('reason', requestData.reason);
 
     if (requestData.supporting_documents) {
@@ -428,7 +432,7 @@ class LeaveService {
   async getPendingLeaveRequests(
     filters?: LeaveRequestFilterOptions
   ): Promise<PendingLeaveRequest[]> {
-    const params: Record<string, any> = { status: 'PENDING' };
+    const params: Record<string, any> = {};
 
     if (filters) {
       if (filters.leave_type) params.leave_type = filters.leave_type.join(',');
@@ -438,20 +442,49 @@ class LeaveService {
       if (filters.department) params.department = filters.department.join(',');
     }
 
-    const response = await api.get<PendingLeaveRequest[]>(
-      `${LEAVE_ENDPOINTS.LEAVE_APPROVALS}/pending`,
+    const response = await api.get<{ pending_requests: any[]; count: number; urgent_count: number }>(
+      `${LEAVE_ENDPOINTS.LEAVE_REQUESTS}pending_approvals/`,
       { params }
     );
-    return response.data;
+
+    // Transform backend data to include urgency_level and days_until_start
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return response.data.pending_requests.map(request => {
+      const startDate = new Date(request.start_date);
+      startDate.setHours(0, 0, 0, 0);
+      const daysUntilStart = Math.ceil((startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Determine urgency based on days until start
+      let urgencyLevel: 'low' | 'medium' | 'high';
+      if (daysUntilStart <= 3) {
+        urgencyLevel = 'high';
+      } else if (daysUntilStart <= 7) {
+        urgencyLevel = 'medium';
+      } else {
+        urgencyLevel = 'low';
+      }
+
+      return {
+        ...request,
+        urgency_level: urgencyLevel,
+        days_until_start: daysUntilStart
+      };
+    });
   }
 
   /**
    * Approve or reject a leave request
    */
   async processLeaveRequest(approval: LeaveApprovalAction): Promise<LeaveRequest> {
+    const endpoint = approval.action === 'approve'
+      ? `${LEAVE_ENDPOINTS.LEAVE_REQUESTS}${approval.request_id}/approve/`
+      : `${LEAVE_ENDPOINTS.LEAVE_REQUESTS}${approval.request_id}/reject/`;
+
     const response = await api.post<LeaveRequest>(
-      `${LEAVE_ENDPOINTS.LEAVE_APPROVALS}/process`,
-      approval
+      endpoint,
+      { notes: approval.comments || '' }
     );
     return response.data;
   }
@@ -460,11 +493,17 @@ class LeaveService {
    * Bulk approve/reject multiple leave requests
    */
   async bulkProcessLeaveRequests(bulkApproval: BulkApprovalRequest): Promise<LeaveRequest[]> {
-    const response = await api.post<LeaveRequest[]>(
-      `${LEAVE_ENDPOINTS.LEAVE_APPROVALS}/bulk-process`,
-      bulkApproval
+    // Process each request individually since backend doesn't have bulk endpoint
+    const results = await Promise.all(
+      bulkApproval.request_ids.map(requestId =>
+        this.processLeaveRequest({
+          request_id: requestId,
+          action: bulkApproval.action,
+          comments: bulkApproval.comments
+        })
+      )
     );
-    return response.data;
+    return results;
   }
 
   // ============ Calendar and Statistics ============
@@ -533,37 +572,43 @@ class LeaveService {
   }
 
   // ============ Validation Helpers ============
+  // NOTE: These endpoints are not yet implemented in the backend
+  // Validation is done server-side during request submission
+
   /**
    * Check if a leave request would be valid without creating it
+   * TODO: Implement backend endpoint for this feature
    */
-  async validateLeaveRequest(requestData: LeaveRequestFormData): Promise<{
-    is_valid: boolean;
-    errors: string[];
-    warnings: string[];
-    balance_after: string;
-  }> {
-    const response = await api.post(
-      `${LEAVE_ENDPOINTS.LEAVE_REQUESTS}/validate`,
-      requestData
-    );
-    return response.data;
-  }
+  // async validateLeaveRequest(requestData: LeaveRequestFormData): Promise<{
+  //   is_valid: boolean;
+  //   errors: string[];
+  //   warnings: string[];
+  //   balance_after: string;
+  // }> {
+  //   const response = await api.post(
+  //     `${LEAVE_ENDPOINTS.LEAVE_REQUESTS}/validate/`,
+  //     requestData
+  //   );
+  //   return response.data;
+  // }
 
   /**
    * Calculate working days between two dates
+   * TODO: Implement backend endpoint for this feature
+   * Currently calculated client-side in LeaveRequestForm
    */
-  async calculateWorkingDays(startDate: string, endDate: string): Promise<{
-    working_days: number;
-    weekends: number;
-    holidays: number;
-    total_days: number;
-  }> {
-    const response = await api.post('/leave/calculate-days', {
-      start_date: startDate,
-      end_date: endDate
-    });
-    return response.data;
-  }
+  // async calculateWorkingDays(startDate: string, endDate: string): Promise<{
+  //   working_days: number;
+  //   weekends: number;
+  //   holidays: number;
+  //   total_days: number;
+  // }> {
+  //   const response = await api.post('/leave/calculate-days/', {
+  //     start_date: startDate,
+  //     end_date: endDate
+  //   });
+  //   return response.data;
+  // }
 
   // ============ File Downloads ============
   /**

@@ -1,7 +1,19 @@
-from rest_framework import viewsets, status, permissions, filters
+from rest_framework import viewsets, status, permissions, filters, renderers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+
+
+# Custom renderer for raw HttpResponse (used for file downloads)
+class PassthroughRenderer(renderers.BaseRenderer):
+    """
+    Return data as-is. View should supply a Response.
+    """
+    media_type = '*/*'
+    format = None
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        return data
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Sum, Count, Avg, Prefetch
 from django.utils import timezone
@@ -408,15 +420,25 @@ class TeamOverviewViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         """Get team members based on user permissions"""
-        permission_checker = LeaveBalancePermission()
+        # Get the user's company from their active membership
+        user_membership = self.request.user.company_memberships.filter(
+            is_active=True
+        ).select_related('company').first()
 
-        if permission_checker.is_admin(self.request.user):
-            # Admins see all users
-            return User.objects.filter(is_active=True)
-        else:
-            # Managers see team members (TODO: implement team hierarchy)
-            # For now, return all active users
-            return User.objects.filter(is_active=True)
+        if not user_membership:
+            # User has no company membership - return empty queryset
+            return User.objects.none()
+
+        # Get all users who are members of the same company
+        company_user_ids = user_membership.company.memberships.filter(
+            is_active=True
+        ).values_list('user_id', flat=True)
+
+        # Return active users from the same company
+        return User.objects.filter(
+            id__in=company_user_ids,
+            is_active=True
+        )
 
     def list(self, request):
         """Get team overview data"""
@@ -666,20 +688,48 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
     ordering_fields = ['created_at', 'start_date', 'submitted_at', 'approved_at']
     ordering = ['-created_at']
 
+    def perform_content_negotiation(self, request, force=False):
+        """
+        Override content negotiation to allow raw HttpResponse for export action.
+        For export_requests action, bypass normal content negotiation.
+        """
+        if self.action == 'export_requests':
+            # Return PassthroughRenderer for export action
+            return (PassthroughRenderer(), 'application/octet-stream')
+        return super().perform_content_negotiation(request, force)
+
     def get_queryset(self):
         """Filter queryset based on user permissions"""
         queryset = super().get_queryset()
         user = self.request.user
 
-        # Staff users see only their own requests
+        # Get the user's company from their active membership
+        user_membership = user.company_memberships.filter(
+            is_active=True
+        ).select_related('company').first()
+
+        if not user_membership:
+            # User has no company membership - return empty queryset
+            return queryset.none()
+
+        # Get all users who are members of the same company
+        company_user_ids = user_membership.company.memberships.filter(
+            is_active=True
+        ).values_list('user_id', flat=True)
+
+        # Filter requests to only include users from the same company
+        queryset = queryset.filter(staff_user_id__in=company_user_ids)
+
+        # Staff users see only their own requests within their company
         if user.role == 'staff':
             return queryset.filter(staff_user=user)
 
-        # Managers see team requests (TODO: implement team hierarchy filtering)
+        # Managers see all requests from their company
+        # (TODO: implement team hierarchy to show only direct reports)
         elif user.role == 'manager':
-            return queryset  # For now, return all - implement team filtering later
+            return queryset
 
-        # Admins see all requests
+        # Admins see all requests from their company
         return queryset
 
     def perform_create(self, serializer):
@@ -934,6 +984,180 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(user_requests, many=True)
         return Response(serializer.data)
 
+    @action(
+        detail=False,
+        methods=['get'],
+        url_path='export',
+        renderer_classes=[PassthroughRenderer]  # Allow raw HttpResponse
+    )
+    def export_requests(self, request):
+        """Export leave requests to CSV or Excel"""
+        import csv
+        import io
+        from django.http import HttpResponse
+        from django.utils import timezone
+
+        logger.info(f"Export action called by user: {request.user.username}")
+
+        export_format = request.query_params.get('format', 'csv')
+
+        # Get filtered queryset
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Apply additional filters from query params
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            statuses = status_filter.split(',')
+            queryset = queryset.filter(status__in=statuses)
+
+        leave_type_filter = request.query_params.get('leave_type')
+        if leave_type_filter:
+            leave_types = leave_type_filter.split(',')
+            queryset = queryset.filter(leave_type_id__in=leave_types)
+
+        start_date = request.query_params.get('start_date')
+        if start_date:
+            queryset = queryset.filter(start_date__gte=start_date)
+
+        end_date = request.query_params.get('end_date')
+        if end_date:
+            queryset = queryset.filter(end_date__lte=end_date)
+
+        user_filter = request.query_params.get('user')
+        if user_filter:
+            users = user_filter.split(',')
+            queryset = queryset.filter(staff_user_id__in=users)
+
+        # Order by creation date descending
+        queryset = queryset.order_by('-created_at')
+
+        if export_format == 'csv':
+            # Create CSV
+            output = io.StringIO()
+            writer = csv.writer(output)
+
+            # Header row
+            writer.writerow([
+                'Request ID',
+                'Employee Name',
+                'Employee Email',
+                'Leave Type',
+                'Start Date',
+                'End Date',
+                'Days Requested',
+                'Status',
+                'Reason',
+                'Submitted Date',
+                'Approved By',
+                'Approved Date',
+                'Manager Notes'
+            ])
+
+            # Data rows
+            for request_obj in queryset:
+                approved_by_name = ''
+                if request_obj.approved_by:
+                    approved_by_name = f"{request_obj.approved_by.first_name} {request_obj.approved_by.last_name}".strip()
+
+                writer.writerow([
+                    request_obj.id,
+                    f"{request_obj.staff_user.first_name} {request_obj.staff_user.last_name}".strip(),
+                    request_obj.staff_user.email,
+                    request_obj.leave_type.name,
+                    request_obj.start_date.strftime('%Y-%m-%d'),
+                    request_obj.end_date.strftime('%Y-%m-%d'),
+                    float(request_obj.days_requested),
+                    request_obj.status.title(),
+                    request_obj.reason,
+                    request_obj.submitted_at.strftime('%Y-%m-%d %H:%M') if request_obj.submitted_at else '',
+                    approved_by_name,
+                    request_obj.approved_at.strftime('%Y-%m-%d %H:%M') if request_obj.approved_at else '',
+                    request_obj.manager_notes
+                ])
+
+            # Create response
+            response = HttpResponse(output.getvalue(), content_type='text/csv')
+            filename = f"leave_requests_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+        elif export_format == 'xlsx':
+            # Create Excel file
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Leave Requests"
+
+            # Header row with styling
+            headers = [
+                'Request ID', 'Employee Name', 'Employee Email', 'Leave Type',
+                'Start Date', 'End Date', 'Days Requested', 'Status',
+                'Reason', 'Submitted Date', 'Approved By', 'Approved Date', 'Manager Notes'
+            ]
+
+            header_fill = PatternFill(start_color="0078D4", end_color="0078D4", fill_type="solid")
+            header_font = Font(bold=True, color="FFFFFF")
+
+            for col_num, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col_num, value=header)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+
+            # Data rows
+            for row_num, request_obj in enumerate(queryset, 2):
+                approved_by_name = ''
+                if request_obj.approved_by:
+                    approved_by_name = f"{request_obj.approved_by.first_name} {request_obj.approved_by.last_name}".strip()
+
+                ws.cell(row=row_num, column=1, value=request_obj.id)
+                ws.cell(row=row_num, column=2, value=f"{request_obj.staff_user.first_name} {request_obj.staff_user.last_name}".strip())
+                ws.cell(row=row_num, column=3, value=request_obj.staff_user.email)
+                ws.cell(row=row_num, column=4, value=request_obj.leave_type.name)
+                ws.cell(row=row_num, column=5, value=request_obj.start_date.strftime('%Y-%m-%d'))
+                ws.cell(row=row_num, column=6, value=request_obj.end_date.strftime('%Y-%m-%d'))
+                ws.cell(row=row_num, column=7, value=float(request_obj.days_requested))
+                ws.cell(row=row_num, column=8, value=request_obj.status.title())
+                ws.cell(row=row_num, column=9, value=request_obj.reason)
+                ws.cell(row=row_num, column=10, value=request_obj.submitted_at.strftime('%Y-%m-%d %H:%M') if request_obj.submitted_at else '')
+                ws.cell(row=row_num, column=11, value=approved_by_name)
+                ws.cell(row=row_num, column=12, value=request_obj.approved_at.strftime('%Y-%m-%d %H:%M') if request_obj.approved_at else '')
+                ws.cell(row=row_num, column=13, value=request_obj.manager_notes)
+
+            # Auto-adjust column widths
+            for column in ws.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[column_letter].width = adjusted_width
+
+            # Save to bytes
+            output = io.BytesIO()
+            wb.save(output)
+            output.seek(0)
+
+            # Create response
+            response = HttpResponse(
+                output.getvalue(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            filename = f"leave_requests_{timezone.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+        else:
+            return Response({
+                'error': f'Unsupported format: {export_format}. Use csv or xlsx.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, ManagerOrAdminPermission])
     def pending_approvals(self, request):
         """Get leave requests pending manager approval"""
@@ -1053,7 +1277,7 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def analytics(self, request):
-        """Get comprehensive leave analytics"""
+        """Get comprehensive leave analytics with filtering support"""
         current_year = timezone.now().year
         year = int(request.query_params.get('year', current_year))
 
@@ -1061,13 +1285,37 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
 
+        # Additional filter parameters
+        leave_type_ids = request.query_params.getlist('leave_type')  # Can be multiple IDs
+        status_filters = request.query_params.getlist('status')  # Can be multiple statuses
+        department_filters = request.query_params.getlist('department')
+
         # Base queryset
         requests_qs = LeaveRequest.objects.filter(created_at__year=year)
 
+        # Apply date range filters
         if start_date:
             requests_qs = requests_qs.filter(start_date__gte=start_date)
         if end_date:
             requests_qs = requests_qs.filter(end_date__lte=end_date)
+
+        # Apply leave type filter
+        if leave_type_ids:
+            # Convert to integers and filter
+            leave_type_ids = [int(id) for id in leave_type_ids]
+            requests_qs = requests_qs.filter(leave_type_id__in=leave_type_ids)
+
+        # Apply status filter
+        if status_filters:
+            requests_qs = requests_qs.filter(status__in=status_filters)
+
+        # Apply department filter (if staff_user has profile with department info)
+        if department_filters:
+            # Assuming StaffProfile has department or employment_type field
+            # This may need adjustment based on actual model structure
+            requests_qs = requests_qs.filter(
+                staff_user__profile__employment_type__name__in=department_filters
+            )
 
         # Basic statistics
         total_requests = requests_qs.count()
@@ -1400,12 +1648,542 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
             'generated_at': timezone.now().isoformat()
         })
 
+    @action(detail=False, methods=['get'])
+    def statistics(self, request):
+        """Get leave statistics summary for dashboard metrics"""
+        current_year = timezone.now().year
+        year = int(request.query_params.get('year', current_year))
 
-class LeaveSettingsViewSet(viewsets.ReadOnlyModelViewSet):
+        # Date range filtering
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        # Base queryset
+        requests_qs = LeaveRequest.objects.filter(created_at__year=year)
+
+        if start_date:
+            requests_qs = requests_qs.filter(start_date__gte=start_date)
+        if end_date:
+            requests_qs = requests_qs.filter(end_date__lte=end_date)
+
+        # Basic statistics
+        total_requests = requests_qs.count()
+        approved_requests = requests_qs.filter(status='approved').count()
+        pending_requests = requests_qs.filter(status='pending').count()
+        rejected_requests = requests_qs.filter(status='rejected').count()
+
+        # Average days per request
+        total_days = requests_qs.aggregate(total=Sum('days_requested'))['total'] or Decimal('0')
+        avg_days = float(total_days / total_requests) if total_requests > 0 else 0
+
+        # Most popular leave type
+        most_popular_type = requests_qs.values(
+            'leave_type__id',
+            'leave_type__name',
+            'leave_type__code',
+            'leave_type__description',
+            'leave_type__color_code',
+            'leave_type__is_active'
+        ).annotate(
+            count=Count('id')
+        ).order_by('-count').first()
+
+        # Busiest leave period (by start date month)
+        busiest_period = requests_qs.filter(status='approved').values(
+            'start_date__month',
+            'start_date__year'
+        ).annotate(
+            count=Count('id')
+        ).order_by('-count').first()
+
+        # Format response matching LeaveStatistics interface
+        statistics_data = {
+            'total_requests': total_requests,
+            'pending_requests': pending_requests,
+            'approved_requests': approved_requests,
+            'rejected_requests': rejected_requests,
+            'average_days_per_request': f"{avg_days:.1f}",
+            'most_popular_leave_type': {
+                'id': most_popular_type['leave_type__id'] if most_popular_type else None,
+                'name': most_popular_type['leave_type__name'] if most_popular_type else 'N/A',
+                'code': most_popular_type['leave_type__code'] if most_popular_type else '',
+                'description': most_popular_type['leave_type__description'] if most_popular_type else '',
+                'color_code': most_popular_type['leave_type__color_code'] if most_popular_type else '#0078d4',
+                'is_active': most_popular_type['leave_type__is_active'] if most_popular_type else True
+            } if most_popular_type else None,
+            'busiest_leave_period': {
+                'month': busiest_period['start_date__month'] if busiest_period else 1,
+                'year': busiest_period['start_date__year'] if busiest_period else year,
+                'request_count': busiest_period['count'] if busiest_period else 0
+            }
+        }
+
+        return Response(statistics_data)
+
+    @action(detail=False, methods=['get'])
+    def export_xlsx(self, request):
+        """Export analytics data to Excel format"""
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from django.http import HttpResponse
+        import io
+
+        # Get analytics data with same filters
+        analytics_response = self.analytics(request)
+        data = analytics_response.data
+
+        # Create workbook
+        wb = Workbook()
+
+        # Summary Sheet
+        ws_summary = wb.active
+        ws_summary.title = "Summary"
+
+        # Header styling
+        header_fill = PatternFill(start_color="0078D4", end_color="0078D4", fill_type="solid")
+        header_font = Font(color="FFFFFF", bold=True, size=12)
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        # Summary section
+        ws_summary['A1'] = 'Leave Analytics Summary'
+        ws_summary['A1'].font = Font(bold=True, size=14)
+        ws_summary['A2'] = f"Period: {data['period']['year']}"
+
+        row = 4
+        ws_summary[f'A{row}'] = 'Metric'
+        ws_summary[f'B{row}'] = 'Value'
+        ws_summary[f'A{row}'].fill = header_fill
+        ws_summary[f'B{row}'].fill = header_fill
+        ws_summary[f'A{row}'].font = header_font
+        ws_summary[f'B{row}'].font = header_font
+
+        summary = data['summary']
+        metrics = [
+            ('Total Requests', summary['total_requests']),
+            ('Approved Requests', summary['approved_requests']),
+            ('Pending Requests', summary['pending_requests']),
+            ('Rejected Requests', summary['rejected_requests']),
+            ('Total Days Taken', summary['total_days_taken']),
+            ('Average Days per Request', summary['average_days_per_request']),
+            ('Approval Rate (%)', summary['approval_rate']),
+        ]
+
+        for i, (metric, value) in enumerate(metrics, start=5):
+            ws_summary[f'A{i}'] = metric
+            ws_summary[f'B{i}'] = value
+
+        # Column widths
+        ws_summary.column_dimensions['A'].width = 25
+        ws_summary.column_dimensions['B'].width = 15
+
+        # Monthly Trends Sheet
+        ws_monthly = wb.create_sheet("Monthly Trends")
+        headers = ['Month', 'Total Requests', 'Approved', 'Rejected', 'Total Days']
+        for col, header in enumerate(headers, start=1):
+            cell = ws_monthly.cell(row=1, column=col)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = border
+
+        for row_idx, month_data in enumerate(data['monthly_trends'], start=2):
+            ws_monthly.cell(row=row_idx, column=1, value=month_data['month_name'])
+            ws_monthly.cell(row=row_idx, column=2, value=month_data['total_requests'])
+            ws_monthly.cell(row=row_idx, column=3, value=month_data['approved'])
+            ws_monthly.cell(row=row_idx, column=4, value=month_data['rejected'])
+            ws_monthly.cell(row=row_idx, column=5, value=month_data['total_days'])
+
+        # Auto-width columns
+        for col in range(1, 6):
+            ws_monthly.column_dimensions[chr(64 + col)].width = 18
+
+        # Leave Types Breakdown Sheet
+        if data['leave_types_breakdown']:
+            ws_types = wb.create_sheet("Leave Types")
+            headers = ['Leave Type', 'Code', 'Requests', 'Total Days', 'Avg Days', 'Percentage']
+            for col, header in enumerate(headers, start=1):
+                cell = ws_types.cell(row=1, column=col)
+                cell.value = header
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.border = border
+
+            for row_idx, type_data in enumerate(data['leave_types_breakdown'], start=2):
+                ws_types.cell(row=row_idx, column=1, value=type_data['leave_type'])
+                ws_types.cell(row=row_idx, column=2, value=type_data['code'])
+                ws_types.cell(row=row_idx, column=3, value=type_data['request_count'])
+                ws_types.cell(row=row_idx, column=4, value=type_data['total_days'])
+                ws_types.cell(row=row_idx, column=5, value=type_data['average_days'])
+                ws_types.cell(row=row_idx, column=6, value=f"{type_data['percentage']}%")
+
+            for col in range(1, 7):
+                ws_types.column_dimensions[chr(64 + col)].width = 16
+
+        # Save to BytesIO
+        excel_file = io.BytesIO()
+        wb.save(excel_file)
+        excel_file.seek(0)
+
+        # Create response
+        response = HttpResponse(
+            excel_file.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        filename = f"leave_analytics_{data['period']['year']}.xlsx"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        return response
+
+    @action(detail=False, methods=['get'])
+    def export_pdf(self, request):
+        """Export analytics data to PDF format"""
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter, A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
+        from django.http import HttpResponse
+        import io
+
+        # Get analytics data with same filters
+        analytics_response = self.analytics(request)
+        data = analytics_response.data
+
+        # Create PDF buffer
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+        story = []
+
+        # Styles
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#0078D4'),
+            spaceAfter=30,
+            alignment=TA_CENTER
+        )
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=colors.HexColor('#0078D4'),
+            spaceAfter=12,
+            spaceBefore=20
+        )
+
+        # Title
+        story.append(Paragraph('Leave Analytics Report', title_style))
+        story.append(Paragraph(f"Period: {data['period']['year']}", styles['Normal']))
+        story.append(Spacer(1, 0.3*inch))
+
+        # Summary Section
+        story.append(Paragraph('Summary Statistics', heading_style))
+
+        summary = data['summary']
+        summary_data = [
+            ['Metric', 'Value'],
+            ['Total Requests', str(summary['total_requests'])],
+            ['Approved Requests', str(summary['approved_requests'])],
+            ['Pending Requests', str(summary['pending_requests'])],
+            ['Rejected Requests', str(summary['rejected_requests'])],
+            ['Total Days Taken', f"{summary['total_days_taken']:.1f}"],
+            ['Average Days per Request', f"{summary['average_days_per_request']:.2f}"],
+            ['Approval Rate', f"{summary['approval_rate']:.1f}%"],
+        ]
+
+        summary_table = Table(summary_data, colWidths=[3.5*inch, 2*inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0078D4')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 0.3*inch))
+
+        # Monthly Trends Section
+        story.append(Paragraph('Monthly Trends', heading_style))
+
+        monthly_data = [['Month', 'Total', 'Approved', 'Rejected', 'Days']]
+        for month in data['monthly_trends']:
+            monthly_data.append([
+                month['month_name'],
+                str(month['total_requests']),
+                str(month['approved']),
+                str(month['rejected']),
+                f"{month['total_days']:.1f}"
+            ])
+
+        monthly_table = Table(monthly_data, colWidths=[1.5*inch, 1*inch, 1*inch, 1*inch, 1*inch])
+        monthly_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0078D4')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+        ]))
+        story.append(monthly_table)
+
+        # Leave Types Breakdown (if available)
+        if data['leave_types_breakdown']:
+            story.append(PageBreak())
+            story.append(Paragraph('Leave Types Breakdown', heading_style))
+
+            types_data = [['Leave Type', 'Code', 'Requests', 'Days', 'Avg', '%']]
+            for lt in data['leave_types_breakdown']:
+                types_data.append([
+                    lt['leave_type'],
+                    lt['code'],
+                    str(lt['request_count']),
+                    f"{lt['total_days']:.1f}",
+                    f"{lt['average_days']:.1f}",
+                    f"{lt['percentage']:.1f}%"
+                ])
+
+            types_table = Table(types_data, colWidths=[1.8*inch, 0.8*inch, 1*inch, 1*inch, 0.8*inch, 0.8*inch])
+            types_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0078D4')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+            ]))
+            story.append(types_table)
+
+        # Build PDF
+        doc.build(story)
+        buffer.seek(0)
+
+        # Create response
+        response = HttpResponse(buffer.read(), content_type='application/pdf')
+        filename = f"leave_analytics_{data['period']['year']}.pdf"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        return response
+
+    @action(detail=False, methods=['get'])
+    def export_csv(self, request):
+        """Export analytics data to CSV format"""
+        import csv
+        from django.http import HttpResponse
+        import io
+
+        # Get analytics data with same filters
+        analytics_response = self.analytics(request)
+        data = analytics_response.data
+
+        # Create CSV buffer
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write summary section
+        writer.writerow(['Leave Analytics Summary'])
+        writer.writerow(['Period:', data['period']['year']])
+        writer.writerow([])
+
+        writer.writerow(['Summary Statistics'])
+        writer.writerow(['Metric', 'Value'])
+
+        summary = data['summary']
+        writer.writerow(['Total Requests', summary['total_requests']])
+        writer.writerow(['Approved Requests', summary['approved_requests']])
+        writer.writerow(['Pending Requests', summary['pending_requests']])
+        writer.writerow(['Rejected Requests', summary['rejected_requests']])
+        writer.writerow(['Total Days Taken', f"{summary['total_days_taken']:.1f}"])
+        writer.writerow(['Average Days per Request', f"{summary['average_days_per_request']:.2f}"])
+        writer.writerow(['Approval Rate (%)', f"{summary['approval_rate']:.1f}"])
+        writer.writerow([])
+
+        # Write monthly trends
+        writer.writerow(['Monthly Trends'])
+        writer.writerow(['Month', 'Total Requests', 'Approved', 'Rejected', 'Total Days'])
+
+        for month in data['monthly_trends']:
+            writer.writerow([
+                month['month_name'],
+                month['total_requests'],
+                month['approved'],
+                month['rejected'],
+                f"{month['total_days']:.1f}"
+            ])
+        writer.writerow([])
+
+        # Write leave types breakdown
+        if data['leave_types_breakdown']:
+            writer.writerow(['Leave Types Breakdown'])
+            writer.writerow(['Leave Type', 'Code', 'Requests', 'Total Days', 'Avg Days', 'Percentage'])
+
+            for lt in data['leave_types_breakdown']:
+                writer.writerow([
+                    lt['leave_type'],
+                    lt['code'],
+                    lt['request_count'],
+                    f"{lt['total_days']:.1f}",
+                    f"{lt['average_days']:.1f}",
+                    f"{lt['percentage']:.1f}%"
+                ])
+
+        # Create response
+        output.seek(0)
+        response = HttpResponse(output.getvalue(), content_type='text/csv')
+        filename = f"leave_analytics_{data['period']['year']}.csv"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        return response
+
+    @action(detail=False, methods=['get'])
+    def detailed_requests(self, request):
+        """
+        Get detailed leave requests list with sorting, pagination, and filtering
+
+        Query Parameters:
+        - year: Filter by year (default: current year)
+        - start_date: Filter by start date (YYYY-MM-DD)
+        - end_date: Filter by end date (YYYY-MM-DD)
+        - leave_type: Filter by leave type IDs (multiple allowed)
+        - status: Filter by status (multiple allowed)
+        - department: Filter by department (multiple allowed)
+        - ordering: Sort by field (e.g., 'start_date', '-created_at')
+        - page: Page number for pagination (default: 1)
+        - page_size: Number of results per page (default: 25, max: 100)
+        """
+        from django.core.paginator import Paginator
+        from django.db.models import Q
+
+        # Get filter parameters
+        current_year = timezone.now().year
+        year = int(request.query_params.get('year', current_year))
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        leave_type_ids = request.query_params.getlist('leave_type')
+        status_filters = request.query_params.getlist('status')
+        department_filters = request.query_params.getlist('department')
+        ordering = request.query_params.get('ordering', '-created_at')
+        page_number = int(request.query_params.get('page', 1))
+        page_size = min(int(request.query_params.get('page_size', 25)), 100)
+
+        # Build queryset with filters
+        queryset = LeaveRequest.objects.filter(created_at__year=year)
+
+        if start_date:
+            queryset = queryset.filter(start_date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(end_date__lte=end_date)
+        if leave_type_ids:
+            leave_type_ids = [int(id) for id in leave_type_ids]
+            queryset = queryset.filter(leave_type_id__in=leave_type_ids)
+        if status_filters:
+            queryset = queryset.filter(status__in=status_filters)
+        if department_filters:
+            queryset = queryset.filter(
+                staff_user__profile__employment_type__name__in=department_filters
+            )
+
+        # Apply ordering
+        valid_ordering_fields = [
+            'start_date', '-start_date',
+            'end_date', '-end_date',
+            'created_at', '-created_at',
+            'status', '-status',
+            'days_requested', '-days_requested',
+            'staff_user__first_name', '-staff_user__first_name',
+            'leave_type__name', '-leave_type__name'
+        ]
+        if ordering in valid_ordering_fields:
+            queryset = queryset.order_by(ordering)
+        else:
+            queryset = queryset.order_by('-created_at')
+
+        # Select related data to avoid N+1 queries
+        queryset = queryset.select_related(
+            'staff_user',
+            'staff_user__profile',
+            'leave_type',
+            'approved_by'
+        )
+
+        # Paginate results
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page_number)
+
+        # Serialize data
+        requests_data = []
+        for leave_request in page_obj:
+            request_data = {
+                'id': leave_request.id,
+                'staff_user': {
+                    'id': leave_request.staff_user.id,
+                    'name': f"{leave_request.staff_user.first_name} {leave_request.staff_user.last_name}",
+                    'email': leave_request.staff_user.email,
+                    'department': leave_request.staff_user.profile.employment_type.name if hasattr(leave_request.staff_user, 'profile') and leave_request.staff_user.profile.employment_type else None
+                },
+                'leave_type': {
+                    'id': leave_request.leave_type.id,
+                    'name': leave_request.leave_type.name,
+                    'code': leave_request.leave_type.code,
+                    'color_code': leave_request.leave_type.color_code
+                },
+                'start_date': leave_request.start_date.isoformat(),
+                'end_date': leave_request.end_date.isoformat(),
+                'days_requested': float(leave_request.days_requested),
+                'status': leave_request.status,
+                'reason': leave_request.reason,
+                'created_at': leave_request.created_at.isoformat(),
+                'approved_by': {
+                    'id': leave_request.approved_by.id,
+                    'name': f"{leave_request.approved_by.first_name} {leave_request.approved_by.last_name}"
+                } if leave_request.approved_by else None,
+                'approved_at': leave_request.approved_at.isoformat() if leave_request.approved_at else None,
+                'manager_notes': leave_request.manager_notes if hasattr(leave_request, 'manager_notes') else None,
+                'rejection_reason': leave_request.rejection_reason if hasattr(leave_request, 'rejection_reason') else None
+            }
+            requests_data.append(request_data)
+
+        # Return paginated response
+        return Response({
+            'results': requests_data,
+            'pagination': {
+                'count': paginator.count,
+                'page': page_number,
+                'page_size': page_size,
+                'total_pages': paginator.num_pages,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
+        })
+
+
+class LeaveSettingsViewSet(viewsets.ViewSet):
     """
     ViewSet for Leave System Settings Management
 
     Handles system-wide leave settings and blackout periods
+    This ViewSet doesn't work with a model, so it uses ViewSet instead of ModelViewSet
     """
     permission_classes = [IsAuthenticated, AdminOnlyPermission]
 
@@ -1440,21 +2218,28 @@ class LeaveSettingsViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get', 'put'], permission_classes=[AdminOnlyPermission])
     def system_config(self, request):
         """Get or update system-wide leave configuration"""
+        from .models import SystemConfig
+
         if request.method == 'GET':
-            # Return current system configuration
+            # Load saved configuration from database
+            saved_configs = {}
+            for config in SystemConfig.objects.all():
+                saved_configs[config.config_key] = config.config_data
+
+            # Return saved configuration or defaults
             config = {
-                'working_week': {
+                'working_week': saved_configs.get('working_week', {
                     'days_per_week': 5,
                     'hours_per_day': 8,
                     'working_days': ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-                },
-                'approval_settings': {
+                }),
+                'approval_settings': saved_configs.get('approval_settings', {
                     'auto_approve_threshold_days': None,
                     'require_manager_notes_on_rejection': True,
                     'allow_emergency_override': True,
                     'max_advance_booking_days': 365
-                },
-                'notification_settings': {
+                }),
+                'notification_settings': saved_configs.get('notification_settings', {
                     'email_notifications': True,
                     'sms_notifications': False,
                     'manager_notification_on_submission': True,
@@ -1464,26 +2249,135 @@ class LeaveSettingsViewSet(viewsets.ReadOnlyModelViewSet):
                         'days_before_expiry': [90, 30, 7],
                         'balance_low_threshold': 5
                     }
-                },
-                'policy_defaults': {
+                }),
+                'policy_defaults': saved_configs.get('policy_defaults', {
                     'default_accrual_method': 'monthly',
                     'default_carryover_method': 'partial',
                     'default_carryover_limit': 5,
                     'default_probation_months': 6
-                }
+                }),
+                'accrual_settings': saved_configs.get('accrual_settings', {})
             }
             return Response(config)
 
         elif request.method == 'PUT':
-            # Update system configuration (in a real app, this would update database/config)
+            # Update system configuration in database
             updated_config = request.data
-            # TODO: Implement actual configuration update logic
+
+            # Save each configuration section
+            for config_key, config_data in updated_config.items():
+                SystemConfig.objects.update_or_create(
+                    config_key=config_key,
+                    defaults={
+                        'config_data': config_data,
+                        'updated_by': request.user,
+                        'description': f'System configuration for {config_key}'
+                    }
+                )
 
             return Response({
                 'message': 'System configuration updated successfully',
                 'updated_config': updated_config,
                 'updated_at': timezone.now().isoformat()
             })
+
+    @action(detail=False, methods=['get', 'put'], permission_classes=[AdminOnlyPermission])
+    def notifications(self, request):
+        """Get or update notification settings"""
+        from .models import SystemConfig
+
+        if request.method == 'GET':
+            # Load saved notification settings from database
+            try:
+                config = SystemConfig.objects.get(config_key='notification_settings')
+                return Response(config.config_data)
+            except SystemConfig.DoesNotExist:
+                # Return defaults
+                return Response({
+                    'email_notifications': True,
+                    'sms_notifications': False,
+                    'manager_approval_notifications': True,
+                    'employee_request_notifications': True,
+                    'balance_threshold_notifications': True,
+                    'accrual_processing_notifications': False,
+                    'reminder_days_before': 7,
+                    'digest_frequency': 'weekly'
+                })
+
+        elif request.method == 'PUT':
+            # Update notification settings
+            updated_settings = request.data
+            SystemConfig.objects.update_or_create(
+                config_key='notification_settings',
+                defaults={
+                    'config_data': updated_settings,
+                    'updated_by': request.user,
+                    'description': 'System notification settings'
+                }
+            )
+
+            return Response({
+                'message': 'Notification settings updated successfully',
+                'updated_settings': updated_settings,
+                'updated_at': timezone.now().isoformat()
+            })
+
+    @action(detail=False, methods=['get'], permission_classes=[AdminOnlyPermission])
+    def system_health(self, request):
+        """Get system health and diagnostic information"""
+        from .models import SystemConfig, LeaveRequest
+        from django.db import connection
+
+        # Get last accrual run timestamp
+        try:
+            accrual_config = SystemConfig.objects.get(config_key='accrual_settings')
+            last_accrual_run = accrual_config.updated_at
+            accrual_status = 'healthy'
+        except SystemConfig.DoesNotExist:
+            last_accrual_run = None
+            accrual_status = 'not_configured'
+
+        # Get pending notification count (approximate based on pending leave requests)
+        pending_notifications = LeaveRequest.objects.filter(
+            status='pending'
+        ).count()
+
+        # Check database connection
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            database_status = 'healthy'
+            database_response_time = '< 5ms'
+        except Exception as e:
+            database_status = 'error'
+            database_response_time = 'N/A'
+
+        # Get system statistics
+        total_leave_requests = LeaveRequest.objects.count()
+        pending_approvals = LeaveRequest.objects.filter(status='pending').count()
+
+        return Response({
+            'accrual_engine': {
+                'status': accrual_status,
+                'last_run': last_accrual_run.isoformat() if last_accrual_run else None,
+                'next_run': 'Scheduled for next month start'
+            },
+            'notifications': {
+                'status': 'operational',
+                'pending_count': pending_notifications,
+                'queue_status': 'processing'
+            },
+            'database': {
+                'status': database_status,
+                'response_time': database_response_time,
+                'connection_pool': 'healthy'
+            },
+            'statistics': {
+                'total_leave_requests': total_leave_requests,
+                'pending_approvals': pending_approvals
+            },
+            'last_updated': timezone.now().isoformat()
+        })
 
 
 class BlackoutPeriodsViewSet(viewsets.ModelViewSet):

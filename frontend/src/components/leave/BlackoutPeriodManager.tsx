@@ -32,10 +32,12 @@ interface BlackoutPeriod {
   description: string;
   start_date: string;
   end_date: string;
-  is_recurring: boolean;
-  recurrence_type?: 'yearly' | 'monthly';
-  departments: string[];
+  venue?: number | null;
   leave_types: number[];
+  restriction_level: 'no_requests' | 'emergency_only' | 'manager_approval' | 'limit_percentage';
+  max_staff_percentage?: number | null;
+  allow_manager_override: boolean;
+  override_reason_required: boolean;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
@@ -73,8 +75,16 @@ const validationSchema = Yup.object().shape({
     .nullable()
     .required('End date is required')
     .min(Yup.ref('start_date_obj'), 'End date must be after start date'),
-  departments: Yup.array()
-    .min(1, 'At least one department must be selected'),
+  restriction_level: Yup.string()
+    .required('Restriction level is required')
+    .oneOf(['no_requests', 'emergency_only', 'manager_approval', 'limit_percentage'], 'Invalid restriction level'),
+  max_staff_percentage: Yup.number()
+    .nullable()
+    .when('restriction_level', {
+      is: 'limit_percentage',
+      then: (schema) => schema.required('Max staff percentage is required when using limit percentage restriction').min(1, 'Must be at least 1%').max(100, 'Cannot exceed 100%'),
+      otherwise: (schema) => schema.nullable()
+    }),
   leave_types: Yup.array()
     .min(1, 'At least one leave type must be selected'),
 });
@@ -100,22 +110,17 @@ const BlackoutPeriodManager: React.FC<BlackoutPeriodManagerProps> = ({
   } | null>(null);
 
   // Dropdown options
-  const departmentOptions: IDropdownOption[] = [
-    { key: 'security', text: 'Security' },
-    { key: 'admin', text: 'Administration' },
-    { key: 'management', text: 'Management' },
-    { key: 'operations', text: 'Operations' }
+  const restrictionLevelOptions: IDropdownOption[] = [
+    { key: 'no_requests', text: 'No Requests Allowed' },
+    { key: 'emergency_only', text: 'Emergency Only' },
+    { key: 'manager_approval', text: 'Manager Approval Required' },
+    { key: 'limit_percentage', text: 'Limit Staff Percentage' }
   ];
 
   const leaveTypeOptions: IDropdownOption[] = leaveTypes.map(type => ({
-    key: type.id,
+    key: String(type.id),
     text: type.name
   }));
-
-  const recurrenceOptions: IDropdownOption[] = [
-    { key: 'yearly', text: 'Yearly (same dates each year)' },
-    { key: 'monthly', text: 'Monthly (same dates each month)' }
-  ];
 
   // Initialize form data
   const getInitialFormData = useCallback((): BlackoutFormData => {
@@ -127,10 +132,12 @@ const BlackoutPeriodManager: React.FC<BlackoutPeriodManagerProps> = ({
         end_date: editingPeriod.end_date,
         start_date_obj: new Date(editingPeriod.start_date),
         end_date_obj: new Date(editingPeriod.end_date),
-        is_recurring: editingPeriod.is_recurring,
-        recurrence_type: editingPeriod.recurrence_type,
-        departments: editingPeriod.departments,
+        venue: editingPeriod.venue,
         leave_types: editingPeriod.leave_types,
+        restriction_level: editingPeriod.restriction_level,
+        max_staff_percentage: editingPeriod.max_staff_percentage,
+        allow_manager_override: editingPeriod.allow_manager_override,
+        override_reason_required: editingPeriod.override_reason_required,
         is_active: editingPeriod.is_active,
       };
     }
@@ -142,9 +149,12 @@ const BlackoutPeriodManager: React.FC<BlackoutPeriodManagerProps> = ({
       end_date: '',
       start_date_obj: null,
       end_date_obj: null,
-      is_recurring: false,
-      departments: [],
+      venue: null,
       leave_types: [],
+      restriction_level: 'no_requests',
+      max_staff_percentage: null,
+      allow_manager_override: false,
+      override_reason_required: false,
       is_active: true,
     };
   }, [editingPeriod]);
@@ -158,10 +168,12 @@ const BlackoutPeriodManager: React.FC<BlackoutPeriodManagerProps> = ({
         description: values.description,
         start_date: values.start_date_obj!.toISOString().split('T')[0],
         end_date: values.end_date_obj!.toISOString().split('T')[0],
-        is_recurring: values.is_recurring,
-        recurrence_type: values.recurrence_type,
-        departments: values.departments,
+        venue: values.venue,
         leave_types: values.leave_types,
+        restriction_level: values.restriction_level,
+        max_staff_percentage: values.max_staff_percentage,
+        allow_manager_override: values.allow_manager_override,
+        override_reason_required: values.override_reason_required,
         is_active: values.is_active,
       };
 
@@ -271,30 +283,31 @@ const BlackoutPeriodManager: React.FC<BlackoutPeriodManagerProps> = ({
       maxWidth: 250,
       isResizable: true,
       onRender: (period: BlackoutPeriod) => (
-        <Stack tokens={{ childrenGap: 2 }}>
-          <Text variant="small">
-            {new Date(period.start_date).toLocaleDateString()} - {new Date(period.end_date).toLocaleDateString()}
-          </Text>
-          {period.is_recurring && (
-            <Text variant="small" styles={{ root: { color: '#0078d4', fontWeight: 600 } }}>
-              Recurring {period.recurrence_type}
-            </Text>
-          )}
-        </Stack>
+        <Text variant="small">
+          {new Date(period.start_date).toLocaleDateString()} - {new Date(period.end_date).toLocaleDateString()}
+        </Text>
       )
     },
     {
-      key: 'departments',
-      name: 'Departments',
-      fieldName: 'departments',
+      key: 'restriction',
+      name: 'Restriction Level',
+      fieldName: 'restriction_level',
       minWidth: 150,
       maxWidth: 200,
       isResizable: true,
-      onRender: (period: BlackoutPeriod) => (
-        <Text variant="small">
-          {period.departments.join(', ') || 'All Departments'}
-        </Text>
-      )
+      onRender: (period: BlackoutPeriod) => {
+        const restrictionText = restrictionLevelOptions.find(opt => opt.key === period.restriction_level)?.text || period.restriction_level;
+        return (
+          <Stack tokens={{ childrenGap: 2 }}>
+            <Text variant="small">{restrictionText}</Text>
+            {period.restriction_level === 'limit_percentage' && period.max_staff_percentage && (
+              <Text variant="small" styles={{ root: { color: '#0078d4' } }}>
+                Max {period.max_staff_percentage}% of staff
+              </Text>
+            )}
+          </Stack>
+        );
+      }
     },
     {
       key: 'leave_types',
@@ -517,55 +530,76 @@ const BlackoutPeriodManager: React.FC<BlackoutPeriodManagerProps> = ({
                       </Field>
                     </div>
 
-                    {/* Recurrence Settings */}
-                    <Field name="is_recurring">
-                      {({ field, form }: any) => (
-                        <Toggle
-                          label="Recurring Period"
-                          checked={field.value}
-                          onChange={(_, checked) => form.setFieldValue('is_recurring', checked)}
-                          onText="Yes"
-                          offText="No"
-                        />
-                      )}
-                    </Field>
-
-                    {formik.values.is_recurring && (
-                      <Field name="recurrence_type">
-                        {({ field, form }: any) => (
-                          <Dropdown
-                            label="Recurrence Type"
-                            selectedKey={field.value}
-                            options={recurrenceOptions}
-                            onChange={(_, option) => form.setFieldValue('recurrence_type', option?.key)}
-                            styles={{ dropdown: { width: 300 } }}
-                          />
-                        )}
-                      </Field>
-                    )}
-
-                    {/* Scope Settings */}
-                    <Field name="departments">
+                    {/* Restriction Settings */}
+                    <Field name="restriction_level">
                       {({ field, meta, form }: any) => (
                         <Dropdown
-                          label="Affected Departments"
-                          placeholder="Select departments (leave empty for all)"
-                          multiSelect
-                          options={departmentOptions}
-                          selectedKeys={field.value}
+                          label="Restriction Level"
+                          placeholder="Select restriction level"
+                          required
+                          selectedKey={field.value}
+                          options={restrictionLevelOptions}
                           onChange={(_, option) => {
-                            if (option) {
-                              const currentDepts = field.value || [];
-                              const newDepts = option.selected
-                                ? [...currentDepts, option.key]
-                                : currentDepts.filter((dept: string) => dept !== option.key);
-                              form.setFieldValue('departments', newDepts);
+                            form.setFieldValue('restriction_level', option?.key);
+                            // Clear max_staff_percentage if not using limit_percentage
+                            if (option?.key !== 'limit_percentage') {
+                              form.setFieldValue('max_staff_percentage', null);
                             }
                           }}
                           errorMessage={meta.touched && meta.error ? meta.error : ''}
                         />
                       )}
                     </Field>
+
+                    {formik.values.restriction_level === 'limit_percentage' && (
+                      <Field name="max_staff_percentage">
+                        {({ field, meta }: any) => (
+                          <TextField
+                            label="Maximum Staff Percentage"
+                            placeholder="e.g., 25"
+                            type="number"
+                            min="1"
+                            max="100"
+                            suffix="%"
+                            required
+                            {...field}
+                            value={field.value || ''}
+                            onChange={(_, newValue) => {
+                              const numValue = newValue ? Number(newValue) : null;
+                              formik.setFieldValue('max_staff_percentage', numValue);
+                            }}
+                            errorMessage={meta.touched && meta.error ? meta.error : ''}
+                          />
+                        )}
+                      </Field>
+                    )}
+
+                    {/* Override Settings */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Field name="allow_manager_override">
+                        {({ field, form }: any) => (
+                          <Toggle
+                            label="Allow Manager Override"
+                            checked={field.value}
+                            onChange={(_, checked) => form.setFieldValue('allow_manager_override', checked)}
+                            onText="Yes"
+                            offText="No"
+                          />
+                        )}
+                      </Field>
+
+                      <Field name="override_reason_required">
+                        {({ field, form }: any) => (
+                          <Toggle
+                            label="Override Reason Required"
+                            checked={field.value}
+                            onChange={(_, checked) => form.setFieldValue('override_reason_required', checked)}
+                            onText="Yes"
+                            offText="No"
+                          />
+                        )}
+                      </Field>
+                    </div>
 
                     <Field name="leave_types">
                       {({ field, meta, form }: any) => (

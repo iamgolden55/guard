@@ -26,25 +26,26 @@ html, body {
 }
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
+  /* Aligned with Fluent UI Red Theme (#cb2431) */
+  --background: 0 0% 100%; /* white */
+  --foreground: 0 0% 20%; /* neutralPrimary #323130 */
+  --card: 0 0% 100%; /* white */
+  --card-foreground: 0 0% 20%;
   --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  --primary: 0 70% 45%; /* Changed from 240 5.9% 10% (blue-black) to red */
-  --primary-foreground: 0 0% 98%;
-  --secondary: 0 10% 95%; /* Changed from blue-tinted to red-tinted */
-  --secondary-foreground: 0 70% 40%; /* Changed to match red theme */
-  --muted: 0 10% 95%;
-  --muted-foreground: 0 10% 40%;
-  --accent: 0 60% 95%; /* Changed from blue-tinted to red-tinted */
-  --accent-foreground: 0 70% 45%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 0 10% 90%;
-  --input: 0 10% 90%;
-  --ring: 0 70% 45%; /* Changed from blue to red */
+  --popover-foreground: 0 0% 20%;
+  --primary: 356 70% 48%; /* themePrimary #cb2431 */
+  --primary-foreground: 0 0% 100%; /* white */
+  --secondary: 0 4% 95%; /* neutralLighter #f3f2f1 */
+  --secondary-foreground: 356 61% 34%; /* themeDark #991b25 */
+  --muted: 30 6% 91%; /* neutralLight #edebe9 */
+  --muted-foreground: 20 2% 63%; /* neutralTertiary #a19f9d */
+  --accent: 30 6% 91%; /* neutralLight */
+  --accent-foreground: 356 70% 48%; /* themePrimary */
+  --destructive: 356 70% 48%; /* Same as primary for consistency */
+  --destructive-foreground: 0 0% 100%;
+  --border: 30 6% 91%; /* neutralLight #edebe9 */
+  --input: 30 6% 91%;
+  --ring: 356 70% 48%; /* themePrimary */
   --radius: 0.5rem;
   --chart-1: 12 76% 61%;
   --chart-2: 173 58% 39%;
@@ -54,28 +55,104 @@ html, body {
 }
 
 .dark {
-  --background: 240 10% 3.9%;
-  --foreground: 0 0% 98%;
-  --card: 240 10% 3.9%;
+  /* Dark mode aligned with Fluent UI Red Theme */
+  --background: 0 0% 12%; /* neutralDark #201f1e */
+  --foreground: 0 0% 98%; /* white */
+  --card: 0 0% 12%;
   --card-foreground: 0 0% 98%;
-  --popover: 240 10% 3.9%;
+  --popover: 0 0% 12%;
   --popover-foreground: 0 0% 98%;
-  --primary: 0 70% 55%; /* Changed from 0 0% 98% to bright red */
+  --primary: 356 70% 48%; /* themePrimary #cb2431 */
   --primary-foreground: 0 0% 98%;
-  --secondary: 0 20% 20%; /* Changed from blue-tinted to red-tinted */
+  --secondary: 0 0% 23%; /* neutralPrimaryAlt #3b3a39 */
   --secondary-foreground: 0 0% 98%;
-  --muted: 0 20% 20%;
-  --muted-foreground: 0 10% 70%;
-  --accent: 0 20% 20%; /* Changed from blue-tinted to red-tinted */
+  --muted: 0 0% 23%;
+  --muted-foreground: 20 2% 63%; /* neutralTertiary */
+  --accent: 0 0% 23%;
   --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 30.6%;
+  --destructive: 356 70% 48%;
   --destructive-foreground: 0 0% 98%;
-  --border: 0 20% 20%;
-  --input: 0 20% 20%;
-  --ring: 0 70% 55%; /* Changed from blue to red */
-  --chart-1: 0 70% 50%; /* Changed from blue to red */
+  --border: 0 0% 23%;
+  --input: 0 0% 23%;
+  --ring: 356 70% 48%;
+  --chart-1: 356 70% 48%; /* Red theme */
   --chart-2: 30 60% 45%;
   --chart-3: 60 80% 55%;
   --chart-4: 280 65% 60%;
   --chart-5: 340 75% 55%;
+}
+
+/* Professional Sidebar Navigation - Outlook-inspired */
+.ms-Nav-link {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  padding: 8px 12px;
+  transition: background-color 0.15s ease;
+}
+
+/* Default icon styling - neutral dark gray */
+.ms-Nav-link i[data-icon-name],
+.ms-Nav-link .ms-Icon {
+  color: #605e5c;
+  font-size: 20px;
+  margin-right: 12px;
+  transition: all 0.15s ease;
+}
+
+/* Tasteful icon colors by category - muted, professional tones */
+.ms-Icon--Tiles { color: #d13438; } /* Dashboard - muted red */
+.ms-Icon--Calendar { color: #c239b3; } /* Calendar - muted purple */
+.ms-Icon--SwitcherStartEnd { color: #ca5010; } /* Exchange - muted orange */
+.ms-Icon--PaymentCard { color: #018574; } /* Invoices - teal */
+.ms-Icon--PeopleAlert { color: #498205; } /* Staff - green */
+.ms-Icon--ToDoLogoOutline { color: #8764b8; } /* Approvals - purple */
+.ms-Icon--ComplianceAudit { color: #0078d4; } /* Compliance - blue */
+.ms-Icon--People { color: #8764b8; } /* People - purple */
+.ms-Icon--ScheduleEventAction { color: #c239b3; } /* Scheduling - purple */
+.ms-Icon--MapPin { color: #107c10; } /* Venues - green */
+.ms-Icon--AddFriend { color: #498205; } /* Recruitment - green */
+.ms-Icon--ReportLock { color: #498205; } /* Reports - green */
+.ms-Icon--Money { color: #018574; } /* Money - teal */
+.ms-Icon--Plug { color: #986f0b; } /* Integration - gold */
+.ms-Icon--Settings { color: #605e5c; } /* Settings - gray */
+
+/* Selected state - brand red accent */
+.ms-Nav-compositeLink.is-selected .ms-Nav-link {
+  font-weight: 600;
+}
+
+.ms-Nav-compositeLink.is-selected i[data-icon-name],
+.ms-Nav-compositeLink.is-selected .ms-Icon {
+  color: #cb2431;
+}
+
+/* Hover state - subtle background wash */
+.ms-Nav-link:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.ms-Nav-link:hover i[data-icon-name],
+.ms-Nav-link:hover .ms-Icon {
+  opacity: 0.8;
+}
+
+/* Mobile bottom navigation icons */
+.ms-Icon[class*="ms-Icon--"] {
+  font-weight: 400;
+}
+
+/* Leave Management Icon Colors - Professional tones */
+.ms-Icon--ViewDashboard { color: #d13438; } /* Dashboard - muted red */
+.ms-Icon--Add { color: #107c10; } /* Add/Request - green */
+.ms-Icon--TimeEntry { color: #018574; } /* Balance - teal */
+.ms-Icon--History { color: #986f0b; } /* History - gold */
+.ms-Icon--CalendarReply { color: #8764b8; } /* Approvals - purple */
+.ms-Icon--CalendarWorkWeek { color: #c239b3; } /* Calendar - purple */
+.ms-Icon--DocumentManagement { color: #0078d4; } /* Policies - blue */
+.ms-Icon--BarChart4 { color: #498205; } /* Reports - green */
+
+/* Active state for leave sidebar icons */
+.leave-nav-active .ms-Icon {
+  color: #cb2431 !important; /* Brand red when active */
 }

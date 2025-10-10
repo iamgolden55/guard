@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.db.models import Count, Sum
-from .models import LeaveType, LeavePolicy, LeaveEntitlement, LeaveRequest, LeaveBalance, BlackoutPeriod
+from .models import LeaveType, LeavePolicy, LeaveEntitlement, LeaveRequest, LeaveBalance, BlackoutPeriod, SystemConfig
 
 
 @admin.register(LeaveType)
@@ -499,6 +499,27 @@ class BlackoutPeriodAdmin(admin.ModelAdmin):
         """Override save to run model validation"""
         obj.full_clean()
         super().save_model(request, obj, form, change)
+
+
+@admin.register(SystemConfig)
+class SystemConfigAdmin(admin.ModelAdmin):
+    list_display = ['config_key', 'description', 'updated_by', 'updated_at']
+    list_filter = ['updated_at', 'config_key']
+    search_fields = ['config_key', 'description']
+    readonly_fields = ['created_at', 'updated_at']
+
+    fieldsets = (
+        ('Configuration', {
+            'fields': ('config_key', 'description', 'config_data')
+        }),
+        ('Metadata', {
+            'fields': ('updated_by', 'created_at', 'updated_at')
+        }),
+    )
+
+    def has_delete_permission(self, request, obj=None):
+        """Prevent accidental deletion of system configurations"""
+        return request.user.is_superuser
 
 
 # Custom admin site configuration

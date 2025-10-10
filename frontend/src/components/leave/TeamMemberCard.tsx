@@ -42,19 +42,17 @@ const TeamMemberCard: React.FC<TeamMemberCardProps> = ({
 
   // Calculate total available days across all leave types
   const totalAvailableDays = leaveBalances.reduce((sum, balance) => {
-    return sum + parseFloat(balance.available_balance || '0');
+    return sum + parseFloat((balance as any).current_balance || '0');
   }, 0);
 
   // Calculate total used days
   const totalUsedDays = leaveBalances.reduce((sum, balance) => {
-    const entitlement = parseFloat(balance.entitlement.annual_entitlement || '0');
-    const available = parseFloat(balance.available_balance || '0');
-    return sum + (entitlement - available);
+    return sum + parseFloat((balance as any).used_to_date || '0');
   }, 0);
 
   // Calculate usage percentage
   const totalEntitlement = leaveBalances.reduce((sum, balance) => {
-    return sum + parseFloat(balance.entitlement.annual_entitlement || '0');
+    return sum + parseFloat((balance as any).total_entitlement || '0');
   }, 0);
   const usagePercentage = totalEntitlement > 0 ? (totalUsedDays / totalEntitlement) * 100 : 0;
 
@@ -143,9 +141,9 @@ const TeamMemberCard: React.FC<TeamMemberCardProps> = ({
               Leave Types
             </Text>
             <Stack tokens={{ childrenGap: 8 }}>
-              {leaveBalances.slice(0, 3).map((balance) => (
+              {leaveBalances.slice(0, 3).map((balance, index) => (
                 <Stack
-                  key={balance.leave_type.id}
+                  key={(balance as any).leave_type_code || index}
                   horizontal
                   horizontalAlign="space-between"
                   verticalAlign="center"
@@ -158,15 +156,15 @@ const TeamMemberCard: React.FC<TeamMemberCardProps> = ({
                           width: 12,
                           height: 12,
                           borderRadius: '50%',
-                          backgroundColor: balance.leave_type.color_code || '#0078d4',
+                          backgroundColor: (balance as any).color_code || '#0078d4',
                         }}
                       />
-                      <Text variant="small">{balance.leave_type.name}</Text>
+                      <Text variant="small">{(balance as any).leave_type}</Text>
                     </Stack>
                   </Stack.Item>
                   <Stack.Item>
                     <Text variant="small" styles={{ root: { fontWeight: 600 } }}>
-                      {parseFloat(balance.available_balance || '0').toFixed(1)} days
+                      {parseFloat((balance as any).current_balance || '0').toFixed(1)} days
                     </Text>
                   </Stack.Item>
                 </Stack>

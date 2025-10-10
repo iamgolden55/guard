@@ -13,6 +13,7 @@ import ApplicationCard from './ApplicationCard';
 import ActiveShiftWidget from './ActiveShiftWidget';
 import ShiftCard from './ShiftCard';
 import AccountMappingInterface from './AccountMappingInterface';
+import EmploymentTypesManagement from './EmploymentTypesManagement';
 
 export {
   Card,
@@ -29,5 +30,6 @@ export {
   ApplicationCard,
   ActiveShiftWidget,
   ShiftCard,
-  AccountMappingInterface
+  AccountMappingInterface,
+  EmploymentTypesManagement
 };

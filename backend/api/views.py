@@ -287,6 +287,8 @@ class UserViewSet(viewsets.ModelViewSet):
             # Create user with proper permissions
             user = serializer.save()
             user.is_staff = True  # Enable staff status for API access
+            # New registered users are company admins who will create their company during onboarding
+            user.role = 'admin'  # Set role to admin for new registrations (company owners)
             user.save()
 
             return Response({
@@ -296,7 +298,7 @@ class UserViewSet(viewsets.ModelViewSet):
                     'email': user.email
                 }
             }, status=status.HTTP_201_CREATED)
-        
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, *args, **kwargs):
@@ -622,19 +624,27 @@ class StaffProfileViewSet(viewsets.ModelViewSet):
         """
         Limit staff users to only see their own profile.
         Managers and admins can see all profiles.
+        Supports filtering by is_approved query parameter.
         """
         user = self.request.user
         queryset = StaffProfile.objects.all()
-        
+
         # Filter by user ID if provided
         user_id = self.request.query_params.get('user', None)
         if user_id:
-            return queryset.filter(user__id=user_id)
-        
-        # Admin and managers can see all profiles
+            queryset = queryset.filter(user__id=user_id)
+
+        # Filter by approval status if provided (only for admin/manager)
+        is_approved = self.request.query_params.get('is_approved', None)
+        if is_approved is not None and user.role in ['admin', 'manager']:
+            # Convert string to boolean
+            is_approved_bool = is_approved.lower() in ['true', '1', 'yes']
+            queryset = queryset.filter(is_approved=is_approved_bool)
+
+        # Admin and managers can see all profiles (or filtered subset)
         if user.role in ['admin', 'manager']:
             return queryset
-        
+
         # Staff can only see their own profile
         return queryset.filter(user=user)
     
@@ -642,9 +652,15 @@ class StaffProfileViewSet(viewsets.ModelViewSet):
         """
         Handle partial updates (PATCH) and protect immutable fields
         """
+        # DEBUG: Print incoming request data
+        print("=" * 80)
+        print("StaffProfileViewSet.update() - Incoming request.data:")
+        print(request.data)
+        print("=" * 80)
+
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
-        
+
         # Check if user is trying to update immutable fields
         for field in self.IMMUTABLE_FIELDS:
             if field in request.data and getattr(instance, field) != request.data[field]:
@@ -750,15 +766,29 @@ class VenueViewSet(viewsets.ModelViewSet):
                 'message': 'Only admin users can create venues',
                 'error': 'permission_denied'
             }, status=status.HTTP_403_FORBIDDEN)
-            
+
+        # Get the user's company context
+        company = self.get_user_company(request)
+        if not company:
+            logger.error(f"User {request.user.username} attempted to create venue without company context")
+            return Response({
+                'message': 'No company context found. Please ensure you are associated with a company.',
+                'error': 'no_company_context'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        logger.info(f"Creating venue for company: {company.name} (ID: {company.id})")
+
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
-            venue = serializer.save()
+            # Save the venue with the company association
+            venue = serializer.save(company=company)
+            logger.info(f"Venue '{venue.name}' created successfully for company {company.name}")
             return Response({
                 'message': 'Venue created successfully',
                 'venue': serializer.data
             }, status=status.HTTP_201_CREATED)
-            
+
+        logger.error(f"Venue creation failed. Validation errors: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def update(self, request, *args, **kwargs):
@@ -768,18 +798,46 @@ class VenueViewSet(viewsets.ModelViewSet):
                 'message': 'Only admin users can update venues',
                 'error': 'permission_denied'
             }, status=status.HTTP_403_FORBIDDEN)
-            
+
+        # Get the user's company context
+        company = self.get_user_company(request)
+        if not company:
+            logger.error(f"User {request.user.username} attempted to update venue without company context")
+            return Response({
+                'message': 'No company context found. Please ensure you are associated with a company.',
+                'error': 'no_company_context'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
+
+        # Verify the venue belongs to the user's company
+        if instance.company != company:
+            logger.error(f"User {request.user.username} attempted to update venue '{instance.name}' belonging to different company")
+            return Response({
+                'message': 'You do not have permission to update this venue.',
+                'error': 'company_mismatch'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Prevent changing the company field
+        if 'company' in request.data and request.data['company'] != company.id:
+            logger.error(f"Attempt to change venue company from {instance.company.id} to {request.data['company']}")
+            return Response({
+                'message': 'Cannot change venue company association.',
+                'error': 'company_immutable'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        
+
         if serializer.is_valid():
             venue = serializer.save()
+            logger.info(f"Venue '{venue.name}' updated successfully by {request.user.username}")
             return Response({
                 'message': 'Venue updated successfully',
                 'venue': serializer.data
             })
-            
+
+        logger.error(f"Venue update failed. Validation errors: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def destroy(self, request, *args, **kwargs):
@@ -2210,70 +2268,94 @@ class SystemSettingsView(APIView):
 @api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def my_profile(request):
-    try:
-        profile = StaffProfile.objects.get(user=request.user)
-        # User has a staff profile, handle normally
-        if request.method == 'GET':
-            serializer = StaffProfileSerializer(profile)
-            return Response(serializer.data)
-        elif request.method == 'PATCH':
-            # List of fields that can't be updated by staff users
-            IMMUTABLE_FIELDS = ['national_insurance_number', 'date_of_birth']
+    # CRITICAL FIX: Admin users should ALWAYS use company data, not StaffProfile data
+    # Even if they have a StaffProfile (e.g., created when saving bank details)
+    user = request.user
+    is_admin_user = user.role.lower() in ['admin', 'owner']
 
-            # Separate user fields from profile fields
-            user_fields = ['firstName', 'lastName', 'email']
-            user_data = {}
-            profile_data = request.data.copy()
+    # If admin/owner, skip StaffProfile and use company data
+    if not is_admin_user:
+        try:
+            profile = StaffProfile.objects.get(user=request.user)
+            # User has a staff profile, handle normally
+            if request.method == 'GET':
+                serializer = StaffProfileSerializer(profile)
+                return Response(serializer.data)
+            elif request.method == 'PATCH':
+                # List of fields that can't be updated by staff users
+                IMMUTABLE_FIELDS = ['national_insurance_number', 'date_of_birth']
 
-            # Extract user fields and convert to snake_case
-            for field in user_fields:
-                if field in profile_data:
-                    if field == 'firstName':
-                        user_data['first_name'] = profile_data.pop(field)
-                    elif field == 'lastName':
-                        user_data['last_name'] = profile_data.pop(field)
-                    elif field == 'email':
-                        user_data['email'] = profile_data.pop(field)
+                # Separate user fields from profile fields
+                user_fields = ['firstName', 'lastName', 'email']
+                user_data = {}
+                profile_data = request.data.copy()
 
-            # Update user fields if any were provided
-            if user_data:
-                for field, value in user_data.items():
-                    setattr(request.user, field, value)
-                request.user.save()
+                # Extract user fields and convert to snake_case
+                for field in user_fields:
+                    if field in profile_data:
+                        if field == 'firstName':
+                            user_data['first_name'] = profile_data.pop(field)
+                        elif field == 'lastName':
+                            user_data['last_name'] = profile_data.pop(field)
+                        elif field == 'email':
+                            user_data['email'] = profile_data.pop(field)
 
-            # Check if user is trying to update immutable fields
-            for field in IMMUTABLE_FIELDS:
-                if field in profile_data and getattr(profile, field) != profile_data[field]:
-                    # If admin or manager, allow the update
-                    if request.user.role in ['admin', 'manager']:
-                        pass  # Allow admins and managers to update immutable fields
-                    else:
-                        # For staff users, remove immutable fields from request data
-                        profile_data.pop(field)
+                # Update user fields if any were provided
+                if user_data:
+                    for field, value in user_data.items():
+                        setattr(request.user, field, value)
+                    request.user.save()
 
-            # Update profile fields if any remain
-            if profile_data:
-                serializer = StaffProfileSerializer(profile, data=profile_data, partial=True, context={'request': request})
-                serializer.is_valid(raise_exception=True)
-                serializer.save()
+                # Check if user is trying to update immutable fields
+                for field in IMMUTABLE_FIELDS:
+                    if field in profile_data and getattr(profile, field) != profile_data[field]:
+                        # If admin or manager, allow the update
+                        if request.user.role in ['admin', 'manager']:
+                            pass  # Allow admins and managers to update immutable fields
+                        else:
+                            # For staff users, remove immutable fields from request data
+                            profile_data.pop(field)
 
-            # Return updated profile data
-            updated_serializer = StaffProfileSerializer(profile, context={'request': request})
-            return Response(updated_serializer.data)
-    except StaffProfile.DoesNotExist:
+                # Update profile fields if any remain
+                if profile_data:
+                    serializer = StaffProfileSerializer(profile, data=profile_data, partial=True, context={'request': request})
+                    serializer.is_valid(raise_exception=True)
+                    serializer.save()
+
+                # Return updated profile data
+                updated_serializer = StaffProfileSerializer(profile, context={'request': request})
+                return Response(updated_serializer.data)
+        except StaffProfile.DoesNotExist:
+            pass  # Fall through to admin/company handling below
+
+    # Handle admin/owner users OR staff users without StaffProfile
+    if True:  # Always execute this block for admin users, or staff without profile
         # User doesn't have a staff profile (likely admin/owner)
         user = request.user
 
         if request.method == 'GET':
             # Get company information to populate contact details
+            print(f"[PROFILE DEBUG] Admin user {user.id} GET request started")
             try:
                 membership = user.company_memberships.filter(
                     is_active=True,
                     role__in=['owner', 'admin', 'manager']
                 ).select_related('company').first()
 
+                print(f"[PROFILE DEBUG] Admin user {user.id} GET: membership found={membership is not None}")
+                if membership:
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: membership.company={membership.company is not None}")
+
                 if membership and membership.company:
                     company = membership.company
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: Found company {company.id} - {company.name}")
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: Company phone='{company.primary_contact_phone}'")
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: Company email='{company.primary_contact_email}'")
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: Company address_line_1='{company.address_line_1}'")
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: Company city='{company.city}'")
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: Company postal_code='{company.postal_code}'")
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: Company state_province='{company.state_province}'")
+
                     # Prioritize user's actual name over company contact name
                     first_name = user.first_name or ''
                     last_name = user.last_name or ''
@@ -2295,8 +2377,12 @@ def my_profile(request):
                         'postalCode': company.postal_code or '',
                         'country': company.state_province or ''
                     }
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: Set phone_number='{phone_number}'")
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: Set email='{email}'")
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: Set address={address}")
                 else:
                     # Fallback if no company found
+                    print(f"[PROFILE DEBUG] Admin user {user.id} GET: No company membership found - using empty contact info")
                     first_name = user.first_name
                     last_name = user.last_name
                     phone_number = ''
@@ -2304,11 +2390,35 @@ def my_profile(request):
                     address = {'street': '', 'city': '', 'postalCode': '', 'country': ''}
             except Exception as e:
                 # Fallback in case of any errors
+                print(f"[PROFILE DEBUG] Admin user {user.id} GET: EXCEPTION: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 first_name = user.first_name
                 last_name = user.last_name
                 phone_number = ''
                 email = user.email
                 address = {'street': '', 'city': '', 'postalCode': '', 'country': ''}
+
+            # Get bank details if StaffProfile exists for this admin user
+            from api.models import StaffProfile as SP
+            bank_details_response = {
+                'accountName': '',
+                'accountNumber': '',
+                'sortCode': '',
+                'bankName': ''
+            }
+            try:
+                staff_profile = SP.objects.filter(user=user).select_related('bank_details').first()
+                if staff_profile and staff_profile.bank_details:
+                    bd = staff_profile.bank_details
+                    bank_details_response = {
+                        'accountName': bd.account_name or '',
+                        'accountNumber': bd.account_number or '',
+                        'sortCode': bd.sort_code or '',
+                        'bankName': bd.bank_name or ''
+                    }
+            except Exception:
+                pass
 
             # Create a profile response for admin users with company contact info
             admin_profile_data = {
@@ -2333,12 +2443,7 @@ def my_profile(request):
                 'nationalInsuranceNumber': '',
                 'address': address,
                 'siaLicenses': [],
-                'bankDetails': {
-                    'accountName': '',
-                    'accountNumber': '',
-                    'sortCode': '',
-                    'bankName': ''
-                },
+                'bankDetails': bank_details_response,
                 'emergencyContact': {
                     'name': '',
                     'relationship': '',
@@ -2349,8 +2454,11 @@ def my_profile(request):
                 'preferredVenues': [],
                 'notes': '',
                 'isApproved': True,  # Admin users are always approved
-                'securityRoles': getattr(user, 'security_roles', [])
+                'securityRoles': getattr(user, 'security_roles', []),
+                'passwordLastChanged': user.password_last_changed.isoformat() if user.password_last_changed else None
             }
+            print(f"[PROFILE DEBUG] Admin user {user.id} GET: Returning phoneNumber='{admin_profile_data['phoneNumber']}'")
+            print(f"[PROFILE DEBUG] Admin user {user.id} GET: Returning address={admin_profile_data['address']}")
             return Response(admin_profile_data)
         elif request.method == 'PATCH':
             # For admin users, allow updating user fields and company contact info
@@ -2358,6 +2466,11 @@ def my_profile(request):
             allowed_company_fields = ['phoneNumber', 'address']
             # Note: emergencyContact, bankDetails, dateOfBirth, nationalInsuranceNumber, and notes
             # are accepted for form compatibility but not stored for admin users
+
+            # DEBUG: Log incoming request data
+            logger = logging.getLogger(__name__)
+            logger.info(f"Admin user {user.id} PATCH request.data keys: {list(request.data.keys())}")
+            logger.info(f"Admin user {user.id} PATCH request.data: {request.data}")
 
             user_updates = {}
             company_updates = {}
@@ -2388,8 +2501,48 @@ def my_profile(request):
                         if 'country' in address_data:
                             company_updates['state_province'] = address_data['country']
 
-            # Accept but ignore fields that don't apply to admin users
-            ignored_fields = ['emergencyContact', 'bankDetails', 'dateOfBirth', 'nationalInsuranceNumber', 'notes']
+            # Handle bank details by creating a StaffProfile if needed
+            if 'bankDetails' in request.data:
+                from api.models import StaffProfile as SP3, BankDetails
+                from django.db import transaction
+
+                try:
+                    with transaction.atomic():
+                        # Get or create StaffProfile for this admin user
+                        profile, created = SP3.objects.get_or_create(
+                            user=user,
+                            defaults={
+                                'phone_number': phone_number if 'phone_number' in locals() else '',
+                                'date_of_birth': '1900-01-01',  # Default placeholder for admin users
+                                'is_approved': True  # Auto-approve admin profiles
+                            }
+                        )
+
+                        # Get or create BankDetails
+                        bank_details_data = request.data['bankDetails']
+                        bank_details, _ = BankDetails.objects.get_or_create(
+                            staff_profile=profile
+                        )
+
+                        # Update bank details fields
+                        if 'accountName' in bank_details_data:
+                            bank_details.account_name = bank_details_data['accountName']
+                        if 'accountNumber' in bank_details_data:
+                            bank_details.account_number = bank_details_data['accountNumber']
+                        if 'sortCode' in bank_details_data:
+                            bank_details.sort_code = bank_details_data['sortCode']
+                        if 'bankName' in bank_details_data:
+                            bank_details.bank_name = bank_details_data['bankName']
+
+                        bank_details.save()
+                except Exception as e:
+                    # Log error but continue
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to save bank details for admin user {user.id}: {str(e)}")
+
+            # Accept but ignore other fields that don't apply to admin users without StaffProfile
+            ignored_fields = ['emergencyContact', 'dateOfBirth', 'nationalInsuranceNumber', 'notes']
             for field in ignored_fields:
                 if field in request.data:
                     # Accept the field to prevent form errors, but don't store it
@@ -2409,21 +2562,36 @@ def my_profile(request):
                         role__in=['owner', 'admin', 'manager']
                     ).select_related('company').first()
 
-                    if membership and membership.company:
+                    if not membership:
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Admin user {user.id} ({user.username}) has no company membership - cannot save contact info")
+                        # Continue without failing - contact info just won't be saved
+                    elif not membership.company:
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Admin user {user.id} ({user.username}) membership has no company - cannot save contact info")
+                        # Continue without failing - contact info just won't be saved
+                    else:
                         company = membership.company
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"Updating company {company.id} contact info for admin user {user.id}")
 
                         # Update contact name if first/last name changed
                         if 'first_name' in user_updates or 'last_name' in user_updates:
                             company.primary_contact_name = f"{user.first_name} {user.last_name}".strip()
+                            logger.info(f"Updated company contact name to: {company.primary_contact_name}")
 
                         # Update other company fields
                         for field, value in company_updates.items():
+                            logger.info(f"Updating company field {field} to: {value}")
                             setattr(company, field, value)
 
                         company.save()
+                        logger.info(f"Successfully saved company {company.id} with contact updates")
                 except Exception as e:
-                    # Log error but don't fail the request
-                    pass
+                    # Log the actual error for debugging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to save company contact info for admin user {user.id}: {str(e)}", exc_info=True)
+                    # Continue without failing - the user data was still saved successfully
 
             # Return updated admin profile data (reuse the GET logic)
             try:
@@ -2458,6 +2626,27 @@ def my_profile(request):
                 email = user.email
                 address = {'street': '', 'city': '', 'postalCode': '', 'country': ''}
 
+            # Get bank details if StaffProfile was created/exists
+            from api.models import StaffProfile as SP2
+            bank_details_response = {
+                'accountName': '',
+                'accountNumber': '',
+                'sortCode': '',
+                'bankName': ''
+            }
+            try:
+                staff_profile = SP2.objects.filter(user=user).select_related('bank_details').first()
+                if staff_profile and staff_profile.bank_details:
+                    bd = staff_profile.bank_details
+                    bank_details_response = {
+                        'accountName': bd.account_name or '',
+                        'accountNumber': bd.account_number or '',
+                        'sortCode': bd.sort_code or '',
+                        'bankName': bd.bank_name or ''
+                    }
+            except Exception:
+                pass
+
             updated_profile_data = {
                 'id': user.id,
                 'user': {
@@ -2480,12 +2669,7 @@ def my_profile(request):
                 'nationalInsuranceNumber': '',
                 'address': address,
                 'siaLicenses': [],
-                'bankDetails': {
-                    'accountName': '',
-                    'accountNumber': '',
-                    'sortCode': '',
-                    'bankName': ''
-                },
+                'bankDetails': bank_details_response,
                 'emergencyContact': {
                     'name': '',
                     'relationship': '',
@@ -2545,10 +2729,12 @@ def change_password(request):
     # Set new password
     user.set_password(new_password)
 
-    # Update password_last_changed if user has a staff profile
+    # Update password_last_changed on User model (for all users)
+    user.password_last_changed = timezone.now()
+
+    # Also update password_last_changed if user has a staff profile
     try:
         if hasattr(user, 'profile') and user.profile:
-            from django.utils import timezone
             user.profile.password_last_changed = timezone.now()
             user.profile.save()
     except:
@@ -2612,7 +2798,13 @@ class EmploymentTypeViewSet(viewsets.ModelViewSet):
             return EmploymentType.objects.none()
 
         return EmploymentType.objects.filter(company=company)
-    
+
+    def get_serializer_context(self):
+        """Add company context to serializer"""
+        context = super().get_serializer_context()
+        context['company'] = self.get_user_company(self.request)
+        return context
+
     def get_permissions(self):
         """
         Admin-only access for CUD operations, authenticated users can read.
@@ -5927,15 +6119,18 @@ class CompaniesViewSet(viewsets.ReadOnlyModelViewSet):
             is_active=True
         )
 
-    @action(detail=False, methods=['get'], url_path='current')
+    @action(detail=False, methods=['get'], url_path='current', permission_classes=[IsAuthenticated])
     def get_current_company(self, request):
         """
         GET /api/v1/companies/current/
         Get the user's current company context.
+
+        This endpoint is accessible to all authenticated users, including those
+        who haven't completed onboarding yet. It returns null if no company membership exists.
         """
         # Get the user's primary company (first active membership with highest role)
         role_priority = {'owner': 1, 'admin': 2, 'manager': 3, 'staff': 4, 'viewer': 5}
-        
+
         membership = request.user.company_memberships.filter(
             is_active=True
         ).select_related('company').order_by(
@@ -5947,10 +6142,13 @@ class CompaniesViewSet(viewsets.ReadOnlyModelViewSet):
         ).first()
 
         if not membership:
+            # Return success with null data for users without a company (e.g., during onboarding)
             return Response({
-                'status': 'error',
+                'status': 'success',
+                'company': None,
+                'membership': None,
                 'message': 'No active company membership found'
-            }, status=status.HTTP_404_NOT_FOUND)
+            }, status=status.HTTP_200_OK)
 
         company_serializer = SecurityCompanySerializer(membership.company)
         membership_serializer = UserCompanyMembershipSerializer(membership)

@@ -143,8 +143,8 @@ const RequestDetailsPanel: React.FC<RequestDetailsProps> = ({
           <Stack tokens={{ childrenGap: 12 }} className="p-4">
             <div className="flex items-start justify-between">
               <Persona
-                text={`${request.user.first_name} ${request.user.last_name}`}
-                secondaryText={request.user.email}
+                text={request.user ? `${request.user.first_name} ${request.user.last_name}` : 'Unknown User'}
+                secondaryText={request.user?.email || ''}
                 size={PersonaSize.size48}
               />
               <div className="text-right">
@@ -166,12 +166,14 @@ const RequestDetailsPanel: React.FC<RequestDetailsProps> = ({
               <div>
                 <Text variant="small" className="text-gray-600">Leave Type:</Text>
                 <div className="flex items-center gap-2 mt-1">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: request.leave_type.color_code }}
-                  />
+                  {request.leave_type && (
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: request.leave_type.color_code }}
+                    />
+                  )}
                   <Text variant="medium" className="font-medium">
-                    {request.leave_type.name}
+                    {request.leave_type?.name || 'Unknown Leave Type'}
                   </Text>
                 </div>
               </div>
@@ -567,13 +569,20 @@ const LeaveHistoryTable: React.FC<LeaveHistoryTableProps> = ({
       minWidth: 180,
       maxWidth: 220,
       isResizable: true,
-      onRender: (item: LeaveRequest) => (
-        <Persona
-          text={`${item.user.first_name} ${item.user.last_name}`}
-          secondaryText={item.user.email}
-          size={compact ? PersonaSize.size24 : PersonaSize.size32}
-        />
-      ),
+      onRender: (item: LeaveRequest) => {
+        const displayName = item.user
+          ? `${item.user.first_name} ${item.user.last_name}`
+          : 'Unknown User';
+        const email = item.user?.email || '';
+
+        return (
+          <Persona
+            text={displayName}
+            secondaryText={email}
+            size={compact ? PersonaSize.size24 : PersonaSize.size32}
+          />
+        );
+      },
     }] : []),
     {
       key: 'leaveType',
@@ -583,12 +592,14 @@ const LeaveHistoryTable: React.FC<LeaveHistoryTableProps> = ({
       isResizable: true,
       onRender: (item: LeaveRequest) => (
         <div className="flex items-center gap-2">
-          <div
-            className="w-3 h-3 rounded-full"
-            style={{ backgroundColor: item.leave_type.color_code }}
-          />
+          {item.leave_type && (
+            <div
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: item.leave_type.color_code }}
+            />
+          )}
           <Text variant={compact ? 'small' : 'medium'}>
-            {item.leave_type.name}
+            {item.leave_type?.name || 'Unknown Leave Type'}
           </Text>
         </div>
       ),

@@ -21,7 +21,7 @@ interface AuthContextValue {
   refreshUserToken: () => Promise<boolean>;
   refreshUserData: () => void;
   updateOnboardingStatus: (status: Partial<OnboardingStatus>) => void;
-  completeOnboarding: (companyId: string) => void;
+  completeOnboarding: (companyId: string) => Promise<void>;
 }
 
 // Create context with default values - WITHOUT localStorage
@@ -172,8 +172,47 @@ function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Function to fetch current company membership
+  const fetchCompanyMembership = useCallback(async (token: string): Promise<CompanyMembership | null> => {
+    try {
+      // Temporarily set the token for the API call
+      const originalToken = api.defaults.headers.common['Authorization'];
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+      const response = await companyService.getCurrentCompanyContext();
+
+      // Restore original token
+      if (originalToken) {
+        api.defaults.headers.common['Authorization'] = originalToken;
+      } else {
+        delete api.defaults.headers.common['Authorization'];
+      }
+
+      // Handle null response (user doesn't have a company yet)
+      if (!response || !response.membership) {
+        console.log('No company membership found - user may be in onboarding');
+        return null;
+      }
+
+      return {
+        id: response.membership.id,
+        role: response.membership.role,
+        isOwner: response.membership.is_owner,
+        isActive: response.membership.is_active,
+        companyId: response.membership.company,
+        companyName: response.membership.company_name
+      };
+    } catch (error) {
+      console.log('Failed to fetch company membership (this is expected for new users):', error);
+      return null;
+    }
+  }, []);
+
   // Function to complete onboarding
-  const completeOnboarding = useCallback((companyId: string) => {
+  const completeOnboarding = useCallback(async (companyId: string) => {
+    console.log('Completing onboarding and refreshing company membership...');
+
+    // Update onboarding state
     setAuthState(prev => ({
       ...prev,
       onboarding: {
@@ -186,7 +225,29 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
     // Clear onboarding data from localStorage
     onboardingService.clearProgress();
-  }, []);
+
+    // Fetch the new company membership to update auth state
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        const companyMembership = await fetchCompanyMembership(token);
+        setAuthState(prev => ({
+          ...prev,
+          currentMembership: companyMembership,
+          onboarding: {
+            ...prev.onboarding,
+            isCompleted: true,
+            companyId,
+            hasCompany: true
+          }
+        }));
+        console.log('Company membership refreshed successfully:', companyMembership);
+      }
+    } catch (error) {
+      console.error('Failed to refresh company membership after onboarding:', error);
+      // Don't throw - the onboarding is still complete, user can refresh page
+    }
+  }, [fetchCompanyMembership]);
 
   // Function to refresh the user token
   const refreshUserToken = useCallback(async (): Promise<boolean> => {
@@ -325,6 +386,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
         // Fetch onboarding status using the current token
         const onboardingStatus = await fetchOnboardingStatus(token, validatedUser);
 
+        // CRITICAL FIX: Fetch company membership on initialization (not just on login)
+        const companyMembership = await fetchCompanyMembership(token);
+
         setAuthState(prev => ({
           ...prev,
           user: validatedUser,
@@ -332,7 +396,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
           isLoading: false,
           onboardingLoading: false,
           error: null,
-          onboarding: onboardingStatus
+          onboarding: onboardingStatus,
+          currentMembership: companyMembership
         }));
 
         // Mark onboarding as successfully fetched
@@ -364,7 +429,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
               currentStep: null, // null = not loaded
               completedSteps: [],
               hasCompany: false
-            }
+            },
+            currentMembership: null
           });
         } else {
           console.log('DEBUG: Token refresh successful, validating user again');
@@ -375,6 +441,10 @@ function AuthProvider({ children }: { children: ReactNode }) {
             // Fetch onboarding status with refreshed token
             const onboardingStatus = await fetchOnboardingStatus(undefined, validatedUser);
 
+            // CRITICAL FIX: Also fetch company membership after token refresh
+            const refreshedToken = localStorage.getItem('token');
+            const companyMembership = refreshedToken ? await fetchCompanyMembership(refreshedToken) : null;
+
             setAuthState(prev => ({
               ...prev,
               user: validatedUser,
@@ -382,7 +452,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
               isLoading: false,
               onboardingLoading: false,
               error: null,
-              onboarding: onboardingStatus
+              onboarding: onboardingStatus,
+              currentMembership: companyMembership
             }));
 
             // Mark onboarding as successfully fetched
@@ -408,7 +479,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
                 currentStep: null, // null = not loaded
                 completedSteps: [],
                 hasCompany: false
-              }
+              },
+              currentMembership: null
             });
           }
         }
@@ -417,39 +489,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
     initializeAuth();
   }, [refreshUserToken]); // Only run on mount
-
-  // Function to fetch current company membership
-  const fetchCompanyMembership = async (token: string): Promise<CompanyMembership | null> => {
-    try {
-      // Temporarily set the token for the API call
-      const originalToken = api.defaults.headers.common['Authorization'];
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
-      const response = await companyService.getCurrentCompanyContext();
-
-      // Restore original token
-      if (originalToken) {
-        api.defaults.headers.common['Authorization'] = originalToken;
-      } else {
-        delete api.defaults.headers.common['Authorization'];
-      }
-
-      if (response.membership) {
-        return {
-          id: response.membership.id,
-          role: response.membership.role,
-          isOwner: response.membership.is_owner,
-          isActive: response.membership.is_active,
-          companyId: response.membership.company,
-          companyName: response.membership.company_name
-        };
-      }
-      return null;
-    } catch (error) {
-      console.error('Failed to fetch company membership:', error);
-      return null;
-    }
-  };
 
   // Login function
   const login = async (username: string, password: string) => {
@@ -467,8 +506,10 @@ function AuthProvider({ children }: { children: ReactNode }) {
       // Set refs earlier and prevent validation effect immediately
       onboardingFetchedRef.current = true; // Prevent validation effect immediately
 
-      // Restructure state setting to avoid token change trigger
-      const loginData = {
+      // CRITICAL: Set ALL state in ONE update to prevent intermediate renders with wrong role
+      setAuthState(prev => ({
+        ...prev,
+        token: response.access,
         user: response.user,
         refreshToken: response.refresh,
         isAuthenticated: true,
@@ -477,13 +518,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
         error: null,
         onboarding: onboardingStatus,
         currentMembership: companyMembership
-      };
-
-      // Set state without token first
-      setAuthState(prev => ({ ...prev, ...loginData }));
-
-      // Set token separately to avoid triggering effects during critical login flow
-      setAuthState(prev => ({ ...prev, token: response.access }));
+      }));
 
       isLoggingInRef.current = false; // Allow token validation useEffect to run again
     } catch (error) {
@@ -581,9 +616,21 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   // Role check utility - checks company membership role, not user role
   const isUserRole = (role: string): boolean => {
+    // CRITICAL: Always check if user is loaded
+    if (!authState.user) {
+      console.warn('isUserRole called but no user loaded');
+      return false;
+    }
+
     if (!authState.currentMembership) {
       // Fallback to user role if no company membership (shouldn't happen in normal flow)
-      return authState.user?.role.toLowerCase() === role.toLowerCase();
+      console.warn('isUserRole: No membership found, using user role as fallback', {
+        userRole: authState.user.role,
+        targetRole: role
+      });
+      const hasRole = authState.user?.role.toLowerCase() === role.toLowerCase();
+      console.log(`isUserRole(${role}): ${hasRole} (using user.role: ${authState.user.role})`);
+      return hasRole;
     }
 
     // Check company membership role
@@ -592,10 +639,13 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
     // Map owner role to admin for dashboard purposes
     if (membershipRole === 'owner' && targetRole === 'admin') {
+      console.log(`isUserRole(${role}): true (owner mapped to admin)`);
       return true;
     }
 
-    return membershipRole === targetRole;
+    const hasRole = membershipRole === targetRole;
+    console.log(`isUserRole(${role}): ${hasRole} (membership.role: ${membershipRole})`);
+    return hasRole;
   };
 
   const value: AuthContextValue = {

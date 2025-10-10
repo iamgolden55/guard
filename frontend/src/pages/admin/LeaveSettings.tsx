@@ -20,6 +20,7 @@ import {
 } from '../../types/leave';
 import AccrualSettings from '../../components/leave/AccrualSettings';
 import BlackoutPeriodManager from '../../components/leave/BlackoutPeriodManager';
+import NotificationSettings from '../../components/leave/NotificationSettings';
 import Card from '../../components/Card';
 
 interface AccrualSettingsData {
@@ -54,10 +55,12 @@ interface BlackoutPeriod {
   description: string;
   start_date: string;
   end_date: string;
-  is_recurring: boolean;
-  recurrence_type?: 'yearly' | 'monthly';
-  departments: string[];
+  venue?: number | null;
   leave_types: number[];
+  restriction_level: 'no_requests' | 'emergency_only' | 'manager_approval' | 'limit_percentage';
+  max_staff_percentage?: number | null;
+  allow_manager_override: boolean;
+  override_reason_required: boolean;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
@@ -74,6 +77,29 @@ interface NotificationSettings {
   digest_frequency: 'daily' | 'weekly' | 'monthly';
 }
 
+interface SystemHealthData {
+  accrual_engine: {
+    status: string;
+    last_run: string | null;
+    next_run: string;
+  };
+  notifications: {
+    status: string;
+    pending_count: number;
+    queue_status: string;
+  };
+  database: {
+    status: string;
+    response_time: string;
+    connection_pool: string;
+  };
+  statistics: {
+    total_leave_requests: number;
+    pending_approvals: number;
+  };
+  last_updated: string;
+}
+
 const stackTokens: IStackTokens = {
   childrenGap: 24,
   padding: 16,
@@ -86,6 +112,7 @@ const LeaveSettings: React.FC = () => {
   const [accrualSettings, setAccrualSettings] = useState<AccrualSettingsData | null>(null);
   const [blackoutPeriods, setBlackoutPeriods] = useState<BlackoutPeriod[]>([]);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
+  const [systemHealth, setSystemHealth] = useState<SystemHealthData | null>(null);
   const [notification, setNotification] = useState<{
     type: MessageBarType;
     message: string;
@@ -99,17 +126,19 @@ const LeaveSettings: React.FC = () => {
     setIsLoading(true);
     try {
       // Fetch settings data in parallel
-      const [leaveTypesResponse, accrualResponse, blackoutResponse, notificationResponse] = await Promise.all([
+      const [leaveTypesResponse, accrualResponse, blackoutResponse, notificationResponse, healthResponse] = await Promise.all([
         leaveService.getLeaveTypes(false), // Include inactive types
         fetchAccrualSettings(),
         fetchBlackoutPeriods(),
-        fetchNotificationSettings()
+        fetchNotificationSettings(),
+        fetchSystemHealth()
       ]);
 
       setLeaveTypes(leaveTypesResponse);
       setAccrualSettings(accrualResponse);
       setBlackoutPeriods(blackoutResponse);
       setNotificationSettings(notificationResponse);
+      setSystemHealth(healthResponse);
 
     } catch (error) {
       console.error('Error fetching settings data:', error);
@@ -125,7 +154,7 @@ const LeaveSettings: React.FC = () => {
   // Fetch accrual settings
   const fetchAccrualSettings = async (): Promise<AccrualSettingsData> => {
     try {
-      const response = await fetch('/api/v1/leave/settings/', {
+      const response = await fetch('/api/v1/leave/settings/system_config/', {
         headers: {
           'Authorization': `Bearer ${authState.token}`,
           'Content-Type': 'application/json'
@@ -188,6 +217,27 @@ const LeaveSettings: React.FC = () => {
     }
   };
 
+  // Fetch system health
+  const fetchSystemHealth = async (): Promise<SystemHealthData | null> => {
+    try {
+      const response = await fetch('/api/v1/leave/settings/system_health/', {
+        headers: {
+          'Authorization': `Bearer ${authState.token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch system health');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching system health:', error);
+      return null;
+    }
+  };
+
   // Default settings
   const getDefaultAccrualSettings = (): AccrualSettingsData => ({
     default_accrual_method: 'monthly',
@@ -234,7 +284,7 @@ const LeaveSettings: React.FC = () => {
   // Handle accrual settings save
   const handleSaveAccrualSettings = useCallback(async (settings: AccrualSettingsData) => {
     try {
-      const response = await fetch('/api/v1/leave/settings/', {
+      const response = await fetch('/api/v1/leave/settings/system_config/', {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${authState.token}`,
@@ -258,6 +308,33 @@ const LeaveSettings: React.FC = () => {
     }
   }, [authState.token]);
 
+  // Handle notification settings save
+  const handleSaveNotificationSettings = useCallback(async (settings: NotificationSettings) => {
+    try {
+      const response = await fetch('/api/v1/leave/settings/notifications/', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${authState.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(settings)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save notification settings');
+      }
+
+      setNotificationSettings(settings);
+      setNotification({
+        type: MessageBarType.success,
+        message: 'Notification settings saved successfully!'
+      });
+    } catch (error) {
+      console.error('Error saving notification settings:', error);
+      throw error;
+    }
+  }, [authState.token]);
+
   // Handle blackout period save
   const handleSaveBlackoutPeriod = useCallback(async (period: BlackoutPeriod) => {
     try {
@@ -266,13 +343,20 @@ const LeaveSettings: React.FC = () => {
         ? `/api/v1/leave/blackout-periods/${period.id}/`
         : '/api/v1/leave/blackout-periods/';
 
+      // Transform leave_types to leave_type_ids for the API
+      const { leave_types, ...periodData } = period;
+      const requestData = {
+        ...periodData,
+        leave_type_ids: leave_types
+      };
+
       const response = await fetch(url, {
         method,
         headers: {
           'Authorization': `Bearer ${authState.token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(period)
+        body: JSON.stringify(requestData)
       });
 
       if (!response.ok) {
@@ -338,6 +422,50 @@ const LeaveSettings: React.FC = () => {
     }
   }, [authState.token]);
 
+  // Handle reset to defaults
+  const handleResetToDefaults = useCallback(async () => {
+    const confirmed = window.confirm(
+      'Are you sure you want to reset all settings to their default values?\n\n' +
+      'This will reset:\n' +
+      '- Accrual settings\n' +
+      '- Notification settings\n\n' +
+      'Blackout periods and leave types will not be affected.\n\n' +
+      'This action cannot be undone.'
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      // Reset accrual settings
+      const defaultAccrualSettings = getDefaultAccrualSettings();
+      await handleSaveAccrualSettings(defaultAccrualSettings);
+
+      // Reset notification settings
+      const defaultNotificationSettings = getDefaultNotificationSettings();
+      await handleSaveNotificationSettings(defaultNotificationSettings);
+
+      setNotification({
+        type: MessageBarType.success,
+        message: 'All settings have been reset to default values!'
+      });
+
+      // Refresh data to show the changes
+      setRefreshTrigger(prev => prev + 1);
+    } catch (error) {
+      console.error('Error resetting to defaults:', error);
+      setNotification({
+        type: MessageBarType.error,
+        message: 'Failed to reset settings. Please try again.'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [handleSaveAccrualSettings, handleSaveNotificationSettings]);
+
   // Clear notification after 5 seconds
   useEffect(() => {
     if (notification) {
@@ -374,11 +502,14 @@ const LeaveSettings: React.FC = () => {
             <DefaultButton
               text="Reset to Defaults"
               iconProps={{ iconName: 'Refresh' }}
+              onClick={handleResetToDefaults}
+              disabled={isLoading}
             />
             <IconButton
               iconProps={{ iconName: 'Refresh' }}
               onClick={() => setRefreshTrigger(prev => prev + 1)}
               title="Refresh data"
+              disabled={isLoading}
             />
           </Stack>
         </Stack>
@@ -489,27 +620,13 @@ const LeaveSettings: React.FC = () => {
           </PivotItem>
 
           <PivotItem headerText="Notifications" itemIcon="Ringer">
-            <Card tokens={{ padding: 20 }}>
-              <Stack tokens={{ childrenGap: 16 }}>
-                <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-                  <Icon iconName="Ringer" styles={{ root: { color: '#0078d4' } }} />
-                  <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
-                    Notification Settings
-                  </Text>
-                </Stack>
-
-                <div className="text-center py-12">
-                  <Icon iconName="Ringer" styles={{ root: { fontSize: 48, marginBottom: 16, color: '#666' } }} />
-                  <Text variant="medium" styles={{ root: { color: '#666', marginBottom: 16 } }}>
-                    Notification settings configuration
-                  </Text>
-                  <Text variant="small" styles={{ root: { color: '#666' } }}>
-                    Configure email notifications, SMS alerts, manager notifications,
-                    and automated reminders for leave requests and approvals.
-                  </Text>
-                </div>
-              </Stack>
-            </Card>
+            {notificationSettings && (
+              <NotificationSettings
+                initialSettings={notificationSettings}
+                onSave={handleSaveNotificationSettings}
+                isLoading={isLoading}
+              />
+            )}
           </PivotItem>
 
           <PivotItem headerText="Integration" itemIcon="Plug">
@@ -539,59 +656,145 @@ const LeaveSettings: React.FC = () => {
           <PivotItem headerText="System Health" itemIcon="Health">
             <Card tokens={{ padding: 20 }}>
               <Stack tokens={{ childrenGap: 16 }}>
-                <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-                  <Icon iconName="Health" styles={{ root: { color: '#107c10' } }} />
-                  <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
-                    System Health & Diagnostics
-                  </Text>
+                <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
+                  <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
+                    <Icon iconName="Health" styles={{ root: { color: '#107c10' } }} />
+                    <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
+                      System Health & Diagnostics
+                    </Text>
+                  </Stack>
+                  {systemHealth && (
+                    <Text variant="small" styles={{ root: { color: '#666' } }}>
+                      Last updated: {new Date(systemHealth.last_updated).toLocaleString()}
+                    </Text>
+                  )}
                 </Stack>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                    <Stack tokens={{ childrenGap: 4 }}>
-                      <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-                        <Icon iconName="CheckMark" styles={{ root: { color: '#107c10' } }} />
-                        <Text variant="medium" styles={{ root: { fontWeight: 600, color: '#107c10' } }}>
-                          Accrual Engine
-                        </Text>
-                      </Stack>
-                      <Text variant="small">Running normally</Text>
-                      <Text variant="small" styles={{ root: { color: '#666' } }}>
-                        Last run: {new Date().toLocaleString()}
-                      </Text>
-                    </Stack>
+                {!systemHealth ? (
+                  <div className="text-center py-12">
+                    <Spinner size={SpinnerSize.medium} label="Loading system health data..." />
                   </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Accrual Engine */}
+                      <div className={`p-4 rounded-lg border ${
+                        systemHealth.accrual_engine.status === 'healthy'
+                          ? 'bg-green-50 border-green-200'
+                          : systemHealth.accrual_engine.status === 'not_configured'
+                          ? 'bg-yellow-50 border-yellow-200'
+                          : 'bg-red-50 border-red-200'
+                      }`}>
+                        <Stack tokens={{ childrenGap: 4 }}>
+                          <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
+                            <Icon
+                              iconName={systemHealth.accrual_engine.status === 'healthy' ? 'CheckMark' : 'Warning'}
+                              styles={{ root: { color: systemHealth.accrual_engine.status === 'healthy' ? '#107c10' : '#d13438' } }}
+                            />
+                            <Text variant="medium" styles={{ root: { fontWeight: 600, color: systemHealth.accrual_engine.status === 'healthy' ? '#107c10' : '#d13438' } }}>
+                              Accrual Engine
+                            </Text>
+                          </Stack>
+                          <Text variant="small" styles={{ root: { textTransform: 'capitalize' } }}>
+                            {systemHealth.accrual_engine.status.replace('_', ' ')}
+                          </Text>
+                          <Text variant="small" styles={{ root: { color: '#666' } }}>
+                            {systemHealth.accrual_engine.last_run
+                              ? `Last run: ${new Date(systemHealth.accrual_engine.last_run).toLocaleString()}`
+                              : 'Not yet run'
+                            }
+                          </Text>
+                          <Text variant="small" styles={{ root: { color: '#666' } }}>
+                            Next: {systemHealth.accrual_engine.next_run}
+                          </Text>
+                        </Stack>
+                      </div>
 
-                  <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                    <Stack tokens={{ childrenGap: 4 }}>
-                      <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-                        <Icon iconName="CheckMark" styles={{ root: { color: '#107c10' } }} />
-                        <Text variant="medium" styles={{ root: { fontWeight: 600, color: '#107c10' } }}>
-                          Notifications
-                        </Text>
-                      </Stack>
-                      <Text variant="small">All systems operational</Text>
-                      <Text variant="small" styles={{ root: { color: '#666' } }}>
-                        Queue: 0 pending
-                      </Text>
-                    </Stack>
-                  </div>
+                      {/* Notifications */}
+                      <div className={`p-4 rounded-lg border ${
+                        systemHealth.notifications.status === 'operational'
+                          ? 'bg-green-50 border-green-200'
+                          : 'bg-red-50 border-red-200'
+                      }`}>
+                        <Stack tokens={{ childrenGap: 4 }}>
+                          <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
+                            <Icon
+                              iconName={systemHealth.notifications.status === 'operational' ? 'CheckMark' : 'Warning'}
+                              styles={{ root: { color: systemHealth.notifications.status === 'operational' ? '#107c10' : '#d13438' } }}
+                            />
+                            <Text variant="medium" styles={{ root: { fontWeight: 600, color: systemHealth.notifications.status === 'operational' ? '#107c10' : '#d13438' } }}>
+                              Notifications
+                            </Text>
+                          </Stack>
+                          <Text variant="small" styles={{ root: { textTransform: 'capitalize' } }}>
+                            {systemHealth.notifications.status}
+                          </Text>
+                          <Text variant="small" styles={{ root: { color: '#666' } }}>
+                            Queue: {systemHealth.notifications.pending_count} pending
+                          </Text>
+                          <Text variant="small" styles={{ root: { color: '#666' } }}>
+                            Status: {systemHealth.notifications.queue_status}
+                          </Text>
+                        </Stack>
+                      </div>
 
-                  <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                    <Stack tokens={{ childrenGap: 4 }}>
-                      <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-                        <Icon iconName="CheckMark" styles={{ root: { color: '#107c10' } }} />
-                        <Text variant="medium" styles={{ root: { fontWeight: 600, color: '#107c10' } }}>
-                          Database
+                      {/* Database */}
+                      <div className={`p-4 rounded-lg border ${
+                        systemHealth.database.status === 'healthy'
+                          ? 'bg-green-50 border-green-200'
+                          : 'bg-red-50 border-red-200'
+                      }`}>
+                        <Stack tokens={{ childrenGap: 4 }}>
+                          <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
+                            <Icon
+                              iconName={systemHealth.database.status === 'healthy' ? 'CheckMark' : 'Warning'}
+                              styles={{ root: { color: systemHealth.database.status === 'healthy' ? '#107c10' : '#d13438' } }}
+                            />
+                            <Text variant="medium" styles={{ root: { fontWeight: 600, color: systemHealth.database.status === 'healthy' ? '#107c10' : '#d13438' } }}>
+                              Database
+                            </Text>
+                          </Stack>
+                          <Text variant="small" styles={{ root: { textTransform: 'capitalize' } }}>
+                            {systemHealth.database.status}
+                          </Text>
+                          <Text variant="small" styles={{ root: { color: '#666' } }}>
+                            Response time: {systemHealth.database.response_time}
+                          </Text>
+                          <Text variant="small" styles={{ root: { color: '#666' } }}>
+                            Pool: {systemHealth.database.connection_pool}
+                          </Text>
+                        </Stack>
+                      </div>
+                    </div>
+
+                    {/* Statistics */}
+                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                      <Stack tokens={{ childrenGap: 8 }}>
+                        <Text variant="medium" styles={{ root: { fontWeight: 600, color: '#0078d4' } }}>
+                          System Statistics
                         </Text>
+                        <Stack horizontal tokens={{ childrenGap: 24 }}>
+                          <Stack tokens={{ childrenGap: 4 }}>
+                            <Text variant="small" styles={{ root: { color: '#666' } }}>
+                              Total Leave Requests
+                            </Text>
+                            <Text variant="large" styles={{ root: { fontWeight: 600, color: '#0078d4' } }}>
+                              {systemHealth.statistics.total_leave_requests}
+                            </Text>
+                          </Stack>
+                          <Stack tokens={{ childrenGap: 4 }}>
+                            <Text variant="small" styles={{ root: { color: '#666' } }}>
+                              Pending Approvals
+                            </Text>
+                            <Text variant="large" styles={{ root: { fontWeight: 600, color: '#ff8c00' } }}>
+                              {systemHealth.statistics.pending_approvals}
+                            </Text>
+                          </Stack>
+                        </Stack>
                       </Stack>
-                      <Text variant="small">Healthy</Text>
-                      <Text variant="small" styles={{ root: { color: '#666' } }}>
-                        Response time: &lt;2ms
-                      </Text>
-                    </Stack>
-                  </div>
-                </div>
+                    </div>
+                  </>
+                )}
               </Stack>
             </Card>
           </PivotItem>

@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import {
   Stack,
   Text,
@@ -19,6 +19,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { shiftService, invoiceService, deputyService, venueService, employmentTypeService } from '../../services';
 import api from '../../services/api';
 import type { DeputyStatus, User, Venue, Shift, Invoice } from '../../types';
+import { UserRole } from '../../types';
 import useIsMobile from '../../hooks/useIsMobile';
 
 // Placeholder component for statistics card
@@ -74,6 +75,36 @@ const AdminDashboard: React.FC = () => {
   const [deputyStatus, setDeputyStatus] = useState<DeputyStatus | null>(null);
   const [employmentTypes, setEmploymentTypes] = useState<any[]>([]);
   const [showEmploymentTypePrompt, setShowEmploymentTypePrompt] = useState(false);
+
+  // CRITICAL: Verify user is actually admin before rendering
+  useEffect(() => {
+    if (!authState.user || !authState.currentMembership) {
+      console.warn('AdminDashboard: User or membership not loaded');
+      return;
+    }
+
+    const membershipRole = authState.currentMembership.role.toLowerCase();
+    const isAdmin = membershipRole === 'admin' || membershipRole === 'owner';
+
+    if (!isAdmin) {
+      console.error('Non-admin user accessed admin dashboard!', {
+        userRole: authState.user.role,
+        membershipRole: membershipRole,
+        isOwner: authState.currentMembership.isOwner
+      });
+      navigate('/dashboard', { replace: true });
+    }
+  }, [authState.user, authState.currentMembership, navigate]);
+
+  // Early return if user is not admin
+  if (authState.user && authState.currentMembership) {
+    const membershipRole = authState.currentMembership.role.toLowerCase();
+    const isAdmin = membershipRole === 'admin' || membershipRole === 'owner';
+
+    if (!isAdmin) {
+      return <Navigate to="/dashboard" replace />;
+    }
+  }
 
   // Load dashboard data
   useEffect(() => {

@@ -22,6 +22,7 @@ import {
 import LeaveAnalyticsDashboard from '../../components/leave/LeaveAnalyticsDashboard';
 import ReportFilters from '../../components/leave/ReportFilters';
 import ExportReportButton from '../../components/leave/ExportReportButton';
+import LeaveRequestsTable from '../../components/leave/LeaveRequestsTable';
 
 interface ExportOptions {
   format: 'csv' | 'xlsx' | 'pdf';
@@ -87,8 +88,7 @@ const LeaveReports: React.FC = () => {
   // Handle filter changes
   const handleFiltersChange = useCallback((newFilters: LeaveRequestFilterOptions) => {
     setFilters(newFilters);
-    // In a real implementation, you would refetch data with these filters
-    console.log('Filters changed:', newFilters);
+    // Filters are automatically applied via LeaveAnalyticsDashboard's useEffect
   }, []);
 
   // Reset filters
@@ -100,28 +100,67 @@ const LeaveReports: React.FC = () => {
 
   // Handle export
   const handleExport = useCallback(async (format: 'csv' | 'xlsx' | 'pdf', options: ExportOptions) => {
+    if (!authState.token) {
+      setNotification({
+        type: MessageBarType.error,
+        message: 'Authentication required for export'
+      });
+      return;
+    }
+
     setIsExporting(true);
     try {
       // Generate filename
       const fileName = options.customFileName || `leave_report_${new Date().toISOString().split('T')[0]}`;
 
-      // In a real implementation, you would call your export service
-      console.log('Exporting report:', { format, options, filters });
+      // Build query parameters from filters
+      const params = new URLSearchParams();
+      const year = new Date().getFullYear();
+      params.append('year', year.toString());
 
-      // Simulate export delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // For demonstration, we'll use the existing leaveService export method
-      if (format === 'csv') {
-        const blob = await leaveService.exportLeaveRequests('csv', filters);
-        downloadBlob(blob, `${fileName}.csv`);
-      } else {
-        // For xlsx and pdf, you would implement additional export endpoints
-        setNotification({
-          type: MessageBarType.info,
-          message: `${format.toUpperCase()} export functionality would be implemented here.`
-        });
+      if (filters.start_date) params.append('start_date', filters.start_date);
+      if (filters.end_date) params.append('end_date', filters.end_date);
+      if (filters.leave_type && filters.leave_type.length > 0) {
+        filters.leave_type.forEach(id => params.append('leave_type', id.toString()));
       }
+      if (filters.status && filters.status.length > 0) {
+        filters.status.forEach(status => params.append('status', status));
+      }
+      if (filters.department && filters.department.length > 0) {
+        filters.department.forEach(dept => params.append('department', dept));
+      }
+
+      let endpoint: string;
+      let fileExtension: string;
+
+      if (format === 'csv') {
+        endpoint = `/api/v1/leave/reports/export_csv/?${params.toString()}`;
+        fileExtension = 'csv';
+      } else if (format === 'xlsx') {
+        endpoint = `/api/v1/leave/reports/export_xlsx/?${params.toString()}`;
+        fileExtension = 'xlsx';
+      } else if (format === 'pdf') {
+        endpoint = `/api/v1/leave/reports/export_pdf/?${params.toString()}`;
+        fileExtension = 'pdf';
+      } else {
+        throw new Error(`Unsupported export format: ${format}`);
+      }
+
+      // Fetch the file from backend
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authState.token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Export failed: ${response.statusText}`);
+      }
+
+      // Download the file
+      const blob = await response.blob();
+      downloadBlob(blob, `${fileName}.${fileExtension}`);
 
     } catch (error) {
       console.error('Export error:', error);
@@ -129,7 +168,7 @@ const LeaveReports: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
-  }, [filters]);
+  }, [filters, authState.token]);
 
   // Utility function to download blob
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -246,6 +285,7 @@ const LeaveReports: React.FC = () => {
               statistics={statistics}
               leaveTypes={leaveTypes}
               isLoading={isLoading}
+              filters={filters}
               onRefresh={handleAnalyticsRefresh}
               onExport={handleAnalyticsExport}
             />
@@ -304,23 +344,17 @@ const LeaveReports: React.FC = () => {
                 </div>
               </div>
 
-              {/* Detailed Report Tables - Placeholder */}
+              {/* Detailed Leave Requests Table */}
               <div className="bg-white p-6 rounded-lg border border-gray-200">
                 <Stack tokens={{ childrenGap: 16 }}>
                   <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
                     Detailed Leave Request Data
                   </Text>
 
-                  <div className="text-center py-12">
-                    <IconButton iconProps={{ iconName: 'Table' }} styles={{ root: { fontSize: 48, marginBottom: 16 } }} />
-                    <Text variant="medium" styles={{ root: { color: '#666', marginBottom: 16 } }}>
-                      Detailed tabular reports would be displayed here
-                    </Text>
-                    <Text variant="small" styles={{ root: { color: '#666' } }}>
-                      This would include sortable, filterable tables with individual leave request details,
-                      employee information, approval timelines, and other granular data points.
-                    </Text>
-                  </div>
+                  <LeaveRequestsTable
+                    filters={filters}
+                    onRefresh={handleAnalyticsRefresh}
+                  />
                 </Stack>
               </div>
             </Stack>

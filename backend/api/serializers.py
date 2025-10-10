@@ -22,23 +22,64 @@ class EmergencyContactSerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at', 'updated_at')
 
 class BankDetailsSerializer(serializers.ModelSerializer):
+    # Add camelCase aliases for frontend compatibility
+    accountName = serializers.CharField(source='account_name', required=False, allow_blank=True)
+    accountNumber = serializers.CharField(source='account_number', required=False, allow_blank=True)
+    sortCode = serializers.CharField(source='sort_code', required=False, allow_blank=True)
+    bankName = serializers.CharField(source='bank_name', required=False, allow_blank=True)
+
     class Meta:
         model = BankDetails
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at')
+        read_only_fields = ('created_at', 'updated_at', 'staff_profile')
+
+    def to_internal_value(self, data):
+        """Log incoming data for debugging"""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"BankDetailsSerializer - Incoming data: {data}")
+        result = super().to_internal_value(data)
+        logger.info(f"BankDetailsSerializer - Converted to internal: {result}")
+        return result
 
     def to_representation(self, instance):
         # Hide sensitive data in responses
         representation = super().to_representation(instance)
-        representation['account_number'] = '****' + str(representation['account_number'])[-4:]
-        representation['sort_code'] = '****' + str(representation['sort_code'])[-2:]
+        # Mask sensitive fields
+        if 'account_number' in representation and representation['account_number']:
+            representation['account_number'] = '****' + str(representation['account_number'])[-4:]
+            representation['accountNumber'] = '****' + str(instance.account_number)[-4:]
+        if 'sort_code' in representation and representation['sort_code']:
+            representation['sort_code'] = '****' + str(representation['sort_code'])[-2:]
+            representation['sortCode'] = '****' + str(instance.sort_code)[-2:]
+        # Add camelCase versions
+        representation['accountName'] = instance.account_name
+        representation['bankName'] = instance.bank_name
         return representation
 
 class SIALicenseSerializer(serializers.ModelSerializer):
+    # Add camelCase aliases for frontend compatibility
+    licenseNumber = serializers.CharField(source='license_number', read_only=True)
+    licenseType = serializers.CharField(source='license_type', read_only=True)
+    issueDate = serializers.DateField(source='issue_date', read_only=True)
+    expiryDate = serializers.DateField(source='expiry_date', read_only=True)
+    documentUrl = serializers.URLField(source='document_url', read_only=True)
+
     class Meta:
         model = SIALicense
         fields = '__all__'
         read_only_fields = ('created_at', 'updated_at')
+
+    def to_representation(self, instance):
+        """Add camelCase versions of all fields"""
+        representation = super().to_representation(instance)
+        # Ensure camelCase fields are always present
+        representation['licenseNumber'] = instance.license_number
+        representation['licenseType'] = instance.license_type
+        representation['issueDate'] = instance.issue_date.isoformat() if instance.issue_date else None
+        representation['expiryDate'] = instance.expiry_date.isoformat() if instance.expiry_date else None
+        representation['documentUrl'] = instance.document_url if instance.document_url else None
+        return representation
 
     def validate(self, data):
         # Ensure expiry date is after issue date
@@ -123,18 +164,20 @@ class StaffProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     employment_type_details = serializers.SerializerMethodField()
     emergency_contacts = EmergencyContactSerializer(many=True, read_only=True)
-    bank_details = BankDetailsSerializer(read_only=True)
+    bank_details = BankDetailsSerializer(required=False, allow_null=True)  # FIXED: Allow updates
     sia_licenses = SIALicenseSerializer(many=True, read_only=True)
     availability = StaffAvailabilitySerializer(many=True, read_only=True)
-    
+
     # Add security roles from User model for frontend compatibility
     security_roles = serializers.ReadOnlyField(source='user.security_roles')
-    
+
     # Add camelCase aliases for frontend compatibility
     securityRoles = serializers.ReadOnlyField(source='user.security_roles')
     siaLicenses = serializers.SerializerMethodField()
+    bankDetails = serializers.SerializerMethodField()
     isApproved = serializers.ReadOnlyField(source='is_approved')
     employmentType = serializers.IntegerField(source='employment_type_id', required=False, allow_null=True)
+    passwordLastChanged = serializers.DateTimeField(source='user.password_last_changed', read_only=True)
 
     # Add direct access to user fields for frontend compatibility
     firstName = serializers.CharField(source='user.first_name', read_only=True)
@@ -142,11 +185,22 @@ class StaffProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source='user.email', read_only=True)
     username = serializers.CharField(source='user.username', read_only=True)
     role = serializers.CharField(source='user.role', read_only=True)
-    
+
     def get_siaLicenses(self, obj):
         """Return SIA licenses in camelCase format for frontend compatibility"""
         return SIALicenseSerializer(obj.sia_licenses.all(), many=True).data
-    
+
+    def get_bankDetails(self, obj):
+        """Return bank details in camelCase format for frontend compatibility"""
+        from api.models import BankDetails
+        try:
+            bank_details = BankDetails.objects.filter(staff_profile=obj).first()
+            if bank_details:
+                return BankDetailsSerializer(bank_details).data
+        except Exception:
+            pass
+        return None
+
     def get_employment_type_details(self, obj):
         """Return employment type details"""
         if obj.employment_type:
@@ -158,6 +212,61 @@ class StaffProfileSerializer(serializers.ModelSerializer):
             }
         return None
 
+    def update(self, instance, validated_data):
+        """Handle nested bank_details updates with atomic transaction"""
+        from api.models import BankDetails
+        from django.db import transaction
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Extract bank_details from validated_data
+        bank_details_data = validated_data.pop('bank_details', None)
+
+        logger.info(f"=" * 80)
+        logger.info(f"StaffProfileSerializer.update() called for profile {instance.id}")
+        logger.info(f"Validated data keys: {list(validated_data.keys())}")
+        logger.info(f"Bank details data: {bank_details_data}")
+        logger.info(f"=" * 80)
+
+        try:
+            # Use atomic transaction to ensure data integrity
+            with transaction.atomic():
+                # Update regular StaffProfile fields
+                for attr, value in validated_data.items():
+                    setattr(instance, attr, value)
+                instance.save()
+
+                # Handle bank_details update/create
+                if bank_details_data is not None:
+                    logger.info(f"Processing bank details for profile {instance.id}")
+
+                    # Get or create bank_details for this profile
+                    bank_details, created = BankDetails.objects.get_or_create(
+                        staff_profile=instance
+                    )
+
+                    # Update all bank details fields
+                    for field in ['account_name', 'account_number', 'sort_code', 'bank_name']:
+                        if field in bank_details_data:
+                            setattr(bank_details, field, bank_details_data[field])
+
+                    bank_details.save()
+
+                    logger.info(f"Bank details {'created' if created else 'updated'} successfully for profile {instance.id}")
+
+        except Exception as e:
+            logger.error(f"Failed to update profile {instance.id}: {str(e)}", exc_info=True)
+            raise  # Re-raise to let DRF handle the error response
+
+        return instance
+
+    def to_internal_value(self, data):
+        """Map camelCase bankDetails to snake_case bank_details"""
+        # If bankDetails is provided, map it to bank_details
+        if 'bankDetails' in data:
+            data['bank_details'] = data.pop('bankDetails')
+        return super().to_internal_value(data)
+
     class Meta:
         model = StaffProfile
         fields = (
@@ -165,10 +274,10 @@ class StaffProfileSerializer(serializers.ModelSerializer):
             'street', 'city', 'postal_code', 'country', 'profile_image_url', 'notes',
             'password_last_changed', 'is_approved', 'created_at', 'updated_at',
             'emergency_contacts', 'bank_details', 'sia_licenses', 'availability',
-            'security_roles', 'securityRoles', 'siaLicenses', 'isApproved', 'employmentType',
+            'security_roles', 'securityRoles', 'siaLicenses', 'bankDetails', 'isApproved', 'employmentType', 'passwordLastChanged',
             'firstName', 'lastName', 'email', 'username', 'role'
         )
-        read_only_fields = ('created_at', 'updated_at', 'password_last_changed', 'security_roles', 'securityRoles', 'siaLicenses', 'isApproved', 'firstName', 'lastName', 'email', 'username', 'role')
+        read_only_fields = ('created_at', 'updated_at', 'password_last_changed', 'passwordLastChanged', 'security_roles', 'securityRoles', 'siaLicenses', 'bankDetails', 'isApproved', 'firstName', 'lastName', 'email', 'username', 'role')
 
 class VenueSerializer(serializers.ModelSerializer):
     class Meta:
@@ -182,7 +291,7 @@ class VenueSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         )
         read_only_fields = ('created_at', 'updated_at')
-        
+
     def validate_capacity(self, value):
         """
         Validate that capacity is a positive integer.
@@ -190,6 +299,17 @@ class VenueSerializer(serializers.ModelSerializer):
         if value <= 0:
             raise serializers.ValidationError("Capacity must be greater than zero")
         return value
+
+    def create(self, validated_data):
+        """
+        Override create to ensure company is set.
+        The company should be passed in via save(company=company) from the viewset.
+        """
+        if 'company' not in validated_data or validated_data['company'] is None:
+            raise serializers.ValidationError({
+                'company': 'Company is required when creating a venue. Please contact support if this issue persists.'
+            })
+        return super().create(validated_data)
 
 class VenueTermsAcceptanceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -450,30 +570,41 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
 
 class EmploymentTypeSerializer(serializers.ModelSerializer):
     application_count = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = EmploymentType
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at')
-    
+        read_only_fields = ('created_at', 'updated_at', 'company')
+
     def get_application_count(self, obj):
         """Return count of applications for this employment type"""
         return obj.applications.count()
-    
+
     def validate_name(self, value):
-        """Validate employment type name is not empty and unique"""
+        """Validate employment type name is not empty and unique per company"""
         if not value.strip():
             raise serializers.ValidationError("Employment type name cannot be empty")
-        
-        # Check uniqueness during update
+
+        # Get company from context (set by viewset)
+        company = self.context.get('company')
+
+        # Check uniqueness per company during update
         if self.instance:
-            existing = EmploymentType.objects.filter(name=value).exclude(pk=self.instance.pk)
+            existing = EmploymentType.objects.filter(
+                company=company,
+                name=value
+            ).exclude(pk=self.instance.pk)
         else:
-            existing = EmploymentType.objects.filter(name=value)
-        
+            # For creation, check if name exists for this company
+            if company:
+                existing = EmploymentType.objects.filter(company=company, name=value)
+            else:
+                # If no company context, check globally (fallback)
+                existing = EmploymentType.objects.filter(name=value)
+
         if existing.exists():
-            raise serializers.ValidationError("Employment type with this name already exists")
-        
+            raise serializers.ValidationError("Employment type with this name already exists for your company")
+
         return value.strip()
 
 

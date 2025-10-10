@@ -315,16 +315,69 @@ class LeaveBalanceSerializer(serializers.Serializer):
     entitlements = LeaveEntitlementSerializer(many=True, read_only=True)
 
 
-class LeaveRequestSerializer(serializers.Serializer):
-    """Serializer for leave request submission (placeholder for TASK-012)"""
+class LeaveRequestSerializer(serializers.ModelSerializer):
+    """Serializer for leave request submission and retrieval"""
 
+    # For reading: include full leave_type object
+    leave_type = LeaveTypeSerializer(read_only=True)
+
+    # For writing: accept leave_type_id
     leave_type_id = serializers.PrimaryKeyRelatedField(
-        queryset=LeaveType.objects.filter(is_active=True)
+        queryset=LeaveType.objects.filter(is_active=True),
+        source='leave_type',
+        write_only=True
     )
-    start_date = serializers.DateField()
-    end_date = serializers.DateField()
-    days_requested = serializers.DecimalField(max_digits=6, decimal_places=2)
-    reason = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    # User information (read-only)
+    user = serializers.SerializerMethodField(read_only=True)
+
+    # Approval information
+    approved_by = serializers.SerializerMethodField(read_only=True)
+    reviewed_by = serializers.SerializerMethodField(read_only=True)
+    reviewed_at = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = LeaveRequest
+        fields = [
+            'id', 'leave_type', 'leave_type_id', 'start_date', 'end_date',
+            'days_requested', 'reason', 'status', 'user', 'staff_user',
+            'created_at', 'submitted_at', 'approved_at', 'approved_by',
+            'reviewed_by', 'reviewed_at', 'manager_notes', 'emergency'
+        ]
+        read_only_fields = [
+            'id', 'status', 'created_at', 'submitted_at', 'approved_at',
+            'staff_user', 'approved_by', 'reviewed_by', 'reviewed_at', 'manager_notes'
+        ]
+
+    def get_user(self, obj):
+        """Return user information"""
+        if obj.staff_user:
+            return {
+                'id': obj.staff_user.id,
+                'first_name': obj.staff_user.first_name,
+                'last_name': obj.staff_user.last_name,
+                'email': obj.staff_user.email
+            }
+        return None
+
+    def get_approved_by(self, obj):
+        """Return approver information"""
+        if obj.approved_by:
+            return {
+                'id': obj.approved_by.id,
+                'name': f"{obj.approved_by.first_name} {obj.approved_by.last_name}",
+                'first_name': obj.approved_by.first_name,
+                'last_name': obj.approved_by.last_name
+            }
+        return None
+
+    def get_reviewed_by(self, obj):
+        """Return reviewer information (same as approved_by for compatibility)"""
+        return self.get_approved_by(obj)
+
+    def get_reviewed_at(self, obj):
+        """Return review timestamp (same as approved_at for compatibility)"""
+        return obj.approved_at.isoformat() if obj.approved_at else None
 
     def validate(self, data):
         """Validate leave request data"""
@@ -431,7 +484,13 @@ class BlackoutPeriodSerializer(serializers.ModelSerializer):
 class TeamOverviewSerializer(serializers.Serializer):
     """Serializer for team overview data"""
 
-    user = UserBasicSerializer(read_only=True)
+    # Directly serialize user fields instead of nesting
+    id = serializers.IntegerField(read_only=True)
+    username = serializers.CharField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+    first_name = serializers.CharField(read_only=True)
+    last_name = serializers.CharField(read_only=True)
+
     leave_balances = serializers.SerializerMethodField()
     pending_requests_count = serializers.SerializerMethodField()
     upcoming_leave = serializers.SerializerMethodField()

@@ -17,14 +17,20 @@ class CompanyService {
 
   /**
    * Get current company context (company + user role + permissions + limits)
+   * Returns null if the user doesn't have a company (e.g., during onboarding)
    */
-  async getCurrentCompanyContext(): Promise<CompanyContextResponse> {
+  async getCurrentCompanyContext(): Promise<CompanyContextResponse | null> {
     try {
       const response = await api.get(`${this.baseUrl}/current/`);
+      // If the API returns null company and membership, return null
+      if (response.data.company === null && response.data.membership === null) {
+        return null;
+      }
       return response.data;
     } catch (error) {
       console.error('Failed to get current company context:', error);
-      throw new Error('Failed to retrieve company information');
+      // Return null instead of throwing for users without companies
+      return null;
     }
   }
 
