@@ -1,0 +1,1 @@
+export { VenueTermsModal } from './VenueTermsModal';
