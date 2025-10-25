@@ -41,6 +41,7 @@ uritemplate==4.1.1
 urllib3==2.2.0
 reportlab==4.0.4
 cryptography==41.0.7
+bcrypt==4.1.2
 # Django Channels WebSocket support
 channels==4.1.0
 channels-redis==4.2.0

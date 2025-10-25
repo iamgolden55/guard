@@ -33,7 +33,7 @@ if not SECRET_KEY:
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,172.16.32.165,10.0.4.21,10.0.4.27,192.168.0.127').split(',')
 
 
 # Application definition
@@ -73,6 +73,16 @@ MIDDLEWARE = [
     'api.middleware.tenant_middleware.TenantMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+# Exempt API endpoints from CSRF (mobile app uses JWT tokens, not cookies)
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://10.0.4.21:8081',
+    'http://10.0.4.21:19000',
+    'http://10.0.4.27:8081',
+    'http://10.0.4.27:19000',
 ]
 
 ROOT_URLCONF = 'core.urls'
@@ -141,6 +151,15 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# Password Hashing Configuration
+# Using bcrypt for industry-standard password security
+# Fallback to PBKDF2 for backward compatibility with existing users
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',  # Primary: bcrypt with SHA256
+    'django.contrib.auth.hashers.BCryptPasswordHasher',        # Fallback: standard bcrypt
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',        # Fallback: existing users (PBKDF2)
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',    # Legacy support
+]
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
@@ -181,6 +200,15 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3001",
     "https://localhost:3001",
     "https://127.0.0.1:3001",
+    # Mobile app development
+    "http://10.0.4.21:8081",
+    "http://10.0.4.21:8082",
+    "http://10.0.4.21:19000",
+    "http://10.0.4.21:19001",
+    "http://10.0.4.27:8081",
+    "http://10.0.4.27:8082",
+    "http://10.0.4.27:19000",
+    "http://10.0.4.27:19001",
 ]
 
 # Add any additional production origins from environment
@@ -258,6 +286,10 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
+    ],
+    # Disable CSRF for API endpoints (mobile app uses JWT, not cookies)
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
     ],
 }
 

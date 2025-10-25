@@ -30,9 +30,14 @@ class ShiftSerializer(serializers.ModelSerializer):
     class Meta:
         model = Shift
         fields = [
-            'id', 'venue', 'venue_details', 'staff_user', 'staff_details', 
-            'start_time', 'end_time', 'status', 'required_security_role', 'check_in_time', 
-            'check_out_time', 'shift_group', 'hourly_rate', 'is_special_event', 'calculated_payment',
+            'id', 'venue', 'venue_details', 'staff_user', 'staff_details',
+            'start_time', 'end_time', 'status', 'required_security_role',
+            'check_in_time', 'check_out_time',
+            'check_in_location', 'check_out_location',
+            'check_in_photo', 'check_out_photo',
+            'start_signature', 'end_signature',
+            'break_duration',
+            'shift_group', 'hourly_rate', 'is_special_event', 'calculated_payment',
             'actual_hours_worked', 'manager_approved', 'created_at', 'updated_at'
         ]
     

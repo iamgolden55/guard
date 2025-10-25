@@ -8,6 +8,8 @@ from django.utils import timezone
 from django.db.models import Q, Count, Avg, Sum, Max, Min
 from django.core.cache import cache
 from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 from .compliance_performance_guide import CompliancePerformanceGuide
 # Create your views here.
 from rest_framework import viewsets, status, serializers, filters
@@ -173,6 +175,7 @@ class CustomPagination(PageNumberPagination):
 
 # Authentication and permissions, consider adding TokenAuthentication as well.
 
+@method_decorator(csrf_exempt, name='dispatch')
 class LoginView(APIView):
     """
     Handle user login functionality by verifying credentials and providing authentication tokens.
@@ -751,7 +754,24 @@ class VenueViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Return venues for the user's company only.
+        For venue terms actions, allow staff to access venues they have shifts at.
         """
+        # For venue terms actions, staff can access any venue they have shifts at
+        # Check if this is a venue terms action by looking at the action or request path
+        is_terms_action = (
+            getattr(self, 'action', None) in ['accept_terms', 'terms_acceptance'] or
+            'accept_terms' in self.request.path or
+            'terms_acceptance' in self.request.path
+        )
+
+        if is_terms_action:
+            # Allow staff to access venues where they have shifts
+            from django.db.models import Q
+            return Venue.objects.filter(
+                Q(shifts__staff_user=self.request.user) |
+                Q(company__in=self.request.user.company_memberships.values_list('company', flat=True))
+            ).distinct()
+
         company = self.get_user_company(self.request)
         if not company:
             # No company context, return empty queryset
