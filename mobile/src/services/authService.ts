@@ -256,19 +256,65 @@ class AuthService {
 
   /**
    * Fetch user profile from backend
+   *
+   * IMPORTANT: The backend returns a StaffProfile object with nested user data:
+   * {
+   *   id: 5,  // StaffProfile ID
+   *   user: {
+   *     id: 1,  // User ID (the real user ID we need!)
+   *     username: "James44",
+   *     ...
+   *   },
+   *   phone_number: "...",
+   *   ...
+   * }
+   *
+   * We need to transform this to use the nested user.id as the primary user ID,
+   * not the StaffProfile ID. Otherwise, shift exchanges and other features that
+   * compare user IDs will fail.
    */
   async fetchUserProfile(token: string): Promise<any> {
     try {
       const response = await axios.get(
         API_ENDPOINTS.AUTH.PROFILE,
-        { 
+        {
           headers: getAuthHeaders(token),
           timeout: 5000, // 5 second timeout for auth checks
         }
       );
 
-      return response.data;
+      const profileData = response.data;
+
+      // Check if response is StaffProfile format (has nested user object)
+      if (profileData.user && profileData.user.id) {
+        console.log('[AuthService] Transforming StaffProfile response to User structure');
+        console.log('[AuthService] StaffProfile ID:', profileData.id);
+        console.log('[AuthService] User ID:', profileData.user.id);
+
+        // Extract user data and move StaffProfile data to staff_profile property
+        const userData = {
+          ...profileData.user,
+          staff_profile: {
+            id: profileData.id,
+            phone_number: profileData.phone_number,
+            emergency_contact_name: profileData.emergency_contact_name,
+            emergency_contact_phone: profileData.emergency_contact_phone,
+            sia_license_number: profileData.sia_license_number,
+            sia_license_expiry: profileData.sia_license_expiry,
+            is_approved: profileData.is_approved,
+            security_roles: profileData.security_roles,
+          }
+        };
+
+        console.log('[AuthService] Transformed user ID:', userData.id);
+        return userData;
+      }
+
+      // If already in User format (e.g., admin users), return as-is
+      console.log('[AuthService] Profile already in User format');
+      return profileData;
     } catch (error) {
+      console.error('[AuthService] Failed to fetch user profile:', error);
       throw new Error('Failed to fetch user profile');
     }
   }

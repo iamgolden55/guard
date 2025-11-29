@@ -19,6 +19,9 @@ import { useAuth } from '../hooks/useAuth';
 import { useAppSelector } from '../hooks/useRedux';
 import { selectIsAuthenticated } from '../store/slices/authSlice';
 
+// Navigation Ref
+import { navigationRef } from './navigationRef';
+
 const Stack = createStackNavigator<RootStackParamList>();
 
 export const AppNavigator = () => {
@@ -73,7 +76,7 @@ export const AppNavigator = () => {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,

@@ -15,12 +15,14 @@ import {
   Image,
   Text,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Container, Button } from '@components/ui';
 import { CameraModal } from '@components/camera';
 import { SignatureModal } from '@components/signature';
 import { VenueTermsModal } from '@components/terms';
+import { TransferShiftModal, ReleaseShiftModal } from '@components/modals';
 import { colors, spacing } from '../../theme';
 import { Shift, checkInShift, checkOutShift } from '../../store/slices/shiftsSlice';
 import { useAppDispatch } from '../../hooks/useRedux';
@@ -32,6 +34,7 @@ import { venueTermsService } from '../../services/venueTermsService';
 import { apiService, ApiError, ApiTimeoutError, NetworkError } from '../../services/api';
 import { logger } from '../../utils/logger';
 import { ERROR_MESSAGES } from '../../utils/constants';
+import { shiftsService } from '../../services/shiftsService';
 
 const { width } = Dimensions.get('window');
 const MAP_WIDTH = width * 0.9;
@@ -42,7 +45,8 @@ type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 interface ShiftDetailsScreenProps {
   route: {
     params: {
-      shift: Shift;
+      shift?: Shift;      // Full shift object (from in-app navigation)
+      shiftId?: number;   // Just shift ID (from notifications or deep links)
     };
   };
 }
@@ -52,7 +56,10 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
 }) => {
   const navigation = useNavigation<NavigationProp>();
   const dispatch = useAppDispatch();
-  const { shift } = route.params;
+
+  // Handle both cases: full shift object OR just ID
+  const [shift, setShift] = useState<Shift | null>(route.params.shift || null);
+  const [isLoadingShift, setIsLoadingShift] = useState(!route.params.shift && !!route.params.shiftId);
   const [distanceToVenue, setDistanceToVenue] = useState<number | null>(null);
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [venuePhoto, setVenuePhoto] = useState<string | null>(null);
@@ -64,9 +71,49 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
   const [checkOutPhoto, setCheckOutPhoto] = useState<string | null>(null);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
+  // Transfer and Release modals state
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showReleaseModal, setShowReleaseModal] = useState(false);
+
+  // Fetch shift data if only ID was provided (from notification/deep link)
+  useEffect(() => {
+    const fetchShiftData = async () => {
+      if (route.params.shiftId && !shift) {
+        setIsLoadingShift(true);
+        try {
+          console.log('[ShiftDetails] Fetching shift data for ID:', route.params.shiftId);
+          const response = await shiftsService.fetchShifts({
+            page: 1,
+            pageSize: 100
+          });
+
+          // Find the shift in the response
+          const fetchedShift = response.results.find(s => s.id === route.params.shiftId);
+
+          if (fetchedShift) {
+            console.log('[ShiftDetails] ✅ Shift data loaded');
+            setShift(fetchedShift);
+          } else {
+            console.warn('[ShiftDetails] ⚠️ Shift not found');
+            Alert.alert('Error', 'Shift not found');
+            navigation.goBack();
+          }
+        } catch (error) {
+          console.error('[ShiftDetails] ❌ Error fetching shift:', error);
+          Alert.alert('Error', 'Failed to load shift details');
+          navigation.goBack();
+        } finally {
+          setIsLoadingShift(false);
+        }
+      }
+    };
+
+    fetchShiftData();
+  }, [route.params.shiftId, route.params.shift]);
+
   // Calculate distance to venue with real-time updates
   useEffect(() => {
-    if (!shift.venue.latitude || !shift.venue.longitude) {
+    if (!shift || !shift.venue.latitude || !shift.venue.longitude) {
       return;
     }
 
@@ -117,7 +164,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
         console.log('[ShiftDetails] Stopped tracking location');
       }
     };
-  }, [shift.venue.latitude, shift.venue.longitude]);
+  }, [shift]); // Use shift instead of accessing nested properties
 
   // Format date
   const formatDate = (dateString: string) => {
@@ -140,8 +187,37 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
     });
   };
 
+  // Check if shift has already started
+  const hasShiftStarted = () => {
+    if (!shift) return false;
+    const startTime = new Date(shift.start_time);
+    const now = new Date();
+    return startTime <= now;
+  };
+
+  // Check if shift is eligible for check-in (comprehensive time validation)
+  const canCheckIn = () => {
+    if (!shift) return false;
+    const now = new Date();
+    const startTime = new Date(shift.start_time);
+    const endTime = new Date(shift.end_time);
+
+    // Don't show button if shift has ended
+    if (endTime < now) return false;
+
+    // Don't show button if shift is from a previous date
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const shiftDate = new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate());
+    if (shiftDate < today) return false;
+
+    // Check 15-minute early window and 5-minute late window (matching backend logic)
+    const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
+    return diffMinutes <= 15 && diffMinutes >= -5;
+  };
+
   // Calculate shift duration
   const calculateDuration = () => {
+    if (!shift) return '0h';
     const start = new Date(shift.start_time);
     const end = new Date(shift.end_time);
     const diffMs = end.getTime() - start.getTime();
@@ -153,6 +229,14 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
 
   // Get status info
   const getStatusInfo = () => {
+    if (!shift) {
+      return {
+        color: colors.gray[600],
+        bgColor: colors.gray[100],
+        text: 'LOADING',
+        icon: 'time' as const,
+      };
+    }
     switch (shift.status) {
       case 'in_progress':
         return {
@@ -186,10 +270,9 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
     }
   };
 
-  const statusInfo = getStatusInfo();
-
   // Generate static map image URL using Mapbox
   const getStaticMapUrl = () => {
+    if (!shift) return '';
     let { latitude, longitude } = shift.venue;
 
     console.log('[ShiftDetails] Venue coordinates (raw):', { latitude, longitude });
@@ -583,6 +666,24 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
     }
   };
 
+  // Show loading state while fetching shift data
+  if (isLoadingShift || !shift) {
+    return (
+      <Container style={styles.container}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeButton}>
+          <Ionicons name="close" size={28} color={colors.text.primary} />
+        </TouchableOpacity>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading shift details...</Text>
+        </View>
+      </Container>
+    );
+  }
+
+  // Now that we know shift is not null, we can safely call getStatusInfo
+  const statusInfo = getStatusInfo();
+
   return (
     <Container style={styles.container}>
       {/* Close Button */}
@@ -781,15 +882,104 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
 
       {/* Action Buttons - Fixed at Bottom */}
       <View style={styles.footer}>
-        {shift.status === 'scheduled' && (
-          <Button
-            title="Check In to Shift"
-            variant="primary"
-            size="large"
-            onPress={handleCheckIn}
-            style={styles.actionButton}
-            icon={<MaterialCommunityIcons name="clipboard-check-outline" size={22} color={colors.white} />}
-          />
+        {shift.status === 'scheduled' && canCheckIn() && (
+          <>
+            <Button
+              title="Check In to Shift"
+              variant="primary"
+              size="large"
+              onPress={handleCheckIn}
+              style={styles.actionButton}
+              icon={<MaterialCommunityIcons name="clipboard-check-outline" size={22} color={colors.white} />}
+            />
+
+            {/* Secondary Actions Row */}
+            <View style={styles.secondaryActionsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.secondaryActionButton,
+                  hasShiftStarted() && styles.secondaryActionButtonDisabled
+                ]}
+                onPress={() => {
+                  if (hasShiftStarted()) {
+                    Alert.alert(
+                      'Cannot Transfer',
+                      'This shift has already started and cannot be transferred.'
+                    );
+                    return;
+                  }
+                  setShowTransferModal(true);
+                }}
+                disabled={hasShiftStarted()}
+              >
+                <Ionicons
+                  name="swap-horizontal-outline"
+                  size={20}
+                  color={hasShiftStarted() ? colors.gray[400] : colors.primary}
+                />
+                <Text style={[
+                  styles.secondaryActionText,
+                  hasShiftStarted() && styles.secondaryActionTextDisabled
+                ]}>
+                  Transfer
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.secondaryActionButton,
+                  hasShiftStarted() && styles.secondaryActionButtonDisabled
+                ]}
+                onPress={() => {
+                  if (hasShiftStarted()) {
+                    Alert.alert(
+                      'Cannot Release',
+                      'This shift has already started and cannot be released to the pool.'
+                    );
+                    return;
+                  }
+                  setShowReleaseModal(true);
+                }}
+                disabled={hasShiftStarted()}
+              >
+                <MaterialCommunityIcons
+                  name="hand-extended-outline"
+                  size={20}
+                  color={hasShiftStarted() ? colors.gray[400] : colors.primary}
+                />
+                <Text style={[
+                  styles.secondaryActionText,
+                  hasShiftStarted() && styles.secondaryActionTextDisabled
+                ]}>
+                  Release
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.secondaryActionButton, styles.dangerAction]}
+                onPress={() => {
+                  Alert.alert(
+                    'Cancel Shift',
+                    'Are you sure you want to cancel this shift?',
+                    [
+                      { text: 'No', style: 'cancel' },
+                      {
+                        text: 'Yes, Cancel',
+                        style: 'destructive',
+                        onPress: () => {
+                          // TODO: Implement cancel shift API call
+                          Alert.alert('Cancelled', 'Shift cancellation coming soon');
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Ionicons name="close-circle-outline" size={20} color={colors.error} />
+                <Text style={[styles.secondaryActionText, styles.dangerActionText]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </>
         )}
 
         {shift.status === 'in_progress' && (
@@ -859,6 +1049,27 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
           requires_fire_exit_check: shift.venue.requires_fire_exit_check,
           requires_capacity_check: shift.venue.requires_capacity_check,
           requires_id_scan: shift.venue.requires_id_scan,
+        }}
+      />
+
+      {/* Transfer and Release Modals */}
+      <TransferShiftModal
+        visible={showTransferModal}
+        shift={shift}
+        onClose={() => setShowTransferModal(false)}
+        onSuccess={() => {
+          // Refresh shift data or navigate back
+          navigation.goBack();
+        }}
+      />
+
+      <ReleaseShiftModal
+        visible={showReleaseModal}
+        shift={shift}
+        onClose={() => setShowReleaseModal(false)}
+        onSuccess={() => {
+          // Refresh shift data or navigate back
+          navigation.goBack();
         }}
       />
     </Container>
@@ -1126,5 +1337,56 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     minHeight: 56,
+  },
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.md,
+    gap: spacing.xs,
+  },
+  secondaryActionButton: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.primary + '30', // 30% opacity
+    gap: 4,
+  },
+  secondaryActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+    marginTop: 2,
+  },
+  dangerAction: {
+    borderColor: colors.error + '30',
+  },
+  secondaryActionButtonDisabled: {
+    opacity: 0.5,
+    backgroundColor: colors.gray[100],
+    borderColor: colors.gray[300],
+  },
+  secondaryActionTextDisabled: {
+    color: colors.gray[400],
+  },
+  dangerActionText: {
+    color: colors.error,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    fontSize: 16,
+    color: colors.text.secondary,
+    fontWeight: '500',
   },
 });

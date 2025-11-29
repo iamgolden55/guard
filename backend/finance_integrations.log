@@ -66,3 +66,20 @@ Traceback (most recent call last):
   File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/providers/factory.py", line 37, in create_provider
     raise ValueError(f"Unsupported provider: {provider_key}")
 ValueError: Unsupported provider: freshbooks
+ERROR 2025-11-27 20:58:11,540 views 22049 6245036032 OAuth initiation failed
+Traceback (most recent call last):
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/views.py", line 320, in post
+    oauth_url, state = ConnectionSetupService.initiate_oauth_flow(
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        provider_key=serializer.validated_data['provider_key'],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        is_sandbox=serializer.validated_data.get('is_sandbox', False)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/services.py", line 563, in initiate_oauth_flow
+    provider = ProviderFactory.create_provider(provider_key, config)
+  File "/Users/new/Projects/mead-security/remix2/backend/finance_integrations/providers/factory.py", line 42, in create_provider
+    return provider_class(connection_config)
+TypeError: Can't instantiate abstract class QuickBooksProvider without an implementation for abstract methods 'create_pay_run', 'exchange_oauth_code', 'get_oauth_url', 'list_accounts', 'list_earnings_types', 'list_payments', 'list_vat_codes', 'refresh_tokens', 'upsert_contact', 'upsert_employee', 'verify_webhook_signature'

@@ -28,6 +28,9 @@ export const API_CONFIG = {
   // Retry Configuration
   MAX_RETRIES: 3,
   RETRY_DELAY: 1000,
+
+  // Expo Push Notifications
+  EXPO_PROJECT_ID: Constants.expoConfig?.extra?.eas?.projectId || 'your-expo-project-id',
 };
 
 // Authentication Configuration
@@ -100,8 +103,12 @@ export const SYNC_CONFIG = {
 
 // Notification Configuration
 export const NOTIFICATION_CONFIG = {
-  // Check reminder (minutes before due)
-  CHECK_REMINDER_MINUTES: 10,
+  // Shift reminder timing
+  ADVANCE_REMINDER_HOURS: 3, // Advance reminder (3 hours before shift)
+  FINAL_REMINDER_MINUTES: 45, // Final reminder (45 minutes before shift)
+
+  // Exchange expiration
+  EXCHANGE_EXPIRY_MINUTES: 30, // Exchanges expire 30 minutes before shift
 
   // Notification channels (Android)
   CHANNELS: {

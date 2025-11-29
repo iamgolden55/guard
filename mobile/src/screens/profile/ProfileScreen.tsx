@@ -240,6 +240,54 @@ export const ProfileScreen = () => {
             <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={styles.actionItem}
+            onPress={() => navigation.navigate('LeaveBalance')}
+          >
+            <View style={styles.actionIconCircle}>
+              <Ionicons name="calendar" size={22} color="#0066FF" />
+            </View>
+            <View style={styles.actionContent}>
+              <Text style={styles.actionTitle}>Leave Balance</Text>
+              <Text style={styles.actionDescription}>
+                View your available leave days and balances
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionItem}
+            onPress={() => navigation.navigate('LeaveRequest')}
+          >
+            <View style={styles.actionIconCircle}>
+              <Ionicons name="add-circle" size={22} color="#0066FF" />
+            </View>
+            <View style={styles.actionContent}>
+              <Text style={styles.actionTitle}>Request Leave</Text>
+              <Text style={styles.actionDescription}>
+                Submit a new leave request for approval
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionItem}
+            onPress={() => navigation.navigate('LeaveHistory')}
+          >
+            <View style={styles.actionIconCircle}>
+              <Ionicons name="document-text" size={22} color="#0066FF" />
+            </View>
+            <View style={styles.actionContent}>
+              <Text style={styles.actionTitle}>Leave History</Text>
+              <Text style={styles.actionDescription}>
+                View and manage your leave requests
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.actionItem} onPress={handleEditProfile}>
             <View style={styles.actionIconCircle}>
               <Ionicons name="create" size={22} color="#0066FF" />

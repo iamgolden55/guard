@@ -26,7 +26,9 @@ from .views import (
     # Onboarding system views
     OnboardingViewSet, CompaniesViewSet,
     # Company recruitment views
-    CompanyRecruitmentViewSet
+    CompanyRecruitmentViewSet,
+    # Notification system views
+    SNSDeviceTokenViewSet, NotificationPreferencesViewSet,
 )
 
 router = DefaultRouter()
@@ -75,6 +77,9 @@ router.register('onboarding', OnboardingViewSet, basename='onboarding')
 router.register('companies', CompaniesViewSet, basename='companies')
 # Company recruitment endpoints
 router.register('company-recruitment', CompanyRecruitmentViewSet, basename='company-recruitment')
+# Notification system endpoints
+router.register('notifications/devices', SNSDeviceTokenViewSet, basename='notification-devices')
+router.register('notifications/preferences', NotificationPreferencesViewSet, basename='notification-preferences')
 
 urlpatterns = [
     path('', include(router.urls)),

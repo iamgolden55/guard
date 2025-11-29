@@ -419,9 +419,43 @@ class LeaveBalanceService:
         if year is None:
             year = timezone.now().year
 
-        # For now, return a placeholder structure that matches the expected frontend interface
-        # This will be fully implemented in TASK-013
-        from api.serializers import UserSerializer
+        # Query actual leave balances from database
+        from .models import LeaveBalance
+
+        balances = LeaveBalance.objects.filter(
+            staff_user=user,
+            year=year
+        ).select_related('leave_type').order_by('leave_type__name')
+
+        # Calculate totals
+        total_available = Decimal('0')
+        total_used = Decimal('0')
+        total_pending = Decimal('0')
+
+        balance_list = []
+        for balance in balances:
+            balance_data = {
+                'id': balance.id,
+                'leave_type': {
+                    'id': balance.leave_type.id,
+                    'name': balance.leave_type.name,
+                    'code': balance.leave_type.code,
+                    'color_code': balance.leave_type.color_code,
+                },
+                'year': balance.year,
+                'total_entitlement': float(balance.total_entitlement),
+                'used_balance': float(balance.used_balance),
+                'pending_balance': float(balance.pending_balance),
+                'available_balance': float(balance.available_balance),
+                'opening_balance': float(balance.opening_balance),
+                'accrued_balance': float(balance.accrued_balance),
+                'adjustment_balance': float(balance.adjustment_balance),
+            }
+            balance_list.append(balance_data)
+
+            total_available += balance.available_balance
+            total_used += balance.used_balance
+            total_pending += balance.pending_balance
 
         response = {
             'user': {
@@ -434,10 +468,10 @@ class LeaveBalanceService:
                 'is_manager': getattr(user, 'is_manager', False),
                 'date_joined': user.date_joined.isoformat() if user.date_joined else None,
             },
-            'balances': [],  # Empty array for now - will be populated in TASK-013
-            'total_days_available': '0',
-            'total_days_used': '0',
-            'total_days_pending': '0'
+            'balances': balance_list,
+            'total_days_available': str(total_available),
+            'total_days_used': str(total_used),
+            'total_days_pending': str(total_pending)
         }
 
         return response

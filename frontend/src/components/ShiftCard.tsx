@@ -73,6 +73,18 @@ const ShiftCard: React.FC<ShiftCardProps> = ({
   const isReadyToStart = () => {
     const now = new Date();
     const startTime = new Date(shift.startTime);
+
+    // Don't show button if shift has ended
+    if (shift.endTime) {
+      const endTime = new Date(shift.endTime);
+      if (endTime < now) return false;
+    }
+
+    // Don't show button if shift is from a previous date
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const shiftDate = new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate());
+    if (shiftDate < today) return false;
+
     const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
     return diffMinutes <= 15 && diffMinutes >= -5; // Can check in 15 mins early, 5 mins after
   };

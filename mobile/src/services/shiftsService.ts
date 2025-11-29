@@ -5,6 +5,7 @@
 
 import { apiService } from './api';
 import { Shift } from '../store/slices/shiftsSlice';
+import notificationService from './notificationService';
 
 /**
  * Paginated response from the backend
@@ -82,6 +83,9 @@ class ShiftsService {
       // Transform the backend response to match frontend Shift interface
       const shifts = response.results.map((shift: any) => this.transformShift(shift));
 
+      // Schedule notifications for upcoming shifts
+      await this.scheduleNotificationsForShifts(shifts);
+
       return {
         count: response.count,
         next: response.next,
@@ -91,6 +95,33 @@ class ShiftsService {
     } catch (error) {
       console.error('[ShiftsService] Error fetching shifts:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Schedule notifications for upcoming shifts
+   * Called after fetching shifts to ensure reminders are set
+   */
+  private async scheduleNotificationsForShifts(shifts: Shift[]): Promise<void> {
+    try {
+      // Check if we have notification permissions
+      const hasPermission = await notificationService.hasPermissions();
+      if (!hasPermission) {
+        console.log('[ShiftsService] Skipping notification scheduling - no permissions');
+        return;
+      }
+
+      // Schedule notifications for all upcoming scheduled shifts
+      for (const shift of shifts) {
+        if (shift.status === 'scheduled') {
+          await notificationService.scheduleShiftReminder(shift);
+        }
+      }
+
+      console.log(`[ShiftsService] Scheduled notifications for ${shifts.filter(s => s.status === 'scheduled').length} shifts`);
+    } catch (error) {
+      console.error('[ShiftsService] Error scheduling notifications:', error);
+      // Don't throw - notification scheduling shouldn't break shift fetching
     }
   }
 
@@ -131,6 +162,10 @@ class ShiftsService {
         `/api/v1/shifts/${shiftId}/check-in/`,
         data
       );
+
+      // Cancel notifications since shift has started
+      await notificationService.cancelShiftReminders(shiftId);
+
       return response;
     } catch (error) {
       console.error('[ShiftsService] Error checking in:', error);
@@ -153,6 +188,10 @@ class ShiftsService {
         `/api/v1/shifts/${shiftId}/check-out/`,
         data
       );
+
+      // Cancel notifications since shift has ended
+      await notificationService.cancelShiftReminders(shiftId);
+
       return response;
     } catch (error) {
       console.error('[ShiftsService] Error checking out:', error);
@@ -168,6 +207,10 @@ class ShiftsService {
       const response = await apiService.post<Shift>(
         `/api/v1/shifts/${shiftId}/cancel/`
       );
+
+      // Cancel notifications since shift is cancelled
+      await notificationService.cancelShiftReminders(shiftId);
+
       return response;
     } catch (error) {
       console.error('[ShiftsService] Error canceling shift:', error);

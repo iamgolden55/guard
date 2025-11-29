@@ -18,6 +18,7 @@ import authReducer from './slices/authSlice';
 import shiftsReducer from './slices/shiftsSlice';
 import incidentsReducer from './slices/incidentsSlice';
 import syncReducer from './slices/syncSlice';
+import leaveReducer from './slices/leaveSlice';
 
 // Import API
 import { api } from './api/baseApi';
@@ -25,9 +26,37 @@ import { api } from './api/baseApi';
 // Persist configuration
 const persistConfig = {
   key: 'root',
-  version: 1,
+  version: 2, // Incremented from 1 to 2 to force data migration
   storage: AsyncStorage,
-  whitelist: ['auth', 'shifts', 'incidents', 'sync'], // Only persist these reducers
+  whitelist: ['auth', 'shifts', 'incidents', 'sync', 'leave'], // Only persist these reducers
+  migrate: (state: any) => {
+    // Migration from version 1 to version 2
+    // Fix: Clear corrupted auth data where user.id was set to StaffProfile ID instead of User ID
+    if (state && state._persist && state._persist.version === 1) {
+      console.log('[Redux Persist] Migrating from version 1 to 2 - clearing corrupted auth data');
+
+      return Promise.resolve({
+        ...state,
+        auth: {
+          user: null,
+          accessToken: null,
+          refreshToken: null,
+          isAuthenticated: false,
+          isLoading: false,
+          // Preserve biometric setting if it exists
+          biometricEnabled: state.auth?.biometricEnabled || false,
+          lastSync: null,
+        },
+        _persist: {
+          ...state._persist,
+          version: 2,
+        }
+      });
+    }
+
+    // For version 2+, no migration needed
+    return Promise.resolve(state);
+  }
 };
 
 // Combine reducers
@@ -36,6 +65,7 @@ const rootReducer = combineReducers({
   shifts: shiftsReducer,
   incidents: incidentsReducer,
   sync: syncReducer,
+  leave: leaveReducer,
   [api.reducerPath]: api.reducer,
 });
 

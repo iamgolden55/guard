@@ -28,11 +28,27 @@ class ShiftViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        """Filter shifts to only show the current user's shifts unless they're a manager/admin"""
+        """Filter shifts to only show the current user's shifts unless they're a manager/admin
+
+        SECURITY: Admin/manager users see all shifts from their company ONLY, not the entire database.
+        """
         user_role = getattr(self.request.user, 'role', 'staff')
+
         if user_role in ['manager', 'admin']:
-            # Managers and admins can see all shifts
-            return Shift.objects.all().order_by('-start_time')
+            # SECURITY FIX: Admin/manager users should only see shifts from their own company
+            # Get the user's company membership
+            from api.models import UserCompanyMembership
+            membership = UserCompanyMembership.objects.filter(
+                user=self.request.user,
+                is_active=True
+            ).select_related('company').first()
+
+            if membership and membership.company:
+                # Return all shifts for venues in the user's company
+                return Shift.objects.filter(venue__company=membership.company).order_by('-start_time')
+            else:
+                # No company membership - return only user's own shifts as fallback
+                return Shift.objects.filter(staff_user=self.request.user).order_by('-start_time')
         else:
             # Regular staff can only see their own shifts
             return Shift.objects.filter(staff_user=self.request.user).order_by('-start_time')

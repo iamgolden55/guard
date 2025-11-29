@@ -18,6 +18,7 @@ export interface Shift {
   };
   start_time: string;
   end_time: string;
+  required_security_role: string;
   actual_start_time?: string;
   actual_end_time?: string;
   status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'pending_approval' | 'approved';

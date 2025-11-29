@@ -30,13 +30,15 @@ import os
 from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
-    Shift, FireExitCheck, CapacityCheck, ToiletCheck, ShiftExchange, OpenShiftRequest,
+    Shift, ShiftTemplate, FireExitCheck, CapacityCheck, ToiletCheck, ShiftExchange, OpenShiftRequest,
     Invoice, InvoiceItem, PayRate, DeputyConfig, DeputyEmployee,
     DeputyTimesheet, SystemSettings, EmploymentType, RecruitmentApplication,
     WorkingHoursRegulation, ComplianceProfile, ComplianceViolation, WorkingHoursMetrics,
     ReportTemplate, ReportJob,
     # Onboarding models
-    SecurityCompany, CompanyOnboarding, CompanyIntegration, UserCompanyMembership
+    SecurityCompany, CompanyOnboarding, CompanyIntegration, UserCompanyMembership,
+    # Notification models
+    SNSDeviceToken, NotificationPreferences
 )
 from .serializers import (
     UserSerializer, StaffProfileSerializer, EmergencyContactSerializer,
@@ -54,7 +56,9 @@ from .serializers import (
     # Onboarding serializers
     SecurityCompanySerializer, CompanyOnboardingSerializer, CompanyInfoSerializer,
     RegionalSetupSerializer, StaffConfigSerializer, IntegrationsSerializer,
-    CompanyIntegrationSerializer, UserCompanyMembershipSerializer
+    CompanyIntegrationSerializer, UserCompanyMembershipSerializer,
+    # Notification serializers
+    SNSDeviceTokenSerializer, NotificationPreferencesSerializer
 )
 
 User = get_user_model()
@@ -374,6 +378,80 @@ class UserViewSet(viewsets.ModelViewSet):
                 'error': 'Failed to fetch staff users',
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'], url_path='eligible-for-transfer')
+    def eligible_for_transfer(self, request):
+        """
+        Get staff members eligible for shift transfers from user's company.
+
+        Query Parameters:
+        - shift_id (optional): Filter staff by required security role for specific shift
+
+        Returns staff from the same company as the requesting user, excluding:
+        - The current user themselves
+        - Unapproved staff profiles
+        - Inactive users
+        - Staff without required security role (if shift_id provided)
+
+        Accessible by all authenticated users (any role).
+        """
+        user = request.user
+
+        # Get optional shift_id for security role filtering
+        shift_id = request.query_params.get('shift_id')
+        required_role = None
+
+        if shift_id:
+            try:
+                shift = Shift.objects.get(id=shift_id, staff_user=user)
+                required_role = shift.required_security_role
+            except Shift.DoesNotExist:
+                return Response({
+                    'error': 'Shift not found',
+                    'detail': 'Shift does not exist or is not assigned to you'
+                }, status=status.HTTP_404_NOT_FOUND)
+
+        # Get user's company (include all roles, not just admin/manager)
+        membership = user.company_memberships.filter(
+            is_active=True
+        ).select_related('company').first()
+
+        if not membership:
+            return Response({
+                'error': 'No company membership found',
+                'detail': 'User must be a member of a company to view eligible staff'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        company = membership.company
+
+        # Get all active staff from same company
+        company_user_ids = company.memberships.filter(
+            is_active=True,
+            role='staff'  # Only staff members eligible for shift transfers
+        ).values_list('user_id', flat=True)
+
+        # Exclude current user from results
+        eligible_users = User.objects.filter(
+            id__in=company_user_ids,
+            is_active=True
+        ).exclude(id=user.id).select_related('profile')
+
+        # Filter for approved profiles and matching security role
+        approved_staff = []
+        for staff_user in eligible_users:
+            # Check if user has profile and is approved
+            if not (hasattr(staff_user, 'profile') and staff_user.profile.is_approved):
+                continue
+
+            # Check security role if shift_id provided
+            if required_role and not staff_user.has_security_role(required_role):
+                continue
+
+            approved_staff.append(staff_user)
+
+        # Use existing UserSerializer for consistent response format
+        serializer = self.get_serializer(approved_staff, many=True)
+        return Response(serializer.data)
 
     def list(self, request):
         # Use the filtered queryset from get_queryset()
@@ -933,520 +1011,6 @@ class PreferredVenueViewSet(viewsets.ModelViewSet):
     queryset = PreferredVenue.objects.all()
     serializer_class = PreferredVenueSerializer
 
-class ShiftViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
-    queryset = Shift.objects.all()
-    serializer_class = ShiftSerializer
-    
-    def get_serializer_class(self):
-        """
-        Use the frontend-compatible serializer if 'frontend' query param is present
-        """
-        if self.request.query_params.get('frontend', None) == 'true':
-            from .serializers_frontend import FrontendShiftSerializer
-            return FrontendShiftSerializer
-        return ShiftSerializer
-    
-    def get_user_company(self, request):
-        """Get the user's current company context"""
-        # For now, get the first active company membership where user is owner/admin/manager
-        membership = request.user.company_memberships.filter(
-            is_active=True,
-            role__in=['owner', 'admin', 'manager']
-        ).select_related('company').first()
-
-        if not membership:
-            return None
-        return membership.company
-
-    def get_queryset(self):
-        """
-        Filter shifts based on company context and query parameters
-        """
-        # First filter by company context
-        company = self.get_user_company(self.request)
-        if not company:
-            # No company context, return shifts for staff user only
-            if self.request.user.role == 'staff':
-                queryset = Shift.objects.filter(staff_user=self.request.user)
-            else:
-                queryset = Shift.objects.none()
-        else:
-            # Filter shifts to only include venues from the user's company
-            queryset = Shift.objects.filter(venue__company=company)
-        
-        # Filter by staff_user if provided
-        staff_user_id = self.request.query_params.get('staff_user', None)
-        staff_id = self.request.query_params.get('staffId', None)
-        if staff_user_id:
-            queryset = queryset.filter(staff_user_id=staff_user_id)
-        elif staff_id:  # Support camelCase frontend param
-            queryset = queryset.filter(staff_user_id=staff_id)
-        
-        # Filter by venue if provided
-        venue_id = self.request.query_params.get('venue', None)
-        venue_id_frontend = self.request.query_params.get('venueId', None)
-        if venue_id:
-            queryset = queryset.filter(venue_id=venue_id)
-        elif venue_id_frontend:  # Support camelCase frontend param
-            queryset = queryset.filter(venue_id=venue_id_frontend)
-        
-        # Filter by status if provided
-        status_param = self.request.query_params.get('status', None)
-        if status_param:
-            queryset = queryset.filter(status=status_param)
-        
-        # Filter by date range if provided
-        start_date = self.request.query_params.get('start_date', None)
-        start_date_frontend = self.request.query_params.get('startDate', None)
-        
-        end_date = self.request.query_params.get('end_date', None)
-        end_date_frontend = self.request.query_params.get('endDate', None)
-        
-        if start_date:
-            queryset = queryset.filter(start_time__gte=start_date)
-        elif start_date_frontend:  # Support camelCase frontend param
-            queryset = queryset.filter(start_time__gte=start_date_frontend)
-            
-        if end_date:
-            queryset = queryset.filter(start_time__lte=end_date)
-        elif end_date_frontend:  # Support camelCase frontend param
-            queryset = queryset.filter(start_time__lte=end_date_frontend)
-        
-        return queryset
-    
-    def create(self, request, *args, **kwargs):
-        """
-        Create a new shift, with special handling for staff_user
-        """
-        # Use frontend serializer if specified
-        if request.query_params.get('frontend', None) == 'true':
-            from .serializers_frontend import FrontendShiftSerializer
-            serializer = FrontendShiftSerializer(data=request.data)
-        else:
-            serializer = self.get_serializer(data=request.data)
-            
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-    
-    def perform_create(self, serializer):
-        serializer.save()
-    
-    @action(detail=False, methods=['post'])
-    def bulk(self, request, *args, **kwargs):
-        """
-        Create multiple shifts in bulk based on date range and days of week
-        """
-        from datetime import datetime, timedelta
-        
-        # Support both snake_case and camelCase parameters
-        # Get request data
-        venue_id = request.data.get('venue_id') or request.data.get('venueId')
-        start_date_str = request.data.get('start_date') or request.data.get('startDate')
-        end_date_str = request.data.get('end_date') or request.data.get('endDate')
-        start_time = request.data.get('start_time') or request.data.get('startTime')
-        end_time = request.data.get('end_time') or request.data.get('endTime')
-        days_of_week = request.data.get('days_of_week') or request.data.get('daysOfWeek', [])
-        staff_ids = request.data.get('staff_ids') or request.data.get('staffIds', [])
-        notes = request.data.get('notes', '')
-        is_published = request.data.get('is_published') or request.data.get('isPublished', False)
-        required_security_role = request.data.get('required_security_role') or request.data.get('requiredSecurityRole', 'ds')
-        
-        # Validation
-        if not venue_id or not start_date_str or not end_date_str or not start_time or not end_time:
-            return Response(
-                {"error": "Missing required fields: venueId, startDate, endDate, startTime, endTime"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Parse dates
-        try:
-            if isinstance(start_date_str, str):
-                start_date = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
-            else:
-                start_date = start_date_str
-                
-            if isinstance(end_date_str, str):
-                end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
-            else:
-                end_date = end_date_str
-        except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Get venue
-        try:
-            venue = Venue.objects.get(id=venue_id)
-        except Venue.DoesNotExist:
-            return Response(
-                {"error": f"Venue with ID {venue_id} does not exist"},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Create shifts
-        created_shifts = []
-        current_date = start_date
-        
-        while current_date <= end_date:
-            # Check if current day is in the selected days of week
-            if current_date.weekday() in days_of_week:
-                # Parse times
-                shift_start_time = None
-                shift_end_time = None
-                
-                # Handle different time formats
-                if isinstance(start_time, str):
-                    if ':' in start_time:
-                        try:
-                            # Handle HH:MM format
-                            hour, minute = map(int, start_time.split(':'))
-                            shift_start_time = current_date.replace(
-                                hour=hour, 
-                                minute=minute,
-                                second=0,
-                                microsecond=0
-                            )
-                        except (ValueError, TypeError):
-                            # Try ISO format
-                            try:
-                                shift_start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                                # Use only the time portion with current_date
-                                shift_start_time = current_date.replace(
-                                    hour=shift_start_time.hour,
-                                    minute=shift_start_time.minute,
-                                    second=0,
-                                    microsecond=0
-                                )
-                            except (ValueError, TypeError):
-                                return Response(
-                                    {"error": f"Invalid time format for startTime: {start_time}. Use HH:MM or ISO format."},
-                                    status=status.HTTP_400_BAD_REQUEST
-                                )
-                    else:
-                        # Try ISO format directly
-                        try:
-                            shift_start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                        except (ValueError, TypeError):
-                            return Response(
-                                {"error": f"Invalid time format for startTime: {start_time}. Use HH:MM or ISO format."},
-                                status=status.HTTP_400_BAD_REQUEST
-                            )
-                else:
-                    # Assume it's already a datetime object
-                    shift_start_time = start_time
-                
-                # Same logic for end time
-                if isinstance(end_time, str):
-                    if ':' in end_time:
-                        try:
-                            # Handle HH:MM format
-                            hour, minute = map(int, end_time.split(':'))
-                            shift_end_time = current_date.replace(
-                                hour=hour, 
-                                minute=minute,
-                                second=0,
-                                microsecond=0
-                            )
-                        except (ValueError, TypeError):
-                            # Try ISO format
-                            try:
-                                shift_end_time = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-                                # Use only the time portion with current_date
-                                shift_end_time = current_date.replace(
-                                    hour=shift_end_time.hour,
-                                    minute=shift_end_time.minute,
-                                    second=0,
-                                    microsecond=0
-                                )
-                            except (ValueError, TypeError):
-                                return Response(
-                                    {"error": f"Invalid time format for endTime: {end_time}. Use HH:MM or ISO format."},
-                                    status=status.HTTP_400_BAD_REQUEST
-                                )
-                    else:
-                        # Try ISO format directly
-                        try:
-                            shift_end_time = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-                        except (ValueError, TypeError):
-                            return Response(
-                                {"error": f"Invalid time format for endTime: {end_time}. Use HH:MM or ISO format."},
-                                status=status.HTTP_400_BAD_REQUEST
-                            )
-                else:
-                    # Assume it's already a datetime object
-                    shift_end_time = end_time
-                
-                # Handle overnight shifts
-                if shift_end_time < shift_start_time:
-                    shift_end_time += timedelta(days=1)
-                
-                # Create shift for each staff member or as an open shift
-                if staff_ids:
-                    for staff_id in staff_ids:
-                        try:
-                            staff_user = User.objects.get(id=staff_id)
-                            # Validate staff eligibility
-                            if not hasattr(staff_user, 'profile') or not staff_user.profile.is_eligible_for_shifts():
-                                # Skip ineligible staff but log a warning
-                                # Staff not eligible for shifts - skip silently
-                                continue
-                            
-                            shift = Shift.objects.create(
-                                venue=venue,
-                                staff_user=staff_user,
-                                start_time=shift_start_time,
-                                end_time=shift_end_time,
-                                required_security_role=required_security_role,
-                                status='scheduled',
-                                notes=notes
-                            )
-                            created_shifts.append(shift)
-                        except User.DoesNotExist:
-                            # Skip invalid staff IDs
-                            continue
-                else:
-                    # Create an open shift
-                    shift = Shift.objects.create(
-                        venue=venue,
-                        staff_user=None,
-                        start_time=shift_start_time,
-                        end_time=shift_end_time,
-                        required_security_role=required_security_role,
-                        status='open',
-                        notes=notes
-                    )
-                    created_shifts.append(shift)
-            
-            # Move to next day
-            current_date += timedelta(days=1)
-        
-        # Serialize the result - use the appropriate serializer
-        if request.query_params.get('frontend', None) == 'true':
-            from .serializers_frontend import FrontendShiftSerializer
-            serializer = FrontendShiftSerializer(created_shifts, many=True)
-        else:
-            serializer = self.get_serializer(created_shifts, many=True)
-            
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
-    @action(detail=True, methods=['put'])
-    def assign(self, request, *args, **kwargs):
-        """
-        Assign a staff member to an existing shift
-        """
-        shift = self.get_object()
-        
-        # Support both snake_case and camelCase for staffId
-        staff_id = request.data.get('staff_id') or request.data.get('staffId')
-        
-        if not staff_id:
-            return Response(
-                {"error": "staffId is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            staff_user = User.objects.get(id=staff_id)
-            
-            # Verify staff eligibility
-            if not hasattr(staff_user, 'profile') or not staff_user.profile.is_eligible_for_shifts():
-                return Response({
-                    "error": "Staff must have a valid SIA license and be admin approved to be assigned shifts."
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Update the shift
-            shift.staff_user = staff_user
-            shift.status = 'scheduled'
-            shift.save()
-            
-            # Return the updated shift
-            if request.query_params.get('frontend', None) == 'true':
-                from .serializers_frontend import FrontendShiftSerializer
-                serializer = FrontendShiftSerializer(shift)
-            else:
-                serializer = self.get_serializer(shift)
-                
-            return Response(serializer.data)
-        except User.DoesNotExist:
-            return Response({"error": "Staff not found"}, status=status.HTTP_404_NOT_FOUND)
-    
-    @action(detail=True, methods=['post'])
-    def unassign(self, request, *args, **kwargs):
-        """
-        Unassign a staff member from a shift (make it an open shift)
-        """
-        shift = self.get_object()
-        
-        if not shift.staff_user:
-            return Response({"error": "Shift is already unassigned"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Store for message
-        staff_name = f"{shift.staff_user.first_name} {shift.staff_user.last_name}"
-        
-        # Unassign
-        shift.staff_user = None
-        shift.status = 'open'
-        shift.save()
-        
-        # Return the updated shift
-        if request.query_params.get('frontend', None) == 'true':
-            from .serializers_frontend import FrontendShiftSerializer
-            serializer = FrontendShiftSerializer(shift)
-        else:
-            serializer = self.get_serializer(shift)
-            
-        return Response({
-            "message": f"Staff {staff_name} unassigned from shift",
-            "shift": serializer.data
-        })
-    
-    @action(detail=False, methods=['post'])
-    def publish(self, request, *args, **kwargs):
-        """
-        Publish multiple shifts (change status from 'draft' to 'published')
-        """
-        # Get shift IDs - support both snake_case and camelCase
-        shift_ids = request.data.get('shift_ids') or request.data.get('shiftIds', [])
-        
-        if not shift_ids:
-            return Response({"error": "No shifts specified"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Get shifts
-        shifts = Shift.objects.filter(id__in=shift_ids)
-        
-        if not shifts.exists():
-            return Response({"error": "No matching shifts found"}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Update status
-        count = shifts.update(status='published')
-        
-        return Response({
-            "success": True,
-            "message": f"{count} shifts published successfully",
-            "count": count
-        })
-    
-    @action(detail=False, methods=['post'])
-    def copy(self, request, *args, **kwargs):
-        """
-        Copy shifts from one month to another
-        """
-        # Get parameters - support both snake_case and camelCase
-        source_month = request.data.get('source_month') or request.data.get('sourceMonth')
-        target_month = request.data.get('target_month') or request.data.get('targetMonth')
-        
-        if not source_month or not target_month:
-            return Response({
-                "error": "source_month and target_month are required"
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Parse dates
-        try:
-            source_date = datetime.fromisoformat(source_month.replace('Z', '+00:00'))
-            target_date = datetime.fromisoformat(target_month.replace('Z', '+00:00'))
-        except ValueError:
-            return Response({
-                "error": "Invalid date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Get shifts in source month
-        source_shifts = Shift.objects.filter(
-            start_time__year=source_date.year,
-            start_time__month=source_date.month
-        )
-        
-        if not source_shifts.exists():
-            return Response({
-                "error": f"No shifts found in source month {source_date.year}-{source_date.month}"
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Calculate month difference
-        month_diff = (target_date.year - source_date.year) * 12 + (target_date.month - source_date.month)
-        
-        # Clone shifts
-        new_shifts = []
-        for shift in source_shifts:
-            # Calculate new dates
-            start_time = shift.start_time.replace(
-                year=target_date.year,
-                month=target_date.month,
-                day=min(shift.start_time.day, self._days_in_month(target_date.year, target_date.month))
-            )
-            
-            if shift.end_time:
-                # Handle overnight shifts that cross month boundary
-                if shift.end_time.month != shift.start_time.month:
-                    # Add the same number of days as the original shift
-                    days_diff = (shift.end_time.day - shift.start_time.day)
-                    if days_diff < 0:  # Handle month boundary crossing in original shift
-                        days_diff += self._days_in_month(shift.start_time.year, shift.start_time.month)
-                    
-                    # Calculate target end day
-                    target_end_day = start_time.day + days_diff
-                    target_end_month = target_date.month
-                    target_end_year = target_date.year
-                    
-                    # Handle month boundary crossing in target shift
-                    days_in_target_month = self._days_in_month(target_date.year, target_date.month)
-                    if target_end_day > days_in_target_month:
-                        target_end_day -= days_in_target_month
-                        target_end_month += 1
-                        if target_end_month > 12:
-                            target_end_month = 1
-                            target_end_year += 1
-                    
-                    end_time = shift.end_time.replace(
-                        year=target_end_year,
-                        month=target_end_month,
-                        day=target_end_day
-                    )
-                else:
-                    # Regular case - just update the month/year
-                    end_time = shift.end_time.replace(
-                        year=target_date.year,
-                        month=target_date.month,
-                        day=min(shift.end_time.day, self._days_in_month(target_date.year, target_date.month))
-                    )
-            else:
-                end_time = None
-            
-            # Create a new shift based on the source shift
-            new_shift = Shift.objects.create(
-                venue=shift.venue,
-                staff_user=None,  # Don't copy staff assignments
-                start_time=start_time,
-                end_time=end_time,
-                required_security_role=shift.required_security_role,
-                status='open',  # Always start as open
-                notes=shift.notes
-            )
-            
-            new_shifts.append(new_shift)
-        
-        # Serialize the result
-        if request.query_params.get('frontend', None) == 'true':
-            from .serializers_frontend import FrontendShiftSerializer
-            serializer = FrontendShiftSerializer(new_shifts, many=True)
-        else:
-            serializer = self.get_serializer(new_shifts, many=True)
-            
-        return Response({
-            "success": True,
-            "message": f"{len(new_shifts)} shifts copied from {source_date.year}-{source_date.month} to {target_date.year}-{target_date.month}",
-            "shifts": serializer.data
-        })
-    
-    def _days_in_month(self, year, month):
-        """Helper to get the number of days in a month"""
-        import calendar
-        return calendar.monthrange(year, month)[1]
-
-# Now let's create a ShiftTemplateViewSet
-from .models import ShiftTemplate  # Re-import to ensure it's in scope for this class
 class ShiftTemplateViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = ShiftTemplate.objects.all()
@@ -1712,28 +1276,87 @@ class OpenShiftRequestViewSet(viewsets.ModelViewSet):
         if user.role in ['manager', 'admin']:
             return OpenShiftRequest.objects.all()
         else:
-            # Staff can see requests they created, claimed, or that are available to claim
-            return OpenShiftRequest.objects.filter(
-                models.Q(requesting_user=user) | 
-                models.Q(claimed_by=user) |
-                models.Q(status='open')  # Allow access to open shifts for claiming
+            # For list action: Show only requests the user created or claimed
+            # For detail actions (claim, retrieve, cancel): Also include open shifts
+            if self.action == 'list':
+                # List view: Only show user's own releases and claims
+                return OpenShiftRequest.objects.filter(
+                    models.Q(requesting_user=user) |
+                    models.Q(claimed_by=user)
+                )
+            else:
+                # Detail actions: Include open shifts for claiming
+                return OpenShiftRequest.objects.filter(
+                    models.Q(requesting_user=user) |
+                    models.Q(claimed_by=user) |
+                    models.Q(status='open')  # Allow access to open shifts for claiming
+                )
+
+    def create(self, request, *args, **kwargs):
+        """
+        Custom create to handle shift_id instead of original_shift
+        Mobile app sends {shift_id, request_reason} but model expects {original_shift, requesting_user, request_reason}
+        """
+        shift_id = request.data.get('shift_id')
+        reason = request.data.get('request_reason')
+
+        # Validation
+        if not shift_id:
+            return Response(
+                {"error": "shift_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
             )
-    
+
+        if not reason:
+            return Response(
+                {"error": "request_reason is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Get shift and verify ownership
+            shift = Shift.objects.get(id=shift_id, staff_user=request.user)
+
+            # Use model method to create open shift request (handles business logic)
+            open_request = shift.release_to_pool(reason)
+
+            # Serialize and return
+            serializer = self.get_serializer(open_request)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except Shift.DoesNotExist:
+            return Response(
+                {"error": "Shift not found or not assigned to you"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except ValueError as e:
+            # Validation errors from release_to_pool (e.g., shift already started)
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
     def perform_create(self, serializer):
         """Create an open shift request by releasing a shift"""
         # The shift ID should be passed in the request data
         shift_id = self.request.data.get('shift_id')
         reason = self.request.data.get('request_reason')
-        
+
         if not shift_id:
             raise serializers.ValidationError("shift_id is required")
-        
+
+        if not reason:
+            raise serializers.ValidationError("request_reason is required")
+
         try:
             shift = Shift.objects.get(id=shift_id, staff_user=self.request.user)
             open_request = shift.release_to_pool(reason)
             return open_request
         except Shift.DoesNotExist:
             raise serializers.ValidationError("Shift not found or not assigned to you")
+        except ValueError as e:
+            # Catch validation errors from release_to_pool (e.g., shift already started)
+            raise serializers.ValidationError(str(e))
     
     @action(detail=False, methods=['get'])
     def available(self, request):
@@ -6178,3 +5801,115 @@ class CompaniesViewSet(viewsets.ReadOnlyModelViewSet):
             'company': company_serializer.data,
             'membership': membership_serializer.data
         })
+
+
+# =====================================================
+# NOTIFICATION API ENDPOINTS
+# =====================================================
+
+class SNSDeviceTokenViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing device push notification tokens.
+    
+    Endpoints:
+    - GET /api/v1/notifications/devices/ - List user's registered devices
+    - POST /api/v1/notifications/devices/ - Register a new device token
+    - DELETE /api/v1/notifications/devices/{id}/ - Deactivate a device token
+    """
+    serializer_class = SNSDeviceTokenSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Only return tokens for the current user"""
+        return SNSDeviceToken.objects.filter(user=self.request.user)
+    
+    def perform_create(self, serializer):
+        """Create token for the current user"""
+        serializer.save(user=self.request.user)
+    
+    def perform_destroy(self, instance):
+        """Deactivate instead of deleting"""
+        instance.deactivate()
+    
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        """Activate a device token"""
+        token = self.get_object()
+        token.activate()
+        return Response({'status': 'Device token activated'})
+    
+    @action(detail=True, methods=['post'])
+    def deactivate(self, request, pk=None):
+        """Deactivate a device token"""
+        token = self.get_object()
+        token.deactivate()
+        return Response({'status': 'Device token deactivated'})
+
+
+class NotificationPreferencesViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing user notification preferences.
+    
+    Endpoints:
+    - GET /api/v1/notifications/preferences/ - Get user's notification preferences
+    - PUT /api/v1/notifications/preferences/ - Update notification preferences
+    - PATCH /api/v1/notifications/preferences/ - Partially update preferences
+    """
+    serializer_class = NotificationPreferencesSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ['get', 'put', 'patch', 'head', 'options']
+    
+    def get_queryset(self):
+        """Only return preferences for the current user"""
+        return NotificationPreferences.objects.filter(user=self.request.user)
+    
+    def get_object(self):
+        """Get or create preferences for the current user"""
+        preferences, created = NotificationPreferences.objects.get_or_create(
+            user=self.request.user
+        )
+        return preferences
+    
+    def list(self, request, *args, **kwargs):
+        """Return the user's preferences (single object, not a list)"""
+        preferences = self.get_object()
+        serializer = self.get_serializer(preferences)
+        return Response(serializer.data)
+    
+    def update(self, request, *args, **kwargs):
+        """Update the user's preferences"""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        
+        return Response(serializer.data)
+    
+    def perform_update(self, serializer):
+        """Save updated preferences"""
+        serializer.save()
+    
+    @action(detail=False, methods=['post'])
+    def reset_to_defaults(self, request):
+        """Reset preferences to default values"""
+        preferences = self.get_object()
+        preferences.shift_reminders_enabled = True
+        preferences.advance_reminder_hours = 3
+        preferences.final_reminder_minutes = 45
+        preferences.exchange_notifications_enabled = True
+        preferences.exchange_request_received = True
+        preferences.exchange_request_accepted = True
+        preferences.exchange_request_approved = True
+        preferences.available_shifts_notifications_enabled = True
+        preferences.new_available_shift = True
+        preferences.incident_alerts_enabled = True
+        preferences.sync_notifications_enabled = False
+        preferences.sync_errors_only = True
+        preferences.quiet_hours_enabled = False
+        preferences.quiet_hours_start = None
+        preferences.quiet_hours_end = None
+        preferences.save()
+
+        serializer = self.get_serializer(preferences)
+        return Response(serializer.data)

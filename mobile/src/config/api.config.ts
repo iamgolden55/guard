@@ -2,22 +2,25 @@
  * API Configuration
  * Centralized location for all API endpoints and configuration
  *
- * To change for production:
- * 1. Update PRODUCTION_API_URL below
+ * To change the backend URL:
+ * 1. Update the .env file in the mobile directory
  * 2. That's it! All files use this configuration
+ *
+ * To find your IP: Run `ipconfig getifaddr en0` on Mac or `ipconfig` on Windows
  */
 
+import Constants from 'expo-constants';
+
 // ============================================
-// API Base URLs - Change these for production
+// API Base URLs - Read from .env file
 // ============================================
 
-// IMPORTANT: When testing on physical device, use your computer's IP address
-// To find your IP: Run `ipconfig getifaddr en0` on Mac or `ipconfig` on Windows
-const DEVELOPMENT_API_URL = 'http://172.16.32.165:8000/api/v1/';
+// Read API base URL from environment configuration (.env file)
+const ENV_API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
 const PRODUCTION_API_URL = 'https://api.meadsecurity.com/api/v1/'; // Update this when deploying
 
 // Automatically select based on environment
-export const API_BASE_URL = __DEV__ ? DEVELOPMENT_API_URL : PRODUCTION_API_URL;
+export const API_BASE_URL = __DEV__ ? `${ENV_API_BASE_URL}/api/v1/` : PRODUCTION_API_URL;
 
 // ============================================
 // API Endpoints

@@ -1,7 +1,7 @@
 {
   "project": "Security Staff Management System Enhancement",
   "project_id": "SSMS-2025",
-  "last_updated": "2025-01-13T10:00:00Z",
+  "last_updated": "2025-10-26T02:00:00Z",
   "orchestrator": "head_agent",
   "phases": {
     "Phase 1": {
@@ -37,4 +37,434 @@
           "not_started": 4
         }
       },
-      "deliverables": [\n        \"Complete leave request/approval workflow functional\",\n        \"Auto-accrual calculations working accurately\",\n        \"Manager approval dashboard operational\",\n        \"Integration with existing shift scheduling system\"\n      ],\      "risks": [\n        \"Database migration complexity for existing data\",\n        \"Integration challenges with existing shift system\"\n      ]\n    },\n    \"Phase 2\": {\n      \"name\": \"Attendance & Virtual ID System\",\n      \"description\": \"Digital ID cards with QR codes, GPS-based attendance tracking\",\n      \"priority\": \"Highest\",\n      \"target_weeks\": \"5-8\",\n      \"status\": \"not_started\",\n      \"progress_percentage\": 0,\n      \"dependencies\": [\"Phase 1\"],\n      \"tasks\": {\n        \"backend\": {\n          \"total\": 6,\n          \"completed\": 0,\n          \"in_progress\": 0,\n          \"blocked\": 0,\n          \"not_started\": 6\n        },\n        \"frontend\": {\n          \"total\": 8,\n          \"completed\": 0,\n          \"in_progress\": 0,\n          \"blocked\": 0,\n          \"not_started\": 8\n        }\n      },\n      \"deliverables\": [\n        \"Virtual ID cards generated with QR codes\",\n        \"GPS-based check-in/out functionality working\",\n        \"Attendance pattern analysis and graphs operational\",\n        \"Mobile-responsive design validated\"\n      ]\n    },\n    \"Phase 3\": {\n      \"name\": \"Digital Signature & Compliance\",\n      \"description\": \"Enhanced signature capture, approval workflows, security compliance\",\n      \"priority\": \"High\",\n      \"target_weeks\": \"9-12\",\n      \"status\": \"not_started\",\n      \"progress_percentage\": 0,\n      \"dependencies\": [\"Phase 2\"]\n    },\n    \"Phase 4\": {\n      \"name\": \"Advanced Features & Analytics\",\n      \"description\": \"AI optimization, gamification, advanced analytics\",\n      \"priority\": \"Medium\",\n      \"target_weeks\": \"13-16\",\n      \"status\": \"not_started\",\n      \"progress_percentage\": 0,\n      \"dependencies\": [\"Phase 3\"]\n    }\n  },\n  \"agent_status\": {\n    \"django_backend_expert\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 5,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 15.0,\n      \"availability\": \"available\"\n    },\n    \"django_orm_expert\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 5,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 12.0,\n      \"availability\": \"available\"\n    },\n    \"django_api_developer\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 7,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 20.0,\n      \"availability\": \"available\"\n    },\n    \"react_component_architect\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 8,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 26.0,\n      \"availability\": \"available\"\n    },\n    \"react_state_manager\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 5.5,\n      \"availability\": \"available\"\n    },\n    \"frontend_developer\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 7.0,\n      \"availability\": \"available\"\n    },\n    \"api_architect\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 5.0,\n      \"availability\": \"available\"\n    },\n    \"performance_optimizer\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 5.0,\n      \"availability\": \"available\"\n    },\n    \"documentation_specialist\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 7.0,\n      \"availability\": \"available\"\n    },\n    \"code_reviewer\": {\n      \"status\": \"idle\",\n      \"current_task\": null,\n      \"last_activity\": \"2025-01-13T10:00:00Z\",\n      \"tasks_assigned\": 2,\n      \"tasks_completed\": 0,\n      \"workload_hours_remaining\": 5.5,\n      \"availability\": \"available\"\n    }\n  },\n  \"critical_path\": [\n    \"LeavePolicy model → API endpoints → Frontend form → Manager approval\",\n    \"LeaveBalance calculations → Real-time display → Mobile optimization\",\n    \"Virtual ID generation → QR codes → Offline access → PWA features\"\n  ],\n  \"current_blockers\": [],\n  \"upcoming_milestones\": [\n    {\n      \"name\": \"Phase 1 Backend Foundation Complete\",\n      \"date\": \"2025-01-27T23:59:59Z\",\n      \"dependencies\": [\"TASK-001\", \"TASK-002\", \"TASK-003\", \"TASK-006\", \"TASK-007\"]\n    },\n    {\n      \"name\": \"Phase 1 API Layer Complete\",\n      \"date\": \"2025-02-03T23:59:59Z\",\n      \"dependencies\": [\"TASK-011\", \"TASK-012\", \"TASK-013\", \"TASK-014\"]\n    },\n    {\n      \"name\": \"Phase 1 Frontend Complete\",\n      \"date\": \"2025-02-10T23:59:59Z\",\n      \"dependencies\": [\"TASK-018\", \"TASK-019\", \"TASK-021\", \"TASK-026\"]\n    }\n  ],\n  \"risk_items\": [\n    {\n      \"risk\": \"Database migration complexity for existing data\",\n      \"impact\": \"high\",\n      \"probability\": \"medium\",\n      \"mitigation\": \"Plan thorough testing environment and rollback procedures\",\n      \"owner\": \"django_orm_expert\"\n    },\n    {\n      \"risk\": \"Mobile performance for offline PWA features\",\n      \"impact\": \"medium\",\n      \"probability\": \"medium\",\n      \"mitigation\": \"Early testing on various mobile devices\",\n      \"owner\": \"performance_optimizer\"\n    }\n  ],\n  \"success_metrics\": {\n    \"phase_1_targets\": {\n      \"leave_request_completion_rate\": 95,\n      \"manager_approval_time\": \"< 24 hours\",\n      \"balance_calculation_accuracy\": \"100%\",\n      \"api_response_time\": \"< 200ms\"\n    }\n  },\n  \"communication_log\": [\n    {\n      \"timestamp\": \"2025-01-13T10:00:00Z\",\n      \"message\": \"Agent memory system initialized\",\n      \"type\": \"system\",\n      \"priority\": \"info\"\n    }\n  ]\n}"
+      "deliverables": [
+        "Complete leave request/approval workflow functional",
+        "Auto-accrual calculations working accurately",
+        "Manager approval dashboard operational",
+        "Integration with existing shift scheduling system"
+      ],
+      "risks": [
+        "Database migration complexity for existing data",
+        "Integration challenges with existing shift system"
+      ]
+    },
+    "Mobile Phase 1": {
+      "name": "Mobile Shift Transfer & Notifications",
+      "description": "Shift transfer/exchange functionality and push notification system for mobile app",
+      "priority": "Critical",
+      "target_weeks": "1-3",
+      "status": "in_progress",
+      "progress_percentage": 85,
+      "start_date": "2025-10-26T00:00:00Z",
+      "target_completion": "2025-11-16T23:59:59Z",
+      "actual_completion": null,
+      "research_doc": "thoughts/shared/research/2025-10-26-shift-transfer-mobile-notifications.md",
+      "tasks": {
+        "mobile_shift_transfer": {
+          "total": 8,
+          "completed": 8,
+          "in_progress": 0,
+          "blocked": 0,
+          "not_started": 0,
+          "subtasks": [
+            "Create exchangeService.ts for mobile API calls (COMPLETED)",
+            "Add transfer/release buttons to ShiftDetailsScreen (COMPLETED)",
+            "Create TransferShiftModal component (COMPLETED)",
+            "Create ReleaseShiftModal component (COMPLETED)",
+            "Build AvailableShiftsScreen for claiming (COMPLETED)",
+            "Build ShiftExchangesScreen for history (COMPLETED)",
+            "Implement offline queue with AsyncStorage (COMPLETED)",
+            "Add sync status indicators to UI (COMPLETED)"
+          ]
+        },
+        "backend_api_fixes": {
+          "total": 5,
+          "completed": 5,
+          "in_progress": 0,
+          "blocked": 0,
+          "not_started": 0,
+          "subtasks": [
+            "Fix release shift API field name mismatch (COMPLETED)",
+            "Enhance error message parsing system-wide (COMPLETED)",
+            "Fix available shifts filter logic (COMPLETED)",
+            "Fix admin-created open shifts visibility (COMPLETED)",
+            "Fix claim shift 404 error with action-based queryset (COMPLETED)"
+          ]
+        },
+        "backend_enhancements": {
+          "total": 4,
+          "completed": 2,
+          "in_progress": 0,
+          "blocked": 0,
+          "not_started": 2,
+          "subtasks": [
+            "Add Celery task for exchange expiration (30min before shift)",
+            "Create SNSDeviceToken model and endpoints (COMPLETED)",
+            "Add NotificationPreferences model and API (COMPLETED)",
+            "Create shift reminder Celery task (3h + 45min before)"
+          ]
+        },
+        "notification_system": {
+          "total": 6,
+          "completed": 6,
+          "in_progress": 0,
+          "blocked": 0,
+          "not_started": 0,
+          "subtasks": [
+            "Update NOTIFICATION_CONFIG constants (COMPLETED)",
+            "Create notificationService.ts with permission handling (COMPLETED)",
+            "Implement local notification scheduling (COMPLETED)",
+            "Add SNS token registration on app launch (COMPLETED)",
+            "Setup notification listeners and deep linking (COMPLETED)",
+            "Integrate notification scheduling into shiftsService (COMPLETED)"
+          ]
+        },
+        "testing": {
+          "total": 3,
+          "completed": 0,
+          "in_progress": 0,
+          "blocked": 0,
+          "not_started": 3,
+          "subtasks": [
+            "Test shift transfer workflow end-to-end",
+            "Test notification delivery (local + push)",
+            "Test offline queue sync behavior"
+          ]
+        }
+      },
+      "deliverables": [
+        "✅ Staff can transfer shifts to other staff via mobile app (COMPLETED)",
+        "✅ Staff can release shifts to open pool and claim available shifts (COMPLETED)",
+        "✅ Offline shift requests queue and sync when online (COMPLETED)",
+        "✅ Local notifications (3h + 45min before shift) fully functional (COMPLETED)",
+        "✅ Push token registration and backend API ready for SNS (COMPLETED)",
+        "⏳ Exchanges auto-expire 30 minutes before shift start (PENDING - Celery task)",
+        "✅ Exchange requests show 'Pending Sync' status when offline (COMPLETED)"
+      ],
+      "completed_features": [
+        "Modal UI/UX redesign (full-screen presentation with proper keyboard handling)",
+        "Navigation quick actions for Available Shifts and My Exchanges",
+        "Multi-layer validation (UI, client, backend) for shift operations",
+        "System-wide error message parsing and display",
+        "Proper filtering: 'Released Shifts' vs 'Available Shifts' separation",
+        "Action-based queryset filtering for list vs detail operations",
+        "Client-side validation to prevent releasing/transferring started shifts",
+        "Complete notification service with permission handling and channel creation",
+        "Local notification scheduling (3h advance + 45min final reminders)",
+        "Deep linking from notifications to ShiftDetailsScreen",
+        "Automatic notification cancellation on shift check-in/out/cancel",
+        "Backend API for device token management and notification preferences",
+        "SNSDeviceToken and NotificationPreferences models with full CRUD"
+      ],
+      "bug_fixes": [
+        "Metro bundler module resolution cache issue",
+        "Release shift 400 error due to field name mismatch (shift_id vs original_shift)",
+        "Available shifts showing user's own releases (self-conflict detection)",
+        "Admin-created open shifts not appearing in mobile app",
+        "Admin-created shifts appearing in user's Released Shifts section",
+        "404 error when claiming available shifts (action-based queryset fix)"
+      ],
+      "decisions": [
+        "Manager approval: Web-only (mobile is staff-focused)",
+        "Exchange expiration: 30 minutes before shift start",
+        "Notification service: AWS SNS + Local (dual approach)",
+        "Notification timing: 3 hours before + 45 minutes before",
+        "Offline behavior: Queue requests, sync when online"
+      ],
+      "dependencies": [],
+      "risks": [
+        "AWS SNS configuration and testing complexity",
+        "Offline queue sync edge cases and race conditions",
+        "Background notification delivery on iOS restrictions"
+      ]
+    },
+    "Phase 2": {
+      "name": "Attendance & Virtual ID System",
+      "description": "Digital ID cards with QR codes, GPS-based attendance tracking",
+      "priority": "Highest",
+      "target_weeks": "5-8",
+      "status": "not_started",
+      "progress_percentage": 0,
+      "dependencies": ["Phase 1"],
+      "tasks": {
+        "backend": {
+          "total": 6,
+          "completed": 0,
+          "in_progress": 0,
+          "blocked": 0,
+          "not_started": 6
+        },
+        "frontend": {
+          "total": 8,
+          "completed": 0,
+          "in_progress": 0,
+          "blocked": 0,
+          "not_started": 8
+        }
+      },
+      "deliverables": [
+        "Virtual ID cards generated with QR codes",
+        "GPS-based check-in/out functionality working",
+        "Attendance pattern analysis and graphs operational",
+        "Mobile-responsive design validated"
+      ]
+    },
+    "Phase 3": {
+      "name": "Digital Signature & Compliance",
+      "description": "Enhanced signature capture, approval workflows, security compliance",
+      "priority": "High",
+      "target_weeks": "9-12",
+      "status": "not_started",
+      "progress_percentage": 0,
+      "dependencies": ["Phase 2"]
+    },
+    "Phase 4": {
+      "name": "Advanced Features & Analytics",
+      "description": "AI optimization, gamification, advanced analytics",
+      "priority": "Medium",
+      "target_weeks": "13-16",
+      "status": "not_started",
+      "progress_percentage": 0,
+      "dependencies": ["Phase 3"]
+    }
+  },
+  "agent_status": {
+    "django_backend_expert": {
+      "status": "idle",
+      "current_task": null,
+      "last_activity": "2025-10-26T00:00:00Z",
+      "tasks_assigned": 5,
+      "tasks_completed": 0,
+      "workload_hours_remaining": 15.0,
+      "availability": "available"
+    },
+    "django_orm_expert": {
+      "status": "idle",
+      "current_task": null,
+      "last_activity": "2025-10-26T00:00:00Z",
+      "tasks_assigned": 5,
+      "tasks_completed": 0,
+      "workload_hours_remaining": 12.0,
+      "availability": "available"
+    },
+    "django_api_developer": {
+      "status": "idle",
+      "current_task": null,
+      "last_activity": "2025-10-26T00:00:00Z",
+      "tasks_assigned": 7,
+      "tasks_completed": 0,
+      "workload_hours_remaining": 20.0,
+      "availability": "available"
+    },
+    "react_component_architect": {
+      "status": "idle",
+      "current_task": null,
+      "last_activity": "2025-10-26T00:00:00Z",
+      "tasks_assigned": 8,
+      "tasks_completed": 0,
+      "workload_hours_remaining": 26.0,
+      "availability": "available"
+    },
+    "react_state_manager": {
+      "status": "idle",
+      "current_task": null,
+      "last_activity": "2025-10-26T00:00:00Z",
+      "tasks_assigned": 2,
+      "tasks_completed": 0,
+      "workload_hours_remaining": 5.5,
+      "availability": "available"
+    },
+    "frontend_developer": {
+      "status": "idle",
+      "current_task": null,
+      "last_activity": "2025-10-26T00:00:00Z",
+      "tasks_assigned": 2,
+      "tasks_completed": 0,
+      "workload_hours_remaining": 7.0,
+      "availability": "available"
+    },
+    "api_architect": {
+      "status": "idle",
+      "current_task": null,
+      "last_activity": "2025-10-26T00:00:00Z",
+      "tasks_assigned": 2,
+      "tasks_completed": 0,
+      "workload_hours_remaining": 5.0,
+      "availability": "available"
+    },
+    "performance_optimizer": {
+      "status": "idle",
+      "current_task": null,
+      "last_activity": "2025-10-26T00:00:00Z",
+      "tasks_assigned": 2,
+      "tasks_completed": 0,
+      "workload_hours_remaining": 5.0,
+      "availability": "available"
+    },
+    "documentation_specialist": {
+      "status": "idle",
+      "current_task": null,
+      "last_activity": "2025-10-26T00:00:00Z",
+      "tasks_assigned": 2,
+      "tasks_completed": 0,
+      "workload_hours_remaining": 7.0,
+      "availability": "available"
+    },
+    "code_reviewer": {
+      "status": "idle",
+      "current_task": null,
+      "last_activity": "2025-10-26T00:00:00Z",
+      "tasks_assigned": 2,
+      "tasks_completed": 0,
+      "workload_hours_remaining": 5.5,
+      "availability": "available"
+    }
+  },
+  "critical_path": [
+    "LeavePolicy model → API endpoints → Frontend form → Manager approval",
+    "LeaveBalance calculations → Real-time display → Mobile optimization",
+    "Virtual ID generation → QR codes → Offline access → PWA features",
+    "Mobile shift transfer → Exchange service → Offline queue → Sync logic",
+    "Notification permissions → Local scheduling → SNS integration → Deep linking"
+  ],
+  "current_blockers": [],
+  "upcoming_milestones": [
+    {
+      "name": "Phase 1 Backend Foundation Complete",
+      "date": "2025-01-27T23:59:59Z",
+      "dependencies": ["TASK-001", "TASK-002", "TASK-003", "TASK-006", "TASK-007"]
+    },
+    {
+      "name": "Phase 1 API Layer Complete",
+      "date": "2025-02-03T23:59:59Z",
+      "dependencies": ["TASK-011", "TASK-012", "TASK-013", "TASK-014"]
+    },
+    {
+      "name": "Phase 1 Frontend Complete",
+      "date": "2025-02-10T23:59:59Z",
+      "dependencies": ["TASK-018", "TASK-019", "TASK-021", "TASK-026"]
+    },
+    {
+      "name": "Mobile Phase 1 - Shift Transfer Complete",
+      "date": "2025-11-09T23:59:59Z",
+      "dependencies": ["MOB-001", "MOB-002", "MOB-003", "MOB-004"]
+    },
+    {
+      "name": "Mobile Phase 1 - Notifications Complete",
+      "date": "2025-11-16T23:59:59Z",
+      "dependencies": ["MOB-005", "MOB-006", "MOB-007", "MOB-008"]
+    }
+  ],
+  "risk_items": [
+    {
+      "risk": "Database migration complexity for existing data",
+      "impact": "high",
+      "probability": "medium",
+      "mitigation": "Plan thorough testing environment and rollback procedures",
+      "owner": "django_orm_expert"
+    },
+    {
+      "risk": "Mobile performance for offline PWA features",
+      "impact": "medium",
+      "probability": "medium",
+      "mitigation": "Early testing on various mobile devices",
+      "owner": "performance_optimizer"
+    },
+    {
+      "risk": "AWS SNS configuration and testing complexity",
+      "impact": "high",
+      "probability": "medium",
+      "mitigation": "Start with local notifications first, add SNS as enhancement",
+      "owner": "django_api_developer",
+      "phase": "Mobile Phase 1"
+    },
+    {
+      "risk": "Offline queue sync race conditions",
+      "impact": "medium",
+      "probability": "high",
+      "mitigation": "Implement idempotency keys and conflict resolution",
+      "owner": "frontend_developer",
+      "phase": "Mobile Phase 1"
+    },
+    {
+      "risk": "iOS background notification restrictions",
+      "impact": "medium",
+      "probability": "high",
+      "mitigation": "Rely primarily on local notifications with SNS as fallback",
+      "owner": "frontend_developer",
+      "phase": "Mobile Phase 1"
+    }
+  ],
+  "success_metrics": {
+    "phase_1_targets": {
+      "leave_request_completion_rate": 95,
+      "manager_approval_time": "< 24 hours",
+      "balance_calculation_accuracy": "100%",
+      "api_response_time": "< 200ms"
+    },
+    "mobile_phase_1_targets": {
+      "shift_transfer_success_rate": 95,
+      "notification_delivery_rate": 98,
+      "offline_sync_success_rate": 90,
+      "exchange_expiration_accuracy": "100%",
+      "avg_notification_delivery_time": "< 30 seconds"
+    }
+  },
+  "communication_log": [
+    {
+      "timestamp": "2025-01-13T10:00:00Z",
+      "message": "Agent memory system initialized",
+      "type": "system",
+      "priority": "info"
+    },
+    {
+      "timestamp": "2025-10-26T00:00:00Z",
+      "message": "Mobile Phase 1 added: Shift Transfer & Notifications",
+      "type": "system",
+      "priority": "info",
+      "details": "Research complete, implementation starting with shift transfer service"
+    },
+    {
+      "timestamp": "2025-10-26T02:00:00Z",
+      "message": "Mobile Shift Transfer - 100% Complete (8/8 tasks)",
+      "type": "milestone",
+      "priority": "high",
+      "details": "All mobile shift transfer features completed: TransferShiftModal, ReleaseShiftModal, AvailableShiftsScreen, ShiftExchangesScreen, offline queue, sync indicators"
+    },
+    {
+      "timestamp": "2025-10-26T02:00:00Z",
+      "message": "Backend API Fixes - 100% Complete (5/5 fixes)",
+      "type": "milestone",
+      "priority": "high",
+      "details": "Fixed: release shift field mismatch, error message parsing, available shifts filter, admin open shifts visibility, claim shift 404 error"
+    },
+    {
+      "timestamp": "2025-10-26T02:00:00Z",
+      "message": "Mobile Phase 1 Progress: 48% (13/27 tasks complete)",
+      "type": "progress",
+      "priority": "info",
+      "details": "Shift transfer module complete. Remaining: backend enhancements (Celery tasks, SNS), notification system, testing"
+    },
+    {
+      "timestamp": "2025-10-26T03:30:00Z",
+      "message": "Notification System - 100% Complete (6/6 tasks)",
+      "type": "milestone",
+      "priority": "high",
+      "details": "Full notification system implemented: notificationService.ts, local scheduling (3h + 45min), deep linking, permission handling, backend models (SNSDeviceToken, NotificationPreferences), API endpoints for device token management"
+    },
+    {
+      "timestamp": "2025-10-26T03:30:00Z",
+      "message": "Backend Enhancements - 50% Complete (2/4 tasks)",
+      "type": "progress",
+      "priority": "info",
+      "details": "SNSDeviceToken and NotificationPreferences models created with full CRUD. Remaining: Celery tasks for auto-expiry and shift reminders"
+    },
+    {
+      "timestamp": "2025-10-26T03:30:00Z",
+      "message": "Mobile Phase 1 Progress: 85% (23/27 tasks complete)",
+      "type": "progress",
+      "priority": "high",
+      "details": "Major milestone: Local notifications fully functional, backend API ready. Remaining: 2 Celery tasks for automation, testing"
+    }
+  ]
+}

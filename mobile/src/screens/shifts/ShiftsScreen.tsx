@@ -4,9 +4,9 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { View, FlatList, RefreshControl, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, FlatList, RefreshControl, StyleSheet, ActivityIndicator, TouchableOpacity, Text } from 'react-native';
 import { Container, Heading2, Body, Card } from '@components/ui';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppSelector, useAppDispatch } from '../../hooks/useRedux';
 import {
   selectUpcomingShifts,
@@ -201,6 +201,37 @@ export const ShiftsScreen = () => {
           />
         </View>
 
+        {/* Quick Actions */}
+        <View style={styles.quickActions}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('AvailableShifts')}
+          >
+            <View style={styles.actionIconContainer}>
+              <MaterialCommunityIcons name="calendar-search" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.actionTextContainer}>
+              <Text style={styles.actionTitle}>Available Shifts</Text>
+              <Text style={styles.actionSubtitle}>Browse open shifts to claim</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.text.secondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('ShiftExchanges')}
+          >
+            <View style={styles.actionIconContainer}>
+              <MaterialCommunityIcons name="swap-horizontal" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.actionTextContainer}>
+              <Text style={styles.actionTitle}>My Exchanges</Text>
+              <Text style={styles.actionSubtitle}>View transfer history</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.text.secondary} />
+          </TouchableOpacity>
+        </View>
+
         {/* Shifts List */}
         <FlatList
           data={filteredShifts}
@@ -240,6 +271,44 @@ const styles = StyleSheet.create({
   },
   title: {
     marginBottom: spacing.md,
+  },
+  quickActions: {
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+    gap: spacing.xs,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background.secondary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: 12,
+    gap: spacing.md,
+  },
+  actionIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionTextContainer: {
+    flex: 1,
+  },
+  actionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: 2,
+  },
+  actionSubtitle: {
+    fontSize: 12,
+    color: colors.text.secondary,
   },
   listContent: {
     padding: spacing.xl,

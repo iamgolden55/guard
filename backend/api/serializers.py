@@ -10,7 +10,9 @@ from .models import (
     WorkingHoursRegulation, ComplianceProfile, ComplianceViolation, WorkingHoursMetrics,
     ReportTemplate, ReportJob,
     # Onboarding models
-    SecurityCompany, CompanyOnboarding, CompanyIntegration, UserCompanyMembership
+    SecurityCompany, CompanyOnboarding, CompanyIntegration, UserCompanyMembership,
+    # Notification models
+    SNSDeviceToken, NotificationPreferences
 )
 
 User = get_user_model() # Ensure User model is fetched
@@ -2202,5 +2204,86 @@ class CompanyIntegrationSerializer(serializers.ModelSerializer):
 
         if errors:
             raise serializers.ValidationError(errors)
+
+        return data
+
+
+# =====================================================
+# NOTIFICATION SERIALIZERS
+# =====================================================
+
+class SNSDeviceTokenSerializer(serializers.ModelSerializer):
+    """Serializer for device push notification tokens"""
+    
+    class Meta:
+        model = SNSDeviceToken
+        fields = [
+            'id', 'user', 'token', 'platform', 'device_id',
+            'endpoint_arn', 'is_active', 'created_at', 'updated_at', 'last_used_at'
+        ]
+        read_only_fields = ['id', 'user', 'endpoint_arn', 'created_at', 'updated_at', 'last_used_at']
+    
+    def create(self, validated_data):
+        """Create or update device token for the user"""
+        user = self.context['request'].user
+        token = validated_data['token']
+        
+        # Check if token already exists for this user
+        existing_token = SNSDeviceToken.objects.filter(
+            user=user,
+            token=token
+        ).first()
+        
+        if existing_token:
+            # Update existing token
+            existing_token.is_active = True
+            existing_token.platform = validated_data.get('platform', existing_token.platform)
+            existing_token.device_id = validated_data.get('device_id', existing_token.device_id)
+            existing_token.activate()
+            return existing_token
+        
+        # Create new token
+        validated_data['user'] = user
+        return super().create(validated_data)
+
+
+class NotificationPreferencesSerializer(serializers.ModelSerializer):
+    """Serializer for user notification preferences"""
+    
+    class Meta:
+        model = NotificationPreferences
+        fields = [
+            'id', 'user', 'shift_reminders_enabled', 'advance_reminder_hours', 
+            'final_reminder_minutes', 'exchange_notifications_enabled',
+            'exchange_request_received', 'exchange_request_accepted', 
+            'exchange_request_approved', 'available_shifts_notifications_enabled',
+            'new_available_shift', 'incident_alerts_enabled', 
+            'sync_notifications_enabled', 'sync_errors_only',
+            'quiet_hours_enabled', 'quiet_hours_start', 'quiet_hours_end',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+    
+    def validate(self, data):
+        """Validate notification preferences"""
+        # Validate quiet hours
+        if data.get('quiet_hours_enabled'):
+            if not data.get('quiet_hours_start') or not data.get('quiet_hours_end'):
+                raise serializers.ValidationError(
+                    "Quiet hours start and end times are required when quiet hours are enabled"
+                )
+        
+        # Validate reminder times
+        if 'advance_reminder_hours' in data:
+            if not (1 <= data['advance_reminder_hours'] <= 24):
+                raise serializers.ValidationError(
+                    "Advance reminder hours must be between 1 and 24"
+                )
+        
+        if 'final_reminder_minutes' in data:
+            if not (15 <= data['final_reminder_minutes'] <= 180):
+                raise serializers.ValidationError(
+                    "Final reminder minutes must be between 15 and 180"
+                )
 
         return data

@@ -5,19 +5,32 @@
  */
 
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 import authService from './authService';
 
 /**
  * Custom Error Classes for API
  */
 export class ApiError extends Error {
+  public response?: any;
+
   constructor(
     public statusCode: number,
     public statusText: string,
-    public endpoint: string
+    public endpoint: string,
+    responseData?: any
   ) {
-    super(`HTTP ${statusCode}: ${statusText}`);
+    // Use response data message if available, otherwise use statusText
+    const errorMessage = responseData?.detail ||
+                        responseData?.error ||
+                        responseData?.message ||
+                        (Array.isArray(responseData) ? responseData.join(', ') : null) ||
+                        (typeof responseData === 'string' ? responseData : null) ||
+                        statusText;
+
+    super(`HTTP ${statusCode}: ${errorMessage}`);
     this.name = 'ApiError';
+    this.response = responseData;
   }
 }
 
@@ -35,12 +48,10 @@ export class NetworkError extends Error {
   }
 }
 
-// API Base URL (points to /api, endpoints specify their own paths)
-// For physical devices, use your computer's IP address instead of localhost
-// Run 'ipconfig getifaddr en0' on Mac to find your IP
-const API_BASE_URL = __DEV__
-  ? 'http://172.16.32.165:8000'  // Base URL without /api - endpoints will specify full paths
-  : 'https://your-production-api.com';
+// API Base URL - Read from environment configuration (.env file)
+// To change the backend URL, update the .env file in the mobile directory
+// Find your IP with: ipconfig getifaddr en0 (Mac) or ipconfig (Windows)
+const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
 
 class ApiService {
   private baseUrl: string;
@@ -109,7 +120,14 @@ class ApiService {
       }
 
       if (!response.ok) {
-        throw new ApiError(response.status, response.statusText, endpoint);
+        // Try to parse error response body
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = response.statusText;
+        }
+        throw new ApiError(response.status, response.statusText, endpoint, errorData);
       }
 
       return response.json();
@@ -156,7 +174,15 @@ class ApiService {
       }
 
       if (!response.ok) {
-        throw new ApiError(response.status, response.statusText, endpoint);
+        // Try to parse error response body
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          // If response isn't JSON, use statusText
+          errorData = response.statusText;
+        }
+        throw new ApiError(response.status, response.statusText, endpoint, errorData);
       }
 
       return response.json();
@@ -203,7 +229,14 @@ class ApiService {
       }
 
       if (!response.ok) {
-        throw new ApiError(response.status, response.statusText, endpoint);
+        // Try to parse error response body
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = response.statusText;
+        }
+        throw new ApiError(response.status, response.statusText, endpoint, errorData);
       }
 
       return response.json();
@@ -250,7 +283,14 @@ class ApiService {
       }
 
       if (!response.ok) {
-        throw new ApiError(response.status, response.statusText, endpoint);
+        // Try to parse error response body
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = response.statusText;
+        }
+        throw new ApiError(response.status, response.statusText, endpoint, errorData);
       }
 
       return response.json();

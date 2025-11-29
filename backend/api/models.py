@@ -1575,23 +1575,23 @@ class OpenShiftRequest(models.Model):
     @classmethod
     def get_available_shifts(cls, staff_user):
         """Get all open shifts that a staff member is qualified for"""
-        # Get all open shift requests
-        open_requests = cls.objects.filter(status='open')
-        
+        # Get all open shift requests (exclude shifts the user released themselves)
+        open_requests = cls.objects.filter(status='open').exclude(requesting_user=staff_user)
+
         # Filter to shifts the staff member is qualified for
         qualified_shifts = []
         for request in open_requests:
             if staff_user.has_security_role(request.original_shift.required_security_role):
-                # Check for schedule conflicts
+                # Check for schedule conflicts (exclude the shift being offered)
                 conflicts = Shift.objects.filter(
                     staff_user=staff_user,
                     start_time__lt=request.original_shift.end_time,
                     end_time__gt=request.original_shift.start_time
-                ).exclude(status__in=['cancelled', 'rejected'])
-                
+                ).exclude(status__in=['cancelled', 'rejected']).exclude(id=request.original_shift.id)
+
                 if not conflicts.exists():
                     qualified_shifts.append(request)
-                    
+
         return qualified_shifts
 
 class Shift(models.Model):
@@ -4857,3 +4857,248 @@ class ExportConfiguration(models.Model):
                 export_format=export_format,
                 is_default=True
             )
+
+
+# =====================================================
+# NOTIFICATION SYSTEM MODELS
+# =====================================================
+
+class SNSDeviceToken(models.Model):
+    """
+    Stores mobile device push notification tokens for AWS SNS integration.
+    Each user can have multiple devices registered.
+    """
+    PLATFORM_CHOICES = [
+        ('ios', 'iOS'),
+        ('android', 'Android'),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='device_tokens',
+        help_text="User who owns this device"
+    )
+    token = models.CharField(
+        max_length=500,
+        unique=True,
+        help_text="Expo push token for the device"
+    )
+    platform = models.CharField(
+        max_length=10,
+        choices=PLATFORM_CHOICES,
+        help_text="Device platform (iOS or Android)"
+    )
+    device_id = models.CharField(
+        max_length=255,
+        help_text="Unique device identifier"
+    )
+    endpoint_arn = models.CharField(
+        max_length=500,
+        blank=True,
+        null=True,
+        help_text="AWS SNS Platform Endpoint ARN (optional, for future SNS integration)"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this device token is active and should receive notifications"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Last time a notification was sent to this device"
+    )
+
+    class Meta:
+        db_table = 'sns_device_token'
+        verbose_name = 'Device Push Token'
+        verbose_name_plural = 'Device Push Tokens'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+            models.Index(fields=['token']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.platform} ({self.device_id})"
+
+    def save(self, *args, **kwargs):
+        """Update last_used_at when token is saved"""
+        if not self.pk:  # New token
+            self.last_used_at = timezone.now()
+        super().save(*args, **kwargs)
+
+    def deactivate(self):
+        """Deactivate this device token"""
+        self.is_active = False
+        self.save()
+
+    def activate(self):
+        """Activate this device token"""
+        self.is_active = True
+        self.last_used_at = timezone.now()
+        self.save()
+
+
+class NotificationPreferences(models.Model):
+    """
+    User notification preferences for controlling which notifications they receive
+    and when they receive them.
+    """
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='notification_preferences',
+        help_text="User these preferences belong to"
+    )
+    
+    # Shift reminder settings
+    shift_reminders_enabled = models.BooleanField(
+        default=True,
+        help_text="Enable/disable shift reminder notifications"
+    )
+    advance_reminder_hours = models.IntegerField(
+        default=3,
+        validators=[MinValueValidator(1), MaxValueValidator(24)],
+        help_text="Hours before shift to send advance reminder (1-24)"
+    )
+    final_reminder_minutes = models.IntegerField(
+        default=45,
+        validators=[MinValueValidator(15), MaxValueValidator(180)],
+        help_text="Minutes before shift to send final reminder (15-180)"
+    )
+    
+    # Shift exchange settings
+    exchange_notifications_enabled = models.BooleanField(
+        default=True,
+        help_text="Enable/disable shift exchange notifications"
+    )
+    exchange_request_received = models.BooleanField(
+        default=True,
+        help_text="Notify when someone requests to exchange shifts"
+    )
+    exchange_request_accepted = models.BooleanField(
+        default=True,
+        help_text="Notify when your exchange request is accepted"
+    )
+    exchange_request_approved = models.BooleanField(
+        default=True,
+        help_text="Notify when manager approves your exchange"
+    )
+    
+    # Available shift settings
+    available_shifts_notifications_enabled = models.BooleanField(
+        default=True,
+        help_text="Enable/disable available shift notifications"
+    )
+    new_available_shift = models.BooleanField(
+        default=True,
+        help_text="Notify when new shifts become available to claim"
+    )
+    
+    # Incident and alert settings
+    incident_alerts_enabled = models.BooleanField(
+        default=True,
+        help_text="Enable/disable critical incident alerts"
+    )
+    
+    # Sync status settings
+    sync_notifications_enabled = models.BooleanField(
+        default=False,
+        help_text="Enable/disable sync status notifications"
+    )
+    sync_errors_only = models.BooleanField(
+        default=True,
+        help_text="Only notify on sync errors, not successful syncs"
+    )
+    
+    # Quiet hours
+    quiet_hours_enabled = models.BooleanField(
+        default=False,
+        help_text="Enable quiet hours (no notifications during these times)"
+    )
+    quiet_hours_start = models.TimeField(
+        null=True,
+        blank=True,
+        help_text="Start time for quiet hours (e.g., 22:00)"
+    )
+    quiet_hours_end = models.TimeField(
+        null=True,
+        blank=True,
+        help_text="End time for quiet hours (e.g., 07:00)"
+    )
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'notification_preferences'
+        verbose_name = 'Notification Preferences'
+        verbose_name_plural = 'Notification Preferences'
+
+    def __str__(self):
+        return f"{self.user.username} - Notification Preferences"
+
+    @classmethod
+    def get_or_create_for_user(cls, user):
+        """Get or create notification preferences for a user with defaults"""
+        preferences, created = cls.objects.get_or_create(
+            user=user,
+            defaults={
+                'shift_reminders_enabled': True,
+                'advance_reminder_hours': 3,
+                'final_reminder_minutes': 45,
+                'exchange_notifications_enabled': True,
+                'available_shifts_notifications_enabled': True,
+                'incident_alerts_enabled': True,
+                'sync_notifications_enabled': False,
+            }
+        )
+        return preferences
+
+    def is_in_quiet_hours(self):
+        """Check if current time is within quiet hours"""
+        if not self.quiet_hours_enabled or not self.quiet_hours_start or not self.quiet_hours_end:
+            return False
+        
+        now = timezone.localtime().time()
+        
+        # Handle quiet hours that span midnight
+        if self.quiet_hours_start > self.quiet_hours_end:
+            return now >= self.quiet_hours_start or now <= self.quiet_hours_end
+        else:
+            return self.quiet_hours_start <= now <= self.quiet_hours_end
+
+    def should_send_notification(self, notification_type: str) -> bool:
+        """
+        Check if a notification of the given type should be sent based on user preferences.
+        
+        Args:
+            notification_type: Type of notification (e.g., 'shift_reminder', 'exchange_request')
+        
+        Returns:
+            bool: True if notification should be sent, False otherwise
+        """
+        # Check quiet hours first
+        if self.is_in_quiet_hours():
+            # Only send critical incident alerts during quiet hours
+            if notification_type != 'incident_alert':
+                return False
+        
+        # Check specific notification type preferences
+        if notification_type == 'shift_reminder':
+            return self.shift_reminders_enabled
+        elif notification_type in ['exchange_request', 'exchange_accepted', 'exchange_approved']:
+            return self.exchange_notifications_enabled
+        elif notification_type == 'available_shift':
+            return self.available_shifts_notifications_enabled
+        elif notification_type == 'incident_alert':
+            return self.incident_alerts_enabled
+        elif notification_type == 'sync_status':
+            return self.sync_notifications_enabled
+        
+        # Default to True for unknown notification types
+        return True

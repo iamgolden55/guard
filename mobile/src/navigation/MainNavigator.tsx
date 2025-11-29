@@ -12,14 +12,26 @@ import type { MainStackParamList } from '../types/navigation';
 import { TabNavigator } from './TabNavigator';
 
 // Components
-import { NetworkStatusBanner } from '../components/common/NetworkStatusBanner';
+import { NetworkStatusBanner, SyncStatusBanner } from '../components/common';
 
 // Lazy-load Modal Screens to prevent premature native module access
 const ShiftDetailsScreen = lazy(() => import('../screens/shifts/ShiftDetailsScreen').then(m => ({ default: m.ShiftDetailsScreen })));
 const CheckInFlowScreen = lazy(() => import('../screens/shifts/CheckInFlowScreen').then(m => ({ default: m.CheckInFlowScreen })));
+const AvailableShiftsScreen = lazy(() => import('../screens/shifts/AvailableShiftsScreen').then(m => ({ default: m.AvailableShiftsScreen })));
+const ShiftExchangesScreen = lazy(() => import('../screens/shifts/ShiftExchangesScreen').then(m => ({ default: m.ShiftExchangesScreen })));
 const VenueTermsScreen = lazy(() => import('../screens/venue/VenueTermsScreen').then(m => ({ default: m.VenueTermsScreen })));
 const VirtualIDScreen = lazy(() => import('../screens/profile/VirtualIDScreen').then(m => ({ default: m.VirtualIDScreen })));
 const EditProfileScreen = lazy(() => import('../screens/profile/EditProfileScreen').then(m => ({ default: m.EditProfileScreen })));
+const SyncQueueScreen = lazy(() => import('../screens/profile/SyncQueueScreen').then(m => ({ default: m.SyncQueueScreen })));
+
+// Test/Debug Screens
+const NotificationTestScreen = lazy(() => import('../screens/NotificationTestScreen').then(m => ({ default: m.NotificationTestScreen })));
+
+// Leave Management Screens
+const LeaveBalanceScreen = lazy(() => import('../screens/leave/LeaveBalanceScreen').then(m => ({ default: m.LeaveBalanceScreen })));
+const LeaveRequestScreen = lazy(() => import('../screens/leave/LeaveRequestScreen').then(m => ({ default: m.LeaveRequestScreen })));
+const LeaveHistoryScreen = lazy(() => import('../screens/leave/LeaveHistoryScreen').then(m => ({ default: m.LeaveHistoryScreen })));
+const LeaveRequestDetailScreen = lazy(() => import('../screens/leave/LeaveRequestDetailScreen').then(m => ({ default: m.LeaveRequestDetailScreen })));
 
 // Incident Screens
 const IncidentReportScreen = lazy(() => import('../screens/incidents/IncidentReportScreen').then(m => ({ default: m.IncidentReportScreen })));
@@ -53,6 +65,7 @@ export const MainNavigator = () => {
   return (
     <View style={styles.container}>
       <NetworkStatusBanner />
+      <SyncStatusBanner />
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
@@ -68,6 +81,12 @@ export const MainNavigator = () => {
           </Stack.Screen>
           <Stack.Screen name="CheckInFlow">
             {(props) => <LazyScreen component={CheckInFlowScreen} {...props} />}
+          </Stack.Screen>
+          <Stack.Screen name="AvailableShifts">
+            {(props) => <LazyScreen component={AvailableShiftsScreen} {...props} />}
+          </Stack.Screen>
+          <Stack.Screen name="ShiftExchanges">
+            {(props) => <LazyScreen component={ShiftExchangesScreen} {...props} />}
           </Stack.Screen>
           <Stack.Screen name="VenueTerms">
             {(props) => <LazyScreen component={VenueTermsScreen} {...props} />}
@@ -93,6 +112,36 @@ export const MainNavigator = () => {
           </Stack.Screen>
           <Stack.Screen name="EditProfile">
             {(props) => <LazyScreen component={EditProfileScreen} {...props} />}
+          </Stack.Screen>
+          <Stack.Screen name="SyncQueue">
+            {(props) => <LazyScreen component={SyncQueueScreen} {...props} />}
+          </Stack.Screen>
+
+          {/* Leave Management Screens */}
+          <Stack.Screen name="LeaveBalance">
+            {(props) => <LazyScreen component={LeaveBalanceScreen} {...props} />}
+          </Stack.Screen>
+          <Stack.Screen name="LeaveRequest">
+            {(props) => <LazyScreen component={LeaveRequestScreen} {...props} />}
+          </Stack.Screen>
+          <Stack.Screen name="LeaveHistory">
+            {(props) => <LazyScreen component={LeaveHistoryScreen} {...props} />}
+          </Stack.Screen>
+          <Stack.Screen name="LeaveRequestDetail">
+            {(props) => <LazyScreen component={LeaveRequestDetailScreen} {...props} />}
+          </Stack.Screen>
+
+          {/* Test/Debug Screens */}
+          <Stack.Screen
+            name="NotificationTest"
+            options={{
+              headerShown: true,
+              headerTitle: 'Notification Testing',
+              headerBackTitle: 'Back',
+              presentation: 'card',
+            }}
+          >
+            {(props) => <LazyScreen component={NotificationTestScreen} {...props} />}
           </Stack.Screen>
 
           {/* Incident Screens */}

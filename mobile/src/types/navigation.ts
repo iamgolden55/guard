@@ -24,7 +24,9 @@ export type AuthStackParamList = {
 export type MainStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList>;
   // Modal Screens
-  ShiftDetails: { shift: Shift };
+  ShiftDetails: { shift?: Shift; shiftId?: number }; // Accept either full shift object OR just ID
+  AvailableShifts: undefined;
+  ShiftExchanges: undefined;
   CheckInFlow: {
     shiftId: number;
     venueId: number;
@@ -62,6 +64,12 @@ export type MainStackParamList = {
   EditProfile: undefined;
   NotificationSettings: undefined;
   SyncQueue: undefined;
+  NotificationTest: undefined;
+  // Leave Management
+  LeaveBalance: undefined;
+  LeaveRequest: undefined;
+  LeaveHistory: undefined;
+  LeaveRequestDetail: { requestId: number };
 };
 
 // Tab Navigator (bottom tabs)
