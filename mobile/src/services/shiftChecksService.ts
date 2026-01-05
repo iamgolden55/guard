@@ -32,6 +32,20 @@ export interface CapacityCheck extends BaseCheck {
   action_taken?: string;
 }
 
+/**
+ * Toilet Check Interface
+ *
+ * Note: The 'condition' field uses mobile-friendly values in the UI:
+ * - 'clean' (maps to 'excellent' in backend)
+ * - 'needs_cleaning' (maps to 'fair' in backend)
+ * - 'requires_maintenance' (maps to 'critical' in backend)
+ *
+ * The submitToiletCheck method handles the mapping automatically.
+ * Backend accepts: 'excellent' | 'good' | 'fair' | 'poor' | 'critical'
+ *
+ * Also note: supplies_needed is an array in the mobile app but gets converted
+ * to a comma-separated string when sending to the backend.
+ */
 export interface ToiletCheck extends BaseCheck {
   location_name: string;
   condition: 'clean' | 'needs_cleaning' | 'requires_maintenance';
@@ -182,13 +196,23 @@ class ShiftChecksService {
     notes?: string;
   }): Promise<ToiletCheck> {
     try {
+      // Map mobile condition values to backend's expected values
+      const conditionMap: Record<string, string> = {
+        'clean': 'excellent',
+        'needs_cleaning': 'fair',
+        'requires_maintenance': 'critical'
+      };
+
       const payload: any = {
         shift: data.shift,
         location_name: data.location_name.trim(),
-        condition: data.condition,
+        condition: conditionMap[data.condition] || 'good', // Map to backend values
         needs_attention: data.needs_attention,
         is_out_of_order: data.is_out_of_order,
-        supplies_needed: data.supplies_needed,
+        // Convert supplies array to comma-separated string for backend
+        supplies_needed: data.supplies_needed.length > 0
+          ? data.supplies_needed.join(', ')
+          : '',
         timestamp: new Date().toISOString(),
       };
 
@@ -235,22 +259,41 @@ class ShiftChecksService {
   }> {
     try {
       // Fetch all check types in parallel
-      const [fireExitChecks, capacityChecks, toiletChecks] = await Promise.all([
+      const [fireExitChecks, capacityChecks, toiletChecksResponse] = await Promise.all([
         apiService.get<{ results: FireExitCheck[] }>(
           `/api/v1/fire-exit-checks/?shift=${shiftId}`
         ),
         apiService.get<{ results: CapacityCheck[] }>(
           `/api/v1/capacity-checks/?shift=${shiftId}`
         ),
-        apiService.get<{ results: ToiletCheck[] }>(
+        apiService.get<{ results: any[] }>(
           `/api/v1/toilet-checks/?shift=${shiftId}`
         ),
       ]);
 
+      // Map backend condition values back to mobile-friendly values
+      const reverseConditionMap: Record<string, 'clean' | 'needs_cleaning' | 'requires_maintenance'> = {
+        'excellent': 'clean',
+        'good': 'clean',
+        'fair': 'needs_cleaning',
+        'poor': 'needs_cleaning',
+        'critical': 'requires_maintenance'
+      };
+
+      // Transform toilet checks to match mobile interface
+      const toiletChecks: ToiletCheck[] = (toiletChecksResponse.results || []).map((check: any) => ({
+        ...check,
+        condition: reverseConditionMap[check.condition] || 'clean',
+        // Convert supplies_needed string back to array
+        supplies_needed: check.supplies_needed
+          ? check.supplies_needed.split(',').map((s: string) => s.trim()).filter(Boolean)
+          : []
+      }));
+
       return {
         fireExitChecks: fireExitChecks.results || [],
         capacityChecks: capacityChecks.results || [],
-        toiletChecks: toiletChecks.results || [],
+        toiletChecks,
       };
     } catch (error) {
       console.error('[ShiftChecksService] Error fetching shift checks:', error);

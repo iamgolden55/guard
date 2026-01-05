@@ -5,7 +5,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 from .views import (
-    LoginView,
+    LoginView, LogoutView, CookieTokenRefreshView,
     UserViewSet, StaffProfileViewSet, EmergencyContactViewSet,
     BankDetailsViewSet, SIALicenseViewSet, StaffAvailabilityViewSet,
     VenueViewSet, VenueTermsAcceptanceViewSet, PreferredVenueViewSet,
@@ -29,6 +29,8 @@ from .views import (
     CompanyRecruitmentViewSet,
     # Notification system views
     SNSDeviceTokenViewSet, NotificationPreferencesViewSet,
+    # Password reset views
+    PasswordResetRequestView, PasswordResetValidateView, PasswordResetConfirmView,
 )
 
 router = DefaultRouter()
@@ -85,8 +87,11 @@ urlpatterns = [
     path('', include(router.urls)),
     path('auth/', include('rest_framework.urls')),
     path('login/', LoginView.as_view(), name='login'),
+    path('logout/', LogoutView.as_view(), name='logout'),
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # Sprint 3: Cookie-based token refresh (XSS protection)
+    path('auth/refresh/', CookieTokenRefreshView.as_view(), name='cookie_token_refresh'),
     path('deputy/config/', DeputyConfigView.as_view(), name='deputy-config'),
     path('settings/', SystemSettingsView.as_view(), name='system-settings'),
     path('profiles/me', my_profile, name='my-profile'),
@@ -98,4 +103,8 @@ urlpatterns = [
     # Compliance system endpoints
     path('compliance/check/', check_compliance, name='compliance-check'),
     path('compliance/alerts/', compliance_alerts, name='compliance-alerts'),
+    # Password reset endpoints
+    path('password-reset/request/', PasswordResetRequestView.as_view(), name='password-reset-request'),
+    path('password-reset/validate/<uuid:token>/', PasswordResetValidateView.as_view(), name='password-reset-validate'),
+    path('password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
 ] 

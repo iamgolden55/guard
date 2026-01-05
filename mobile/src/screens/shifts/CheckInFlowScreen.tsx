@@ -3,7 +3,7 @@
  * Multi-step check-in flow with location verification, photo, and signature
  */
 
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,9 +16,7 @@ import { colors, spacing } from '../../theme';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
-// Lazy load camera components to prevent premature native module access
-const CameraView = lazy(() => import('../../components/camera').then(m => ({ default: m.CameraView })));
-const PhotoPreview = lazy(() => import('../../components/camera').then(m => ({ default: m.PhotoPreview })));
+import { CameraView, PhotoPreview } from '../../components/camera';
 import { SignatureCanvas } from '../../components/signature';
 import { locationService, LocationCoordinates } from '../../services/locationService';
 import { photoService } from '../../services/photoService';
@@ -368,42 +366,20 @@ export const CheckInFlowScreen: React.FC<CheckInFlowScreenProps> = ({ route }) =
 
       case 'camera':
         return (
-          <Suspense
-            fallback={
-              <Container>
-                <View style={styles.stepContainer}>
-                  <ActivityIndicator size="large" color={colors.primary} />
-                  <Heading2 style={styles.stepTitle}>Loading Camera</Heading2>
-                </View>
-              </Container>
-            }
-          >
-            <CameraView
-              purpose="check-in"
-              onCapture={handlePhotoCapture}
-              onClose={() => navigation.goBack()}
-            />
-          </Suspense>
+          <CameraView
+            purpose="check-in"
+            onCapture={handlePhotoCapture}
+            onClose={() => navigation.goBack()}
+          />
         );
 
       case 'photo_preview':
         return photoUri ? (
-          <Suspense
-            fallback={
-              <Container>
-                <View style={styles.stepContainer}>
-                  <ActivityIndicator size="large" color={colors.primary} />
-                  <Heading2 style={styles.stepTitle}>Loading Preview</Heading2>
-                </View>
-              </Container>
-            }
-          >
-            <PhotoPreview
-              photoUri={photoUri}
-              onConfirm={handlePhotoConfirm}
-              onRetake={handlePhotoRetake}
-            />
-          </Suspense>
+          <PhotoPreview
+            photoUri={photoUri}
+            onConfirm={handlePhotoConfirm}
+            onRetake={handlePhotoRetake}
+          />
         ) : null;
 
       case 'signature':

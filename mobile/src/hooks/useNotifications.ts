@@ -36,9 +36,9 @@ export const useNotifications = () => {
         console.log('[Notifications] ✅ Channels created');
 
         // Step 3: Register push token (OPTIONAL - only for remote push)
-        console.log('[Notifications] Step 3/4: Registering push token (optional)...');
-        await notificationService.registerPushToken();
-        // Push token registration logs its own status
+        // NOTE: Push token registration now happens after login in useAuth hook
+        console.log('[Notifications] Step 3/4: Push token will be registered after login');
+        // Push token registration moved to useAuth to ensure authentication
 
         // Step 4: Setup notification listeners
         console.log('[Notifications] Step 4/4: Setting up notification listeners...');

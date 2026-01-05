@@ -482,7 +482,21 @@ const ShiftScheduling: React.FC = () => {
         };
       });
       
-      console.log("Loaded and mapped shifts:", mappedShifts.length, mappedShifts);
+      console.log("Loaded and mapped shifts:", mappedShifts.length);
+      console.log("Active filters - Venue:", venueFilter || 'All', "Staff:", staffFilter || 'All');
+      if (mappedShifts.length > 0) {
+        const dateRange = {
+          earliest: new Date(Math.min(...mappedShifts.map(s => s.date.getTime()))),
+          latest: new Date(Math.max(...mappedShifts.map(s => s.date.getTime())))
+        };
+        console.log(`📅 Shifts date range: ${dateRange.earliest.toLocaleDateString()} to ${dateRange.latest.toLocaleDateString()}`);
+        console.log(`Sample shifts:`, mappedShifts.slice(0, 3).map(s => ({
+          id: s.id,
+          date: s.date.toLocaleDateString(),
+          venue: s.venueName,
+          staff: s.staffName
+        })));
+      }
       setShifts(mappedShifts);
     } catch (err) {
       console.error('Error loading shifts:', err);
@@ -573,12 +587,19 @@ const ShiftScheduling: React.FC = () => {
 
   // Filter shifts for a specific day
   const getShiftsForDay = (date: Date) => {
-    return shifts.filter(shift => {
+    const dayShifts = shifts.filter(shift => {
       const shiftDate = new Date(shift.date);
       return shiftDate.getDate() === date.getDate() &&
              shiftDate.getMonth() === date.getMonth() &&
              shiftDate.getFullYear() === date.getFullYear();
     });
+
+    // Debug logging for days with shifts
+    if (dayShifts.length > 0) {
+      console.log(`📆 ${date.toLocaleDateString()}: Found ${dayShifts.length} shift(s)`);
+    }
+
+    return dayShifts;
   };
 
   // Handle opening a new shift dialog
@@ -634,46 +655,33 @@ const ShiftScheduling: React.FC = () => {
     try {
       setIsLoading(true);
       setError(null);
-      
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/shifts/create_multi_staff/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          venue,
-          staff_users: staffUsers,
-          start_time: startTime,
-          end_time: endTime,
-          status: 'scheduled',
-          required_security_role: 'sg',
-          notes: notes || '',
-          hourly_rate: hourlyRate,
-          is_special_event: isSpecialEvent || false
-        }),
+
+      // Sprint 3: Use api client with cookie authentication
+      const response = await shiftService.createMultiStaffShifts({
+        venue,
+        staff_users: staffUsers,
+        start_time: startTime,
+        end_time: endTime,
+        status: 'scheduled',
+        required_security_role: 'sg',
+        notes: notes || '',
+        hourly_rate: hourlyRate,
+        is_special_event: isSpecialEvent || false
       });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('Multi-staff shift creation failed:', response.status, errorData);
-        
-        // Handle validation errors
-        if (response.status === 400) {
-          const errorMessage = errorData.detail || Object.values(errorData).join(', ');
-          throw new Error(errorMessage);
-        }
-        
-        throw new Error(`Failed to create shifts: ${response.status} - ${errorData.detail || 'Unknown error'}`);
-      }
-      
-      const result = await response.json();
-      console.log('Multi-staff shifts created successfully:', result);
+
+      console.log('Multi-staff shifts created successfully:', response);
       return true;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error creating multi-staff shifts:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred while creating the shifts');
+
+      // Handle validation errors
+      if (err.response?.status === 400) {
+        const errorData = err.response.data;
+        const errorMessage = errorData.detail || Object.values(errorData).join(', ');
+        setError(errorMessage);
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred while creating the shifts');
+      }
       return false;
     } finally {
       setIsLoading(false);
@@ -685,39 +693,58 @@ const ShiftScheduling: React.FC = () => {
     try {
       setIsLoading(true);
       setError(null);
-      
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/shifts/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(shiftData),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('Shift creation failed:', response.status, errorData);
-        
-        // Handle duplicate shift errors specifically
-        if (response.status === 400 && errorData.non_field_errors) {
-          const duplicateError = errorData.non_field_errors.find((error: string) => 
-            error.includes('shift already exists')
-          );
-          if (duplicateError) {
-            throw new Error(duplicateError);
-          }
-        }
-        
-        throw new Error(`Failed to create shift: ${response.status} - ${errorData.detail || 'Unknown error'}`);
-      }
-      
+
+      // Sprint 3: Use api client with cookie authentication
+      await shiftService.createShift(shiftData);
+
       // Successfully created shift
       return true;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error creating shift:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred while creating the shift');
+      console.error('Error response data:', err.response?.data);
+
+      // Handle duplicate shift errors specifically
+      if (err.response?.status === 400 && err.response?.data?.non_field_errors) {
+        const duplicateError = err.response.data.non_field_errors.find((error: string) =>
+          error.includes('shift already exists')
+        );
+        if (duplicateError) {
+          setError(duplicateError);
+          return false;
+        }
+      }
+
+      // Extract detailed error message from Django REST Framework response
+      let errorMessage = 'An error occurred while creating the shift';
+      if (err.response?.data) {
+        const responseData = err.response.data;
+
+        // Check for various error formats from DRF
+        if (typeof responseData === 'string') {
+          errorMessage = responseData;
+        } else if (responseData.detail) {
+          errorMessage = responseData.detail;
+        } else if (responseData.non_field_errors) {
+          errorMessage = Array.isArray(responseData.non_field_errors)
+            ? responseData.non_field_errors.join(', ')
+            : responseData.non_field_errors;
+        } else {
+          // Format field-specific errors
+          const fieldErrors = Object.entries(responseData)
+            .map(([field, errors]: [string, any]) => {
+              const errorList = Array.isArray(errors) ? errors : [errors];
+              return `${field}: ${errorList.join(', ')}`;
+            })
+            .join('; ');
+          if (fieldErrors) {
+            errorMessage = fieldErrors;
+          }
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
       return false;
     } finally {
       setIsLoading(false);
@@ -820,11 +847,12 @@ const ShiftScheduling: React.FC = () => {
       const dates: Date[] = [];
       const startDate = new Date(newShiftDate!);
       const endDate = new Date(recurringEndDate);
-      
+      const now = new Date();
+
       if (recurringType === '0') { // Weekly recurrence
         // Get day of week for selected days (0-6)
         const selectedDays = recurringDays;
-        
+
         // Generate all dates between start and end date that match selected days
         for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
           const dayOfWeek = d.getDay();
@@ -835,40 +863,64 @@ const ShiftScheduling: React.FC = () => {
       } else { // Monthly recurrence
         const dayOfMonth = startDate.getDate();
         let currentDate = new Date(startDate);
-        
+
         while (currentDate <= endDate) {
           dates.push(new Date(currentDate));
-          
+
           // Move to next month
           let nextMonth = currentDate.getMonth() + 1;
           let nextYear = currentDate.getFullYear();
-          
+
           if (nextMonth > 11) {
             nextMonth = 0;
             nextYear += 1;
           }
-          
+
           currentDate = new Date(nextYear, nextMonth, dayOfMonth);
         }
       }
-      
-      // Create shifts for all generated dates
+
+      // Filter out past dates - only keep shifts that start in the future
+      console.log(`Current time: ${now.toISOString()}`);
+      console.log(`Generated ${dates.length} total dates`);
+
+      const futureDates = dates.filter(date => {
+        const shiftStart = formatTimeToISO(date, newShiftStartTime);
+        const isPast = new Date(shiftStart) <= now;
+        if (isPast) {
+          console.log(`Skipping past date: ${date.toDateString()} at ${newShiftStartTime} (${shiftStart})`);
+        }
+        return !isPast;
+      });
+
+      console.log(`Future dates after filtering: ${futureDates.length}`);
+
+      if (futureDates.length === 0) {
+        setError('All recurring shift dates are in the past. Please select a future date range.');
+        return;
+      }
+
+      if (futureDates.length < dates.length) {
+        console.log(`✓ Skipped ${dates.length - futureDates.length} past shift dates, creating ${futureDates.length} future shifts`);
+      }
+
+      // Create shifts for all future dates
       let allSuccessful = true;
-      for (const date of dates) {
+      for (const date of futureDates) {
         const shiftDate = new Date(date);
         
         // Create shift with adjusted date
         const recurringShiftData = {
           ...baseShiftData,
-          startTime: formatTimeToISO(shiftDate, newShiftStartTime),
-          endTime: formatTimeToISO(shiftDate, newShiftEndTime),
+          start_time: formatTimeToISO(shiftDate, newShiftStartTime),
+          end_time: formatTimeToISO(shiftDate, newShiftEndTime),
         };
-        
+
         // Handle shifts that cross midnight
-        if (new Date(recurringShiftData.endTime) < new Date(recurringShiftData.startTime)) {
+        if (new Date(recurringShiftData.end_time) < new Date(recurringShiftData.start_time)) {
           const nextDay = new Date(shiftDate);
           nextDay.setDate(nextDay.getDate() + 1);
-          recurringShiftData.endTime = formatTimeToISO(nextDay, newShiftEndTime);
+          recurringShiftData.end_time = formatTimeToISO(nextDay, newShiftEndTime);
         }
         
         const result = await createShift(recurringShiftData);
@@ -882,10 +934,13 @@ const ShiftScheduling: React.FC = () => {
     }
     
     if (success) {
+      console.log('✅ Shifts created successfully, reloading calendar...');
       // Close dialog and reset form
       handleCloseNewShiftDialog();
       // Reload shifts to show newly created ones
-      loadShifts();
+      await loadShifts();
+      console.log(`✅ Calendar reloaded. Total shifts in state: ${shifts.length}`);
+      console.log(`📅 Current calendar month: ${currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`);
     }
   };
 

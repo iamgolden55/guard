@@ -5,7 +5,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from api.models import Shift  # Import from api.models instead
 from .serializers import (
-    ShiftSerializer, 
+    ShiftSerializer,
     ShiftDetailSerializer,
     FrontendShiftSerializer,
     FrontendShiftDetailSerializer,
@@ -14,6 +14,9 @@ from .serializers import (
 from .filters import ShiftFilter
 from django.db.models import Q
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ShiftViewSet(viewsets.ModelViewSet):
     """
@@ -361,26 +364,28 @@ class ShiftViewSet(viewsets.ModelViewSet):
     def performance_reports(self, request):
         """Get staff performance reports for admin view"""
         from django.db.models import Count, Q, Avg
-        from django.contrib.auth.models import User
-        
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+
         if not request.user.is_authenticated:
             return Response(
-                {"detail": "Authentication required"}, 
+                {"detail": "Authentication required"},
                 status=status.HTTP_401_UNAUTHORIZED
             )
-            
+
         # Check if user has admin permissions
         if not (request.user.role == 'admin' or request.user.is_staff):
             return Response(
-                {"detail": "Admin permissions required"}, 
+                {"detail": "Admin permissions required"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         # Get date filters
         start_date = request.query_params.get('startDate')
         end_date = request.query_params.get('endDate')
         venue_id = request.query_params.get('venueId')
-        
+
         # Get all staff users who have worked shifts
         staff_users = User.objects.filter(shift__isnull=False).distinct()
         
@@ -969,36 +974,135 @@ class ShiftViewSet(viewsets.ModelViewSet):
         
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
-        """Cancel a shift"""
+        """
+        Cancel a shift and notify managers.
+
+        Robust implementation with explicit error handling and logging.
+
+        Optional body parameter:
+        - publish_to_pool: If true, creates an OpenShiftRequest so other staff can claim the slot
+        """
+        from api.models import User, OpenShiftRequest
+        from api.services import push_notification_service
+        from django.db import transaction
+
         shift = self.get_object()
-        
+        shift_id = shift.id  # Store ID before any operations
+
         # Only staff users with appropriate permissions or the assigned user can cancel a shift
         if not request.user.is_staff and shift.staff_user != request.user:
             return Response(
-                {"detail": "You don't have permission to cancel this shift"}, 
+                {"detail": "You don't have permission to cancel this shift"},
                 status=status.HTTP_403_FORBIDDEN
             )
-            
+
         # Check if the shift is already cancelled
         if shift.status == 'cancelled':
             return Response(
-                {"detail": "Shift already cancelled"}, 
+                {"detail": "Shift already cancelled"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
         # Check if the shift is completed
         if shift.status == 'completed':
             return Response(
-                {"detail": "Cannot cancel a completed shift"}, 
+                {"detail": "Cannot cancel a completed shift"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
-        # Perform cancellation
-        shift.status = 'cancelled'  # Use the correct status choice
-        shift.save()
-        
-        serializer = self.get_serializer(shift)
-        return Response(serializer.data)
+
+        # Store info before cancellation for notifications
+        cancelled_by_staff = shift.staff_user == request.user
+        staff_name = f"{shift.staff_user.first_name} {shift.staff_user.last_name}" if shift.staff_user else "Unknown"
+        venue_name = shift.venue.name if shift.venue else "Unknown Venue"
+        shift_date = shift.start_time.strftime('%B %d, %Y')
+        shift_time = shift.start_time.strftime('%I:%M %p')
+        company = shift.venue.company if shift.venue else None
+        publish_to_pool = request.data.get('publish_to_pool', False)
+
+        # CRITICAL: Perform cancellation with explicit transaction and logging
+        try:
+            with transaction.atomic():
+                logger.info(f"Cancelling shift {shift_id}, current status: {shift.status}")
+                shift.status = 'cancelled'
+                shift.save()
+                logger.info(f"Shift {shift_id} saved with status: {shift.status}")
+        except Exception as save_error:
+            logger.exception(f"Failed to save cancelled shift {shift_id}: {save_error}")
+            return Response(
+                {"detail": f"Failed to cancel shift: {str(save_error)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        # If publish_to_pool is requested, create an OpenShiftRequest
+        if publish_to_pool and company:
+            try:
+                # Find a manager to be the requesting user for the open shift
+                manager = User.objects.filter(
+                    company_memberships__company=company,
+                    company_memberships__is_active=True,
+                    role__in=['admin', 'manager']
+                ).first()
+
+                if manager:
+                    # Create a new shift copy for the open pool (unassigned)
+                    from api.models import Shift as ApiShift
+                    new_shift = ApiShift.objects.create(
+                        venue=shift.venue,
+                        start_time=shift.start_time,
+                        end_time=shift.end_time,
+                        status='open',
+                        staff_user=None,
+                        notes=f"Re-opened after cancellation by {staff_name}"
+                    )
+
+                    # Create OpenShiftRequest for the new shift
+                    OpenShiftRequest.objects.create(
+                        original_shift=new_shift,
+                        requesting_user=manager,
+                        request_reason=f"Shift cancelled by {staff_name} - published to open pool",
+                        status='open'
+                    )
+                    logger.info(f"Created OpenShiftRequest for cancelled shift {shift_id}")
+            except Exception as e:
+                logger.error(f"Error creating open shift request: {e}")
+
+        # Notify managers if cancelled by staff
+        if cancelled_by_staff and company:
+            try:
+                # Get all managers and admins in the company
+                managers = User.objects.filter(
+                    company_memberships__company=company,
+                    company_memberships__is_active=True,
+                    role__in=['admin', 'manager']
+                ).distinct()
+
+                for manager in managers:
+                    push_notification_service.send_shift_cancellation_to_manager(
+                        manager_user_id=manager.id,
+                        shift_id=shift_id,
+                        staff_name=staff_name,
+                        venue_name=venue_name,
+                        shift_date=shift_date,
+                        shift_time=shift_time,
+                        published_to_pool=publish_to_pool
+                    )
+
+                logger.info(f"Notified {managers.count()} managers of shift cancellation by {staff_name}")
+            except Exception as e:
+                logger.error(f"Error notifying managers of cancellation: {e}")
+
+        # Return response - try full serialization, fallback to simple response
+        try:
+            serializer = self.get_serializer(shift)
+            return Response(serializer.data)
+        except Exception as serialization_error:
+            logger.warning(f"Serialization failed for cancelled shift {shift_id}, returning simple response: {serialization_error}")
+            # Return simple success response - the shift WAS cancelled successfully
+            return Response({
+                "id": shift_id,
+                "status": "cancelled",
+                "message": "Shift cancelled successfully"
+            })
 
     @action(detail=False, methods=['post'])
     def create_multi_staff(self, request):

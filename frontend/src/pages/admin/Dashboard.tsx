@@ -124,7 +124,7 @@ const AdminDashboard: React.FC = () => {
           shiftService.getShifts(),
           invoiceService.getInvoices(),
           deputyService.getDeputyStatus(),
-          api.get<User[]>('/users/'), // Use api.get to fetch users
+          api.get<User[]>('/api/v1/users/'), // Sprint 3: Use /api/v1/ prefix for cookie authentication
           venueService.getAllVenues(), // Use venueService to fetch venues
           employmentTypeService.getEmploymentTypes() // Check employment types
         ]);

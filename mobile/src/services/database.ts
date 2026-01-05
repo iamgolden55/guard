@@ -5,6 +5,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Shift } from '../store/slices/shiftsSlice';
+import type { Incident } from '../types/incident';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -16,7 +17,7 @@ const STORAGE_KEYS = {
 
 export interface SyncQueueItem {
   id: string;
-  type: 'check_in' | 'check_out' | 'incident' | 'shift_check';
+  type: 'check_in' | 'check_out' | 'incident' | 'shift_check' | 'create';
   entityType: string;
   entityId: string;
   payload: any;
@@ -25,20 +26,6 @@ export interface SyncQueueItem {
   attempts: number;
   status: 'pending' | 'processing' | 'failed';
   error?: string;
-}
-
-export interface Incident {
-  id: string;
-  shift_id: number;
-  type: string;
-  description: string;
-  photos: string[];
-  location: {
-    latitude: number;
-    longitude: number;
-  };
-  createdAt: string;
-  syncStatus: 'pending' | 'synced' | 'failed';
 }
 
 class DatabaseService {
@@ -107,28 +94,51 @@ class DatabaseService {
 
   // ============== INCIDENTS ==============
 
-  async getIncidents(): Promise<Incident[]> {
+  async getIncidents(filters?: { shiftId?: number; status?: string }): Promise<Incident[]> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.INCIDENTS);
-      return data ? JSON.parse(data) : [];
+      const incidents: Incident[] = data ? JSON.parse(data) : [];
+
+      if (!filters) {
+        return incidents;
+      }
+
+      return incidents.filter((incident) => {
+        if (filters.shiftId && incident.shift !== filters.shiftId) {
+          return false;
+        }
+        if (filters.status && incident.status !== filters.status) {
+          return false;
+        }
+        return true;
+      });
     } catch (error) {
       console.error('[Database] Error getting incidents:', error);
       return [];
     }
   }
 
-  async saveIncident(incident: Incident): Promise<void> {
+  async saveIncident(incident: Incident): Promise<Incident> {
     try {
       const incidents = await this.getIncidents();
-      incidents.push(incident);
+
+      // Generate a temporary local ID if not present (use negative numbers for local IDs)
+      const incidentWithId = {
+        ...incident,
+        id: incident.id || -Date.now(),
+      };
+
+      incidents.push(incidentWithId);
       await AsyncStorage.setItem(STORAGE_KEYS.INCIDENTS, JSON.stringify(incidents));
+
+      return incidentWithId;
     } catch (error) {
       console.error('[Database] Error saving incident:', error);
       throw error;
     }
   }
 
-  async updateIncident(id: string, updates: Partial<Incident>): Promise<void> {
+  async updateIncident(id: number, updates: Partial<Incident>): Promise<void> {
     try {
       const incidents = await this.getIncidents();
       const index = incidents.findIndex((i) => i.id === id);

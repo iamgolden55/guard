@@ -6,6 +6,8 @@ import { useAuth } from './contexts/AuthContext';
 
 // Auth Pages
 import { LoginPage, RegisterPage } from './pages/auth';
+import PasswordResetRequestPage from './pages/auth/PasswordResetRequestPage';
+import PasswordResetConfirmPage from './pages/auth/PasswordResetConfirmPage';
 import { NotFoundPage, UnauthorizedPage } from './pages/shared';
 
 // Dashboard Pages
@@ -14,6 +16,7 @@ import ShiftDetails from './pages/staff/ShiftDetails';
 import { ManagerDashboard, ShiftApproval } from './pages/manager';
 import { AdminDashboard, InvoiceGeneration, ShiftScheduling, Settings, FinanceIntegrations } from './pages/admin';
 import FinanceIntegrationsOAuthCallback from './pages/admin/FinanceIntegrationsOAuthCallback';
+import CompanySetupPage from './pages/admin/CompanySetupPage';
 
 // Lazy load heavy admin components to improve navigation performance
 const StaffShifts = lazy(() => import('./pages/manager/StaffShifts'));
@@ -55,6 +58,8 @@ const Router: React.FC = () => {
       {/* Public Routes */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/reset-password" element={<PasswordResetRequestPage />} />
+      <Route path="/reset-password/confirm/:token" element={<PasswordResetConfirmPage />} />
       <Route path="/unauthorized" element={<UnauthorizedPage />} />
       <Route path="/recruitment" element={<RecruitmentApplication />} />
       <Route path="/apply/:companySlug" element={<RecruitmentApplication />} />
@@ -73,6 +78,9 @@ const Router: React.FC = () => {
           </Suspense>
         }
       />
+
+      {/* Company Setup Page - For users without company membership */}
+      <Route path="/company-setup" element={<CompanySetupPage />} />
 
       {/* Dashboard redirect */}
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -235,7 +243,8 @@ const DashboardRouter: React.FC = () => {
   const { authState } = useAuth();
 
   // CRITICAL: Wait for auth state to fully load before routing
-  if (authState.isLoading || !authState.user || !authState.currentMembership) {
+  // Fixed: Removed !authState.currentMembership check to prevent infinite spinner
+  if (authState.isLoading || !authState.user) {
     console.log('DashboardRouter - Loading state:', {
       isLoading: authState.isLoading,
       hasUser: !!authState.user,
@@ -249,6 +258,18 @@ const DashboardRouter: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  // Handle users without company membership
+  if (!authState.currentMembership) {
+    console.warn('DashboardRouter - No company membership found', {
+      userId: authState.user.id,
+      onboardingComplete: authState.onboarding.isCompleted,
+      hasCompany: authState.onboarding.hasCompany
+    });
+
+    // Redirect to company setup page
+    return <Navigate to="/company-setup" replace />;
   }
 
   // Get membership role (owner maps to admin)

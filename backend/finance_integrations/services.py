@@ -574,51 +574,129 @@ class ConnectionSetupService:
         return oauth_url, state
     
     @staticmethod
-    def complete_oauth_flow(provider_key: str, code: str, state: str, 
-                          redirect_uri: str, user: User, tenant_id: Optional[str] = None,
-                          is_sandbox: bool = False) -> ProviderConnection:
+    def get_available_tenants(provider_key: str, code: str, redirect_uri: str,
+                            is_sandbox: bool = False) -> Dict[str, Any]:
         """
-        Complete OAuth flow and create connection
-        
+        Get available tenants/organizations after OAuth token exchange
+
+        This is specifically for Xero which requires a separate API call to fetch
+        the list of organizations after getting the access token.
+
         Args:
             provider_key: Provider identifier
             code: OAuth authorization code
-            state: CSRF state parameter
             redirect_uri: OAuth callback URL
-            user: User setting up the connection
-            tenant_id: Provider-specific tenant ID (for Xero)
             is_sandbox: Whether to use sandbox mode
-            
+
         Returns:
-            ProviderConnection instance
+            Dict with 'access_token', 'refresh_token', 'expires_at', 'tenants' list
         """
-        # Verify state (in production, check against stored value)
-        
         # Get provider config
         provider_model = AccountingProvider.objects.get(
             provider_key=provider_key,
             is_active=True
         )
-        
+
         # Create provider instance
         config = {
             'client_id': provider_model.oauth_client_id,
             'client_secret': provider_model.oauth_client_secret,
             'is_sandbox': is_sandbox
         }
-        
+
         provider = ProviderFactory.create_provider(provider_key, config)
-        
+
         # Exchange code for tokens
         tokens = provider.exchange_oauth_code(code, redirect_uri)
-        
+
+        # For Xero, fetch available tenants
+        tenants = []
+        if provider_key == 'xero':
+            config['access_token'] = tokens.access_token
+            provider_with_token = ProviderFactory.create_provider(provider_key, config)
+            tenants_data = provider_with_token.get_tenants()
+
+            # Format tenant data for frontend
+            tenants = [
+                {
+                    'tenant_id': t.get('tenantId'),
+                    'tenant_name': t.get('tenantName'),
+                    'tenant_type': t.get('tenantType'),
+                }
+                for t in tenants_data
+            ]
+
+        return {
+            'access_token': tokens.access_token,
+            'refresh_token': tokens.refresh_token,
+            'expires_at': tokens.expires_at.isoformat(),
+            'tenants': tenants,
+            'provider_key': provider_key
+        }
+
+    @staticmethod
+    def complete_oauth_flow(provider_key: str, code: str, state: str,
+                          redirect_uri: str, user: User, tenant_id: Optional[str] = None,
+                          is_sandbox: bool = False) -> ProviderConnection:
+        """
+        Complete OAuth flow and create connection
+
+        Args:
+            provider_key: Provider identifier
+            code: OAuth authorization code
+            state: CSRF state parameter
+            redirect_uri: OAuth callback URL
+            user: User setting up the connection
+            tenant_id: Provider-specific tenant ID (for Xero - REQUIRED)
+            is_sandbox: Whether to use sandbox mode
+
+        Returns:
+            ProviderConnection instance
+        """
+        # Verify state (in production, check against stored value)
+
+        # Get provider config
+        provider_model = AccountingProvider.objects.get(
+            provider_key=provider_key,
+            is_active=True
+        )
+
+        # Create provider instance
+        config = {
+            'client_id': provider_model.oauth_client_id,
+            'client_secret': provider_model.oauth_client_secret,
+            'is_sandbox': is_sandbox
+        }
+
+        provider = ProviderFactory.create_provider(provider_key, config)
+
+        # Exchange code for tokens
+        tokens = provider.exchange_oauth_code(code, redirect_uri)
+
+        # For Xero, if tenant_id not provided, fetch tenants and use first one
+        if provider_key == 'xero' and not tenant_id:
+            config['access_token'] = tokens.access_token
+            provider_with_token = ProviderFactory.create_provider(provider_key, config)
+            tenants = provider_with_token.get_tenants()
+
+            if not tenants:
+                raise ValueError("No Xero organizations found for this connection")
+
+            # Auto-select first tenant if only one exists
+            tenant_id = tenants[0].get('tenantId')
+
+            # Log tenant auto-selection
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Auto-selected Xero tenant: {tenants[0].get('tenantName')} ({tenant_id})")
+
         # Get company info
         config['access_token'] = tokens.access_token
         config['tenant_id'] = tenant_id or tokens.tenant_id
         provider_with_token = ProviderFactory.create_provider(provider_key, config)
-        
+
         company_info = provider_with_token.get_company_info()
-        
+
         # Create connection record
         connection = ProviderConnection.objects.create(
             provider=provider_model,
@@ -631,7 +709,7 @@ class ConnectionSetupService:
             is_sandbox=is_sandbox,
             created_by=user
         )
-        
+
         # Log successful connection
         SyncLog.objects.create(
             connection=connection,
@@ -640,5 +718,5 @@ class ConnectionSetupService:
             message=f'Successfully connected to {provider_model.display_name}',
             created_by=user
         )
-        
+
         return connection

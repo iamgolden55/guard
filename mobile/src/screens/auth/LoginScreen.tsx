@@ -55,7 +55,7 @@ export const LoginScreen = () => {
   const handleLogin = async () => {
     // Validation
     if (!email || !password) {
-      Alert.alert('Error', 'Please enter both email and password.');
+      Alert.alert('Error', 'Please enter both email/username and password.');
       return;
     }
 
@@ -159,14 +159,14 @@ export const LoginScreen = () => {
         {/* Sign in heading */}
         <Text style={styles.heading}>Sign in</Text>
 
-        {/* Email Input */}
+        {/* Email or Username Input */}
         <TouchableWithoutFeedback onPress={() => emailInputRef.current?.focus()}>
           <View style={styles.inputRow}>
-            <Text style={styles.label}>Username:</Text>
+            <Text style={styles.label}>Email or Username:</Text>
             <TextInput
               ref={emailInputRef}
               style={styles.input}
-              placeholder="Username"
+              placeholder="Enter email or username"
               placeholderTextColor="#999"
               value={email}
               onChangeText={setEmail}

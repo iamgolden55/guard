@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.utils import timezone
-from api.models import Shift, Venue, User  # Import from api.models
+from api.models import Shift, Venue, User, ShiftExchange, OpenShiftRequest  # Import from api.models
 from django.contrib.auth import get_user_model
+from api.utils.shift_validators import check_shift_overlap, check_exact_duplicate
 
 # Simple serializer classes to avoid circular imports
 class SimpleVenueSerializer(serializers.ModelSerializer):
@@ -26,7 +27,11 @@ class ShiftSerializer(serializers.ModelSerializer):
     required_security_role = serializers.CharField(default='sg', required=False)
     shift_group = serializers.CharField(required=False, allow_null=True)
     calculated_payment = serializers.ReadOnlyField()
-    
+    # Transfer status fields for mobile app
+    pending_exchange = serializers.SerializerMethodField()
+    pending_release = serializers.SerializerMethodField()
+    approved_transfer = serializers.SerializerMethodField()
+
     class Meta:
         model = Shift
         fields = [
@@ -38,7 +43,9 @@ class ShiftSerializer(serializers.ModelSerializer):
             'start_signature', 'end_signature',
             'break_duration',
             'shift_group', 'hourly_rate', 'is_special_event', 'calculated_payment',
-            'actual_hours_worked', 'manager_approved', 'created_at', 'updated_at'
+            'actual_hours_worked', 'manager_approved', 'created_at', 'updated_at',
+            # Transfer status fields
+            'pending_exchange', 'pending_release', 'approved_transfer'
         ]
     
     def validate(self, data):
@@ -46,32 +53,136 @@ class ShiftSerializer(serializers.ModelSerializer):
         if 'start_time' in data and 'end_time' in data:
             if data['start_time'] >= data['end_time']:
                 raise serializers.ValidationError("Start time must be before end time")
-        
+
         # Ensure start time is in the future when creating shifts
         # Allow past dates for copying shifts functionality
-        if (self.instance is None and 'start_time' in data and 
+        if (self.instance is None and 'start_time' in data and
             not self.context.get('allow_past_dates', False)):
             if data['start_time'] <= timezone.now():
                 raise serializers.ValidationError("Start time must be in the future")
-        
-        # Check for duplicate shifts when creating new shifts (staff can't be in same shift group twice)
-        # Only validate this for multi-staff shifts that have a shift_group
-        if (self.instance is None and 
-            'shift_group' in data and 'staff_user' in data and 
+
+        # Get staff_user - either from data or from existing instance (for updates)
+        staff_user = data.get('staff_user') or (self.instance.staff_user if self.instance else None)
+
+        # Get time values - either from data or from existing instance (for updates)
+        start_time = data.get('start_time') or (self.instance.start_time if self.instance else None)
+        end_time = data.get('end_time') or (self.instance.end_time if self.instance else None)
+
+        # Check for overlapping shifts (regardless of shift_group)
+        if staff_user and start_time and end_time:
+            exclude_shift_id = self.instance.id if self.instance else None
+            has_overlap, overlapping_shifts = check_shift_overlap(
+                staff_user, start_time, end_time, exclude_shift_id
+            )
+
+            if has_overlap:
+                first_conflict = overlapping_shifts.first()
+                venue_name = first_conflict.venue.name if first_conflict.venue else 'Unknown venue'
+                raise serializers.ValidationError(
+                    f"This staff member already has a shift during this time: "
+                    f"{first_conflict.start_time.strftime('%Y-%m-%d %H:%M')} - "
+                    f"{first_conflict.end_time.strftime('%H:%M')} at {venue_name}"
+                )
+
+        # Also check for shift_group duplicates (legacy check for multi-staff shifts)
+        if (self.instance is None and
+            'shift_group' in data and 'staff_user' in data and
             data.get('shift_group') and data.get('staff_user')):
-            
+
             existing_shift = Shift.objects.filter(
                 shift_group=data['shift_group'],
                 staff_user=data['staff_user']
             ).first()
-            
+
             if existing_shift:
                 staff_name = data['staff_user'].get_full_name() if data['staff_user'] else 'Unassigned'
                 raise serializers.ValidationError(
                     f"{staff_name} is already assigned to this shift group"
                 )
-        
+
         return data
+
+    def get_pending_exchange(self, obj):
+        """Get pending/in-progress exchange for this shift (if any)"""
+        # Look for pending/accepted exchanges where this shift is the original_shift
+        exchange = ShiftExchange.objects.filter(
+            original_shift=obj,
+            status__in=['pending', 'accepted_by_target']
+        ).select_related('target_user').first()
+
+        if exchange:
+            result = {
+                'id': exchange.id,
+                'status': exchange.status,
+                'created_at': exchange.created_at.isoformat() if exchange.created_at else None,
+                'request_reason': exchange.request_reason,
+            }
+            # Add null check for target_user to prevent AttributeError
+            if exchange.target_user:
+                result['target_user'] = {
+                    'id': exchange.target_user.id,
+                    'first_name': exchange.target_user.first_name,
+                    'last_name': exchange.target_user.last_name,
+                }
+            else:
+                result['target_user'] = None
+            return result
+        return None
+
+    def get_pending_release(self, obj):
+        """Get pending open shift request for this shift (if any)"""
+        release = OpenShiftRequest.objects.filter(
+            original_shift=obj,
+            status__in=['open', 'claimed']
+        ).select_related('claimed_by').first()
+
+        if release:
+            result = {
+                'id': release.id,
+                'status': release.status,
+                'created_at': release.created_at.isoformat() if release.created_at else None,
+                'request_reason': release.request_reason,
+            }
+            if release.claimed_by:
+                result['claimed_by'] = {
+                    'id': release.claimed_by.id,
+                    'first_name': release.claimed_by.first_name,
+                    'last_name': release.claimed_by.last_name,
+                }
+            return result
+        return None
+
+    def get_approved_transfer(self, obj):
+        """Get recently approved transfer for this shift (last 7 days)"""
+        from datetime import timedelta
+
+        # Look for recently approved exchanges (within last 7 days)
+        recent_cutoff = timezone.now() - timedelta(days=7)
+
+        exchange = ShiftExchange.objects.filter(
+            original_shift=obj,
+            status='approved',
+            updated_at__gte=recent_cutoff
+        ).select_related('target_user').first()
+
+        if exchange:
+            result = {
+                'id': exchange.id,
+                'approved_at': exchange.updated_at.isoformat() if exchange.updated_at else None,
+                'was_auto_approved': exchange.manager_user is None,
+            }
+            # Add null check for target_user to prevent AttributeError
+            if exchange.target_user:
+                result['target_user'] = {
+                    'id': exchange.target_user.id,
+                    'first_name': exchange.target_user.first_name,
+                    'last_name': exchange.target_user.last_name,
+                }
+            else:
+                result['target_user'] = None
+            return result
+        return None
+
 
 class FrontendShiftSerializer(serializers.ModelSerializer):
     venueDetails = SimpleVenueSerializer(source='venue', read_only=True)
@@ -101,33 +212,55 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
         if 'start_time' in data and 'end_time' in data:
             if data['start_time'] >= data['end_time']:
                 raise serializers.ValidationError("Start time must be before end time")
-        
+
         # Ensure start time is in the future when creating shifts
         # Allow past dates for copying shifts functionality
-        if (self.instance is None and 'start_time' in data and 
+        if (self.instance is None and 'start_time' in data and
             not self.context.get('allow_past_dates', False)):
             if data['start_time'] <= timezone.now():
                 raise serializers.ValidationError("Start time must be in the future")
-        
-        # Check for duplicate shifts when creating new shifts (staff can't be in same shift group twice)
-        # Only validate this for multi-staff shifts that have a shift_group
-        if (self.instance is None and 
-            'shift_group' in data and 'staff_user' in data and 
+
+        # Get staff_user - either from data or from existing instance (for updates)
+        staff_user = data.get('staff_user') or (self.instance.staff_user if self.instance else None)
+
+        # Get time values - either from data or from existing instance (for updates)
+        start_time = data.get('start_time') or (self.instance.start_time if self.instance else None)
+        end_time = data.get('end_time') or (self.instance.end_time if self.instance else None)
+
+        # Check for overlapping shifts (regardless of shift_group)
+        if staff_user and start_time and end_time:
+            exclude_shift_id = self.instance.id if self.instance else None
+            has_overlap, overlapping_shifts = check_shift_overlap(
+                staff_user, start_time, end_time, exclude_shift_id
+            )
+
+            if has_overlap:
+                first_conflict = overlapping_shifts.first()
+                venue_name = first_conflict.venue.name if first_conflict.venue else 'Unknown venue'
+                raise serializers.ValidationError(
+                    f"This staff member already has a shift during this time: "
+                    f"{first_conflict.start_time.strftime('%Y-%m-%d %H:%M')} - "
+                    f"{first_conflict.end_time.strftime('%H:%M')} at {venue_name}"
+                )
+
+        # Also check for shift_group duplicates (legacy check for multi-staff shifts)
+        if (self.instance is None and
+            'shift_group' in data and 'staff_user' in data and
             data.get('shift_group') and data.get('staff_user')):
-            
+
             existing_shift = Shift.objects.filter(
                 shift_group=data['shift_group'],
                 staff_user=data['staff_user']
             ).first()
-            
+
             if existing_shift:
                 staff_name = data['staff_user'].get_full_name() if data['staff_user'] else 'Unassigned'
                 raise serializers.ValidationError(
                     f"{staff_name} is already assigned to this shift group"
                 )
-        
+
         return data
-        
+
     def to_internal_value(self, data):
         # Convert camelCase to snake_case for incoming data
         if 'startTime' in data:
@@ -180,13 +313,13 @@ class MultiStaffShiftSerializer(serializers.Serializer):
         # Ensure start time is before end time
         if data['start_time'] >= data['end_time']:
             raise serializers.ValidationError("Start time must be before end time")
-        
+
         # Ensure start time is in the future
         # Allow past dates for copying shifts functionality
         if not self.context.get('allow_past_dates', False):
             if data['start_time'] <= timezone.now():
                 raise serializers.ValidationError("Start time must be in the future")
-        
+
         # Validate venue exists
         from api.models import Venue
         try:
@@ -194,7 +327,7 @@ class MultiStaffShiftSerializer(serializers.Serializer):
             data['venue_obj'] = venue
         except Venue.DoesNotExist:
             raise serializers.ValidationError("Invalid venue ID")
-        
+
         # Validate all staff users exist
         from api.models import User
         staff_users = []
@@ -204,27 +337,58 @@ class MultiStaffShiftSerializer(serializers.Serializer):
                 staff_users.append(user)
             except User.DoesNotExist:
                 raise serializers.ValidationError(f"Invalid staff user ID: {user_id}")
-        
+
         data['staff_user_objs'] = staff_users
-        
+
         # Check for duplicates in the staff list
         if len(data['staff_users']) != len(set(data['staff_users'])):
             raise serializers.ValidationError("Duplicate staff members in the list")
-        
+
+        # Check for overlapping shifts for each staff member
+        start_time = data['start_time']
+        end_time = data['end_time']
+        conflicts = []
+
+        for user in staff_users:
+            has_overlap, overlapping_shifts = check_shift_overlap(
+                user, start_time, end_time
+            )
+            if has_overlap:
+                first_conflict = overlapping_shifts.first()
+                venue_name = first_conflict.venue.name if first_conflict.venue else 'Unknown venue'
+                conflicts.append(
+                    f"{user.get_full_name() or user.username}: "
+                    f"already has shift at {venue_name} "
+                    f"({first_conflict.start_time.strftime('%H:%M')} - {first_conflict.end_time.strftime('%H:%M')})"
+                )
+
+        if conflicts:
+            raise serializers.ValidationError(
+                "Some staff members have conflicting shifts: " + "; ".join(conflicts)
+            )
+
         return data
-    
+
     def create(self, validated_data):
         """Create multiple shift records for the same venue/time with different staff"""
         from api.models import Shift
-        
+
         venue = validated_data['venue_obj']
         staff_users = validated_data['staff_user_objs']
-        
+
         # Generate a unique shift group ID
         shift_group = Shift.generate_shift_group_id(venue.id, validated_data['start_time'])
-        
+
         created_shifts = []
         for staff_user in staff_users:
+            # Double-check for overlaps before creating (race condition protection)
+            has_overlap, _ = check_shift_overlap(
+                staff_user, validated_data['start_time'], validated_data['end_time']
+            )
+            if has_overlap:
+                # Skip this user if they now have a conflict (race condition)
+                continue
+
             shift = Shift.objects.create(
                 venue=venue,
                 staff_user=staff_user,
@@ -238,5 +402,5 @@ class MultiStaffShiftSerializer(serializers.Serializer):
                 is_special_event=validated_data.get('is_special_event', False)
             )
             created_shifts.append(shift)
-        
+
         return created_shifts

@@ -57,15 +57,9 @@ class VenueService {
     while (retryCount <= maxRetries) {
       try {
         console.log(`Attempting to fetch venues (attempt ${retryCount + 1}/${maxRetries + 1})...`);
-        
-        // Check if token exists
-        const token = localStorage.getItem('token');
-        if (!token) {
-          console.error('Authentication token missing');
-          throw new Error('Authentication token missing');
-        }
-        
-        const response = await api.get('/venues/');
+
+        // Sprint 3: Authentication via httpOnly cookies (sent automatically with api.get)
+        const response = await api.get('/api/v1/venues/');
         console.log('Venue API response:', response);
         
         // Handle different response formats

@@ -49,6 +49,10 @@ class ShiftsService {
       check_in_time: shift.check_in_time,
       check_out_time: shift.check_out_time,
       sync_status: 'synced',
+      // Transfer status fields
+      pending_exchange: shift.pending_exchange,
+      pending_release: shift.pending_release,
+      approved_transfer: shift.approved_transfer,
     };
   }
 

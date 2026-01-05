@@ -10,6 +10,7 @@ from django.core.cache import cache
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 from .compliance_performance_guide import CompliancePerformanceGuide
 # Create your views here.
 from rest_framework import viewsets, status, serializers, filters
@@ -38,7 +39,9 @@ from .models import (
     # Onboarding models
     SecurityCompany, CompanyOnboarding, CompanyIntegration, UserCompanyMembership,
     # Notification models
-    SNSDeviceToken, NotificationPreferences
+    SNSDeviceToken, NotificationPreferences,
+    # Password reset models
+    PasswordResetToken
 )
 from .serializers import (
     UserSerializer, StaffProfileSerializer, EmergencyContactSerializer,
@@ -200,26 +203,68 @@ class LoginView(APIView):
     authentication_classes = []  # No authentication required for login
     throttle_scope = 'rate_limiting'  # Set throttle scope
 
+    @method_decorator(ratelimit(key='ip', rate='20/m', method='POST', block=False))
+    @method_decorator(ratelimit(key='post:username', rate='40/h', method='POST', block=False))
     def post(self, request):
-        # Get the username and password from the request
-        username = request.data.get('username')
+        # Check if rate limited (without incrementing yet)
+        from django_ratelimit.core import is_ratelimited
+        if getattr(request, 'limited', False):
+            return Response({
+                'message': 'Too many login attempts',
+                'detail': 'You have exceeded the maximum number of login attempts. Please try again later.'
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+
+        # Get the username/email and password from the request
+        username_or_email = request.data.get('username')
         password = request.data.get('password')
-        if not username or not password:
-            return Response({'message': 'Both username and password are required',
+        if not username_or_email or not password:
+            return Response({'message': 'Both username/email and password are required',
                              'errors': 'missing required parameters'}, status=400)
 
         try:
-            # Retrieve the user from the database
-            user = User.objects.get(username=username)
+            # Retrieve the user from the database - accept both username and email
+            from django.db.models import Q
+            user = User.objects.get(Q(username=username_or_email) | Q(email=username_or_email))
+
+            # SECURITY FIX: Check if account is locked
+            from django.utils import timezone
+            now = timezone.now()
+
+            # Check if account is temporarily locked
+            if user.account_locked_until and user.account_locked_until > now:
+                lockout_minutes = int((user.account_locked_until - now).total_seconds() / 60)
+                return Response({
+                    'message': 'Account is locked',
+                    'detail': f'Too many failed login attempts. Account is locked for {lockout_minutes} more minutes. Please try again later or contact an administrator.',
+                    'locked_until': user.account_locked_until.isoformat()
+                }, status=status.HTTP_403_FORBIDDEN)
 
             # Verify the provided password
             if user.check_password(password):
+                # SECURITY FIX: Check if account is active before generating tokens
+                if not user.is_active:
+                    return Response({
+                        'message': 'Account is inactive',
+                        'detail': 'Your account has been deactivated. Please contact an administrator.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+
+                # SECURITY FIX: Reset failed login attempts on successful login
+                if user.failed_login_attempts > 0 or user.last_failed_login:
+                    user.failed_login_attempts = 0
+                    user.last_failed_login = None
+                    user.account_locked_until = None
+                    user.save(update_fields=['failed_login_attempts', 'last_failed_login', 'account_locked_until'])
+
                 # Create tokens for authentication
                 refresh = RefreshToken.for_user(user)
-                return Response({
+                access_token = str(refresh.access_token)
+                refresh_token = str(refresh)
+
+                # Sprint 3: Set tokens as httpOnly cookies (XSS protection)
+                # ALSO include tokens in response body for mobile app compatibility
+                response = Response({
                     'message': 'Login successful',
-                    'access': str(refresh.access_token),
-                    'refresh': str(refresh),
                     'user': {
                         "id": user.id,
                         "username": user.username,
@@ -228,14 +273,224 @@ class LoginView(APIView):
                         "last_name": user.last_name,
                         "role": user.role,
                         "is_active": user.is_active
-                    }
+                    },
+                    # Mobile apps need tokens in response body (can't use httpOnly cookies)
+                    'access': access_token,
+                    'refresh': refresh_token
                 }, status=200)
+
+                # Set access token cookie
+                response.set_cookie(
+                    key=settings.SIMPLE_JWT['AUTH_COOKIE'],
+                    value=access_token,
+                    max_age=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds(),
+                    httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+                    secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+                    samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE'],
+                    domain=settings.SIMPLE_JWT['AUTH_COOKIE_DOMAIN'],
+                    path=settings.SIMPLE_JWT['AUTH_COOKIE_PATH'],
+                )
+
+                # Set refresh token cookie
+                response.set_cookie(
+                    key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
+                    value=refresh_token,
+                    max_age=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds(),
+                    httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+                    secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+                    samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE'],
+                    domain=settings.SIMPLE_JWT['AUTH_COOKIE_DOMAIN'],
+                    path=settings.SIMPLE_JWT['AUTH_COOKIE_PATH'],
+                )
+
+                return response
             else:
-                raise AuthenticationFailed('Incorrect password')
+                # SECURITY FIX: Increment failed login attempts
+                user.failed_login_attempts += 1
+                user.last_failed_login = now
+
+                # Lock account after 5 failed attempts for 30 minutes
+                if user.failed_login_attempts >= 5:
+                    from datetime import timedelta
+                    user.account_locked_until = now + timedelta(minutes=30)
+                    user.save(update_fields=['failed_login_attempts', 'last_failed_login', 'account_locked_until'])
+
+                    # TODO: Send email notification to user about account lockout
+
+                    return Response({
+                        'message': 'Account locked',
+                        'detail': 'Too many failed login attempts. Your account has been locked for 30 minutes. Please contact an administrator if you need immediate access.',
+                        'locked_until': user.account_locked_until.isoformat()
+                    }, status=status.HTTP_403_FORBIDDEN)
+                else:
+                    user.save(update_fields=['failed_login_attempts', 'last_failed_login'])
+                    attempts_remaining = 5 - user.failed_login_attempts
+                    return Response({
+                        'message': 'Incorrect password',
+                        'detail': f'Invalid password. {attempts_remaining} attempt(s) remaining before account lockout.'
+                    }, status=status.HTTP_401_UNAUTHORIZED)
+
         except User.DoesNotExist:
-            return Response({'message': 'Invalid username'}, status=401)
+            # Don't reveal whether username/email exists (security best practice)
+            return Response({'message': 'Invalid username/email or password'}, status=401)
         except AuthenticationFailed as e:
             return Response({'message': str(e)}, status=401)
+
+
+class LogoutView(APIView):
+    """
+    Handle user logout by blacklisting the refresh token.
+
+    This endpoint allows authenticated users to logout by blacklisting their refresh token,
+    preventing it from being used to generate new access tokens.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """
+        Blacklist the refresh token to logout the user.
+
+        Sprint 3: Gets refresh token from cookie and clears both access/refresh cookies.
+        Returns a success message if the token is successfully blacklisted.
+        """
+        try:
+            # Sprint 3: Get refresh token from cookie (fallback to request body for backward compatibility)
+            refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
+            if not refresh_token:
+                refresh_token = request.data.get('refresh')
+
+            if not refresh_token:
+                # Even if no token, still clear cookies (graceful logout)
+                response = Response({
+                    'message': 'Logout successful',
+                    'detail': 'You have been logged out.'
+                }, status=status.HTTP_200_OK)
+
+                # Clear cookies
+                response.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE'])
+                response.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
+                return response
+
+            # Import the BlacklistToken model
+            from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
+            from rest_framework_simplejwt.tokens import RefreshToken
+
+            # Create a RefreshToken instance to validate and blacklist
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+
+            # Sprint 3: Clear cookies and return success response
+            response = Response({
+                'message': 'Logout successful',
+                'detail': 'You have been successfully logged out.'
+            }, status=status.HTTP_200_OK)
+
+            # Clear both access and refresh token cookies
+            response.delete_cookie(
+                key=settings.SIMPLE_JWT['AUTH_COOKIE'],
+                path=settings.SIMPLE_JWT['AUTH_COOKIE_PATH'],
+                domain=settings.SIMPLE_JWT['AUTH_COOKIE_DOMAIN'],
+            )
+            response.delete_cookie(
+                key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
+                path=settings.SIMPLE_JWT['AUTH_COOKIE_PATH'],
+                domain=settings.SIMPLE_JWT['AUTH_COOKIE_DOMAIN'],
+            )
+
+            return response
+
+        except Exception as e:
+            # Even on error, try to clear cookies
+            response = Response({
+                'message': 'Logout completed with warning',
+                'detail': f'Cookies cleared, but token blacklist failed: {str(e)}'
+            }, status=status.HTTP_200_OK)
+
+            response.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE'])
+            response.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
+            return response
+
+
+class CookieTokenRefreshView(APIView):
+    """
+    Sprint 3: Token refresh view that works with httpOnly cookies.
+
+    Gets refresh token from cookie, validates it, and returns new access/refresh tokens in cookies.
+    This prevents XSS attacks by keeping tokens out of localStorage.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        """
+        Refresh access token using refresh token from cookie.
+        """
+        try:
+            # Get refresh token from cookie
+            refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
+
+            if not refresh_token:
+                return Response({
+                    'message': 'Refresh token not found',
+                    'detail': 'No refresh token found in cookies. Please log in again.'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+
+            # Create RefreshToken instance and validate
+            from rest_framework_simplejwt.tokens import RefreshToken
+            token = RefreshToken(refresh_token)
+
+            # Get new access token
+            access_token = str(token.access_token)
+
+            # If ROTATE_REFRESH_TOKENS is enabled, get new refresh token
+            if settings.SIMPLE_JWT['ROTATE_REFRESH_TOKENS']:
+                # Blacklist old refresh token
+                if settings.SIMPLE_JWT['BLACKLIST_AFTER_ROTATION']:
+                    try:
+                        token.blacklist()
+                    except Exception:
+                        pass  # Token might already be blacklisted
+
+                # Generate new refresh token
+                refresh_token = str(token)
+
+            response = Response({
+                'message': 'Token refreshed successfully',
+            }, status=status.HTTP_200_OK)
+
+            # Set new access token cookie
+            response.set_cookie(
+                key=settings.SIMPLE_JWT['AUTH_COOKIE'],
+                value=access_token,
+                max_age=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds(),
+                httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+                secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+                samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE'],
+                domain=settings.SIMPLE_JWT['AUTH_COOKIE_DOMAIN'],
+                path=settings.SIMPLE_JWT['AUTH_COOKIE_PATH'],
+            )
+
+            # Set new refresh token cookie (if rotated)
+            if settings.SIMPLE_JWT['ROTATE_REFRESH_TOKENS']:
+                response.set_cookie(
+                    key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
+                    value=refresh_token,
+                    max_age=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds(),
+                    httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+                    secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+                    samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE'],
+                    domain=settings.SIMPLE_JWT['AUTH_COOKIE_DOMAIN'],
+                    path=settings.SIMPLE_JWT['AUTH_COOKIE_PATH'],
+                )
+
+            return response
+
+        except Exception as e:
+            return Response({
+                'message': 'Token refresh failed',
+                'detail': str(e)
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -1165,26 +1420,35 @@ class ShiftExchangeViewSet(viewsets.ModelViewSet):
     def accept(self, request, pk=None):
         """Target user accepts the exchange request"""
         exchange = self.get_object()
-        
+
         # Verify the user is the target user
         if exchange.target_user != request.user:
             return Response(
-                {"error": "You are not the target user for this exchange"}, 
+                {"error": "You are not the target user for this exchange"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         response_text = request.data.get('response', '')
-        
+
         try:
-            exchange.accept_by_target(response_text)
+            was_auto_approved = exchange.accept_by_target(response_text)
             serializer = self.get_serializer(exchange)
-            return Response({
-                "message": "Exchange request accepted successfully",
-                "exchange": serializer.data
-            })
+
+            if was_auto_approved:
+                return Response({
+                    "message": "Exchange accepted and automatically approved!",
+                    "auto_approved": True,
+                    "exchange": serializer.data
+                })
+            else:
+                return Response({
+                    "message": "Exchange accepted. Waiting for manager approval.",
+                    "auto_approved": False,
+                    "exchange": serializer.data
+                })
         except ValueError as e:
             return Response(
-                {"error": str(e)}, 
+                {"error": str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
     
@@ -5716,6 +5980,27 @@ class OnboardingViewSet(viewsets.ViewSet):
             company.is_active = True
             company.save()
 
+        # Ensure user has company membership (fix for infinite spinner bug)
+        # This prevents the frontend from showing infinite loading spinner
+        membership, created = UserCompanyMembership.objects.get_or_create(
+            user=request.user,
+            company=company,
+            defaults={
+                'role': 'owner',
+                'is_active': True,
+                'is_owner': True,
+                'date_joined': timezone.now()
+            }
+        )
+
+        if not created and not membership.is_active:
+            # Reactivate existing inactive membership
+            membership.is_active = True
+            membership.save()
+            logger.info(f"Reactivated membership for user {request.user.id} in company {company.id}")
+        elif created:
+            logger.info(f"Created new membership for user {request.user.id} in company {company.id}")
+
         # Enable default features based on subscription tier
         default_features = {
             'shift_management': True,
@@ -5913,3 +6198,188 @@ class NotificationPreferencesViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(preferences)
         return Response(serializer.data)
+
+
+# =====================================================
+# PASSWORD RESET VIEWS
+# =====================================================
+
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+from .serializers import (
+    PasswordResetRequestSerializer,
+    PasswordResetValidateSerializer,
+    PasswordResetConfirmSerializer
+)
+
+
+class PasswordResetRequestView(APIView):
+    """
+    API endpoint to request password reset.
+    Generates a token and sends reset email.
+    Always returns 200 to prevent user enumeration.
+    """
+    permission_classes = [AllowAny]
+
+    @method_decorator(ratelimit(key='ip', rate='3/h', method='POST'))
+    def post(self, request):
+        """Handle password reset request"""
+        serializer = PasswordResetRequestSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            # Still return 200 to prevent user enumeration
+            return Response(
+                {'message': 'If the email exists, a password reset link has been sent.'},
+                status=status.HTTP_200_OK
+            )
+
+        email = serializer.validated_data['email']
+
+        try:
+            # Try to find user by email
+            user = User.objects.get(email=email)
+
+            # Get client IP address for audit trail
+            ip_address = request.META.get('HTTP_X_FORWARDED_FOR')
+            if ip_address:
+                ip_address = ip_address.split(',')[0]
+            else:
+                ip_address = request.META.get('REMOTE_ADDR')
+
+            # Create password reset token
+            reset_token = PasswordResetToken.objects.create(
+                user=user,
+                ip_address=ip_address
+            )
+
+            # Build reset URL
+            frontend_url = settings.FRONTEND_URL if hasattr(settings, 'FRONTEND_URL') else 'http://localhost:3000'
+            reset_url = f"{frontend_url}/reset-password/confirm/{reset_token.token}"
+
+            # Send email
+            context = {
+                'user': user,
+                'reset_url': reset_url,
+                'expiry_hours': 24
+            }
+
+            html_message = render_to_string('password_reset_email.html', context)
+            plain_message = strip_tags(html_message)
+
+            send_mail(
+                subject='Password Reset Request',
+                message=plain_message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                html_message=html_message,
+                fail_silently=False,
+            )
+
+            logger.info(f"Password reset email sent to {email} from IP {ip_address}")
+
+        except User.DoesNotExist:
+            # User doesn't exist, but still return success to prevent enumeration
+            logger.warning(f"Password reset requested for non-existent email: {email}")
+        except Exception as e:
+            # Log error but still return success to prevent enumeration
+            logger.error(f"Error sending password reset email: {str(e)}")
+
+        # Always return the same response
+        return Response(
+            {'message': 'If the email exists, a password reset link has been sent.'},
+            status=status.HTTP_200_OK
+        )
+
+
+class PasswordResetValidateView(APIView):
+    """
+    API endpoint to validate password reset token.
+    Returns whether the token is valid and not expired.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, token):
+        """Validate password reset token"""
+        try:
+            reset_token = PasswordResetToken.objects.get(token=token)
+
+            if reset_token.is_valid():
+                return Response(
+                    {
+                        'valid': True,
+                        'message': 'Token is valid',
+                        'email': reset_token.user.email
+                    },
+                    status=status.HTTP_200_OK
+                )
+            else:
+                return Response(
+                    {
+                        'valid': False,
+                        'message': 'Token has expired or already been used'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        except PasswordResetToken.DoesNotExist:
+            return Response(
+                {
+                    'valid': False,
+                    'message': 'Invalid token'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class PasswordResetConfirmView(APIView):
+    """
+    API endpoint to confirm password reset with new password.
+    Updates the password and invalidates all user sessions.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        """Confirm password reset and update password"""
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        token = serializer.validated_data['token']
+        new_password = serializer.validated_data['new_password']
+
+        try:
+            reset_token = PasswordResetToken.objects.get(token=token)
+
+            if not reset_token.is_valid():
+                return Response(
+                    {'error': 'Token has expired or already been used'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Update user password
+            user = reset_token.user
+            user.set_password(new_password)
+            user.password_last_changed = timezone.now()
+            user.save()
+
+            # Mark token as used
+            reset_token.mark_as_used()
+
+            # Invalidate all existing sessions/tokens for this user
+            # This forces the user to log in again with the new password
+            user.password_reset_tokens.filter(is_used=False).update(is_used=True)
+
+            logger.info(f"Password reset successful for user {user.username}")
+
+            return Response(
+                {'message': 'Password has been reset successfully'},
+                status=status.HTTP_200_OK
+            )
+
+        except PasswordResetToken.DoesNotExist:
+            return Response(
+                {'error': 'Invalid token'},
+                status=status.HTTP_400_BAD_REQUEST
+            )

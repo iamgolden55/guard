@@ -11,6 +11,7 @@ import {
   selectBiometricEnabled,
 } from '../store/slices/authSlice';
 import authService, { LoginCredentials } from '../services/authService';
+import notificationService from '../services/notificationService';
 import type { User } from '../store/slices/authSlice';
 
 export const useAuth = () => {
@@ -41,6 +42,11 @@ export const useAuth = () => {
             refreshToken: tokens.refresh,
           })
         );
+
+        // Register push notification token (non-blocking)
+        notificationService.registerPushToken().catch((error) => {
+          console.log('[useAuth] Push token registration failed (non-critical):', error);
+        });
 
         dispatch(setLoading(false));
         return { success: true, user: userProfile };
@@ -78,6 +84,11 @@ export const useAuth = () => {
           refreshToken: tokens.refresh,
         })
       );
+
+      // Register push notification token (non-blocking)
+      notificationService.registerPushToken().catch((error) => {
+        console.log('[useAuth] Push token registration failed (non-critical):', error);
+      });
 
       dispatch(setLoading(false));
       return { success: true, user: userProfile };
@@ -179,6 +190,11 @@ export const useAuth = () => {
         accessToken,
         refreshToken,
       }));
+
+      // Register push notification token (non-blocking)
+      notificationService.registerPushToken().catch((error) => {
+        console.log('[useAuth] Push token registration failed (non-critical):', error);
+      });
 
       return { success: true, isAuthenticated: true, user: userProfile };
     } catch (error) {

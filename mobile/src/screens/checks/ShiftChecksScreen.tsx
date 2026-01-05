@@ -3,9 +3,9 @@
  * Dashboard showing required venue safety checks for the active shift
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, Alert, TouchableOpacity, ScrollView } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Container, Heading2, Heading3, Body, Card, Button } from '@components/ui';
 import { useAppSelector } from '../../hooks/useRedux';
@@ -38,10 +38,13 @@ export const ShiftChecksScreen = () => {
   const [loading, setLoading] = useState(true);
   const [checks, setChecks] = useState<CheckItem[]>([]);
 
-  useEffect(() => {
-    logger.info('[ShiftChecks] Screen loaded', { shiftId });
-    loadChecks();
-  }, [shiftId]);
+  // Reload checks whenever screen comes into focus (including after navigation back)
+  useFocusEffect(
+    useCallback(() => {
+      logger.info('[ShiftChecks] Screen focused, loading checks', { shiftId });
+      loadChecks();
+    }, [shiftId])
+  );
 
   const loadChecks = async () => {
     try {

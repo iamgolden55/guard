@@ -191,7 +191,7 @@ export interface TestConnectionResponse {
 }
 
 class FinanceIntegrationsService {
-  private baseUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'}`.replace('/api/v1', '/api/finance');
+  private baseUrl = '/api/v1/finance';
   
   // Create axios instance with auth token
   private createAuthenticatedRequest = () => {
@@ -363,6 +363,18 @@ class FinanceIntegrationsService {
   async completeOAuth(data: OAuthCallbackRequest): Promise<ProviderConnection> {
     const axiosInstance = this.createAuthenticatedRequest();
     const response = await axiosInstance.post('/oauth/callback/', data);
+    return response.data;
+  }
+
+  async getTenants(data: { provider_key: string; code: string; redirect_uri: string; is_sandbox?: boolean }): Promise<{
+    access_token: string;
+    refresh_token: string;
+    expires_at: string;
+    tenants: Array<{ tenant_id: string; tenant_name: string; tenant_type: string }>;
+    provider_key: string;
+  }> {
+    const axiosInstance = this.createAuthenticatedRequest();
+    const response = await axiosInstance.post('/oauth/tenants/', data);
     return response.data;
   }
 

@@ -48,7 +48,7 @@ class AddressResolutionService {
   private geocoder: google.maps.Geocoder | null = null;
   private placesService: google.maps.places.PlacesService | null = null;
   private autocompleteService: google.maps.places.AutocompleteService | null = null;
-  
+
   constructor() {
     this.initializeServices();
   }
@@ -57,21 +57,23 @@ class AddressResolutionService {
     // Wait for Google Maps to load
     let attempts = 0;
     const maxAttempts = 20;
-    
+
     const waitForGoogleMaps = () => {
       if (window.google?.maps?.Geocoder) {
         this.geocoder = new google.maps.Geocoder();
-        
+
         if (window.google.maps.places?.PlacesService && window.google.maps.places?.AutocompleteService) {
           // Create a dummy map element for PlacesService
           const dummyMap = new google.maps.Map(document.createElement('div'));
           this.placesService = new google.maps.places.PlacesService(dummyMap);
           this.autocompleteService = new google.maps.places.AutocompleteService();
         }
-        
-        console.log('AddressResolutionService: Google Maps services initialized');
+
+        console.log('AddressResolutionService: Google Maps services initialized. Places:', !!window.google.maps.places);
       } else {
+        console.warn('AddressResolutionService: Geocoder found, but Places Service missing or incomplete.');
         attempts++;
+
         if (attempts < maxAttempts) {
           setTimeout(waitForGoogleMaps, 500);
         } else {
@@ -79,14 +81,55 @@ class AddressResolutionService {
         }
       }
     };
-    
+
     waitForGoogleMaps();
+  }
+
+  /**
+   * Ensure Google Maps services are initialized before use
+   * This handles the race condition where the service is created before Google Maps loads
+   */
+  private async ensureServicesInitialized(): Promise<void> {
+    // If services are already initialized, return immediately
+    if (this.geocoder && this.placesService && this.autocompleteService) {
+      return;
+    }
+
+    // Wait for Google Maps to be available
+    const maxWaitTime = 15000; // 15 seconds
+    const checkInterval = 100; // 100ms
+    let elapsed = 0;
+
+    while (elapsed < maxWaitTime) {
+      if (window.google?.maps?.Geocoder) {
+        // Initialize services
+        this.geocoder = new google.maps.Geocoder();
+
+        if (window.google.maps.places?.PlacesService && window.google.maps.places?.AutocompleteService) {
+          const dummyMap = new google.maps.Map(document.createElement('div'));
+          this.placesService = new google.maps.places.PlacesService(dummyMap);
+          this.autocompleteService = new google.maps.places.AutocompleteService();
+          console.log('AddressResolutionService: Services initialized successfully via ensureServicesInitialized');
+          return;
+        } else {
+          console.warn('AddressResolutionService: Google Maps loaded but Places API not available. Check API key permissions.');
+          return;
+        }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+      elapsed += checkInterval;
+    }
+
+    console.warn('AddressResolutionService: Timed out waiting for Google Maps. Services may not work correctly.');
   }
 
   /**
    * Main method for intelligent address resolution
    */
   async resolveAddress(query: string): Promise<AddressResolutionResult> {
+    // Ensure services are initialized before resolving
+    await this.ensureServicesInitialized();
     const result: AddressResolutionResult = {
       query,
       exactMatches: [],
@@ -100,15 +143,15 @@ class AddressResolutionService {
       // Strategy 1: Check if input is a UK postcode and use UK Address Service
       if (this.isPostcode(query)) {
         console.log('Using UK Address Service for postcode:', query);
-        
+
         try {
           const ukAddresses = await ukAddressService.lookupPostcode(query);
-          
+
           if (ukAddresses.items.length > 0) {
             // Convert UK addresses to our format
             const convertedAddresses = ukAddresses.items.map(ukAddr => this.convertUKAddressToAddressOption(ukAddr));
             result.postcodeExpansions = convertedAddresses;
-            
+
             // Set postcode area info
             result.postcodeArea = {
               postcode: ukAddresses.postcode,
@@ -120,7 +163,7 @@ class AddressResolutionService {
               longitude: ukAddresses.items[0]?.meta.longitude || 0,
               addresses: convertedAddresses
             };
-            
+
             result.totalResults = convertedAddresses.length;
             console.log(`Found ${result.totalResults} addresses from UK Address Service`);
             return result;
@@ -133,22 +176,56 @@ class AddressResolutionService {
       // Strategy 2: Direct geocoding for exact matches (fallback or non-postcode queries)
       const geocodingResults = await this.performGeocoding(query);
       result.exactMatches = geocodingResults.filter(addr => addr.confidence >= 0.8);
-      
+
       // Strategy 3: If still a postcode, try our Google Maps expansion
       if (this.isPostcode(query) && result.exactMatches.length === 0) {
         const postcodeExpansion = await this.expandPostcode(query);
         result.postcodeExpansions = postcodeExpansion.addresses || [];
         result.postcodeArea = postcodeExpansion;
       }
-      
-      // Strategy 4: Places API autocomplete for additional suggestions
+
+
+      // Strategy 4: Places API Text Search (performTextSearch) - robust search for venue names
+      if (result.exactMatches.length === 0 && !this.isPostcode(query)) {
+        console.log('Strategy 4: Attempting Text Search due to no exact matches');
+        const placeSearchResults = await this.performTextSearch(query);
+
+        // Add unique results
+        const newResults = placeSearchResults.filter(addr =>
+          !result.exactMatches.some(exact => exact.placeId === addr.placeId) &&
+          !result.postcodeExpansions.some(postcode => postcode.placeId === addr.placeId)
+        );
+
+        console.log(`Text Search found ${newResults.length} new results`);
+        result.exactMatches.push(...newResults);
+      }
+
+      // Strategy 5: Places API autocomplete for additional suggestions
+      // This is especially useful for venue names when Text Search fails
+      if (result.exactMatches.length === 0 && !this.isPostcode(query)) {
+        console.log('Strategy 5: Using Places Autocomplete as primary source for venue name search');
+      }
+
       const placesResults = await this.getPlacesSuggestions(query);
-      result.suggestedAlternatives = placesResults.filter(addr => 
-        !result.exactMatches.some(exact => exact.placeId === addr.placeId) &&
-        !result.postcodeExpansions.some(postcode => postcode.placeId === addr.placeId)
-      );
-      
-      // Strategy 5: Address validation for comprehensive results
+
+      // If this is a venue name search (not postcode) and no exact matches yet,
+      // treat autocomplete results as higher confidence
+      if (!this.isPostcode(query) && result.exactMatches.length === 0 && placesResults.length > 0) {
+        // Boost confidence for autocomplete results when they're our best option
+        const boostedResults = placesResults.map(addr => ({
+          ...addr,
+          confidence: Math.max(addr.confidence, 0.85) // Boost to at least 85%
+        }));
+        result.exactMatches = boostedResults;
+        console.log(`Promoted ${boostedResults.length} autocomplete results to exact matches with boosted confidence`);
+      } else {
+        result.suggestedAlternatives = placesResults.filter(addr =>
+          !result.exactMatches.some(exact => exact.placeId === addr.placeId) &&
+          !result.postcodeExpansions.some(postcode => postcode.placeId === addr.placeId)
+        );
+      }
+
+      // Strategy 6: Address validation for comprehensive results
       if (result.exactMatches.length === 0 && result.postcodeExpansions.length === 0) {
         const validationResults = await this.performAddressValidation(query);
         result.suggestedAlternatives.push(...validationResults);
@@ -159,7 +236,13 @@ class AddressResolutionService {
 
       return result;
     } catch (error) {
-      console.error('AddressResolutionService: Error resolving address:', error);
+      console.error('AddressResolutionService: Error resolving address. Full error:', error);
+      // Log the state of services for debugging
+      console.log('Service State:', {
+        hasGeocoder: !!this.geocoder,
+        hasPlacesService: !!this.placesService,
+        hasAutocomplete: !!this.autocompleteService
+      });
       throw new Error('Failed to resolve address. Please try a different search term.');
     }
   }
@@ -181,7 +264,7 @@ class AddressResolutionService {
         },
         (results, status) => {
           if (status === google.maps.GeocoderStatus.OK && results) {
-            const options = results.map((result, index) => 
+            const options = results.map((result, index) =>
               this.mapGeocoderResultToAddressOption(result, 'geocoding', Math.max(0.9 - index * 0.1, 0.5))
             );
             resolve(options);
@@ -199,10 +282,10 @@ class AddressResolutionService {
    */
   private async expandPostcode(postcode: string): Promise<PostcodeArea> {
     const normalizedPostcode = this.normalizePostcode(postcode);
-    
+
     // First get the postcode area information
     const geocodingResults = await this.performGeocoding(normalizedPostcode);
-    
+
     if (geocodingResults.length === 0) {
       throw new Error(`No results found for postcode: ${normalizedPostcode}`);
     }
@@ -210,8 +293,8 @@ class AddressResolutionService {
     const primaryResult = geocodingResults[0];
     const postcodeArea: PostcodeArea = {
       postcode: normalizedPostcode,
-      district: this.extractAddressComponent(primaryResult.addressComponents, 'sublocality') || 
-               this.extractAddressComponent(primaryResult.addressComponents, 'locality') || '',
+      district: this.extractAddressComponent(primaryResult.addressComponents, 'sublocality') ||
+        this.extractAddressComponent(primaryResult.addressComponents, 'locality') || '',
       ward: this.extractAddressComponent(primaryResult.addressComponents, 'sublocality_level_1') || '',
       county: this.extractAddressComponent(primaryResult.addressComponents, 'administrative_area_level_2') || '',
       country: this.extractAddressComponent(primaryResult.addressComponents, 'country') || 'United Kingdom',
@@ -225,24 +308,24 @@ class AddressResolutionService {
 
     // Strategy 1: Use Places API autocomplete with specific patterns
     const addressSearchQueries = this.generateTargetedSearchQueries(normalizedPostcode);
-    
+
     for (const searchQuery of addressSearchQueries) {
       try {
         // Use both geocoding and places API
         const geocodingResults = await this.performGeocoding(searchQuery);
         const placesResults = await this.searchPlacesForAddress(searchQuery);
-        
+
         // Combine and filter results
         const combinedResults = [...geocodingResults, ...placesResults];
-        const validResults = combinedResults.filter(addr => 
+        const validResults = combinedResults.filter(addr =>
           addr.postalCode.replace(/\s/g, '').toLowerCase() === normalizedPostcode.replace(/\s/g, '').toLowerCase()
         );
-        
+
         allAddresses.push(...validResults);
-        
+
         // Small delay to respect API limits
         await new Promise(resolve => setTimeout(resolve, 100));
-        
+
       } catch (error) {
         console.warn(`Failed to search for addresses with query: ${searchQuery}`, error);
       }
@@ -283,7 +366,6 @@ class AddressResolutionService {
       this.autocompleteService!.getPlacePredictions(
         {
           input: postcode,
-          types: ['address', 'establishment'],
           componentRestrictions: { country: 'GB' }
         },
         (predictions, status) => {
@@ -317,7 +399,7 @@ class AddressResolutionService {
    */
   private async findHouseNumbersOnStreet(streetName: string, postcode: string): Promise<AddressOption[]> {
     const addresses: AddressOption[] = [];
-    
+
     // Use a more targeted approach with Google Places Text Search
     // Try specific house number ranges that are most common
     const targetNumbers = [
@@ -330,33 +412,33 @@ class AddressResolutionService {
     // Search in smaller batches to be more API-friendly
     for (let i = 0; i < targetNumbers.length; i += 5) {
       const batch = targetNumbers.slice(i, i + 5);
-      
+
       for (const num of batch) {
         try {
           const query = `${num} ${streetName}, ${postcode}, UK`;
           const results = await this.performGeocoding(query);
-          
+
           // Filter to only include results with the exact street and postcode
           const validResults = results.filter(addr => {
             const hasCorrectPostcode = addr.postalCode.replace(/\s/g, '').toLowerCase() === postcode.replace(/\s/g, '').toLowerCase();
-            const hasCorrectStreet = addr.streetName && streetName && 
-              (addr.streetName.toLowerCase().includes(streetName.toLowerCase()) || 
-               streetName.toLowerCase().includes(addr.streetName.toLowerCase()));
+            const hasCorrectStreet = addr.streetName && streetName &&
+              (addr.streetName.toLowerCase().includes(streetName.toLowerCase()) ||
+                streetName.toLowerCase().includes(addr.streetName.toLowerCase()));
             const hasHouseNumber = addr.streetNumber && parseInt(addr.streetNumber) === num;
-            
+
             return hasCorrectPostcode && hasCorrectStreet && hasHouseNumber;
           });
-          
+
           addresses.push(...validResults);
-          
+
           // Small delay to be respectful to the API
           await new Promise(resolve => setTimeout(resolve, 50));
-          
+
         } catch (error) {
           console.warn(`Failed to geocode: ${num} ${streetName} ${postcode}`, error);
         }
       }
-      
+
       // Longer delay between batches
       await new Promise(resolve => setTimeout(resolve, 200));
     }
@@ -377,7 +459,6 @@ class AddressResolutionService {
       this.autocompleteService!.getPlacePredictions(
         {
           input: query,
-          types: ['address', 'establishment'],
           componentRestrictions: { country: 'GB' }
         },
         (predictions, status) => {
@@ -457,7 +538,7 @@ class AddressResolutionService {
    */
   private generateTargetedSearchQueries(postcode: string): string[] {
     const queries: string[] = [];
-    
+
     // Strategy 1: Search for specific house number ranges with postcode
     const commonNumbers = [1, 2, 3, 5, 10, 15, 20, 25, 30, 31, 35, 40, 41, 45, 50, 55, 60];
     commonNumbers.forEach(num => {
@@ -466,7 +547,7 @@ class AddressResolutionService {
 
     // Strategy 2: Search for street names + postcode
     const commonStreetNames = [
-      'Drive', 'Road', 'Street', 'Avenue', 'Lane', 'Close', 'Way', 
+      'Drive', 'Road', 'Street', 'Avenue', 'Lane', 'Close', 'Way',
       'Gardens', 'Park', 'Crescent', 'Place', 'Court', 'Grove'
     ];
     commonStreetNames.forEach(street => {
@@ -496,13 +577,12 @@ class AddressResolutionService {
       this.autocompleteService!.getPlacePredictions(
         {
           input: query,
-          types: ['address'],
           componentRestrictions: { country: 'GB' }
         },
         async (predictions, status) => {
           if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
             const detailedResults: AddressOption[] = [];
-            
+
             // Get details for first few predictions
             for (const prediction of predictions.slice(0, 5)) {
               try {
@@ -514,7 +594,7 @@ class AddressResolutionService {
                 console.warn('Failed to get place details:', error);
               }
             }
-            
+
             resolve(detailedResults);
           } else {
             resolve([]);
@@ -525,42 +605,154 @@ class AddressResolutionService {
   }
 
   /**
+   * Find place using Text Search (most robust for venue names)
+   * Updated to use new Google Places API (Place.searchByText) since legacy PlacesService
+   * was deprecated as of March 1st, 2025
+   */
+  private async performTextSearch(query: string): Promise<AddressOption[]> {
+    // Check if new Places API is available
+    if (!window.google?.maps?.places?.Place?.searchByText) {
+      console.warn('performTextSearch: New Places API (Place.searchByText) not available. Falling back to legacy...');
+      return this.performTextSearchLegacy(query);
+    }
+
+    try {
+      console.log('performTextSearch: Using new Place.searchByText API for query:', query);
+
+      const request = {
+        textQuery: query + ' UK', // Bias towards UK results
+        fields: ['displayName', 'formattedAddress', 'location', 'addressComponents', 'id', 'types'] as const,
+        maxResultCount: 10,
+        region: 'gb'
+      };
+
+      const { places } = await google.maps.places.Place.searchByText(request);
+
+      console.log('performTextSearch result:', { status: 'OK', count: places?.length });
+
+      if (places && places.length > 0) {
+        const options = await Promise.all(
+          places.map(place => this.mapNewPlaceToAddressOption(place, 0.95))
+        );
+        return options.filter((opt): opt is AddressOption => opt !== null);
+      }
+
+      return [];
+    } catch (error) {
+      console.error('performTextSearch error with new API:', error);
+      // Fallback to legacy if new API fails
+      return this.performTextSearchLegacy(query);
+    }
+  }
+
+  /**
+   * Legacy text search using deprecated PlacesService (fallback)
+   */
+  private async performTextSearchLegacy(query: string): Promise<AddressOption[]> {
+    if (!this.placesService) {
+      console.warn('performTextSearchLegacy: PlacesService not available.');
+      return [];
+    }
+
+    return new Promise((resolve) => {
+      this.placesService!.textSearch(
+        {
+          query: query,
+        },
+        (results, status) => {
+          console.log('performTextSearchLegacy result:', { status, count: results?.length });
+
+          if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+            const options = results.map(place =>
+              this.mapPlaceResultToAddressOption(place, 'places', 0.95)
+            );
+            resolve(options);
+          } else {
+            console.warn('performTextSearchLegacy failed:', status);
+            resolve([]);
+          }
+        }
+      );
+    });
+  }
+
+  /**
+   * Map new Place API result to AddressOption
+   */
+  private async mapNewPlaceToAddressOption(
+    place: google.maps.places.Place,
+    confidence: number
+  ): Promise<AddressOption | null> {
+    try {
+      const location = place.location;
+      const addressComponents = place.addressComponents || [];
+
+      // Convert new address component format to our format
+      const components: AddressComponent[] = addressComponents.map(comp => ({
+        long_name: comp.longText || '',
+        short_name: comp.shortText || '',
+        types: comp.types || []
+      }));
+
+      return {
+        placeId: place.id || '',
+        formattedAddress: place.formattedAddress || place.displayName || '',
+        streetNumber: this.extractAddressComponent(components, 'street_number'),
+        streetName: this.extractAddressComponent(components, 'route'),
+        city: this.extractAddressComponent(components, 'locality') ||
+          this.extractAddressComponent(components, 'postal_town') || '',
+        postalCode: this.extractAddressComponent(components, 'postal_code') || '',
+        country: this.extractAddressComponent(components, 'country') || 'United Kingdom',
+        latitude: location?.lat() || 0,
+        longitude: location?.lng() || 0,
+        addressComponents: components,
+        source: 'places',
+        confidence,
+        buildingType: this.determineBuildingType(place.types || [])
+      };
+    } catch (error) {
+      console.error('Error mapping new Place to AddressOption:', error);
+      return null;
+    }
+  }
+
+  /**
    * Find streets in the postcode area
    */
   private async findStreetsInPostcode(postcode: string): Promise<AddressOption[]> {
     const results: AddressOption[] = [];
-    
+
     // Search for the postcode itself to find what streets exist
     try {
       const postcodeResults = await this.performGeocoding(postcode);
-      
+
       // Try to extract street information from the results
       if (postcodeResults.length > 0) {
         const primaryResult = postcodeResults[0];
-        
+
         // Look for route (street name) in address components
         const streetName = this.extractAddressComponent(primaryResult.addressComponents, 'route');
-        
+
         if (streetName) {
           // Now search for specific house numbers on this street
           const houseNumbers = [1, 5, 10, 15, 20, 25, 30, 31, 35, 40, 41, 45, 50];
-          
+
           for (const num of houseNumbers.slice(0, 8)) { // Limit to 8 searches
             try {
               const houseQuery = `${num} ${streetName} ${postcode}`;
               const houseResults = await this.performGeocoding(houseQuery);
-              
-              const validHouses = houseResults.filter(addr => 
-                addr.streetNumber && 
+
+              const validHouses = houseResults.filter(addr =>
+                addr.streetNumber &&
                 parseInt(addr.streetNumber) === num &&
                 addr.postalCode.replace(/\s/g, '').toLowerCase() === postcode.replace(/\s/g, '').toLowerCase()
               );
-              
+
               results.push(...validHouses);
-              
+
               // Small delay
               await new Promise(resolve => setTimeout(resolve, 50));
-              
+
             } catch (error) {
               console.warn(`Failed to search for ${num} ${streetName}:`, error);
             }
@@ -570,7 +762,7 @@ class AddressResolutionService {
     } catch (error) {
       console.warn('Failed to find streets in postcode:', error);
     }
-    
+
     return results;
   }
 
@@ -579,11 +771,11 @@ class AddressResolutionService {
    */
   private generateAddressSearchQueries(postcode: string): string[] {
     const queries: string[] = [];
-    
+
     // First, try to get street names from the postcode area
     // This is more efficient than trying random house numbers
     queries.push(postcode); // Get the general area first
-    
+
     // Try searching for common house number patterns with the postcode
     // Focus on smaller ranges to be more targeted
     const smallRanges = [
@@ -605,10 +797,10 @@ class AddressResolutionService {
 
     // Try common street name patterns to discover street names in the area
     const commonStreetTypes = [
-      'Road', 'Street', 'Avenue', 'Lane', 'Close', 'Way', 'Drive', 
+      'Road', 'Street', 'Avenue', 'Lane', 'Close', 'Way', 'Drive',
       'Gardens', 'Park', 'Crescent', 'Place', 'Court', 'Grove'
     ];
-    
+
     for (const streetType of commonStreetTypes) {
       queries.push(`${streetType} ${postcode}`);
       // Also try with numbers
@@ -623,22 +815,22 @@ class AddressResolutionService {
    */
   private generateAddressVariations(address: string): string[] {
     const variations: string[] = [address];
-    
+
     // Add "UK" if not present
     if (!address.toLowerCase().includes('uk')) {
       variations.push(`${address}, UK`);
     }
-    
+
     // Try with different formatting
     variations.push(address.replace(/,/g, ''));
     variations.push(address.replace(/\s+/g, ' ').trim());
-    
+
     // If it looks like a postcode, try nearby postcodes
     if (this.isPostcode(address)) {
       const nearby = this.generateNearbyPostcodes(address);
       variations.push(...nearby);
     }
-    
+
     return [...new Set(variations)]; // Remove duplicates
   }
 
@@ -648,22 +840,22 @@ class AddressResolutionService {
   private generateNearbyPostcodes(postcode: string): string[] {
     const normalized = this.normalizePostcode(postcode);
     const parts = normalized.split(' ');
-    
+
     if (parts.length !== 2) return [];
-    
+
     const [outward, inward] = parts;
     const inwardNum = parseInt(inward.substring(0, 1));
     const inwardLetters = inward.substring(1);
-    
+
     const nearby: string[] = [];
-    
+
     // Try adjacent numbers
     for (let i = Math.max(0, inwardNum - 2); i <= inwardNum + 2; i++) {
       if (i !== inwardNum) {
         nearby.push(`${outward} ${i}${inwardLetters}`);
       }
     }
-    
+
     return nearby;
   }
 
@@ -671,7 +863,7 @@ class AddressResolutionService {
    * Map geocoder result to AddressOption
    */
   private mapGeocoderResultToAddressOption(
-    result: google.maps.GeocoderResult, 
+    result: google.maps.GeocoderResult,
     source: AddressOption['source'],
     confidence: number
   ): AddressOption {
@@ -686,8 +878,8 @@ class AddressResolutionService {
       formattedAddress: result.formatted_address,
       streetNumber: this.extractAddressComponent(components, 'street_number'),
       streetName: this.extractAddressComponent(components, 'route'),
-      city: this.extractAddressComponent(components, 'locality') || 
-            this.extractAddressComponent(components, 'sublocality') || '',
+      city: this.extractAddressComponent(components, 'locality') ||
+        this.extractAddressComponent(components, 'sublocality') || '',
       postalCode: this.extractAddressComponent(components, 'postal_code') || '',
       country: this.extractAddressComponent(components, 'country') || 'United Kingdom',
       latitude: result.geometry.location.lat(),
@@ -718,8 +910,8 @@ class AddressResolutionService {
       formattedAddress: place.formatted_address || '',
       streetNumber: this.extractAddressComponent(components, 'street_number'),
       streetName: this.extractAddressComponent(components, 'route'),
-      city: this.extractAddressComponent(components, 'locality') || 
-            this.extractAddressComponent(components, 'sublocality') || '',
+      city: this.extractAddressComponent(components, 'locality') ||
+        this.extractAddressComponent(components, 'sublocality') || '',
       postalCode: this.extractAddressComponent(components, 'postal_code') || '',
       country: this.extractAddressComponent(components, 'country') || 'United Kingdom',
       latitude: place.geometry?.location?.lat() || 0,

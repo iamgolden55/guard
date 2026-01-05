@@ -93,10 +93,11 @@ class ReportWebSocketClient {
         return;
       }
 
-      // Get JWT token from localStorage if not provided
-      const authToken = this.token || localStorage.getItem('token');
+      // Sprint 3: WebSocket authentication needs to be updated for cookie-based auth
+      // For now, attempt connection without token (will likely fail, triggering polling fallback)
+      const authToken = this.token;
       if (!authToken) {
-        reject(new Error('No authentication token available'));
+        reject(new Error('No authentication token available - using polling fallback'));
         return;
       }
 

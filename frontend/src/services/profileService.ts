@@ -81,7 +81,7 @@ class ProfileService {
       return DEMO_PROFILE;
     }
 
-    const response = await api.get<StaffProfile>('/profiles/me');
+    const response = await api.get<StaffProfile>('/api/v1/profiles/me');
     console.log('[PROFILE SERVICE] API Response:', response.data);
     console.log('[PROFILE SERVICE] Phone Number:', response.data.phoneNumber);
     console.log('[PROFILE SERVICE] Address:', response.data.address);
@@ -134,7 +134,7 @@ class ProfileService {
       return updatedProfile;
     }
 
-    const response = await api.patch<StaffProfile>('/profiles/me', data);
+    const response = await api.patch<StaffProfile>('/api/v1/profiles/me', data);
 
     // Update localStorage to keep auth context in sync
     if (data.firstName || data.lastName || data.email) {
@@ -176,7 +176,7 @@ class ProfileService {
       return;
     }
 
-    await api.post('/accounts/change-password/', {
+    await api.post('/api/v1/accounts/change-password/', {
       current_password: currentPassword,
       new_password: newPassword
     });
@@ -191,7 +191,7 @@ class ProfileService {
       return DEMO_PROFILE.siaLicenses;
     }
 
-    const response = await api.get<SIALicense[]>('/profiles/me/sia-licenses');
+    const response = await api.get<SIALicense[]>('/api/v1/profiles/me/sia-licenses');
     return response.data;
   }
 
@@ -211,7 +211,7 @@ class ProfileService {
       level: licenseData.level || 'qualified',
     };
     console.log('addSIALicense payload:', payload);
-    return api.post('/sia-licenses/', payload);
+    return api.post('/api/v1/sia-licenses/', payload);
   }
 
   /**
@@ -247,7 +247,7 @@ class ProfileService {
       formData.append('document', licenseData.documentFile);
     }
 
-    const response = await api.patch<SIALicense>(`/profiles/me/sia-licenses/${licenseId}`, formData);
+    const response = await api.patch<SIALicense>(`/api/v1/profiles/me/sia-licenses/${licenseId}`, formData);
     return response.data;
   }
 
@@ -262,7 +262,7 @@ class ProfileService {
       return;
     }
 
-    await api.delete(`/profiles/me/sia-licenses/${licenseId}`);
+    await api.delete(`/api/v1/profiles/me/sia-licenses/${licenseId}`);
   }
 
   /**
@@ -279,7 +279,7 @@ class ProfileService {
     const formData = new FormData();
     formData.append('profile_image', imageFile);
 
-    const response = await api.post<{ imageUrl: string }>('/profiles/me/image', formData);
+    const response = await api.post<{ imageUrl: string }>('/api/v1/profiles/me/image', formData);
     return response.data;
   }
 
@@ -287,7 +287,7 @@ class ProfileService {
    * Get all staff profiles pending approval
    */
   async getPendingStaffProfiles() {
-    const response = await api.get('/staff-profiles/?is_approved=false');
+    const response = await api.get('/api/v1/staff-profiles/?is_approved=false');
     return response.data;
   }
 
@@ -295,7 +295,7 @@ class ProfileService {
    * Approve a staff profile by ID
    */
   async approveStaffProfile(profileId: number) {
-    const response = await api.patch(`/staff-profiles/${profileId}/approve/`);
+    const response = await api.patch(`/api/v1/staff-profiles/${profileId}/approve/`);
     return response.data;
   }
 }

@@ -26,12 +26,12 @@ export interface SystemSettings {
 
 export const settingsService = {
   async getSettings(): Promise<SystemSettings> {
-    const response = await api.get<SystemSettings>('settings/');
+    const response = await api.get<SystemSettings>('/api/v1/settings/');
     return response.data;
   },
 
   async updateSettings(data: Partial<SystemSettings>): Promise<SystemSettings> {
-    const response = await api.put<SystemSettings>('settings/', data);
+    const response = await api.put<SystemSettings>('/api/v1/settings/', data);
     return response.data;
   }
 };

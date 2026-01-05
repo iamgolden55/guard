@@ -30,7 +30,7 @@ export const API_CONFIG = {
   RETRY_DELAY: 1000,
 
   // Expo Push Notifications
-  EXPO_PROJECT_ID: Constants.expoConfig?.extra?.eas?.projectId || 'your-expo-project-id',
+  EXPO_PROJECT_ID: Constants.expoConfig?.extra?.eas?.projectId ?? 'your-expo-project-id',
 };
 
 // Authentication Configuration
@@ -104,8 +104,13 @@ export const SYNC_CONFIG = {
 // Notification Configuration
 export const NOTIFICATION_CONFIG = {
   // Shift reminder timing
-  ADVANCE_REMINDER_HOURS: 3, // Advance reminder (3 hours before shift)
-  FINAL_REMINDER_MINUTES: 45, // Final reminder (45 minutes before shift)
+  ADVANCE_REMINDER_HOURS: 3,      // Advance reminder (3 hours before shift)
+  SOON_REMINDER_MINUTES: 45,      // Soon reminder (45 minutes before shift)
+  IMMINENT_REMINDER_MINUTES: 5,   // Imminent reminder (5 minutes before shift)
+  CHECKIN_REMINDER_MINUTES: 4,    // Check-in reminder (4 minutes after shift start)
+
+  // Legacy alias for backwards compatibility
+  FINAL_REMINDER_MINUTES: 45,
 
   // Exchange expiration
   EXCHANGE_EXPIRY_MINUTES: 30, // Exchanges expire 30 minutes before shift
@@ -274,9 +279,9 @@ export const FEATURES = {
 // App Metadata
 export const APP_METADATA = {
   name: 'Security Staff Portal',
-  version: Constants.expoConfig?.version || '1.0.0',
-  buildNumber: Constants.expoConfig?.ios?.buildNumber || '1',
-  bundleId: Constants.expoConfig?.ios?.bundleIdentifier || 'com.meadsecurity.staffapp',
+  version: Constants.expoConfig?.version ?? '1.0.0',
+  buildNumber: Constants.expoConfig?.ios?.buildNumber ?? '1',
+  bundleId: Constants.expoConfig?.ios?.bundleIdentifier ?? 'com.meadsecurity.staffapp',
 };
 
 // Error Messages

@@ -51,7 +51,7 @@ export class NetworkError extends Error {
 // API Base URL - Read from environment configuration (.env file)
 // To change the backend URL, update the .env file in the mobile directory
 // Find your IP with: ipconfig getifaddr en0 (Mac) or ipconfig (Windows)
-const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || 'http://localhost:8000';
+const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl ?? 'http://localhost:8000';
 
 class ApiService {
   private baseUrl: string;

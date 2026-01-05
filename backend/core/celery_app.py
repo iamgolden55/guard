@@ -75,7 +75,18 @@ app.conf.update(
             'task': 'api.tasks.cleanup_expired_report_jobs',
             'schedule': 6.0 * 60 * 60,  # Run every 6 hours
             'options': {'queue': 'cleanup'}
-        }
+        },
+        # Shift notification tasks - run every minute
+        'check-shift-reminders': {
+            'task': 'api.tasks.check_shift_reminders',
+            'schedule': 60.0,  # Every minute
+            'options': {'queue': 'notifications'}
+        },
+        'check-missed-checkins': {
+            'task': 'api.tasks.check_missed_checkins',
+            'schedule': 60.0,  # Every minute
+            'options': {'queue': 'notifications'}
+        },
     },
 )
 

@@ -29,7 +29,7 @@ interface Shift {
 interface ScheduledNotification {
   notificationId: string;
   shiftId: number;
-  type: 'advance' | 'final';
+  type: 'advance' | 'soon' | 'imminent' | 'final';
   scheduledTime: string;
 }
 
@@ -217,14 +217,19 @@ class NotificationService {
    */
   private async registerTokenWithBackend(token: string): Promise<void> {
     try {
-      await api.post('/notifications/devices/', {
+      await api.post('/api/v1/notifications/devices/', {
         token,
         platform: Platform.OS,
         device_id: Device.osInternalBuildId || 'unknown',
       });
       console.log('Push token registered with backend successfully');
-    } catch (error) {
-      console.error('Error registering token with backend:', error);
+    } catch (error: any) {
+      // Handle duplicate token gracefully (HTTP 400)
+      if (error?.statusCode === 400) {
+        console.log('[Notifications] Push token already registered (skipping)');
+      } else {
+        console.error('Error registering token with backend:', error);
+      }
       // Don't throw - local notifications will still work
     }
   }
@@ -277,8 +282,11 @@ class NotificationService {
       const advanceReminderTime = new Date(
         shiftStartTime.getTime() - NOTIFICATION_CONFIG.ADVANCE_REMINDER_HOURS * 60 * 60 * 1000
       );
-      const finalReminderTime = new Date(
-        shiftStartTime.getTime() - NOTIFICATION_CONFIG.FINAL_REMINDER_MINUTES * 60 * 1000
+      const soonReminderTime = new Date(
+        shiftStartTime.getTime() - NOTIFICATION_CONFIG.SOON_REMINDER_MINUTES * 60 * 1000
+      );
+      const imminentReminderTime = new Date(
+        shiftStartTime.getTime() - NOTIFICATION_CONFIG.IMMINENT_REMINDER_MINUTES * 60 * 1000
       );
 
       // Schedule advance reminder (3 hours before)
@@ -310,15 +318,44 @@ class NotificationService {
         });
       }
 
-      // Schedule final reminder (45 minutes before)
-      if (finalReminderTime > now) {
-        const finalId = await Notifications.scheduleNotificationAsync({
+      // Schedule soon reminder (45 minutes before)
+      if (soonReminderTime > now) {
+        const soonId = await Notifications.scheduleNotificationAsync({
           content: {
             title: '⏰ Shift Starting Soon!',
-            body: `Your shift at ${shift.venue.name} starts in ${NOTIFICATION_CONFIG.FINAL_REMINDER_MINUTES} minutes. Don't forget to check in!`,
+            body: `Your shift at ${shift.venue.name} starts in ${NOTIFICATION_CONFIG.SOON_REMINDER_MINUTES} minutes. Get ready!`,
             data: {
               shiftId: shift.id,
-              type: 'final_reminder',
+              type: 'soon_reminder',
+              screen: 'ShiftDetails',
+            },
+            sound: 'default',
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+          },
+          trigger: {
+            channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
+            date: soonReminderTime,
+          },
+        });
+
+        notificationIds.push(soonId);
+        scheduledNotifications.push({
+          notificationId: soonId,
+          shiftId: shift.id,
+          type: 'soon',
+          scheduledTime: soonReminderTime.toISOString(),
+        });
+      }
+
+      // Schedule imminent reminder (5 minutes before)
+      if (imminentReminderTime > now) {
+        const imminentId = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '🚨 Almost Time!',
+            body: `Your shift at ${shift.venue.name} starts in ${NOTIFICATION_CONFIG.IMMINENT_REMINDER_MINUTES} minutes. Head to the venue now!`,
+            data: {
+              shiftId: shift.id,
+              type: 'imminent_reminder',
               screen: 'ShiftDetails',
             },
             sound: 'default',
@@ -326,16 +363,16 @@ class NotificationService {
           },
           trigger: {
             channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
-            date: finalReminderTime,
+            date: imminentReminderTime,
           },
         });
 
-        notificationIds.push(finalId);
+        notificationIds.push(imminentId);
         scheduledNotifications.push({
-          notificationId: finalId,
+          notificationId: imminentId,
           shiftId: shift.id,
-          type: 'final',
-          scheduledTime: finalReminderTime.toISOString(),
+          type: 'imminent',
+          scheduledTime: imminentReminderTime.toISOString(),
         });
       }
 
@@ -378,24 +415,31 @@ class NotificationService {
     const expectedAdvance = new Date(
       shiftStartTime.getTime() - NOTIFICATION_CONFIG.ADVANCE_REMINDER_HOURS * 60 * 60 * 1000
     );
-    const expectedFinal = new Date(
-      shiftStartTime.getTime() - NOTIFICATION_CONFIG.FINAL_REMINDER_MINUTES * 60 * 1000
+    const expectedSoon = new Date(
+      shiftStartTime.getTime() - NOTIFICATION_CONFIG.SOON_REMINDER_MINUTES * 60 * 1000
+    );
+    const expectedImminent = new Date(
+      shiftStartTime.getTime() - NOTIFICATION_CONFIG.IMMINENT_REMINDER_MINUTES * 60 * 1000
     );
 
     // Find notifications by type
     const advanceNotif = existing.find(n => n.type === 'advance');
-    const finalNotif = existing.find(n => n.type === 'final');
+    const soonNotif = existing.find(n => n.type === 'soon' || n.type === 'final'); // Support legacy 'final' type
+    const imminentNotif = existing.find(n => n.type === 'imminent');
 
     // Validate times (allow 1 minute tolerance for rounding differences)
     const tolerance = 60 * 1000; // 1 minute
     const advanceValid = advanceNotif
       ? Math.abs(new Date(advanceNotif.scheduledTime).getTime() - expectedAdvance.getTime()) < tolerance
       : true;
-    const finalValid = finalNotif
-      ? Math.abs(new Date(finalNotif.scheduledTime).getTime() - expectedFinal.getTime()) < tolerance
+    const soonValid = soonNotif
+      ? Math.abs(new Date(soonNotif.scheduledTime).getTime() - expectedSoon.getTime()) < tolerance
+      : true;
+    const imminentValid = imminentNotif
+      ? Math.abs(new Date(imminentNotif.scheduledTime).getTime() - expectedImminent.getTime()) < tolerance
       : true;
 
-    return advanceValid && finalValid;
+    return advanceValid && soonValid && imminentValid;
   }
 
   /**
@@ -630,6 +674,97 @@ class NotificationService {
     } catch (error) {
       console.error('Error getting stored push token:', error);
       return null;
+    }
+  }
+
+  /**
+   * Check if a notification is exchange-related
+   * Exchange notifications include: exchange_request, exchange_accepted,
+   * exchange_approved, exchange_rejected, exchange_cancelled
+   */
+  isExchangeNotification(notification: Notifications.Notification): boolean {
+    const data = notification.request.content.data;
+    if (!data || !data.type) return false;
+
+    const exchangeTypes = [
+      'exchange_request',
+      'exchange_accepted',
+      'exchange_approved',
+      'exchange_rejected',
+      'exchange_cancelled',
+    ];
+
+    return exchangeTypes.includes(data.type as string);
+  }
+
+  /**
+   * Get navigation info from a notification
+   * Returns the screen name and params to navigate to based on notification type
+   */
+  getNavigationFromNotification(notification: Notifications.Notification): {
+    screen: string;
+    params?: Record<string, any>;
+  } | null {
+    const data = notification.request.content.data;
+    if (!data) return null;
+
+    // Exchange-related notifications
+    if (this.isExchangeNotification(notification)) {
+      return {
+        screen: (data.screen as string) || 'ShiftExchanges',
+        params: {
+          exchangeId: data.exchangeId,
+          shiftId: data.shiftId,
+          highlightExchangeId: data.exchangeId,
+        },
+      };
+    }
+
+    // Shift-related notifications
+    if (data.shiftId) {
+      return {
+        screen: (data.screen as string) || 'ShiftDetails',
+        params: {
+          shiftId: data.shiftId,
+        },
+      };
+    }
+
+    // Available shifts batch notification
+    if (data.type === 'available_shifts_batch') {
+      return {
+        screen: 'AvailableShifts',
+        params: {},
+      };
+    }
+
+    // Default screen from notification data
+    if (data.screen) {
+      return {
+        screen: data.screen as string,
+        params: {},
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Handle exchange notification received
+   * This can be used to trigger UI updates when an exchange notification arrives
+   */
+  handleExchangeNotification(
+    notification: Notifications.Notification,
+    onRefreshNeeded?: () => void
+  ): void {
+    if (!this.isExchangeNotification(notification)) return;
+
+    const data = notification.request.content.data;
+    console.log('[Notifications] 🔄 Exchange notification received:', data?.type);
+
+    // Trigger refresh callback if provided
+    if (onRefreshNeeded) {
+      onRefreshNeeded();
     }
   }
 }

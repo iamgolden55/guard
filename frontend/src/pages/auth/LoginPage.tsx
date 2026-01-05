@@ -27,19 +27,32 @@ const LoginPage: React.FC = () => {
   // Get the previous location the user was trying to access
   const from = location.state?.from?.pathname || '/';
 
+  // Ref to prevent redirect loop
+  const hasRedirectedRef = React.useRef(false);
+
   // Redirect if already authenticated
   React.useEffect(() => {
-    if (authState.isAuthenticated && !authState.isLoading) {
+    // Prevent redirect loop - only redirect once
+    if (hasRedirectedRef.current) {
+      return;
+    }
+
+    // Wait for both loading states to complete before redirecting
+    if (authState.isAuthenticated && !authState.isLoading && !authState.onboardingLoading) {
+      hasRedirectedRef.current = true;
+
       // If onboarding is not completed, redirect to onboarding
       if (!authState.onboarding.isCompleted) {
         const currentStep = authState.onboarding.currentStep || 1;
+        console.log('LoginPage: Redirecting to onboarding step', currentStep);
         navigate(`/onboarding/step/${currentStep}`);
       } else {
         // If onboarding is completed, redirect to intended destination or dashboard
+        console.log('LoginPage: Redirecting to', from === '/' ? '/dashboard' : from);
         navigate(from === '/' ? '/dashboard' : from);
       }
     }
-  }, [authState, navigate, from]);
+  }, [authState.isAuthenticated, authState.isLoading, authState.onboardingLoading, authState.onboarding.isCompleted, authState.onboarding.currentStep, navigate, from]);
 
   // If session expired, show that message instead of any previous errors
   React.useEffect(() => {
@@ -51,7 +64,7 @@ const LoginPage: React.FC = () => {
   // Login form validation schema
   const validationSchema = Yup.object({
     username: Yup.string()
-      .required('Username is required'),
+      .required('Email or username is required'),
     password: Yup.string()
       .required('Password is required')
   });
@@ -95,10 +108,11 @@ const LoginPage: React.FC = () => {
             </MessageBar>
           )}
 
-          {/* Username field */}
+          {/* Username or Email field */}
           <TextField
-            label="Username"
+            label="Email or Username"
             name="username"
+            placeholder="Enter your email or username"
             value={formik.values.username}
             onChange={formik.handleChange}
             onBlur={formik.handleBlur}
@@ -108,7 +122,7 @@ const LoginPage: React.FC = () => {
                 : undefined
             }
             disabled={authState.isLoading}
-            autoComplete="username"
+            autoComplete="username email"
             required
           />
 
@@ -130,6 +144,13 @@ const LoginPage: React.FC = () => {
             canRevealPassword
             required
           />
+
+          {/* Forgot Password link */}
+          <div className="text-right">
+            <Link to="/reset-password" className="text-blue-600 hover:underline text-sm">
+              Forgot password?
+            </Link>
+          </div>
 
           {/* Submit button */}
           <PrimaryButton

@@ -23,10 +23,9 @@ export interface CompanyMembership {
   companyName: string;
 }
 
+// Sprint 3: Removed token and refreshToken - they're in httpOnly cookies now
 export interface AuthState {
   user: User | null;
-  token: string | null;
-  refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   onboardingLoading: boolean;
@@ -48,9 +47,9 @@ export interface LoginRequest {
   password: string;
 }
 
+// Sprint 3: Tokens are in httpOnly cookies, not in response body
 export interface LoginResponse {
-  access: string;
-  refresh: string;
+  message: string;
   user: User;
 }
 
@@ -62,6 +61,7 @@ export interface RegisterRequest {
   lastName: string;
 }
 
+// Sprint 3: Tokens are in httpOnly cookies, not in response body
 export interface RefreshTokenResponse {
-  access: string;
+  message: string;
 }

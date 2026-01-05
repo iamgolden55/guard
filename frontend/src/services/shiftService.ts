@@ -16,38 +16,9 @@ import type {
 } from '../types';
 import { AcceptedVenueTerms } from '../types/profile';
 
-// Create a separate API instance for shift-related endpoints that use /api/shifts/
-const shiftApi = axios.create({
-  baseURL: 'http://localhost:8000/api/shifts',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 15000,
-});
-
-// Add the same interceptors as the main api
-shiftApi.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-shiftApi.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error.response?.status === 401) {
-      // Handle token refresh logic here if needed
-      localStorage.removeItem('token');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
+// Sprint 3: Use main api client for cookie-based authentication
+// All shift endpoints should use /api/v1/shifts/ and go through Vite proxy
+const shiftApi = api;
 
 class ShiftService {
   // Venue-related methods
@@ -76,7 +47,7 @@ class ShiftService {
   async getStaffProfiles(): Promise<StaffProfile[]> {
     try {
       // Get users from the API instead of staff-profiles
-      const response = await api.get<any[]>('/users/');
+      const response = await api.get<any[]>('/api/v1/users/');
       
       // Check for empty response
       if (!response || !response.data) {
@@ -351,7 +322,7 @@ class ShiftService {
 
   // Shift-related methods
   async getShifts(staffId?: number): Promise<Shift[]> {
-    const url = staffId ? `/?staff=${staffId}` : '/';
+    const url = staffId ? `/api/v1/shifts/?staff=${staffId}` : '/api/v1/shifts/';
     const response = await shiftApi.get<any>(url);
     
     // Handle paginated response from Django REST Framework
@@ -385,7 +356,7 @@ class ShiftService {
   async getMyShifts(): Promise<any[]> {
     try {
       // Use the correct shifts endpoint from the Django backend
-      const response = await shiftApi.get<any>('/my_shifts/');
+      const response = await shiftApi.get<any>('/api/v1/shifts/my_shifts/');
       
       // Handle different response structures
       let shifts = response.data;
@@ -430,14 +401,14 @@ class ShiftService {
   async getAllShiftsForManager(): Promise<any[]> {
     try {
       // Fetch all shifts for manager/admin view with venue check summaries
-      const response = await shiftApi.get<any>('/manager/all/');
-      
+      const response = await shiftApi.get<any>('/api/v1/shifts/manager/all/');
+
       // Handle different response structures
       let shifts = response.data;
       if (response.data.results) {
         shifts = response.data.results; // Paginated response
       }
-      
+
       return shifts;
     } catch (error: any) {
       console.error('Failed to fetch manager shifts:', error);
@@ -445,8 +416,26 @@ class ShiftService {
     }
   }
 
+  async getIncompleteShifts(): Promise<any[]> {
+    try {
+      // Fetch incomplete shifts for manager approval
+      const response = await shiftApi.get<any>('/api/v1/shifts/incomplete/');
+
+      // Handle different response structures
+      let shifts = response.data;
+      if (response.data.results) {
+        shifts = response.data.results; // Paginated response
+      }
+
+      return shifts;
+    } catch (error: any) {
+      console.error('Failed to fetch incomplete shifts:', error);
+      throw error;
+    }
+  }
+
   async getShiftById(shiftId: number): Promise<Shift> {
-    const response = await shiftApi.get<Shift>(`/${shiftId}/`);
+    const response = await shiftApi.get<Shift>(`/api/v1/shifts/${shiftId}/`);
     return response.data;
   }
 
@@ -455,7 +444,7 @@ class ShiftService {
     photo: string;
     signature: string;
   }): Promise<any> {
-    const response = await shiftApi.post(`/frontend/${shiftId}/checkIn/`, {
+    const response = await shiftApi.post(`/api/v1/shifts/frontend/${shiftId}/checkIn/`, {
       latitude: data.location.latitude,
       longitude: data.location.longitude,
       photo: data.photo,
@@ -469,7 +458,7 @@ class ShiftService {
     photo: string;
     signature: string;
   }): Promise<any> {
-    const response = await shiftApi.post(`/frontend/${shiftId}/checkOut/`, {
+    const response = await shiftApi.post(`/api/v1/shifts/frontend/${shiftId}/checkOut/`, {
       latitude: data.location.latitude,
       longitude: data.location.longitude,
       photo: data.photo,
@@ -488,12 +477,12 @@ class ShiftService {
       await this.acceptVenueTerms(data.venueId);
     }
 
-    const response = await shiftApi.post<Shift>('/submit/', data);
+    const response = await shiftApi.post<Shift>('/api/v1/shifts/submit/', data);
     return response.data;
   }
 
   async endShift(shiftId: number, endSignature: string): Promise<Shift> {
-    const response = await shiftApi.post<Shift>(`/${shiftId}/end/`, {
+    const response = await shiftApi.post<Shift>(`/api/v1/shifts/${shiftId}/end/`, {
       endSignature
     });
     return response.data;
@@ -504,13 +493,13 @@ class ShiftService {
     managerSignature: string,
     managerNotes?: string
   }): Promise<Shift> {
-    const response = await shiftApi.post<Shift>(`/${shiftId}/approve/`, data);
+    const response = await shiftApi.post<Shift>(`/api/v1/shifts/${shiftId}/approve/`, data);
     return response.data;
   }
 
   // Check-related methods
   async getFireExitChecks(shiftId: number): Promise<FireExitCheck[]> {
-    const response = await api.get<FireExitCheck[]>(`/fire-exit-checks/?shift=${shiftId}`);
+    const response = await api.get<FireExitCheck[]>(`/api/v1/fire-exit-checks/?shift=${shiftId}`);
     return response.data;
   }
 
@@ -524,12 +513,12 @@ class ShiftService {
       is_accessible: true, // Default to true
       notes: data.comments || ''
     };
-    const response = await api.post<FireExitCheck>('/fire-exit-checks/', requestData);
+    const response = await api.post<FireExitCheck>('/api/v1/fire-exit-checks/', requestData);
     return response.data;
   }
 
   async getCapacityChecks(shiftId: number): Promise<CapacityCheck[]> {
-    const response = await api.get<CapacityCheck[]>(`/capacity-checks/?shift=${shiftId}`);
+    const response = await api.get<CapacityCheck[]>(`/api/v1/capacity-checks/?shift=${shiftId}`);
     return response.data;
   }
 
@@ -543,12 +532,12 @@ class ShiftService {
       action_taken: data.comments || '',
       notes: data.comments || ''
     };
-    const response = await api.post<CapacityCheck>('/capacity-checks/', requestData);
+    const response = await api.post<CapacityCheck>('/api/v1/capacity-checks/', requestData);
     return response.data;
   }
 
   async getToiletChecks(shiftId: number): Promise<ToiletCheck[]> {
-    const response = await api.get<ToiletCheck[]>(`/toilet-checks/?shift=${shiftId}`);
+    const response = await api.get<ToiletCheck[]>(`/api/v1/toilet-checks/?shift=${shiftId}`);
     return response.data;
   }
 
@@ -560,7 +549,7 @@ class ShiftService {
       condition: data.condition,
       notes: data.comments || ''
     };
-    const response = await api.post<ToiletCheck>('/toilet-checks/', requestData);
+    const response = await api.post<ToiletCheck>('/api/v1/toilet-checks/', requestData);
     return response.data;
   }
 
@@ -608,12 +597,12 @@ class ShiftService {
   }
 
   async getEnforcementVisits(shiftId: number): Promise<EnforcementVisit[]> {
-    const response = await shiftApi.get<EnforcementVisit[]>(`/${shiftId}/enforcement-visits/`);
+    const response = await shiftApi.get<EnforcementVisit[]>(`/api/v1/shifts/${shiftId}/enforcement-visits/`);
     return response.data;
   }
 
   async addEnforcementVisit(shiftId: number, data: Omit<EnforcementVisit, 'id' | 'shift' | 'timestamp'>): Promise<EnforcementVisit> {
-    const response = await shiftApi.post<EnforcementVisit>(`/${shiftId}/enforcement-visits/`, data);
+    const response = await shiftApi.post<EnforcementVisit>(`/api/v1/shifts/${shiftId}/enforcement-visits/`, data);
     return response.data;
   }
 
@@ -624,12 +613,12 @@ class ShiftService {
     venueId?: number;
   }): Promise<any[]> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.startDate) queryParams.append('startDate', params.startDate);
     if (params.endDate) queryParams.append('endDate', params.endDate);
     if (params.venueId) queryParams.append('venueId', params.venueId.toString());
-    
-    const url = `/reports/compliance/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+    const url = `/api/v1/reports/compliance/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
     const response = await shiftApi.get<any[]>(url);
     return response.data;
   }
@@ -640,12 +629,12 @@ class ShiftService {
     venueId?: number;
   }): Promise<any[]> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.startDate) queryParams.append('startDate', params.startDate);
     if (params.endDate) queryParams.append('endDate', params.endDate);
     if (params.venueId) queryParams.append('venueId', params.venueId.toString());
-    
-    const url = `/reports/safety/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+    const url = `/api/v1/reports/safety/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
     const response = await shiftApi.get<any[]>(url);
     return response.data;
   }
@@ -656,12 +645,12 @@ class ShiftService {
     venueId?: number;
   }): Promise<any[]> {
     const queryParams = new URLSearchParams();
-    
+
     if (params.startDate) queryParams.append('startDate', params.startDate);
     if (params.endDate) queryParams.append('endDate', params.endDate);
     if (params.venueId) queryParams.append('venueId', params.venueId.toString());
-    
-    const url = `/reports/performance/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+    const url = `/api/v1/reports/performance/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
     const response = await shiftApi.get<any[]>(url);
     return response.data;
   }
@@ -673,7 +662,7 @@ class ShiftService {
       const shift = await this.getShiftById(shiftId);
       
       // Get all staff profiles
-      const response = await api.get<any>('/staff-profiles/');
+      const response = await api.get<any>('/api/v1/staff-profiles/');
       let staffList = response.data;
       
       // Handle paginated response
@@ -767,6 +756,27 @@ class ShiftService {
         reason: "Error checking exchange eligibility"
       };
     }
+  }
+
+  // Direct shift creation methods for scheduling
+  async createShift(shiftData: any): Promise<any> {
+    const response = await shiftApi.post('/api/v1/shifts/', shiftData);
+    return response.data;
+  }
+
+  async createMultiStaffShifts(data: {
+    venue: number;
+    staff_users: number[];
+    start_time: string;
+    end_time: string;
+    status: string;
+    required_security_role: string;
+    notes: string;
+    hourly_rate?: number | null;
+    is_special_event: boolean;
+  }): Promise<any> {
+    const response = await shiftApi.post('/api/v1/shifts/create_multi_staff/', data);
+    return response.data;
   }
 }
 

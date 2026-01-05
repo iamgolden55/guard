@@ -1,26 +1,45 @@
 import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
 
-// Base API configuration  
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+// Base API configuration
+const API_URL = import.meta.env.VITE_API_URL;
 
 // Create an Axios instance with default config
+// Sprint 3: Use relative URLs to leverage Vite proxy in development
 const api: AxiosInstance = axios.create({
-  baseURL: API_URL,
+  baseURL: import.meta.env.DEV ? '' : API_URL, // Empty baseURL in dev to use Vite proxy
   headers: {
     'Content-Type': 'application/json',
   },
   // Add reasonable timeouts to prevent hanging requests
   timeout: 15000, // 15 seconds
+  // Sprint 3: Enable credentials to send httpOnly cookies (XSS protection)
+  withCredentials: true,
 });
 
-// Request interceptor for adding auth token
+// Sprint 3: Helper function to get CSRF token from cookie
+function getCsrfToken(): string | null {
+  const name = 'csrftoken';
+  const cookieValue = document.cookie
+    .split('; ')
+    .find(row => row.startsWith(`${name}=`))
+    ?.split('=')[1];
+  return cookieValue || null;
+}
+
+// Request interceptor for adding CSRF token (Sprint 3: Cookies for auth, no localStorage)
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = localStorage.getItem('token');
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
+    // Sprint 3: Add CSRF token for non-GET requests (POST, PUT, PATCH, DELETE)
+    if (config.method && !['get', 'head', 'options'].includes(config.method.toLowerCase())) {
+      const csrfToken = getCsrfToken();
+      if (csrfToken && config.headers) {
+        config.headers['X-CSRFToken'] = csrfToken;
+      }
     }
-    
+
+    // Sprint 3: No need to add Authorization header - httpOnly cookies are sent automatically
+    // Tokens are now in httpOnly cookies, browser handles this automatically
+
     return config;
   },
   (error: AxiosError) => {
@@ -55,53 +74,45 @@ api.interceptors.response.use(
       return Promise.reject(enhancedError);
     }
 
-    // Check if error is 401 and we haven't already tried refreshing
+    // Sprint 3: Check if error is 401 and we haven't already tried refreshing (Cookie-based)
     if (originalRequest && error.response?.status === 401 && !originalRequest.headers?.['X-Retry']) {
-      const refreshToken = localStorage.getItem('refreshToken');
-
-      if (refreshToken) {
-        try {
-          
-          // Try to get a new token with direct axios to avoid interceptors
-          const response = await axios.post(`${API_URL}/token/refresh/`, {
-            refresh: refreshToken
-          });
-
-          // Save the new token
-          const newToken = response.data.access;
-          console.log('Token refreshed successfully');
-          
-          localStorage.setItem('token', newToken);
-
-          // Retry the original request with the new token
-          if (originalRequest.headers) {
-            originalRequest.headers.Authorization = `Bearer ${newToken}`;
-            originalRequest.headers['X-Retry'] = 'true';
-          }
-
-          return api(originalRequest);
-        } catch (refreshError: any) {
-          console.error('Token refresh failed:', refreshError?.response?.data || refreshError);
-          
-          // If refresh token fails, log out the user
-          localStorage.removeItem('token');
-          localStorage.removeItem('refreshToken');
-          localStorage.removeItem('user');
-
-          // Don't redirect immediately if it's an API call during page load
-          // This prevents redirect loops on pages that make multiple API calls
-          setTimeout(() => {
-            // Check if we're still missing tokens (user hasn't logged in again in the meantime)
-            if (!localStorage.getItem('token')) {
-              console.log('Redirecting to login page due to authentication failure');
-              window.location.href = '/login?expired=true';
+      try {
+        // Sprint 3: Call cookie-based refresh endpoint (refresh token is in httpOnly cookie)
+        // Use /api/v1/ prefix to go through Vite proxy to backend
+        const response = await axios.post(
+          `/api/v1/auth/refresh/`,
+          {},
+          {
+            withCredentials: true, // Send cookies with refresh request
+            headers: {
+              'X-CSRFToken': getCsrfToken() || '', // Add CSRF token
             }
-          }, 500);
-          
-          return Promise.reject(refreshError);
+          }
+        );
+
+        console.log('Token refreshed successfully via cookies');
+
+        // Sprint 3: No need to save tokens - they're in httpOnly cookies now
+        // Retry the original request (cookies will be sent automatically)
+        if (originalRequest.headers) {
+          originalRequest.headers['X-Retry'] = 'true';
         }
-      } else {
-        console.warn('No refresh token available for token refresh');
+
+        return api(originalRequest);
+      } catch (refreshError: any) {
+        console.error('Token refresh failed:', refreshError?.response?.data || refreshError);
+
+        // Sprint 3: If refresh fails, redirect to login (cookies are invalid/expired)
+        // No need to clear localStorage - tokens are in httpOnly cookies
+
+        // Don't redirect immediately if it's an API call during page load
+        // This prevents redirect loops on pages that make multiple API calls
+        setTimeout(() => {
+          console.log('Redirecting to login page due to authentication failure');
+          window.location.href = '/login?expired=true';
+        }, 500);
+
+        return Promise.reject(refreshError);
       }
     }
 
@@ -208,13 +219,9 @@ export const getShifts = async (params?: any): Promise<Shift[]> => {
     }
     
     console.log(`Fetching shifts with query: ${queryString}`);
-    // Use the shifts API endpoint instead of the main API
-    const shiftsApiUrl = 'http://localhost:8000/api/shifts';
-    const response = await axios.get(`${shiftsApiUrl}${queryString}`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    });
+    // Use the api instance which has proper auth and interceptors configured
+    // In dev: /api/v1/shifts is proxied by Vite to http://localhost:8000/api/v1/shifts
+    const response = await api.get(`/api/v1/shifts${queryString}`);
     
     // Ensure we got a valid response with data
     if (!response.data) {
@@ -273,13 +280,8 @@ export const getFilteredShifts = async (venueId?: string, staffId?: string): Pro
 // Create a new shift
 export const createShift = async (shiftData: Omit<Shift, 'id'>): Promise<Shift | null> => {
   try {
-    const shiftsApiUrl = 'http://localhost:8000/api/shifts';
-    const response = await axios.post(`${shiftsApiUrl}/`, shiftData, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
-      }
-    });
+    // Use /api/v1/ prefix to go through Vite proxy to backend
+    const response = await api.post(`/api/v1/shifts/`, shiftData);
     return response.data;
   } catch (error: any) {
     console.error('Error creating shift:', error);
@@ -290,13 +292,8 @@ export const createShift = async (shiftData: Omit<Shift, 'id'>): Promise<Shift |
 // Update a shift
 export const updateShift = async (id: string, shiftData: Partial<Shift>): Promise<Shift | null> => {
   try {
-    const shiftsApiUrl = 'http://localhost:8000/api/shifts';
-    const response = await axios.put(`${shiftsApiUrl}/${id}/`, shiftData, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
-      }
-    });
+    // Use /api/v1/ prefix to go through Vite proxy to backend
+    const response = await api.put(`/api/v1/shifts/${id}/`, shiftData);
     return response.data;
   } catch (error: any) {
     console.error('Error updating shift:', error);
@@ -312,16 +309,12 @@ export const updateShift = async (id: string, shiftData: Partial<Shift>): Promis
 // Delete a shift
 export const deleteShift = async (id: string): Promise<boolean> => {
   try {
-    const shiftsApiUrl = 'http://localhost:8000/api/shifts';
-    await axios.delete(`${shiftsApiUrl}/${id}/`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    });
+    // Use /api/v1/ prefix to go through Vite proxy to backend
+    await api.delete(`/api/v1/shifts/${id}/`);
     return true;
   } catch (error: any) {
     console.error('Error deleting shift:', error);
-    
+
     // Log detailed error information for debugging
     if (error.response) {
       console.error('Delete error details:');
@@ -329,7 +322,7 @@ export const deleteShift = async (id: string): Promise<boolean> => {
       console.error('  Status Text:', error.response.statusText);
       console.error('  Data:', error.response.data);
     }
-    
+
     return false;
   }
 };
@@ -345,20 +338,18 @@ export const bulkCreateShifts = async (shifts: Array<{
   isSpecialEvent?: boolean;
 }>, allowPastDates: boolean = false): Promise<Shift[] | null> => {
   try {
-    const shiftsApiUrl = 'http://localhost:8000/api/shifts';
-    const token = localStorage.getItem('token');
-    
     const results = [];
     let successCount = 0;
     let errorCount = 0;
-    
+
     console.log(`Starting bulk creation of ${shifts.length} shifts...`);
-    
+
     for (const shift of shifts) {
       try {
         // If no staff selected, create unassigned shift
         if (!shift.staffIds || shift.staffIds.length === 0) {
-          const response = await axios.post(`${shiftsApiUrl}/`, {
+          // Use /api/v1/ prefix to go through Vite proxy to backend
+          const response = await api.post(`/api/v1/shifts/`, {
             venue: parseInt(shift.venueId),
             start_time: shift.startTime,
             end_time: shift.endTime,
@@ -369,17 +360,13 @@ export const bulkCreateShifts = async (shifts: Array<{
             notes: '',
             hourly_rate: shift.hourlyRate,
             is_special_event: shift.isSpecialEvent || false
-          }, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
           });
           results.push(response.data);
           successCount++;
         } else {
           // Create multi-staff shift using the multi-staff endpoint
-          const response = await axios.post(`${shiftsApiUrl}/create_multi_staff/`, {
+          // Use /api/v1/ prefix to go through Vite proxy to backend
+          const response = await api.post(`/api/v1/shifts/create_multi_staff/`, {
             venue: parseInt(shift.venueId),
             staff_users: shift.staffIds,
             start_time: shift.startTime,
@@ -389,11 +376,6 @@ export const bulkCreateShifts = async (shifts: Array<{
             allow_past_dates: allowPastDates,
             hourly_rate: shift.hourlyRate,
             is_special_event: shift.isSpecialEvent || false
-          }, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
           });
           
           // The multi-staff endpoint returns an array of shifts

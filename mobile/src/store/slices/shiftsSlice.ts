@@ -44,6 +44,42 @@ export interface Shift {
   break_end_time?: string;
   notes?: string;
   sync_status: 'synced' | 'pending' | 'failed';
+
+  // Transfer status fields
+  pending_exchange?: {
+    id: number;
+    status: 'pending' | 'accepted_by_target';
+    target_user: {
+      id: number;
+      first_name: string;
+      last_name: string;
+    };
+    created_at: string;
+    request_reason: string;
+  };
+
+  pending_release?: {
+    id: number;
+    status: 'open' | 'claimed';
+    created_at: string;
+    request_reason: string;
+    claimed_by?: {
+      id: number;
+      first_name: string;
+      last_name: string;
+    };
+  };
+
+  approved_transfer?: {
+    id: number;
+    target_user: {
+      id: number;
+      first_name: string;
+      last_name: string;
+    };
+    approved_at: string;
+    was_auto_approved: boolean;
+  };
 }
 
 interface PaginationState {

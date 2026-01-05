@@ -1,7 +1,14 @@
 // Load environment variables from .env file
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-export default {
+// Debug: Log environment variables
+console.log('DEBUG app.config.js - Environment variables:');
+console.log('  API_BASE_URL:', process.env.API_BASE_URL);
+console.log('  EXPO_PROJECT_ID:', process.env.EXPO_PROJECT_ID);
+console.log('  NODE_ENV:', process.env.NODE_ENV);
+
+module.exports = {
   expo: {
     name: "Security Staff Portal",
     slug: "security-staff-mobile",
@@ -9,8 +16,14 @@ export default {
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
-    newArchEnabled: true,
+    newArchEnabled: false,
     scheme: "securitystaff",
+    updates: {
+      url: "https://u.expo.dev/9d8d1bce-0f46-4c87-99c4-503a32be2113"
+    },
+    runtimeVersion: {
+      policy: "appVersion"
+    },
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
@@ -62,18 +75,7 @@ export default {
       "expo-location",
       "expo-notifications",
       "expo-local-authentication",
-      [
-        "expo-image-picker",
-        {
-          photosPermission: "This app requires photo library access to attach photos to incident reports."
-        }
-      ],
-      [
-        "expo-av",
-        {
-          microphonePermission: "Allow $(PRODUCT_NAME) to access your microphone for incident voice reports."
-        }
-      ]
+      "@react-native-community/datetimepicker"
     ],
     install: {
       exclude: [
@@ -95,7 +97,7 @@ export default {
         //   3. Run: eas build --platform android --profile development
         //
         // See DEVELOPMENT_BUILD_SETUP.md for complete guide
-        projectId: process.env.EXPO_PROJECT_ID || "placeholder-project-id"
+        projectId: process.env.EXPO_PROJECT_ID || "9d8d1bce-0f46-4c87-99c4-503a32be2113"
       },
       // Environment variables accessible via expo-constants
       apiBaseUrl: process.env.API_BASE_URL || "http://localhost:8000",

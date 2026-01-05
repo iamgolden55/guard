@@ -228,8 +228,39 @@ const RecruitmentApplication: React.FC = () => {
       setSubmitted(true);
       
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to submit application. Please try again.');
+      // Handle validation errors from Django REST Framework serializer
+      if (err.response?.data) {
+        const errorData = err.response.data;
+
+        // If it's a simple error message
+        if (typeof errorData === 'string') {
+          setError(errorData);
+        }
+        // If it's a detail field
+        else if (errorData.detail) {
+          setError(errorData.detail);
+        }
+        // If it's a generic error field
+        else if (errorData.error) {
+          setError(errorData.error);
+        }
+        // If it's validation errors from serializer (field-specific errors)
+        else if (typeof errorData === 'object') {
+          const errorMessages = Object.entries(errorData)
+            .map(([field, messages]) => {
+              const msgArray = Array.isArray(messages) ? messages : [messages];
+              return `${field}: ${msgArray.join(', ')}`;
+            })
+            .join('; ');
+          setError(errorMessages || 'Failed to submit application. Please check your form.');
+        } else {
+          setError('Failed to submit application. Please try again.');
+        }
+      } else {
+        setError('Failed to submit application. Please try again.');
+      }
       console.error('Error submitting application:', err);
+      console.error('Error response data:', err.response?.data);
     } finally {
       setSubmitting(false);
     }

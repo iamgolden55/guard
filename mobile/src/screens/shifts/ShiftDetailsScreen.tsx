@@ -23,6 +23,7 @@ import { CameraModal } from '@components/camera';
 import { SignatureModal } from '@components/signature';
 import { VenueTermsModal } from '@components/terms';
 import { TransferShiftModal, ReleaseShiftModal } from '@components/modals';
+import { TransferDetailsCard } from '../../components/shift';
 import { colors, spacing } from '../../theme';
 import { Shift, checkInShift, checkOutShift } from '../../store/slices/shiftsSlice';
 import { useAppDispatch } from '../../hooks/useRedux';
@@ -35,6 +36,7 @@ import { apiService, ApiError, ApiTimeoutError, NetworkError } from '../../servi
 import { logger } from '../../utils/logger';
 import { ERROR_MESSAGES } from '../../utils/constants';
 import { shiftsService } from '../../services/shiftsService';
+import { exchangeService } from '../../services/exchangeService';
 
 const { width } = Dimensions.get('window');
 const MAP_WIDTH = width * 0.9;
@@ -195,6 +197,18 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
     return startTime <= now;
   };
 
+  // Check if shift can be transferred or released (before it starts)
+  const canTransferOrRelease = () => {
+    if (!shift) return false;
+
+    // Can't transfer if already pending or recently transferred
+    if (shift.pending_exchange || shift.pending_release || shift.approved_transfer) {
+      return false;
+    }
+
+    return shift.status === 'scheduled' && !hasShiftStarted();
+  };
+
   // Check if shift is eligible for check-in (comprehensive time validation)
   const canCheckIn = () => {
     if (!shift) return false;
@@ -202,17 +216,13 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
     const startTime = new Date(shift.start_time);
     const endTime = new Date(shift.end_time);
 
-    // Don't show button if shift has ended
+    // Don't show button if shift has ended (allow check-in up to shift end time)
     if (endTime < now) return false;
 
-    // Don't show button if shift is from a previous date
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const shiftDate = new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate());
-    if (shiftDate < today) return false;
-
-    // Check 15-minute early window and 5-minute late window (matching backend logic)
-    const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
-    return diffMinutes <= 15 && diffMinutes >= -5;
+    // Allow check-in starting 15 minutes before shift and anytime during shift
+    // Staff can check in late - their actual check-in time is recorded for timesheet/pay calculation
+    const fifteenMinutesBefore = new Date(startTime.getTime() - 15 * 60 * 1000);
+    return now >= fifteenMinutesBefore && now <= endTime;
   };
 
   // Calculate shift duration
@@ -666,6 +676,44 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
     }
   };
 
+  // Handle cancel transfer
+  const handleCancelTransfer = async () => {
+    const exchangeId = shift?.pending_exchange?.id || shift?.pending_release?.id;
+    if (!exchangeId) return;
+
+    Alert.alert(
+      'Cancel Transfer',
+      'Are you sure you want to cancel this transfer request?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (shift.pending_exchange) {
+                await exchangeService.cancelExchange(exchangeId);
+              } else if (shift.pending_release) {
+                await exchangeService.cancelOpenShiftRequest(exchangeId);
+              }
+
+              // Refresh shift data
+              Alert.alert('Cancelled', 'Transfer request cancelled successfully', [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack(),
+                },
+              ]);
+            } catch (error) {
+              logger.error('[ShiftDetails] Error cancelling transfer:', error);
+              Alert.alert('Error', 'Failed to cancel transfer request');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Show loading state while fetching shift data
   if (isLoadingShift || !shift) {
     return (
@@ -801,6 +849,15 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
           </View>
         </View>
 
+        {/* Transfer Details Card */}
+        {(shift.pending_exchange || shift.pending_release) && (
+          <TransferDetailsCard
+            exchange={shift.pending_exchange}
+            release={shift.pending_release}
+            onCancel={handleCancelTransfer}
+          />
+        )}
+
         {/* Required Checks Section */}
         {(shift.venue.requires_fire_exit_check ||
         shift.venue.requires_capacity_check ||
@@ -882,75 +939,47 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
 
       {/* Action Buttons - Fixed at Bottom */}
       <View style={styles.footer}>
+        {/* Check-In Button - Only show when within check-in window */}
         {shift.status === 'scheduled' && canCheckIn() && (
-          <>
-            <Button
-              title="Check In to Shift"
-              variant="primary"
-              size="large"
-              onPress={handleCheckIn}
-              style={styles.actionButton}
-              icon={<MaterialCommunityIcons name="clipboard-check-outline" size={22} color={colors.white} />}
-            />
+          <Button
+            title="Check In to Shift"
+            variant="primary"
+            size="large"
+            onPress={handleCheckIn}
+            style={styles.actionButton}
+            icon={<MaterialCommunityIcons name="clipboard-check-outline" size={22} color={colors.white} />}
+          />
+        )}
 
+        {/* Transfer/Release/Cancel Actions - Show for all scheduled shifts that haven't started */}
+        {canTransferOrRelease() && (
+          <>
             {/* Secondary Actions Row */}
             <View style={styles.secondaryActionsRow}>
               <TouchableOpacity
-                style={[
-                  styles.secondaryActionButton,
-                  hasShiftStarted() && styles.secondaryActionButtonDisabled
-                ]}
-                onPress={() => {
-                  if (hasShiftStarted()) {
-                    Alert.alert(
-                      'Cannot Transfer',
-                      'This shift has already started and cannot be transferred.'
-                    );
-                    return;
-                  }
-                  setShowTransferModal(true);
-                }}
-                disabled={hasShiftStarted()}
+                style={styles.secondaryActionButton}
+                onPress={() => setShowTransferModal(true)}
               >
                 <Ionicons
                   name="swap-horizontal-outline"
                   size={20}
-                  color={hasShiftStarted() ? colors.gray[400] : colors.primary}
+                  color={colors.primary}
                 />
-                <Text style={[
-                  styles.secondaryActionText,
-                  hasShiftStarted() && styles.secondaryActionTextDisabled
-                ]}>
+                <Text style={styles.secondaryActionText}>
                   Transfer
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[
-                  styles.secondaryActionButton,
-                  hasShiftStarted() && styles.secondaryActionButtonDisabled
-                ]}
-                onPress={() => {
-                  if (hasShiftStarted()) {
-                    Alert.alert(
-                      'Cannot Release',
-                      'This shift has already started and cannot be released to the pool.'
-                    );
-                    return;
-                  }
-                  setShowReleaseModal(true);
-                }}
-                disabled={hasShiftStarted()}
+                style={styles.secondaryActionButton}
+                onPress={() => setShowReleaseModal(true)}
               >
                 <MaterialCommunityIcons
                   name="hand-extended-outline"
                   size={20}
-                  color={hasShiftStarted() ? colors.gray[400] : colors.primary}
+                  color={colors.primary}
                 />
-                <Text style={[
-                  styles.secondaryActionText,
-                  hasShiftStarted() && styles.secondaryActionTextDisabled
-                ]}>
+                <Text style={styles.secondaryActionText}>
                   Release
                 </Text>
               </TouchableOpacity>
@@ -966,9 +995,22 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
                       {
                         text: 'Yes, Cancel',
                         style: 'destructive',
-                        onPress: () => {
-                          // TODO: Implement cancel shift API call
-                          Alert.alert('Cancelled', 'Shift cancellation coming soon');
+                        onPress: async () => {
+                          try {
+                            await shiftsService.cancelShift(shift.id);
+                            Alert.alert('Success', 'Shift has been cancelled. Your manager will be notified.', [
+                              {
+                                text: 'OK',
+                                onPress: () => navigation.goBack(),
+                              },
+                            ]);
+                          } catch (error: any) {
+                            logger.error('[ShiftDetails] Error cancelling shift:', error);
+                            Alert.alert(
+                              'Error',
+                              error?.message || 'Failed to cancel shift. Please try again.'
+                            );
+                          }
                         },
                       },
                     ]
@@ -1057,9 +1099,22 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
         visible={showTransferModal}
         shift={shift}
         onClose={() => setShowTransferModal(false)}
-        onSuccess={() => {
-          // Refresh shift data or navigate back
-          navigation.goBack();
+        onSuccess={async () => {
+          // Refresh shift data to show the pending transfer badge
+          try {
+            logger.info('[ShiftDetails] Transfer created - refreshing shift data');
+            const response = await shiftsService.fetchShifts({ page: 1, pageSize: 100 });
+            const updatedShift = response.results.find(s => s.id === shift.id);
+            if (updatedShift) {
+              logger.info('[ShiftDetails] Shift refreshed with transfer data', {
+                hasPendingExchange: !!updatedShift.pending_exchange,
+                hasPendingRelease: !!updatedShift.pending_release,
+              });
+              setShift(updatedShift);
+            }
+          } catch (error) {
+            logger.error('[ShiftDetails] Error refreshing shift after transfer:', error);
+          }
         }}
       />
 
@@ -1067,9 +1122,21 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
         visible={showReleaseModal}
         shift={shift}
         onClose={() => setShowReleaseModal(false)}
-        onSuccess={() => {
-          // Refresh shift data or navigate back
-          navigation.goBack();
+        onSuccess={async () => {
+          // Refresh shift data to show the released to pool badge
+          try {
+            logger.info('[ShiftDetails] Release created - refreshing shift data');
+            const response = await shiftsService.fetchShifts({ page: 1, pageSize: 100 });
+            const updatedShift = response.results.find(s => s.id === shift.id);
+            if (updatedShift) {
+              logger.info('[ShiftDetails] Shift refreshed with release data', {
+                hasPendingRelease: !!updatedShift.pending_release,
+              });
+              setShift(updatedShift);
+            }
+          } catch (error) {
+            logger.error('[ShiftDetails] Error refreshing shift after release:', error);
+          }
         }}
       />
     </Container>

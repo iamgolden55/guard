@@ -33,7 +33,7 @@ if not SECRET_KEY:
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,172.16.32.165,10.0.4.21,10.0.4.27,192.168.0.127,192.168.1.82').split(',')
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,172.16.32.165,10.0.4.21,10.0.4.27,192.168.0.127,192.168.1.82,10.167.91.217').split(',')
 
 
 # Application definition
@@ -277,7 +277,9 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # Sprint 3: Custom JWT authentication that reads from httpOnly cookies
+        'api.authentication.CookieJWTAuthentication',
+        # Keep SessionAuthentication for Django admin and browsable API
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -316,6 +318,15 @@ SIMPLE_JWT = {
     'TOKEN_TYPE_CLAIM': 'token_type',
 
     'JTI_CLAIM': 'jti',
+
+    # Cookie-based authentication settings (Sprint 3: Security Enhancement)
+    'AUTH_COOKIE': 'access_token',  # Name of the access token cookie
+    'AUTH_COOKIE_REFRESH': 'refresh_token',  # Name of the refresh token cookie
+    'AUTH_COOKIE_SECURE': not DEBUG,  # Use secure cookies in production (HTTPS only)
+    'AUTH_COOKIE_HTTP_ONLY': True,  # Prevent JavaScript access (XSS protection)
+    'AUTH_COOKIE_PATH': '/',  # Cookie path
+    'AUTH_COOKIE_SAMESITE': 'Lax',  # CSRF protection (Lax allows navigation)
+    'AUTH_COOKIE_DOMAIN': 'localhost' if DEBUG else None,  # Use localhost for development to work across ports
 }
 
 # Swagger settings
@@ -419,14 +430,17 @@ REPORT_BATCH_SIZE = int(os.getenv('REPORT_BATCH_SIZE', '1000'))
 REPORT_STORAGE_PATH = os.path.join(MEDIA_ROOT, 'reports')
 REPORT_TEMP_PATH = os.path.join(REPORT_STORAGE_PATH, 'temp')
 
-# Email settings for report notifications
-EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+# Email settings for report notifications and password reset
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@security-management.com')
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'eruwagolden55@gmail.com')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'uwym juuw yyju xypr')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'eruwagolden55@gmail.com')
+
+# Frontend URL for password reset emails
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 
 # ==========================================
 # DJANGO CHANNELS CONFIGURATION

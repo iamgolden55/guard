@@ -23,7 +23,8 @@ urlpatterns = [
     # OAuth flows
     path('oauth/initiate/', views.OAuthView.as_view(), name='oauth-initiate'),
     path('oauth/callback/', views.OAuthCallbackView.as_view(), name='oauth-callback'),
-    
+    path('oauth/tenants/', views.OAuthTenantsView.as_view(), name='oauth-tenants'),
+
     # Export operations
     path('export/invoices/', views.InvoiceExportView.as_view(), name='export-invoices'),
     path('export/payroll/', views.PayrollExportView.as_view(), name='export-payroll'),

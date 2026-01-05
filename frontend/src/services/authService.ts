@@ -51,7 +51,7 @@ const DEMO_USERS: { [key: string]: User } = {
 class AuthService {
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     if (DEBUG) console.log('AuthService.login called with username:', credentials.username);
-    
+
     // In demo mode, accept any credentials but use predefined user based on username if available
     if (DEMO_MODE) {
       // Convert username to lowercase for case-insensitive matching
@@ -62,28 +62,26 @@ class AuthService {
 
       console.log('Demo login with user:', demoUser);
 
-      // Create a demo response preserving original role
+      // Sprint 3: In demo mode, only store user data (no tokens in localStorage)
       const demoResponse: LoginResponse = {
-        access: 'demo-token',
-        refresh: 'demo-refresh-token',
+        message: 'Demo login successful',
         user: demoUser
       };
 
-      // Store tokens and user data securely
-      setAuthCookie('token', demoResponse.access);
-      setAuthCookie('refreshToken', demoResponse.refresh);
-      setAuthCookie('user', JSON.stringify(demoResponse.user));
+      // Sprint 3: Only store user data (tokens are in httpOnly cookies in production)
+      localStorage.setItem('user', JSON.stringify(demoResponse.user));
 
       return demoResponse;
     }
 
-    // Normal API flow for production
+    // Sprint 3: Normal API flow for production - backend sets httpOnly cookies
     try {
       if (DEBUG) console.log('Making login API call');
-      const response = await api.post<any>('/login/', credentials);
-      
+      const response = await api.post<any>('/api/v1/login/', credentials);
+
       if (DEBUG) console.log('Login API response:', response.data);
-      
+
+      // Sprint 3: Backend now returns only user object (tokens are in httpOnly cookies)
       // Map Django field names to frontend field names
       const user = {
         id: response.data.user.id,
@@ -95,17 +93,14 @@ class AuthService {
         isActive: response.data.user.is_active
       };
 
-      // Create formatted response
+      // Sprint 3: Create formatted response (no tokens, they're in httpOnly cookies)
       const formattedResponse: LoginResponse = {
-        access: response.data.access,
-        refresh: response.data.refresh,
+        message: response.data.message || 'Login successful',
         user: user
       };
 
-      // Store tokens and user data securely
-      setAuthCookie('token', formattedResponse.access);
-      setAuthCookie('refreshToken', formattedResponse.refresh);
-      setAuthCookie('user', JSON.stringify(formattedResponse.user));
+      // Sprint 3: Only store user data (tokens are in httpOnly cookies, not localStorage)
+      localStorage.setItem('user', JSON.stringify(formattedResponse.user));
 
       return formattedResponse;
     } catch (error) {
@@ -130,28 +125,28 @@ class AuthService {
       return demoUser;
     }
 
-    const response = await api.post<User>('/users/', userData);
+    const response = await api.post<User>('/api/v1/users/', userData);
     return response.data;
   }
 
-  async refreshToken(refreshToken: string): Promise<string> {
+  // Sprint 3: Cookie-based token refresh (no parameters needed, refresh token is in httpOnly cookie)
+  async refreshToken(): Promise<void> {
     if (DEBUG) console.log('AuthService.refreshToken called');
-    
+
     if (DEMO_MODE) {
-      console.log('Demo mode: returning demo refreshed token');
-      return 'demo-refreshed-token';
+      console.log('Demo mode: refresh token successful (no-op)');
+      return;
     }
 
     try {
-      if (DEBUG) console.log('Making refresh token API call');
-      const response = await api.post<RefreshTokenResponse>('/token/refresh/', { refresh: refreshToken });
+      if (DEBUG) console.log('Making cookie-based refresh token API call');
+      // Sprint 3: Call cookie-based refresh endpoint (refresh token is in httpOnly cookie)
+      await api.post<RefreshTokenResponse>('/api/v1/auth/refresh/', {});
 
-      if (DEBUG) console.log('Refresh token API response success');
-      
-      // Update token securely
-      setAuthCookie('token', response.data.access);
+      if (DEBUG) console.log('Refresh token API response success (tokens updated in cookies)');
 
-      return response.data.access;
+      // Sprint 3: No need to store tokens - backend sets them as httpOnly cookies
+      // Just return successfully
     } catch (error) {
       console.error('Refresh token API error:', error);
       throw error;
@@ -160,10 +155,10 @@ class AuthService {
 
   async getUserProfile(): Promise<User> {
     if (DEBUG) console.log('AuthService.getUserProfile called');
-    
+
     if (DEMO_MODE) {
-      // Return the stored user from secure storage
-      const userStr = getAuthToken('user');
+      // Return the stored user from localStorage
+      const userStr = localStorage.getItem('user');
       if (userStr) {
         try {
           const user = JSON.parse(userStr) as User;
@@ -183,53 +178,52 @@ class AuthService {
       return DEMO_USERS.admin;
     }
 
+    // Sprint 3: Cookie-based authentication - API calls automatically include cookies
     try {
       // Try to get profile from API first
       try {
         // Since the /users/me/ endpoint doesn't exist, we can instead use:
-        // 1. Get user ID from secure storage
-        // 2. Make a request to /users/{id}/ endpoint
-        const userStr = getAuthToken('user');
-        if (!userStr) throw new Error('No user data in secure storage');
-        
+        // 1. Get user ID from localStorage
+        // 2. Make a request to /users/{id}/ endpoint (cookies handle auth)
+        const userStr = localStorage.getItem('user');
+        if (!userStr) throw new Error('No user data in localStorage');
+
         const userData = JSON.parse(userStr) as User;
         if (!userData.id) throw new Error('User ID not found in localStorage');
-        
-        const response = await api.get<any>(`/users/${userData.id}/`);
+
+        // Sprint 3: API call will automatically include httpOnly cookies for auth
+        const response = await api.get<any>(`/api/v1/users/${userData.id}/`);
         console.log('Retrieved user profile from API:', response.data);
-        
+
         // Ensure proper mapping of fields
         const mappedUser = {
           ...response.data,
           firstName: response.data.first_name || response.data.firstName || '',
           lastName: response.data.last_name || response.data.lastName || ''
         };
-        
+
         // Store updated user data
         localStorage.setItem('user', JSON.stringify(mappedUser));
         return mappedUser;
       } catch (apiError) {
         console.error('API profile fetch failed, using localStorage fallback:', apiError);
-        
+
         // Fallback to localStorage if API call fails
         const userStr = localStorage.getItem('user');
         if (!userStr) throw new Error('No user data found');
-        
+
         const user = JSON.parse(userStr) as User;
         console.log('Retrieved user profile from localStorage:', user);
-        
-        // Validate the token is still valid by trying to refresh
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (refreshToken) {
-          try {
-            await this.refreshToken(refreshToken);
-            // Token refresh successful, user is valid
-          } catch (refreshError) {
-            console.error('Token refresh failed during profile validation:', refreshError);
-            throw new Error('Session expired');
-          }
+
+        // Sprint 3: Try to refresh token via cookies (no refreshToken parameter needed)
+        try {
+          await this.refreshToken();
+          // Token refresh successful, user session is valid
+        } catch (refreshError) {
+          console.error('Token refresh failed during profile validation:', refreshError);
+          throw new Error('Session expired');
         }
-        
+
         return user;
       }
     } catch (error) {
@@ -238,20 +232,31 @@ class AuthService {
     }
   }
 
-  logout(): void {
+  // Sprint 3: Logout calls backend to clear httpOnly cookies
+  async logout(): Promise<void> {
     if (DEBUG) console.log('AuthService.logout called');
-    
-    // Remove all auth data from localStorage
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
+
+    // Sprint 3: Call backend logout endpoint to clear httpOnly cookies
+    try {
+      await api.post('/api/v1/logout/', {});
+      console.log('Logout API call successful - httpOnly cookies cleared by backend');
+    } catch (error) {
+      console.error('Logout API error (continuing with local cleanup):', error);
+      // Continue with local cleanup even if API call fails
+    }
+
+    // Sprint 3: Only remove user data from localStorage (tokens are in httpOnly cookies)
     localStorage.removeItem('user');
-    console.log('User logged out, auth data cleared from localStorage');
+    console.log('User logged out, user data cleared from localStorage');
   }
 
+  // Sprint 3: Check if user is authenticated (based on user presence, not tokens)
+  // Note: Real authentication is based on httpOnly cookies which we can't access from JS
+  // This is just a local check - the backend validates the actual session
   isAuthenticated(): boolean {
-    const token = localStorage.getItem('token');
-    const isAuth = !!token;
-    if (DEBUG) console.log('AuthService.isAuthenticated:', isAuth);
+    const userStr = localStorage.getItem('user');
+    const isAuth = !!userStr;
+    if (DEBUG) console.log('AuthService.isAuthenticated (local check):', isAuth);
     return isAuth;
   }
 

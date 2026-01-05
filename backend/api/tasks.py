@@ -609,6 +609,635 @@ def system_maintenance() -> Dict[str, Any]:
 
 
 # ==========================================
+# SHIFT NOTIFICATION TASKS
+# ==========================================
+
+@shared_task(bind=True, queue='notifications')
+def schedule_shift_reminders(self, shift_id: int) -> Dict[str, Any]:
+    """
+    Schedule reminder notifications for a shift.
+    Called when a shift is assigned.
+
+    Schedules:
+    - 3 hours before: Advance reminder
+    - 45 minutes before: Soon reminder
+    - 5 minutes before: Imminent reminder
+    - 4 minutes after start: Check-in reminder (if not checked in)
+    """
+    from .models import Shift
+
+    try:
+        shift = Shift.objects.select_related('venue', 'staff_user').get(pk=shift_id)
+    except Shift.DoesNotExist:
+        return {'status': 'error', 'message': f'Shift {shift_id} not found'}
+
+    if not shift.staff_user:
+        return {'status': 'skipped', 'message': 'No staff assigned'}
+
+    now = timezone.now()
+    start_time = shift.start_time
+
+    # Define reminder times (negative = before, positive = after)
+    reminder_offsets = [
+        ('advance', timedelta(hours=-3)),       # 3 hours before
+        ('soon', timedelta(minutes=-45)),       # 45 minutes before
+        ('imminent', timedelta(minutes=-5)),    # 5 minutes before
+        ('checkin', timedelta(minutes=4)),      # 4 minutes after (if not checked in)
+    ]
+
+    scheduled_count = 0
+    for reminder_type, offset in reminder_offsets:
+        trigger_time = start_time + offset
+
+        # Skip if trigger time has already passed
+        if trigger_time <= now:
+            continue
+
+        # Calculate delay in seconds
+        delay_seconds = (trigger_time - now).total_seconds()
+
+        # Schedule the reminder task
+        if reminder_type == 'checkin':
+            send_checkin_reminder.apply_async(
+                args=[shift_id],
+                countdown=delay_seconds,
+                queue='notifications'
+            )
+        else:
+            send_shift_reminder.apply_async(
+                args=[shift_id, reminder_type],
+                countdown=delay_seconds,
+                queue='notifications'
+            )
+
+        scheduled_count += 1
+        logger.info(
+            f"Scheduled {reminder_type} reminder for shift {shift_id} "
+            f"at {trigger_time} (in {delay_seconds:.0f} seconds)"
+        )
+
+    return {
+        'status': 'success',
+        'shift_id': shift_id,
+        'reminders_scheduled': scheduled_count
+    }
+
+
+@shared_task(bind=True, queue='notifications')
+def send_shift_reminder(self, shift_id: int, reminder_type: str) -> Dict[str, Any]:
+    """
+    Send a shift reminder notification.
+
+    Args:
+        shift_id: The shift to remind about
+        reminder_type: 'advance' (3h), 'soon' (45min), 'imminent' (5min)
+    """
+    from .models import Shift
+    from .services import push_notification_service
+
+    try:
+        shift = Shift.objects.select_related('venue', 'staff_user').get(pk=shift_id)
+    except Shift.DoesNotExist:
+        return {'status': 'error', 'message': f'Shift {shift_id} not found'}
+
+    # Skip if shift is no longer scheduled or already started
+    if shift.status not in ['scheduled', 'active']:
+        return {'status': 'skipped', 'message': f'Shift status is {shift.status}'}
+
+    if not shift.staff_user:
+        return {'status': 'skipped', 'message': 'No staff assigned'}
+
+    # Skip if already checked in
+    if shift.check_in_time:
+        return {'status': 'skipped', 'message': 'Already checked in'}
+
+    # Calculate time until shift
+    now = timezone.now()
+    time_diff = shift.start_time - now
+
+    if time_diff.total_seconds() < 0:
+        return {'status': 'skipped', 'message': 'Shift already started'}
+
+    # Format time until
+    hours = int(time_diff.total_seconds() // 3600)
+    minutes = int((time_diff.total_seconds() % 3600) // 60)
+
+    if hours > 0:
+        time_until = f"{hours} hour{'s' if hours != 1 else ''}"
+    else:
+        time_until = f"{minutes} minute{'s' if minutes != 1 else ''}"
+
+    venue_name = shift.venue.name if shift.venue else 'Unknown Venue'
+
+    success = push_notification_service.send_shift_reminder(
+        user_id=shift.staff_user.id,
+        shift_id=shift.id,
+        venue_name=venue_name,
+        reminder_type=reminder_type,
+        time_until=time_until
+    )
+
+    return {
+        'status': 'success' if success else 'failed',
+        'shift_id': shift_id,
+        'reminder_type': reminder_type
+    }
+
+
+@shared_task(bind=True, queue='notifications')
+def send_checkin_reminder(self, shift_id: int) -> Dict[str, Any]:
+    """
+    Send a check-in reminder if staff hasn't checked in after shift start.
+    Sent 4 minutes after shift start time.
+    """
+    from .models import Shift
+    from .services import push_notification_service
+
+    try:
+        shift = Shift.objects.select_related('venue', 'staff_user').get(pk=shift_id)
+    except Shift.DoesNotExist:
+        return {'status': 'error', 'message': f'Shift {shift_id} not found'}
+
+    # Skip if already checked in
+    if shift.check_in_time:
+        return {'status': 'skipped', 'message': 'Already checked in'}
+
+    # Skip if shift cancelled or completed
+    if shift.status in ['cancelled', 'completed', 'approved', 'rejected']:
+        return {'status': 'skipped', 'message': f'Shift status is {shift.status}'}
+
+    if not shift.staff_user:
+        return {'status': 'skipped', 'message': 'No staff assigned'}
+
+    # Calculate how late they are
+    now = timezone.now()
+    if shift.start_time > now:
+        return {'status': 'skipped', 'message': 'Shift not started yet'}
+
+    minutes_late = int((now - shift.start_time).total_seconds() // 60)
+    venue_name = shift.venue.name if shift.venue else 'Unknown Venue'
+
+    success = push_notification_service.send_checkin_reminder(
+        user_id=shift.staff_user.id,
+        shift_id=shift.id,
+        venue_name=venue_name,
+        minutes_late=minutes_late
+    )
+
+    return {
+        'status': 'success' if success else 'failed',
+        'shift_id': shift_id,
+        'minutes_late': minutes_late
+    }
+
+
+@shared_task(bind=True, max_retries=3, queue='notifications')
+def send_open_shift_notifications(self, open_shift_request_id: int) -> Dict[str, Any]:
+    """
+    Send notifications to qualified users about open shifts.
+
+    Implements intelligent batching: Multiple shifts published within 30 seconds
+    are aggregated and sent as a single batch notification per qualified user.
+
+    Args:
+        open_shift_request_id: ID of the OpenShiftRequest instance
+
+    Returns:
+        Dict with notification results and stats
+    """
+    from .models import OpenShiftRequest, User
+    from .services import push_notification_service
+    from django.core.cache import cache
+
+    try:
+        # Get the open shift request
+        open_shift_request = OpenShiftRequest.objects.select_related(
+            'original_shift',
+            'original_shift__venue'
+        ).get(pk=open_shift_request_id, status='open')
+
+    except OpenShiftRequest.DoesNotExist:
+        logger.warning(f"OpenShiftRequest {open_shift_request_id} not found or no longer open")
+        return {'status': 'skipped', 'reason': 'shift_not_found'}
+
+    # Get or create batching cache entry
+    # Cache key includes current minute for batching shifts in same time window
+    cache_key = f"pending_open_shift_notifications_{timezone.now().strftime('%Y%m%d%H%M')}"
+    pending_shifts = cache.get(cache_key, [])
+
+    # Add current shift to pending batch
+    pending_shifts.append({
+        'request_id': open_shift_request.id,
+        'shift_id': open_shift_request.original_shift.id,
+        'venue_name': open_shift_request.original_shift.venue.name if open_shift_request.original_shift.venue else 'Unknown',
+        'start_time': open_shift_request.original_shift.start_time.isoformat(),
+        'required_role': open_shift_request.original_shift.required_security_role or 'Any',
+    })
+
+    # Store back with 2-minute expiry (covers batching window + processing time)
+    cache.set(cache_key, pending_shifts, timeout=120)
+
+    # Deduplicate: If another task is processing this batch, skip
+    processing_key = f"{cache_key}_processing"
+    if not cache.add(processing_key, True, timeout=60):
+        logger.info(f"Another task is already processing this batch")
+        return {'status': 'skipped', 'reason': 'already_processing'}
+
+    try:
+        # Find all qualified users across all pending shifts in this batch
+        qualified_users_map = {}  # {user_id: [shift_data, ...]}
+
+        # Get company from shift venue (multi-tenant filtering)
+        company = open_shift_request.original_shift.venue.company
+        if not company:
+            logger.warning(f"OpenShiftRequest {open_shift_request_id} has no company - skipping")
+            return {'status': 'skipped', 'reason': 'no_company'}
+
+        # Get all active staff users with approved profiles IN THE SAME COMPANY
+        staff_users = User.objects.filter(
+            company_memberships__company=company,
+            company_memberships__is_active=True,
+            role__in=['staff', 'manager'],
+            is_active=True,
+            profile__is_approved=True,
+            profile__isnull=False
+        ).select_related('profile').distinct()
+
+        logger.info(f"Processing {len(pending_shifts)} pending open shifts for {staff_users.count()} staff users in company {company.name}")
+
+        # Check qualification for each shift
+        for shift_data in pending_shifts:
+            try:
+                # Get the OpenShiftRequest to check qualification
+                shift_request = OpenShiftRequest.objects.get(
+                    pk=shift_data['request_id'],
+                    status='open'
+                )
+
+                # Check each user's qualification using the model's method
+                for user in staff_users:
+                    try:
+                        # Get available shifts for this user
+                        available_shifts = OpenShiftRequest.get_available_shifts(user)
+
+                        # Check if this shift is available for the user
+                        if shift_request in available_shifts:
+                            if user.id not in qualified_users_map:
+                                qualified_users_map[user.id] = []
+                            qualified_users_map[user.id].append(shift_data)
+
+                    except Exception as e:
+                        logger.warning(f"Error checking qualification for user {user.id}: {e}")
+                        continue
+
+            except OpenShiftRequest.DoesNotExist:
+                logger.warning(f"OpenShiftRequest {shift_data['request_id']} no longer exists")
+                continue
+
+        # Send notifications to qualified users
+        notifications_sent = 0
+        notifications_failed = 0
+
+        for user_id, user_shifts in qualified_users_map.items():
+            try:
+                # Determine if single or batch notification
+                shift_count = len(user_shifts)
+
+                if shift_count == 1:
+                    # Single shift notification
+                    shift = user_shifts[0]
+                    success = push_notification_service.send_notification(
+                        user_id=user_id,
+                        title="🆕 New Open Shift Available",
+                        body=f"A shift at {shift['venue_name']} is now available to claim",
+                        data={
+                            'type': 'available_shift',
+                            'notification_type': 'available_shift',  # For preference checking
+                            'shiftId': shift['shift_id'],
+                            'screen': 'ShiftDetails',
+                            'batch': False,
+                        },
+                        priority='high',
+                        channel_id='shift-reminders'
+                    )
+                else:
+                    # Batch notification
+                    success = push_notification_service.send_notification(
+                        user_id=user_id,
+                        title="🆕 New Open Shifts Available",
+                        body=f"{shift_count} shifts are now available to claim",
+                        data={
+                            'type': 'available_shifts_batch',
+                            'notification_type': 'available_shift',  # For preference checking
+                            'shiftIds': [s['shift_id'] for s in user_shifts],
+                            'screen': 'AvailableShifts',  # Navigate to list view for batch
+                            'batch': True,
+                            'count': shift_count,
+                        },
+                        priority='high',
+                        channel_id='shift-reminders'
+                    )
+
+                if success:
+                    notifications_sent += 1
+                    logger.info(f"Sent open shift notification to user {user_id} ({shift_count} shift{'s' if shift_count != 1 else ''})")
+                else:
+                    notifications_failed += 1
+
+            except Exception as e:
+                logger.exception(f"Error sending notification to user {user_id}: {e}")
+                notifications_failed += 1
+
+        # Clear the cache entries
+        cache.delete(cache_key)
+        cache.delete(processing_key)
+
+        return {
+            'status': 'success',
+            'batch_size': len(pending_shifts),
+            'qualified_users': len(qualified_users_map),
+            'notifications_sent': notifications_sent,
+            'notifications_failed': notifications_failed,
+        }
+
+    except Exception as e:
+        logger.exception(f"Error in send_open_shift_notifications: {e}")
+        # Ensure processing lock is released
+        cache.delete(processing_key)
+        return {
+            'status': 'error',
+            'error': str(e)
+        }
+
+
+@shared_task(bind=True, queue='notifications')
+def check_shift_reminders(self) -> Dict[str, Any]:
+    """
+    Periodic task to check for upcoming shifts and send reminders.
+    Runs every minute via Celery beat.
+
+    This is a backup mechanism - primary reminders are scheduled when shift is assigned.
+    """
+    from .models import Shift
+    from .services import push_notification_service
+
+    now = timezone.now()
+    sent_count = 0
+
+    # Define reminder windows (check within 1 minute of each reminder time)
+    reminder_windows = [
+        ('advance', timedelta(hours=3), timedelta(hours=3, minutes=-1)),
+        ('soon', timedelta(minutes=45), timedelta(minutes=44)),
+        ('imminent', timedelta(minutes=5), timedelta(minutes=4)),
+    ]
+
+    for reminder_type, time_before_max, time_before_min in reminder_windows:
+        window_start = now + time_before_min
+        window_end = now + time_before_max
+
+        shifts = Shift.objects.filter(
+            status__in=['scheduled', 'active'],
+            staff_user__isnull=False,
+            check_in_time__isnull=True,  # Not checked in yet
+            start_time__gte=window_start,
+            start_time__lt=window_end
+        ).select_related('venue', 'staff_user')
+
+        for shift in shifts:
+            time_diff = shift.start_time - now
+            hours = int(time_diff.total_seconds() // 3600)
+            minutes = int((time_diff.total_seconds() % 3600) // 60)
+
+            if hours > 0:
+                time_until = f"{hours} hour{'s' if hours != 1 else ''}"
+            else:
+                time_until = f"{minutes} minute{'s' if minutes != 1 else ''}"
+
+            venue_name = shift.venue.name if shift.venue else 'Unknown Venue'
+
+            success = push_notification_service.send_shift_reminder(
+                user_id=shift.staff_user.id,
+                shift_id=shift.id,
+                venue_name=venue_name,
+                reminder_type=reminder_type,
+                time_until=time_until
+            )
+
+            if success:
+                sent_count += 1
+
+    return {'status': 'success', 'reminders_sent': sent_count}
+
+
+@shared_task(bind=True, queue='notifications')
+def check_missed_checkins(self) -> Dict[str, Any]:
+    """
+    Periodic task to check for shifts where staff hasn't checked in.
+    Sends reminder 4 minutes after shift start time.
+    Runs every minute via Celery beat.
+    """
+    from .models import Shift
+    from .services import push_notification_service
+
+    now = timezone.now()
+
+    # Find shifts that started 4-5 minutes ago without check-in
+    window_start = now - timedelta(minutes=5)
+    window_end = now - timedelta(minutes=4)
+
+    shifts = Shift.objects.filter(
+        status__in=['scheduled', 'active', 'in_progress'],
+        staff_user__isnull=False,
+        check_in_time__isnull=True,  # Not checked in
+        start_time__gte=window_start,
+        start_time__lt=window_end
+    ).select_related('venue', 'staff_user')
+
+    sent_count = 0
+    for shift in shifts:
+        minutes_late = int((now - shift.start_time).total_seconds() // 60)
+        venue_name = shift.venue.name if shift.venue else 'Unknown Venue'
+
+        success = push_notification_service.send_checkin_reminder(
+            user_id=shift.staff_user.id,
+            shift_id=shift.id,
+            venue_name=venue_name,
+            minutes_late=minutes_late
+        )
+
+        if success:
+            sent_count += 1
+
+    return {'status': 'success', 'checkin_reminders_sent': sent_count}
+
+
+# ==========================================
+# SHIFT EXCHANGE NOTIFICATION TASKS
+# ==========================================
+
+@shared_task(bind=True, queue='notifications')
+def send_exchange_status_notification(self, exchange_id: int, event_type: str) -> Dict[str, Any]:
+    """
+    Send push notification for shift exchange status changes.
+
+    Args:
+        exchange_id: ID of the ShiftExchange instance
+        event_type: Type of event ('created', 'accepted', 'approved', 'rejected', 'cancelled')
+
+    Returns:
+        Dict with notification results
+    """
+    from .models import ShiftExchange
+    from .services import push_notification_service
+
+    try:
+        exchange = ShiftExchange.objects.select_related(
+            'original_shift',
+            'original_shift__venue',
+            'requesting_user',
+            'target_user'
+        ).get(pk=exchange_id)
+    except ShiftExchange.DoesNotExist:
+        logger.warning(f"ShiftExchange {exchange_id} not found")
+        return {'status': 'error', 'message': f'Exchange {exchange_id} not found'}
+
+    # Get shift details for notification
+    shift = exchange.original_shift
+    venue_name = shift.venue.name if shift.venue else 'Unknown Venue'
+    start_time = shift.start_time.strftime('%B %d at %I:%M %p') if shift.start_time else 'Unknown time'
+
+    # Determine recipient(s) and message based on event type
+    notifications_sent = 0
+    notifications_failed = 0
+
+    if event_type == 'created':
+        # Notify target user of new request
+        requester_name = exchange.requesting_user.first_name or exchange.requesting_user.username
+        success = push_notification_service.send_notification(
+            user_id=exchange.target_user.id,
+            title="🔄 Shift Transfer Request",
+            body=f"{requester_name} wants to transfer a shift to you ({venue_name}, {start_time})",
+            data={
+                'type': 'exchange_request',
+                'notification_type': 'exchange_request',
+                'exchangeId': exchange.id,
+                'shiftId': shift.id,
+                'screen': 'ShiftExchanges',
+            },
+            priority='high',
+            channel_id='shift-reminders'
+        )
+        if success:
+            notifications_sent += 1
+        else:
+            notifications_failed += 1
+
+    elif event_type == 'accepted':
+        # Notify requesting user that target accepted
+        target_name = exchange.target_user.first_name or exchange.target_user.username
+        success = push_notification_service.send_notification(
+            user_id=exchange.requesting_user.id,
+            title="✅ Transfer Accepted",
+            body=f"{target_name} accepted your shift transfer ({venue_name})",
+            data={
+                'type': 'exchange_accepted',
+                'notification_type': 'exchange_update',
+                'exchangeId': exchange.id,
+                'shiftId': shift.id,
+                'screen': 'ShiftExchanges',
+            },
+            priority='high',
+            channel_id='shift-reminders'
+        )
+        if success:
+            notifications_sent += 1
+        else:
+            notifications_failed += 1
+
+    elif event_type == 'approved':
+        # Notify both users of approval
+        for user_id in [exchange.requesting_user.id, exchange.target_user.id]:
+            success = push_notification_service.send_notification(
+                user_id=user_id,
+                title="🎉 Transfer Approved",
+                body=f"Your shift transfer has been approved ({venue_name}, {start_time})",
+                data={
+                    'type': 'exchange_approved',
+                    'notification_type': 'exchange_update',
+                    'exchangeId': exchange.id,
+                    'shiftId': shift.id,
+                    'screen': 'Shifts',
+                },
+                priority='high',
+                channel_id='shift-reminders'
+            )
+            if success:
+                notifications_sent += 1
+            else:
+                notifications_failed += 1
+
+    elif event_type == 'rejected':
+        # Notify requesting user of rejection
+        success = push_notification_service.send_notification(
+            user_id=exchange.requesting_user.id,
+            title="❌ Transfer Rejected",
+            body=f"Your shift transfer request was rejected ({venue_name})",
+            data={
+                'type': 'exchange_rejected',
+                'notification_type': 'exchange_update',
+                'exchangeId': exchange.id,
+                'shiftId': shift.id,
+                'screen': 'ShiftExchanges',
+            },
+            priority='default',
+            channel_id='shift-reminders'
+        )
+        if success:
+            notifications_sent += 1
+        else:
+            notifications_failed += 1
+
+    elif event_type == 'cancelled':
+        # Notify target user of cancellation
+        requester_name = exchange.requesting_user.first_name or exchange.requesting_user.username
+        success = push_notification_service.send_notification(
+            user_id=exchange.target_user.id,
+            title="🚫 Transfer Cancelled",
+            body=f"{requester_name} cancelled the shift transfer request ({venue_name})",
+            data={
+                'type': 'exchange_cancelled',
+                'notification_type': 'exchange_update',
+                'exchangeId': exchange.id,
+                'shiftId': shift.id,
+                'screen': 'ShiftExchanges',
+            },
+            priority='default',
+            channel_id='shift-reminders'
+        )
+        if success:
+            notifications_sent += 1
+        else:
+            notifications_failed += 1
+
+    else:
+        logger.warning(f"Unknown exchange event type: {event_type}")
+        return {'status': 'error', 'message': f'Unknown event type: {event_type}'}
+
+    logger.info(
+        f"Exchange notification for {event_type}: "
+        f"exchange={exchange_id}, sent={notifications_sent}, failed={notifications_failed}"
+    )
+
+    return {
+        'status': 'success',
+        'exchange_id': exchange_id,
+        'event_type': event_type,
+        'notifications_sent': notifications_sent,
+        'notifications_failed': notifications_failed,
+    }
+
+
+# ==========================================
 # WEBSOCKET NOTIFICATION FUNCTIONS
 # ==========================================
 

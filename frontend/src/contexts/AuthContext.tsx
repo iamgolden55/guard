@@ -24,11 +24,10 @@ interface AuthContextValue {
   completeOnboarding: (companyId: string) => Promise<void>;
 }
 
-// Create context with default values - WITHOUT localStorage
+// Sprint 3: Create context with default values - Tokens now in httpOnly cookies
 const initialAuthState: AuthState = {
   user: null,
-  token: null,
-  refreshToken: null,
+  // Sprint 3: Removed token and refreshToken - they're in httpOnly cookies now
   isAuthenticated: false,
   isLoading: true,
   onboardingLoading: false,
@@ -63,20 +62,17 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const onboardingFetchedRef = useRef(false); // Track if we've already successfully fetched onboarding
 
   // Function to fetch onboarding status
-  const fetchOnboardingStatus = useCallback(async (overrideToken?: string, user?: any): Promise<OnboardingStatus> => {
-    // Get current auth state to avoid stale closure
-    const currentToken = overrideToken || localStorage.getItem('token');
-    const isAuthenticated = overrideToken ? true : !!currentToken;
+  // Sprint 3: Removed token parameter - cookies are sent automatically
+  const fetchOnboardingStatus = useCallback(async (user?: any): Promise<OnboardingStatus> => {
+    // Sprint 3: Authentication is based on cookies, not tokens in state
     const currentUser = user || authState.user;
 
-    // Set loading state before fetch (only if not using override token which means we're in login flow)
-    if (!overrideToken) {
-      setAuthState(prev => ({ ...prev, onboardingLoading: true }));
-    }
+    // Set loading state before fetch
+    setAuthState(prev => ({ ...prev, onboardingLoading: true }));
 
     try {
-      // If user is not authenticated, return default status
-      if (!isAuthenticated || !currentToken) {
+      // Sprint 3: If no user, return default status (cookies will be checked by API)
+      if (!currentUser) {
         return {
           isCompleted: false,
           currentStep: 1,
@@ -144,10 +140,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
         hasCompany: false
       };
     } finally {
-      // Clear loading state (only if not using override token which means we're in login flow)
-      if (!overrideToken) {
-        setAuthState(prev => ({ ...prev, onboardingLoading: false }));
-      }
+      // Clear loading state
+      setAuthState(prev => ({ ...prev, onboardingLoading: false }));
     }
   }, []); // No dependencies needed as we access current values directly
 
@@ -172,21 +166,11 @@ function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Function to fetch current company membership
-  const fetchCompanyMembership = useCallback(async (token: string): Promise<CompanyMembership | null> => {
+  // Sprint 3: Function to fetch current company membership (cookies handle auth)
+  const fetchCompanyMembership = useCallback(async (): Promise<CompanyMembership | null> => {
     try {
-      // Temporarily set the token for the API call
-      const originalToken = api.defaults.headers.common['Authorization'];
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
+      // Sprint 3: No need to set Authorization header - cookies are sent automatically
       const response = await companyService.getCurrentCompanyContext();
-
-      // Restore original token
-      if (originalToken) {
-        api.defaults.headers.common['Authorization'] = originalToken;
-      } else {
-        delete api.defaults.headers.common['Authorization'];
-      }
 
       // Handle null response (user doesn't have a company yet)
       if (!response || !response.membership) {
@@ -226,45 +210,35 @@ function AuthProvider({ children }: { children: ReactNode }) {
     // Clear onboarding data from localStorage
     onboardingService.clearProgress();
 
-    // Fetch the new company membership to update auth state
+    // Sprint 3: Fetch the new company membership (cookies handle auth)
     try {
-      const token = localStorage.getItem('token');
-      if (token) {
-        const companyMembership = await fetchCompanyMembership(token);
-        setAuthState(prev => ({
-          ...prev,
-          currentMembership: companyMembership,
-          onboarding: {
-            ...prev.onboarding,
-            isCompleted: true,
-            companyId,
-            hasCompany: true
-          }
-        }));
-        console.log('Company membership refreshed successfully:', companyMembership);
-      }
+      const companyMembership = await fetchCompanyMembership();
+      setAuthState(prev => ({
+        ...prev,
+        currentMembership: companyMembership,
+        onboarding: {
+          ...prev.onboarding,
+          isCompleted: true,
+          companyId,
+          hasCompany: true
+        }
+      }));
+      console.log('Company membership refreshed successfully:', companyMembership);
     } catch (error) {
       console.error('Failed to refresh company membership after onboarding:', error);
       // Don't throw - the onboarding is still complete, user can refresh page
     }
   }, [fetchCompanyMembership]);
 
-  // Function to refresh the user token
+  // Sprint 3: Function to refresh the user token (cookie-based)
   const refreshUserToken = useCallback(async (): Promise<boolean> => {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (!refreshToken) return false;
-
     try {
-      console.log('Proactively refreshing token...');
-      const newToken = await authService.refreshToken(refreshToken);
-      
-      // Update auth state with new token
-      setAuthState(prev => ({
-        ...prev,
-        token: newToken,
-        isAuthenticated: true,
-      }));
-      
+      console.log('Proactively refreshing token via cookies...');
+      // Sprint 3: Call cookie-based refresh endpoint (refresh token is in httpOnly cookie)
+      await authService.refreshToken();
+
+      // Sprint 3: No need to update state - tokens are in cookies
+      // Just return success
       return true;
     } catch (error) {
       console.error('Proactive token refresh failed:', error);
@@ -272,7 +246,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Set up automatic token refresh (every 12 hours)
+  // Sprint 3: Set up automatic token refresh (every 12 hours) - cookie-based
   useEffect(() => {
     // Clear any existing timers
     if (refreshTimerRef.current) {
@@ -280,8 +254,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
       refreshTimerRef.current = null;
     }
 
-    // If we're authenticated, set up a new refresh timer
-    if (authState.isAuthenticated && authState.token) {
+    // Sprint 3: If we're authenticated, set up a new refresh timer
+    if (authState.isAuthenticated) {
       // Refresh every 12 hours
       const TWELVE_HOURS = 12 * 60 * 60 * 1000;
       refreshTimerRef.current = setInterval(() => {
@@ -295,9 +269,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
         clearInterval(refreshTimerRef.current);
       }
     };
-  }, [authState.isAuthenticated, authState.token, refreshUserToken]);
+  }, [authState.isAuthenticated, refreshUserToken]);
 
-  // Initialize auth state from localStorage and validate token in a single effect
+  // Sprint 3: Initialize auth state from localStorage (only user, cookies handle tokens)
   useEffect(() => {
     // Only run initialization once
     if (!initializeRef.current) {
@@ -305,18 +279,15 @@ function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    console.log('DEBUG: Starting AuthContext initialization');
+    console.log('DEBUG: Starting AuthContext initialization (Sprint 3: Cookie-based)');
     // Mark as initialized immediately to prevent re-runs
     initializeRef.current = false;
 
     const initializeAuth = async () => {
-      const token = localStorage.getItem('token');
-      const refreshToken = localStorage.getItem('refreshToken');
+      // Sprint 3: Only get user from localStorage (tokens are in httpOnly cookies)
       const userStr = localStorage.getItem('user');
 
       console.log('DEBUG: Retrieved from localStorage:', {
-        hasToken: !!token,
-        hasRefreshToken: !!refreshToken,
         hasUser: !!userStr
       });
 
@@ -344,13 +315,11 @@ function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // If no token, set auth state to not authenticated and not loading
-      if (!token) {
-        console.log('DEBUG: No token found, setting unauthenticated state');
+      // Sprint 3: If no user, set auth state to not authenticated
+      if (!user) {
+        console.log('DEBUG: No user found, setting unauthenticated state');
         setAuthState(prev => ({
           ...prev,
-          token: null,
-          refreshToken: null,
           user: null,
           isAuthenticated: false,
           isLoading: false,
@@ -359,35 +328,33 @@ function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // We have a token, set initial state and start validation
-      console.log('DEBUG: Token found, setting loading state and starting validation');
+      // Sprint 3: We have a user, validate session by calling API (cookies handle auth)
+      console.log('DEBUG: User found, setting loading state and validating session');
       setAuthState(prev => ({
         ...prev,
-        token,
-        refreshToken,
         user,
         isAuthenticated: false, // Will be set to true after validation
         isLoading: true, // Loading while we validate
         onboardingLoading: true
       }));
 
-      // Don't validate token if we're currently logging in
+      // Don't validate if we're currently logging in
       if (isLoggingInRef.current) {
-        console.log('DEBUG: Currently logging in, skipping token validation');
+        console.log('DEBUG: Currently logging in, skipping session validation');
         return;
       }
 
-      console.log('DEBUG: Starting token validation for stored token');
+      console.log('DEBUG: Starting session validation (cookie-based)');
 
       try {
-        // Validate the token by fetching user profile
+        // Sprint 3: Validate the session by fetching user profile (cookies sent automatically)
         const validatedUser = await authService.getUserProfile();
 
-        // Fetch onboarding status using the current token
-        const onboardingStatus = await fetchOnboardingStatus(token, validatedUser);
+        // Fetch onboarding status (no token parameter needed)
+        const onboardingStatus = await fetchOnboardingStatus(validatedUser);
 
-        // CRITICAL FIX: Fetch company membership on initialization (not just on login)
-        const companyMembership = await fetchCompanyMembership(token);
+        // Fetch company membership (no token parameter needed)
+        const companyMembership = await fetchCompanyMembership();
 
         setAuthState(prev => ({
           ...prev,
@@ -402,24 +369,20 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
         // Mark onboarding as successfully fetched
         onboardingFetchedRef.current = true;
-        console.log('DEBUG: Token validation successful');
+        console.log('DEBUG: Session validation successful');
       } catch (error) {
-        console.log('DEBUG: Token validation failed, attempting refresh');
+        console.log('DEBUG: Session validation failed, attempting token refresh');
 
-        // Try to refresh the token once before logging out
+        // Sprint 3: Try to refresh the token once before logging out (cookie-based)
         const refreshSuccessful = await refreshUserToken();
 
         if (!refreshSuccessful) {
           console.log('DEBUG: Token refresh failed, clearing auth data');
-          // Clear invalid auth data
-          localStorage.removeItem('token');
-          localStorage.removeItem('refreshToken');
+          // Sprint 3: Clear user data (tokens are in httpOnly cookies, cleared by backend)
           localStorage.removeItem('user');
 
           setAuthState({
             user: null,
-            token: null,
-            refreshToken: null,
             isAuthenticated: false,
             isLoading: false,
             onboardingLoading: false,
@@ -434,16 +397,15 @@ function AuthProvider({ children }: { children: ReactNode }) {
           });
         } else {
           console.log('DEBUG: Token refresh successful, validating user again');
-          // Token refresh was successful, try to get user profile again
+          // Sprint 3: Token refresh was successful, try to get user profile again
           try {
             const validatedUser = await authService.getUserProfile();
 
-            // Fetch onboarding status with refreshed token
-            const onboardingStatus = await fetchOnboardingStatus(undefined, validatedUser);
+            // Fetch onboarding status (no token parameter)
+            const onboardingStatus = await fetchOnboardingStatus(validatedUser);
 
-            // CRITICAL FIX: Also fetch company membership after token refresh
-            const refreshedToken = localStorage.getItem('token');
-            const companyMembership = refreshedToken ? await fetchCompanyMembership(refreshedToken) : null;
+            // Fetch company membership (no token parameter)
+            const companyMembership = await fetchCompanyMembership();
 
             setAuthState(prev => ({
               ...prev,
@@ -461,15 +423,11 @@ function AuthProvider({ children }: { children: ReactNode }) {
             console.log('DEBUG: User validation successful after token refresh');
           } catch (secondError) {
             console.error('Profile fetch failed after token refresh:', secondError);
-            // Clear all auth data
-            localStorage.removeItem('token');
-            localStorage.removeItem('refreshToken');
+            // Sprint 3: Clear user data (tokens in httpOnly cookies)
             localStorage.removeItem('user');
 
             setAuthState({
               user: null,
-              token: null,
-              refreshToken: null,
               isAuthenticated: false,
               isLoading: false,
               onboardingLoading: false,
@@ -488,30 +446,29 @@ function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     initializeAuth();
-  }, [refreshUserToken]); // Only run on mount
+  }, [refreshUserToken, fetchOnboardingStatus, fetchCompanyMembership]); // Only run on mount
 
-  // Login function
+  // Sprint 3: Login function (cookie-based authentication)
   const login = async (username: string, password: string) => {
     isLoggingInRef.current = true; // Prevent token validation useEffect from interfering
     setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
+      // Sprint 3: Login returns only user object (tokens are in httpOnly cookies)
       const response = await authService.login({ username, password });
 
-      // Fetch onboarding status for the logged in user using the new token
-      const onboardingStatus = await fetchOnboardingStatus(response.access, response.user);
-      // Fetch company membership
-      const companyMembership = await fetchCompanyMembership(response.access);
+      // Fetch onboarding status for the logged in user (no token parameter needed)
+      const onboardingStatus = await fetchOnboardingStatus(response.user);
+      // Fetch company membership (no token parameter needed)
+      const companyMembership = await fetchCompanyMembership();
 
       // Set refs earlier and prevent validation effect immediately
       onboardingFetchedRef.current = true; // Prevent validation effect immediately
 
-      // CRITICAL: Set ALL state in ONE update to prevent intermediate renders with wrong role
+      // Sprint 3: CRITICAL - Set ALL state in ONE update (no tokens in state)
       setAuthState(prev => ({
         ...prev,
-        token: response.access,
         user: response.user,
-        refreshToken: response.refresh,
         isAuthenticated: true,
         isLoading: false,
         onboardingLoading: false,
@@ -556,19 +513,20 @@ function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Logout function
-  const logout = () => {
+  // Sprint 3: Logout function (clears httpOnly cookies via backend)
+  const logout = async () => {
     // Clear refresh timer
     if (refreshTimerRef.current) {
       clearInterval(refreshTimerRef.current);
       refreshTimerRef.current = null;
     }
-    
-    authService.logout();
+
+    // Sprint 3: Call backend to clear httpOnly cookies (now async)
+    await authService.logout();
+
+    // Sprint 3: Clear state (no tokens, they're in httpOnly cookies)
     setAuthState({
       user: null,
-      token: null,
-      refreshToken: null,
       isAuthenticated: false,
       isLoading: false,
       onboardingLoading: false,

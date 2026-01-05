@@ -339,14 +339,14 @@ class OAuthView(APIView):
 
 class OAuthCallbackView(APIView):
     """Handle OAuth callback"""
-    
+
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request):
         """Complete OAuth flow"""
         serializer = OAuthCallbackSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         try:
             connection = ConnectionSetupService.complete_oauth_flow(
                 provider_key=serializer.validated_data['provider_key'],
@@ -357,12 +357,51 @@ class OAuthCallbackView(APIView):
                 tenant_id=serializer.validated_data.get('tenant_id'),
                 is_sandbox=serializer.validated_data.get('is_sandbox', False)
             )
-            
+
             connection_serializer = ProviderConnectionSerializer(connection)
             return Response(connection_serializer.data, status=status.HTTP_201_CREATED)
-            
+
         except Exception as e:
             logger.exception(f"OAuth callback failed")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class OAuthTenantsView(APIView):
+    """Fetch available tenants/organizations for provider (specifically Xero)"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """
+        Get list of available tenants after OAuth token exchange
+
+        This is used when a provider (like Xero) requires the user to select
+        which organization to connect to.
+        """
+        # Validate request data
+        required_fields = ['provider_key', 'code', 'redirect_uri']
+        for field in required_fields:
+            if field not in request.data:
+                return Response(
+                    {'error': f'Missing required field: {field}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        try:
+            tenant_data = ConnectionSetupService.get_available_tenants(
+                provider_key=request.data['provider_key'],
+                code=request.data['code'],
+                redirect_uri=request.data['redirect_uri'],
+                is_sandbox=request.data.get('is_sandbox', False)
+            )
+
+            return Response(tenant_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.exception(f"Failed to fetch tenants")
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST

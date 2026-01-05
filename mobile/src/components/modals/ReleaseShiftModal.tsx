@@ -119,11 +119,29 @@ export const ReleaseShiftModal: React.FC<ReleaseShiftModalProps> = ({
             <View style={styles.headerRight} />
           </View>
 
-          {/* Shift Info */}
+          {/* Shift Info - Enhanced with prominent date */}
           <View style={styles.shiftInfo}>
-            <Text style={styles.shiftInfoTitle}>Shift Details</Text>
+            {/* Prominent Date Badge */}
+            <View style={styles.dateHighlight}>
+              <Text style={styles.dateHighlightDay}>
+                {new Date(shift.start_time).getDate()}
+              </Text>
+              <Text style={styles.dateHighlightMonth}>
+                {new Date(shift.start_time).toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
+              </Text>
+              <Text style={styles.dateHighlightYear}>
+                {new Date(shift.start_time).getFullYear()}
+              </Text>
+            </View>
+
+            <Text style={styles.shiftInfoTitle}>{shift.venue.name.toUpperCase()}</Text>
             <Text style={styles.shiftInfoText}>
-              {shift.venue.name} • {new Date(shift.start_time).toLocaleDateString()}
+              {new Date(shift.start_time).toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric'
+              })}
             </Text>
             <Text style={styles.shiftInfoTime}>
               {new Date(shift.start_time).toLocaleTimeString([], {
@@ -234,25 +252,57 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.secondary,
     marginHorizontal: spacing.lg,
     marginTop: spacing.md,
-    padding: spacing.md,
-    borderRadius: 12,
+    padding: spacing.lg,
+    borderRadius: 16,
+    alignItems: 'center',
   },
-  shiftInfoTitle: {
+  // Prominent date display
+  dateHighlight: {
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    paddingVertical: spacing.base,
+    paddingHorizontal: spacing.xl,
+    marginBottom: spacing.md,
+    alignItems: 'center',
+    minWidth: 100,
+  },
+  dateHighlightDay: {
+    fontSize: 36,
+    fontWeight: '900',
+    color: colors.white,
+    lineHeight: 40,
+  },
+  dateHighlightMonth: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.9)',
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  dateHighlightYear: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.text.secondary,
-    textTransform: 'uppercase',
-    marginBottom: 4,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 2,
+  },
+  shiftInfoTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.text.primary,
+    marginBottom: spacing.xs,
+    textAlign: 'center',
   },
   shiftInfoText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text.primary,
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.text.secondary,
     marginBottom: 2,
+    textAlign: 'center',
   },
   shiftInfoTime: {
     fontSize: 14,
     color: colors.text.secondary,
+    textAlign: 'center',
   },
   content: {
     paddingHorizontal: spacing.lg,

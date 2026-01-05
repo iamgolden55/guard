@@ -77,6 +77,7 @@ const IntelligentAddressPicker: React.FC<IntelligentAddressPickerProps> = ({
   const [validationInfo, setValidationInfo] = useState<string | null>(null);
   const [searchGuidance, setSearchGuidance] = useState<{title: string; message: string; tips: string[]} | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
+  const [serviceStatus, setServiceStatus] = useState<'initializing' | 'ready' | 'limited'>('initializing');
   const [selectedLocation, setSelectedLocation] = useState<MapLocation | null>(
     initialLocation ? {
       lat: initialLocation.latitude,
@@ -94,7 +95,29 @@ const IntelligentAddressPicker: React.FC<IntelligentAddressPickerProps> = ({
     const timer = setTimeout(() => {
       setIsMapReady(true);
     }, 1000);
-    
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Check if address resolution services are ready
+  useEffect(() => {
+    const checkServices = () => {
+      if (window.google?.maps?.places?.PlacesService) {
+        setServiceStatus('ready');
+        console.log('IntelligentAddressPicker: Google Places service ready');
+      } else if (window.google?.maps?.Geocoder) {
+        // Google Maps loaded but Places not available
+        setServiceStatus('limited');
+        console.warn('IntelligentAddressPicker: Running in limited mode - Places API not available');
+      } else {
+        // Still waiting for Google Maps
+        setTimeout(checkServices, 500);
+      }
+    };
+
+    // Start checking after a short delay to allow Google Maps to load
+    const timer = setTimeout(checkServices, 1500);
+
     return () => clearTimeout(timer);
   }, []);
 
@@ -340,7 +363,25 @@ const IntelligentAddressPicker: React.FC<IntelligentAddressPickerProps> = ({
   return (
     <Stack tokens={{ childrenGap: 16 }}>
       <Label required={required}>{label}</Label>
-      
+
+      {/* Service Status Warning */}
+      {serviceStatus === 'limited' && (
+        <MessageBar
+          messageBarType={MessageBarType.warning}
+          isMultiline={true}
+        >
+          <strong>Limited Search Mode:</strong> Google Places API is not fully available.
+          Venue name searches may not work correctly. Try searching with a UK postcode instead
+          (e.g., "BS34 7HH") for best results.
+        </MessageBar>
+      )}
+
+      {serviceStatus === 'initializing' && (
+        <MessageBar messageBarType={MessageBarType.info}>
+          Initializing address search services...
+        </MessageBar>
+      )}
+
       {/* Search Input */}
       <TextField
         placeholder={placeholder}

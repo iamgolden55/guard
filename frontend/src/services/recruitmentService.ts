@@ -130,34 +130,34 @@ export const recruitmentService = {
     if (filters?.employment_type) params.append('employment_type', filters.employment_type.toString());
     if (filters?.start_date) params.append('start_date', filters.start_date);
     if (filters?.end_date) params.append('end_date', filters.end_date);
-    
-    const response = await api.get(`/recruitment-applications/?${params.toString()}`);
+
+    const response = await api.get(`/api/v1/recruitment-applications/?${params.toString()}`);
     // Handle paginated response
     return Array.isArray(response.data) ? response.data : (response.data?.results || []);
   },
 
   async getApplication(id: number): Promise<RecruitmentApplication> {
-    const response = await api.get(`/recruitment-applications/${id}/`);
+    const response = await api.get(`/api/v1/recruitment-applications/${id}/`);
     return response.data;
   },
 
   async approveApplication(id: number, notes?: string): Promise<RecruitmentApplication> {
-    const response = await api.post(`/recruitment-applications/${id}/approve/`, { notes });
+    const response = await api.post(`/api/v1/recruitment-applications/${id}/approve/`, { notes });
     return response.data.application;
   },
 
   async rejectApplication(id: number, notes: string): Promise<RecruitmentApplication> {
-    const response = await api.post(`/recruitment-applications/${id}/reject/`, { notes });
+    const response = await api.post(`/api/v1/recruitment-applications/${id}/reject/`, { notes });
     return response.data.application;
   },
 
   async convertToUser(id: number): Promise<{ user: any; application: RecruitmentApplication }> {
-    const response = await api.post(`/recruitment-applications/${id}/convert-to-user/`);
+    const response = await api.post(`/api/v1/recruitment-applications/${id}/convert-to-user/`);
     return response.data;
   },
 
   async getStats(): Promise<RecruitmentStats> {
-    const response = await api.get('/recruitment-applications/stats/');
+    const response = await api.get('/api/v1/recruitment-applications/stats/');
     return response.data;
   },
 
@@ -167,13 +167,13 @@ export const recruitmentService = {
     application_id: number;
     email: string;
   }> {
-    const response = await api.post('/recruitment-apply/', data);
+    const response = await api.post('/api/v1/recruitment-apply/', data);
     return response.data;
   },
 
   // Company-specific public endpoints
   async getCompanyEmploymentTypes(companySlug: string): Promise<EmploymentType[]> {
-    const response = await api.get(`/company-recruitment/employment-types/${companySlug}/`);
+    const response = await api.get(`/api/v1/company-recruitment/employment-types/${companySlug}/`);
     return response.data?.employment_types || [];
   },
 
@@ -183,7 +183,7 @@ export const recruitmentService = {
     logo?: string;
     contact_email?: string;
   }> {
-    const response = await api.get(`/company-recruitment/info/${companySlug}/`);
+    const response = await api.get(`/api/v1/company-recruitment/info/${companySlug}/`);
     return response.data?.company || {};
   },
 
@@ -192,7 +192,7 @@ export const recruitmentService = {
     application_id: number;
     email: string;
   }> {
-    const response = await api.post(`/company-recruitment/apply/${companySlug}/`, data);
+    const response = await api.post(`/api/v1/company-recruitment/apply/${companySlug}/`, data);
     return response.data;
   }
 };

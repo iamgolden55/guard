@@ -328,6 +328,38 @@ class ExchangeService {
       throw error;
     }
   }
+
+  /**
+   * Get count of pending incoming exchanges that need user's attention
+   * These are exchanges where the user is the target and status is 'pending'
+   * (meaning they need to accept or decline the exchange request)
+   */
+  async getPendingIncomingExchangesCount(userId: number): Promise<number> {
+    try {
+      const exchanges = await this.getMyExchanges();
+      const pendingIncoming = exchanges.filter(
+        (ex) => ex.status === 'pending' && ex.target_user === userId
+      );
+      return pendingIncoming.length;
+    } catch (error) {
+      console.error('getPendingIncomingExchangesCount error:', error);
+      return 0; // Return 0 on error to not block UI
+    }
+  }
+
+  /**
+   * Get count of available shifts that the user can claim
+   * These are open shifts released by other users
+   */
+  async getAvailableShiftsCount(): Promise<number> {
+    try {
+      const availableShifts = await this.getAvailableShifts();
+      return availableShifts.length;
+    } catch (error) {
+      console.error('getAvailableShiftsCount error:', error);
+      return 0; // Return 0 on error to not block UI
+    }
+  }
 }
 
 // Export singleton instance

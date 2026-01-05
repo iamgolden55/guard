@@ -3,7 +3,7 @@
  * List view of all shifts with filtering (All/Upcoming/Completed)
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, FlatList, RefreshControl, StyleSheet, ActivityIndicator, TouchableOpacity, Text } from 'react-native';
 import { Container, Heading2, Body, Card } from '@components/ui';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -22,17 +22,22 @@ import {
 import { ShiftCard, ShiftFilterTabs, ShiftFilter } from './components';
 import { colors, spacing } from '../../theme';
 import { logger } from '../../utils/logger';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
+import { useAuth } from '../../hooks/useAuth';
+import exchangeService from '../../services/exchangeService';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
 export const ShiftsScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const dispatch = useAppDispatch();
+  const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState<ShiftFilter>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [pendingExchangeCount, setPendingExchangeCount] = useState(0);
+  const [availableShiftsCount, setAvailableShiftsCount] = useState(0);
 
   // Get shifts from Redux
   const upcomingShifts = useAppSelector(selectUpcomingShifts);
@@ -46,6 +51,35 @@ export const ShiftsScreen = () => {
   React.useEffect(() => {
     logger.info('Shifts screen viewed');
   }, []);
+
+  // Refresh shifts when screen comes into focus
+  // This ensures transfer/release status badges are updated after creating a transfer
+  useFocusEffect(
+    useCallback(() => {
+      logger.info('[ShiftsScreen] Screen focused - refreshing shifts data');
+      dispatch(fetchShifts({ page: 1, pageSize: 20 }));
+
+      // Fetch badge counts for quick actions
+      const fetchBadgeCounts = async () => {
+        try {
+          // Fetch pending exchange count (where user is target)
+          if (user?.id) {
+            const exchangeCount = await exchangeService.getPendingIncomingExchangesCount(user.id);
+            setPendingExchangeCount(exchangeCount);
+            logger.info('[ShiftsScreen] Pending exchange count:', exchangeCount);
+          }
+
+          // Fetch available shifts count
+          const availableCount = await exchangeService.getAvailableShiftsCount();
+          setAvailableShiftsCount(availableCount);
+          logger.info('[ShiftsScreen] Available shifts count:', availableCount);
+        } catch (error) {
+          logger.error('[ShiftsScreen] Error fetching badge counts:', error);
+        }
+      };
+      fetchBadgeCounts();
+    }, [dispatch, user?.id])
+  );
 
   // Combine all shifts
   const allShifts = useMemo(() => {
@@ -214,6 +248,14 @@ export const ShiftsScreen = () => {
               <Text style={styles.actionTitle}>Available Shifts</Text>
               <Text style={styles.actionSubtitle}>Browse open shifts to claim</Text>
             </View>
+            {/* Available shifts count badge */}
+            {availableShiftsCount > 0 && (
+              <View style={[styles.badge, styles.badgeSuccess]}>
+                <Text style={styles.badgeText}>
+                  {availableShiftsCount > 9 ? '9+' : availableShiftsCount}
+                </Text>
+              </View>
+            )}
             <Ionicons name="chevron-forward" size={20} color={colors.text.secondary} />
           </TouchableOpacity>
 
@@ -228,6 +270,14 @@ export const ShiftsScreen = () => {
               <Text style={styles.actionTitle}>My Exchanges</Text>
               <Text style={styles.actionSubtitle}>View transfer history</Text>
             </View>
+            {/* Pending exchange count badge */}
+            {pendingExchangeCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  {pendingExchangeCount > 9 ? '9+' : pendingExchangeCount}
+                </Text>
+              </View>
+            )}
             <Ionicons name="chevron-forward" size={20} color={colors.text.secondary} />
           </TouchableOpacity>
         </View>
@@ -335,5 +385,23 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: spacing.sm,
+  },
+  badge: {
+    backgroundColor: colors.error,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    marginRight: spacing.xs,
+  },
+  badgeSuccess: {
+    backgroundColor: colors.success,
+  },
+  badgeText: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

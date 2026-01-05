@@ -3,7 +3,7 @@
  * Wise-inspired clean minimal dashboard with 3D flip card and bold typography
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Container, Heading1, Body } from '@components/ui';
@@ -21,6 +21,7 @@ import { HeroStatusCard, StatsRow, WiseQuickActions, UpcomingShiftCard } from '.
 import { colors, spacing } from '../../theme';
 import { logger } from '../../utils/logger';
 import { apiService, ApiTimeoutError, NetworkError, ApiError } from '../../services/api';
+import { shiftChecksService } from '../../services/shiftChecksService';
 import { ERROR_MESSAGES } from '../../utils/constants';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
@@ -31,6 +32,11 @@ export const WiseDashboardScreen = () => {
   const user = useAppSelector(selectCurrentUser);
   const activeShift = useAppSelector(selectActiveShift);
   const upcomingShifts = useAppSelector(selectUpcomingShifts);
+  const [shiftChecks, setShiftChecks] = useState<{
+    fireExitChecks: any[];
+    capacityChecks: any[];
+    toiletChecks: any[];
+  } | null>(null);
 
   // DEBUG: Log user object to diagnose first_name issue
   React.useEffect(() => {
@@ -77,6 +83,33 @@ export const WiseDashboardScreen = () => {
     }, [dispatch])
   );
 
+  // Fetch shift checks when active shift changes or screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      const fetchChecks = async () => {
+        if (activeShift?.id) {
+          logger.info('[WiseDashboard] Fetching checks for active shift', { shiftId: activeShift.id });
+          try {
+            const checks = await shiftChecksService.getShiftChecks(activeShift.id);
+            setShiftChecks(checks);
+            logger.info('[WiseDashboard] Checks fetched', {
+              fireExit: checks.fireExitChecks.length,
+              capacity: checks.capacityChecks.length,
+              toilet: checks.toiletChecks.length,
+            });
+          } catch (error) {
+            logger.error('[WiseDashboard] Error fetching checks:', error);
+            setShiftChecks(null);
+          }
+        } else {
+          setShiftChecks(null);
+        }
+      };
+
+      fetchChecks();
+    }, [activeShift?.id])
+  );
+
   // Calculate stats
   const stats = useMemo(() => {
     const hoursToday = activeShift?.check_in_time
@@ -85,7 +118,12 @@ export const WiseDashboardScreen = () => {
         )
       : 0;
 
-    const checksCompleted = 0; // TODO: Get from checks API
+    // Count completed checks from all check types
+    const checksCompleted =
+      (shiftChecks?.fireExitChecks?.length || 0) +
+      (shiftChecks?.capacityChecks?.length || 0) +
+      (shiftChecks?.toiletChecks?.length || 0);
+
     const shiftsThisWeek = upcomingShifts.length + (activeShift ? 1 : 0);
 
     return {
@@ -93,7 +131,7 @@ export const WiseDashboardScreen = () => {
       checksCompleted,
       shiftsThisWeek,
     };
-  }, [activeShift, upcomingShifts]);
+  }, [activeShift, upcomingShifts, shiftChecks]);
 
   // Handlers
   const handleCardPress = () => {

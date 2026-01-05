@@ -9,6 +9,7 @@ import { database } from './database';
 import type { SyncQueueItem } from './database';
 import { apiService } from './api';
 import { logger } from '../utils/logger';
+import { API_ENDPOINTS } from '../config/api.config';
 
 // Sync action types
 export type SyncActionType =
@@ -198,28 +199,28 @@ class SyncService {
   private async executeAction(type: SyncActionType, payload: any) {
     switch (type) {
       case 'check_in':
-        await apiService.post('/shifts/check-in/', payload);
+        await apiService.post(API_ENDPOINTS.SHIFTS.CHECK_IN(payload.shift_id), payload);
         break;
       case 'check_out':
-        await apiService.post('/shifts/check-out/', payload);
+        await apiService.post(API_ENDPOINTS.SHIFTS.CHECK_OUT(payload.shift_id), payload);
         break;
       case 'start_break':
-        await apiService.post('/shifts/start-break/', payload);
+        await apiService.post(API_ENDPOINTS.SHIFTS.START_BREAK(payload.shift_id), payload);
         break;
       case 'end_break':
-        await apiService.post('/shifts/end-break/', payload);
+        await apiService.post(API_ENDPOINTS.SHIFTS.END_BREAK(payload.shift_id), payload);
         break;
       case 'create_incident':
-        await apiService.post('/incidents/', payload);
+        await apiService.post(API_ENDPOINTS.INCIDENTS.CREATE, payload);
         break;
       case 'update_incident':
-        await apiService.put(`/incidents/${payload.id}/`, payload);
+        await apiService.put(API_ENDPOINTS.INCIDENTS.UPDATE(payload.id), payload);
         break;
       case 'create_shift_check':
-        await apiService.post('/shift-checks/', payload);
+        await apiService.post(API_ENDPOINTS.SHIFT_CHECKS.CREATE, payload);
         break;
       case 'update_shift':
-        await apiService.put(`/shifts/${payload.id}/`, payload);
+        await apiService.put(API_ENDPOINTS.SHIFTS.DETAIL(payload.id), payload);
         break;
       default:
         throw new Error(`Unknown action type: ${type}`);

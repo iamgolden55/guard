@@ -801,20 +801,8 @@ const Approvals: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Call the new API endpoint for incomplete shifts using the shift service
-      const response = await fetch('http://localhost:8000/api/shifts/incomplete/', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch incomplete shifts');
-      }
-      
-      const data = await response.json();
+      // Sprint 3: Use shiftService with cookie authentication
+      const data = await shiftService.getIncompleteShifts();
       setIncompleteShifts(data);
       setFilteredIncompleteShifts(data);
     } catch (error) {

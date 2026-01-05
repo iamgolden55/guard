@@ -106,15 +106,15 @@ export const exchangeService = {
    * Get all shift exchanges for the current user
    */
   async getMyExchanges(): Promise<ShiftExchange[]> {
-    const response = await api.get('/shift-exchanges/');
+    const response = await api.get('/api/v1/shift-exchanges/');
     console.log('getMyExchanges API response:', response);
     console.log('getMyExchanges response data:', response.data);
-    
+
     // Handle paginated response structure
     if (response.data.results && Array.isArray(response.data.results)) {
       return response.data.results;
     }
-    
+
     return Array.isArray(response.data) ? response.data : [];
   },
 
@@ -122,7 +122,7 @@ export const exchangeService = {
    * Create a new shift exchange request
    */
   async createExchange(data: CreateExchangeRequest): Promise<ShiftExchange> {
-    const response = await api.post('/shift-exchanges/', data);
+    const response = await api.post('/api/v1/shift-exchanges/', data);
     return response.data;
   },
 
@@ -130,7 +130,7 @@ export const exchangeService = {
    * Accept an exchange request (target user)
    */
   async acceptExchange(exchangeId: number, response?: string): Promise<{ message: string; exchange: ShiftExchange }> {
-    const result = await api.post(`/shift-exchanges/${exchangeId}/accept/`, {
+    const result = await api.post(`/api/v1/shift-exchanges/${exchangeId}/accept/`, {
       response: response || ''
     });
     return result.data;
@@ -142,7 +142,7 @@ export const exchangeService = {
   async approveExchange(exchangeId: number, notes?: string): Promise<{ message: string; exchange: ShiftExchange }> {
     console.log('approveExchange called with:', { exchangeId, notes });
     try {
-      const result = await api.post(`/shift-exchanges/${exchangeId}/approve/`, {
+      const result = await api.post(`/api/v1/shift-exchanges/${exchangeId}/approve/`, {
         notes: notes || ''
       });
       console.log('approveExchange success:', result.data);
@@ -159,7 +159,7 @@ export const exchangeService = {
    * Manager rejects an exchange request
    */
   async rejectExchange(exchangeId: number, notes: string): Promise<{ message: string; exchange: ShiftExchange }> {
-    const result = await api.post(`/shift-exchanges/${exchangeId}/reject/`, {
+    const result = await api.post(`/api/v1/shift-exchanges/${exchangeId}/reject/`, {
       notes
     });
     return result.data;
@@ -169,7 +169,7 @@ export const exchangeService = {
    * Cancel an exchange request
    */
   async cancelExchange(exchangeId: number): Promise<{ message: string }> {
-    const result = await api.delete(`/shift-exchanges/${exchangeId}/cancel/`);
+    const result = await api.delete(`/api/v1/shift-exchanges/${exchangeId}/cancel/`);
     return result.data;
   },
 
@@ -179,15 +179,15 @@ export const exchangeService = {
    * Get all open shift requests for the current user
    */
   async getMyOpenShiftRequests(): Promise<OpenShiftRequest[]> {
-    const response = await api.get('/open-shift-requests/');
+    const response = await api.get('/api/v1/open-shift-requests/');
     console.log('getMyOpenShiftRequests API response:', response);
     console.log('getMyOpenShiftRequests response data:', response.data);
-    
+
     // Handle paginated response structure
     if (response.data.results && Array.isArray(response.data.results)) {
       return response.data.results;
     }
-    
+
     return Array.isArray(response.data) ? response.data : [];
   },
 
@@ -195,7 +195,7 @@ export const exchangeService = {
    * Get all available shifts that can be claimed
    */
   async getAvailableShifts(): Promise<OpenShiftRequest[]> {
-    const response = await api.get('/open-shift-requests/available/');
+    const response = await api.get('/api/v1/open-shift-requests/available/');
     return response.data;
   },
 
@@ -203,7 +203,7 @@ export const exchangeService = {
    * Release a shift to the open pool
    */
   async releaseShift(data: CreateOpenShiftRequest): Promise<OpenShiftRequest> {
-    const response = await api.post('/open-shift-requests/', data);
+    const response = await api.post('/api/v1/open-shift-requests/', data);
     return response.data;
   },
 
@@ -211,7 +211,7 @@ export const exchangeService = {
    * Claim an available shift
    */
   async claimShift(requestId: number): Promise<{ message: string; request: OpenShiftRequest }> {
-    const result = await api.post(`/open-shift-requests/${requestId}/claim/`);
+    const result = await api.post(`/api/v1/open-shift-requests/${requestId}/claim/`);
     return result.data;
   },
 
@@ -219,7 +219,7 @@ export const exchangeService = {
    * Manager approves a shift claim
    */
   async approveClaim(requestId: number, notes?: string): Promise<{ message: string; request: OpenShiftRequest }> {
-    const result = await api.post(`/open-shift-requests/${requestId}/approve/`, {
+    const result = await api.post(`/api/v1/open-shift-requests/${requestId}/approve/`, {
       notes: notes || ''
     });
     return result.data;
@@ -229,7 +229,7 @@ export const exchangeService = {
    * Manager rejects a shift claim
    */
   async rejectClaim(requestId: number, notes: string): Promise<{ message: string; request: OpenShiftRequest }> {
-    const result = await api.post(`/open-shift-requests/${requestId}/reject/`, {
+    const result = await api.post(`/api/v1/open-shift-requests/${requestId}/reject/`, {
       notes
     });
     return result.data;
@@ -239,7 +239,7 @@ export const exchangeService = {
    * Cancel an open shift request
    */
   async cancelOpenShiftRequest(requestId: number): Promise<{ message: string }> {
-    const result = await api.delete(`/open-shift-requests/${requestId}/cancel/`);
+    const result = await api.delete(`/api/v1/open-shift-requests/${requestId}/cancel/`);
     return result.data;
   },
 

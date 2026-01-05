@@ -4,7 +4,7 @@ import type { Invoice, InvoiceFilter, InvoiceItem, PayRate } from '../types';
 class InvoiceService {
   // Invoice-related methods
   async getInvoices(filters?: InvoiceFilter): Promise<Invoice[]> {
-    let url = '/invoices/';
+    let url = '/api/v1/invoices/';
 
     if (filters) {
       const queryParams = new URLSearchParams();
@@ -29,31 +29,31 @@ class InvoiceService {
   }
 
   async getInvoiceById(invoiceId: number): Promise<Invoice> {
-    const response = await api.get<Invoice>(`/invoices/${invoiceId}/`);
+    const response = await api.get<Invoice>(`/api/v1/invoices/${invoiceId}/`);
     return response.data;
   }
 
   async getInvoiceItems(invoiceId: number): Promise<InvoiceItem[]> {
-    const response = await api.get<InvoiceItem[]>(`/invoices/${invoiceId}/items/`);
+    const response = await api.get<InvoiceItem[]>(`/api/v1/invoices/${invoiceId}/items/`);
     return response.data;
   }
 
   async generateInvoicePdf(invoiceId: number): Promise<Blob> {
-    const response = await api.post(`/invoices/${invoiceId}/generate-pdf/`, {}, {
+    const response = await api.post(`/api/v1/invoices/${invoiceId}/generate-pdf/`, {}, {
       responseType: 'blob'
     });
     return response.data;
   }
 
   async getInvoicePdf(invoiceId: number): Promise<Blob> {
-    const response = await api.get(`/invoices/${invoiceId}/pdf/`, {
+    const response = await api.get(`/api/v1/invoices/${invoiceId}/pdf/`, {
       responseType: 'blob'
     });
     return response.data;
   }
 
   async updateInvoiceStatus(invoiceId: number, status: string): Promise<Invoice> {
-    const response = await api.patch<Invoice>(`/invoices/${invoiceId}/update-status/`, { status });
+    const response = await api.patch<Invoice>(`/api/v1/invoices/${invoiceId}/update-status/`, { status });
     return response.data;
   }
 
@@ -62,7 +62,7 @@ class InvoiceService {
     startDate: string,
     endDate: string
   }): Promise<Invoice> {
-    const response = await api.post<Invoice>('/invoices/generate/', {
+    const response = await api.post<Invoice>('/api/v1/invoices/generate/', {
       staff_user_id: data.staffUserId,
       start_date: data.startDate,
       end_date: data.endDate
@@ -75,13 +75,13 @@ class InvoiceService {
     startDate: string,
     endDate: string
   }): Promise<any> {
-    const response = await api.get(`/invoices/preview/?staff_user_id=${data.staffUserId}&start_date=${data.startDate}&end_date=${data.endDate}`);
+    const response = await api.get(`/api/v1/invoices/preview/?staff_user_id=${data.staffUserId}&start_date=${data.startDate}&end_date=${data.endDate}`);
     return response.data;
   }
 
   // Pay rate methods
   async getPayRates(staffUserId?: number): Promise<PayRate[]> {
-    const url = staffUserId ? `/pay-rates/?staff_user=${staffUserId}` : '/pay-rates/';
+    const url = staffUserId ? `/api/v1/pay-rates/?staff_user=${staffUserId}` : '/api/v1/pay-rates/';
     const response = await api.get<PayRate[]>(url);
     return response.data;
   }
@@ -92,7 +92,7 @@ class InvoiceService {
     hourlyRate: number,
     isDefault: boolean
   }): Promise<PayRate> {
-    const response = await api.post<PayRate>('/pay-rates/', data);
+    const response = await api.post<PayRate>('/api/v1/pay-rates/', data);
     return response.data;
   }
 
@@ -100,12 +100,12 @@ class InvoiceService {
     hourlyRate: number,
     isDefault?: boolean
   }): Promise<PayRate> {
-    const response = await api.patch<PayRate>(`/pay-rates/${payRateId}/`, data);
+    const response = await api.patch<PayRate>(`/api/v1/pay-rates/${payRateId}/`, data);
     return response.data;
   }
 
   async deletePayRate(payRateId: number): Promise<void> {
-    await api.delete(`/pay-rates/${payRateId}/`);
+    await api.delete(`/api/v1/pay-rates/${payRateId}/`);
   }
 }
 

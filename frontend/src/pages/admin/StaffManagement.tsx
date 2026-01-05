@@ -407,7 +407,7 @@ const StaffManagement: React.FC = () => {
     try {
       // Fetch users and employment types in parallel
       const [usersResponse, employmentTypesResponse] = await Promise.all([
-        api.get<User[]>('/users/'),
+        api.get<User[]>('/api/v1/users/'),
         employmentTypeService.getEmploymentTypes().catch(err => {
           console.error('Employment types fetch error:', err);
           return [];
@@ -428,8 +428,8 @@ const StaffManagement: React.FC = () => {
           let phone = '';
           
           try {
-            // Try to get staff profile if it exists
-            const profileResponse = await api.get(`/staff-profiles/?user=${user.id}`);
+            // Sprint 3: Use /api/v1/ prefix for cookie authentication
+            const profileResponse = await api.get(`/api/v1/staff-profiles/?user=${user.id}`);
             const profileData = profileResponse.data.results || profileResponse.data;
             if (profileData && profileData.length > 0) {
               const profile = profileData[0];
@@ -698,9 +698,9 @@ const StaffManagement: React.FC = () => {
 
     try {
       console.log('Deleting staff ID:', selectedStaff.id);
-      
+
       // Call the API to delete the user
-      await api.delete(`/users/${selectedStaff.id}/`);
+      await api.delete(`/api/v1/users/${selectedStaff.id}/`);
       
       try {
         // If API call was successful, update the local state
@@ -922,15 +922,15 @@ const StaffManagement: React.FC = () => {
     setAssignmentLoading(true);
     try {
       // First, get the staff profile ID for this user
-      const profileResponse = await api.get(`/staff-profiles/?user=${selectedStaff.id}`);
+      const profileResponse = await api.get(`/api/v1/staff-profiles/?user=${selectedStaff.id}`);
       const staffProfile = profileResponse.data.results?.[0] || profileResponse.data[0];
-      
+
       if (!staffProfile) {
         throw new Error('Staff profile not found');
       }
-      
+
       // Update the staff profile with the selected employment type
-      await api.patch(`/staff-profiles/${staffProfile.id}/`, {
+      await api.patch(`/api/v1/staff-profiles/${staffProfile.id}/`, {
         employment_type: selectedEmploymentType
       });
       

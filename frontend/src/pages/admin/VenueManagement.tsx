@@ -1,6 +1,7 @@
 import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import venueService from '../../services/venueService';
+import authService from '../../services/authService';
 import { Venue as ApiVenue } from '../../types/venue';
 import {
   DetailsList,
@@ -295,14 +296,17 @@ const VenueManagement: React.FC = () => {
   ];
 
   // Function to handle authentication issues
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
     console.log('Manual logout triggered');
-    // Clear all auth data
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
-    // Redirect to login
-    window.location.href = '/login';
+    // Sprint 3: Use authService for cookie-based authentication
+    try {
+      await authService.logout();
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Force redirect even if logout fails
+      window.location.href = '/login';
+    }
   }, []);
 
   // Load venues from API - using useCallback to avoid dependency issues in useEffect
@@ -310,20 +314,11 @@ const VenueManagement: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setHasAuthIssue(false);
-    
+
     try {
       console.log('Attempting to fetch venues...');
 
-      // Check if authentication token exists
-      const token = localStorage.getItem('token');
-      if (!token) {
-        console.error('No authentication token found in localStorage');
-        setError('Authentication token missing. Please log out and log back in.');
-        setHasAuthIssue(true);
-        setIsLoading(false);
-        return;
-      }
-
+      // Sprint 3: Cookie-based authentication - no need to check localStorage token
       // Use the venue service to fetch venues
       const apiVenues = await venueService.getAllVenues();
       console.log('API response received:', apiVenues);
@@ -348,13 +343,9 @@ const VenueManagement: React.FC = () => {
         console.error('Server error:', error.response.status, error.response.data);
         
         if (error.response.status === 401) {
-          // Authentication error - token may be expired
-          console.error('Authentication error. Token may be expired.');
-          
-          // Clear invalid tokens and redirect to login
-          localStorage.removeItem('token');
-          localStorage.removeItem('refreshToken');
-          
+          // Sprint 3: Authentication error - cookie may be expired
+          console.error('Authentication error. Session may be expired.');
+
           setError('Your session has expired. Please log in again.');
           setHasAuthIssue(true);
         } else {

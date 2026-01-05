@@ -880,6 +880,12 @@ class User(AbstractUser):
     updated_at = models.DateTimeField(auto_now=True)
     last_login = models.DateTimeField(null=True, blank=True)
     password_last_changed = models.DateTimeField(null=True, blank=True, help_text="Timestamp of last password change")
+
+    # Account lockout fields for security
+    failed_login_attempts = models.IntegerField(default=0, help_text="Number of consecutive failed login attempts")
+    account_locked_until = models.DateTimeField(null=True, blank=True, help_text="Account locked until this timestamp")
+    last_failed_login = models.DateTimeField(null=True, blank=True, help_text="Timestamp of last failed login attempt")
+
     groups = models.ManyToManyField(
         'auth.Group',
         related_name='api_user_set',
@@ -1575,8 +1581,15 @@ class OpenShiftRequest(models.Model):
     @classmethod
     def get_available_shifts(cls, staff_user):
         """Get all open shifts that a staff member is qualified for"""
+        from django.utils import timezone
+
         # Get all open shift requests (exclude shifts the user released themselves)
-        open_requests = cls.objects.filter(status='open').exclude(requesting_user=staff_user)
+        # Also exclude shifts that have already started
+        now = timezone.now()
+        open_requests = cls.objects.filter(
+            status='open',
+            original_shift__start_time__gt=now  # Only future shifts
+        ).exclude(requesting_user=staff_user)
 
         # Filter to shifts the staff member is qualified for
         qualified_shifts = []
@@ -1652,6 +1665,8 @@ class Shift(models.Model):
         super().__init__(*args, **kwargs)
         # Track original status to detect changes
         self._original_status = self.status
+        # Track original staff_user to detect when staff is assigned to an open shift
+        self._original_staff_user_id = self.staff_user_id if self.pk else None
 
     def __str__(self):
         staff_name = self.staff_user.username if self.staff_user else "Unassigned"
@@ -1732,11 +1747,25 @@ class Shift(models.Model):
                 self.manager_approved = True
 
         super().save(*args, **kwargs)
-        
+
         # Auto-create OpenShiftRequest for new unassigned shifts
         if is_new_unassigned and self.status == 'open':
             self.create_open_shift_request()
-        
+
+        # Cancel any OpenShiftRequest when staff is assigned to a previously open shift
+        # OR when status changes from 'open' to something else
+        # This fixes the bug where shifts show in both "available" and assigned user's shifts
+        staff_was_assigned = (
+            self._original_staff_user_id is None and
+            self.staff_user_id is not None
+        )
+        status_changed_from_open = (
+            self._original_status == 'open' and
+            self.status != 'open'
+        )
+        if staff_was_assigned or status_changed_from_open:
+            self.cancel_open_shift_requests()
+
         # Auto-generate invoice when shift is approved
         if self.status == 'approved' and old_status != 'approved' and self.staff_user:
             self.auto_generate_invoice()
@@ -1792,6 +1821,33 @@ class Shift(models.Model):
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"Failed to create OpenShiftRequest for shift {self.id}: {str(e)}")
+
+    def cancel_open_shift_requests(self):
+        """Cancel any open/claimed OpenShiftRequest records when staff is directly assigned
+
+        This prevents the bug where a shift appears in both the assigned user's shifts
+        AND the available shifts list after an admin directly assigns staff.
+        """
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+
+            # Find and cancel any open or claimed requests for this shift
+            open_requests = OpenShiftRequest.objects.filter(
+                original_shift=self,
+                status__in=['open', 'claimed']
+            )
+
+            count = open_requests.count()
+            if count > 0:
+                open_requests.update(status='cancelled')
+                logger.info(f"Cancelled {count} OpenShiftRequest(s) for shift {self.id} - staff directly assigned")
+
+        except Exception as e:
+            # Log error but don't fail the save operation
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to cancel OpenShiftRequests for shift {self.id}: {str(e)}")
 
     def can_start_shift(self):
         """Check if staff can start this shift"""
@@ -2337,13 +2393,64 @@ class ShiftExchange(models.Model):
         super().save(*args, **kwargs)
 
     def accept_by_target(self, response=None):
-        """Target user accepts the exchange request"""
+        """Target user accepts the exchange request - may auto-approve if no conflicts"""
         if self.status != 'pending':
             raise ValueError("Can only accept pending requests")
-            
-        self.status = 'accepted_by_target'
+
         self.target_response = response
-        self.save()
+
+        # Check if automatic approval is possible
+        try:
+            # Re-run validation to check for conflicts
+            self.clean()  # Raises ValueError if conflicts exist
+
+            # Check company policy (if auto-approval is enabled)
+            system_settings = SystemSettings.objects.first()
+            auto_approve_enabled = getattr(system_settings, 'auto_approve_shift_exchanges', True)
+
+            if auto_approve_enabled:
+                # NO CONFLICTS - Automatically approve
+                logger.info(f"Auto-approving shift exchange {self.id} - no conflicts detected")
+
+                # Perform the shift transfer immediately
+                if self.target_shift:
+                    # Bilateral exchange
+                    original_user = self.original_shift.staff_user
+                    target_user = self.target_shift.staff_user
+
+                    self.original_shift.staff_user = target_user
+                    self.target_shift.staff_user = original_user
+
+                    self.original_shift.status = 'scheduled'
+                    self.target_shift.status = 'scheduled'
+
+                    self.original_shift.save()
+                    self.target_shift.save()
+                else:
+                    # Simple transfer
+                    self.original_shift.staff_user = self.target_user
+                    self.original_shift.status = 'scheduled'
+                    self.original_shift.save()
+
+                # Mark as approved (no manager needed)
+                self.status = 'approved'
+                self.manager_notes = 'Auto-approved: No conflicts detected'
+                self.save()
+
+                return True  # Indicates auto-approval happened
+            else:
+                # Auto-approval disabled - require manager
+                self.status = 'accepted_by_target'
+                self.save()
+                return False
+
+        except ValueError as e:
+            # CONFLICTS DETECTED - Require manager approval
+            logger.info(f"Shift exchange {self.id} requires manager approval: {str(e)}")
+            self.status = 'accepted_by_target'
+            self.manager_notes = f'Requires review: {str(e)}'
+            self.save()
+            return False
 
     def approve(self, manager_user, notes=None):
         """Manager approves the exchange request"""
@@ -2812,6 +2919,10 @@ class SystemSettings(models.Model):
     require_shift_photos = models.BooleanField(default=False)
     session_timeout = models.IntegerField(default=30) # In minutes
     allow_shift_exchange = models.BooleanField(default=True)
+    auto_approve_shift_exchanges = models.BooleanField(
+        default=True,
+        help_text="Automatically approve shift exchanges when no conflicts exist"
+    )
     
     # Auto-checkout settings
     auto_checkout_grace_period = models.IntegerField(default=30, help_text="Minutes after scheduled end time before auto-checkout is allowed")
@@ -4941,6 +5052,11 @@ class SNSDeviceToken(models.Model):
         self.last_used_at = timezone.now()
         self.save()
 
+    def update_last_used(self):
+        """Update the last_used_at timestamp for this token"""
+        self.last_used_at = timezone.now()
+        self.save(update_fields=['last_used_at'])
+
 
 class NotificationPreferences(models.Model):
     """
@@ -5102,3 +5218,69 @@ class NotificationPreferences(models.Model):
         
         # Default to True for unknown notification types
         return True
+
+
+# =====================================================
+# PASSWORD RESET MODELS
+# =====================================================
+
+class PasswordResetToken(models.Model):
+    """
+    Model to manage password reset tokens.
+    Tokens are valid for 24 hours and can only be used once.
+    """
+    token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+        help_text="Unique token for password reset"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='password_reset_tokens',
+        help_text="User requesting password reset"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When the token was created"
+    )
+    expires_at = models.DateTimeField(
+        help_text="When the token expires (24 hours from creation)"
+    )
+    is_used = models.BooleanField(
+        default=False,
+        help_text="Whether the token has been used"
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="IP address of the request for audit trail"
+    )
+
+    class Meta:
+        db_table = 'password_reset_tokens'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['token', 'is_used', 'expires_at']),
+            models.Index(fields=['user', 'created_at']),
+        ]
+
+    def save(self, *args, **kwargs):
+        """Set expiry date to 24 hours from creation if not set"""
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(hours=24)
+        super().save(*args, **kwargs)
+
+    def is_valid(self):
+        """Check if token is still valid (not used and not expired)"""
+        return not self.is_used and timezone.now() < self.expires_at
+
+    def mark_as_used(self):
+        """Mark the token as used"""
+        self.is_used = True
+        self.save(update_fields=['is_used'])
+
+    def __str__(self):
+        return f"Password reset token for {self.user.username} - {'Valid' if self.is_valid() else 'Invalid'}"

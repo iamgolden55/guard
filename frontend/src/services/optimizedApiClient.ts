@@ -139,7 +139,7 @@ class OptimizedApiClient {
 
   constructor(config: Partial<ApiClientConfig> = {}) {
     this.config = {
-      baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1',
+      baseURL: import.meta.env.VITE_API_URL,
       timeout: 10000, // 10 seconds
       enableCaching: true,
       enableDeduplication: true,

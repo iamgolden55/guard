@@ -9,6 +9,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Body, BodySmall, Heading3, Caption } from '@components/ui';
 import { colors, spacing, layout } from '../../../theme';
 import { Shift } from '../../../store/slices/shiftsSlice';
+import { TransferStatusBadge } from '../../../components/shift';
 
 interface ShiftCardProps {
   shift: Shift;
@@ -52,10 +53,11 @@ export const ShiftCard: React.FC<ShiftCardProps> = ({ shift, onPress }) => {
 
   // Get status badge color and text
   const getStatusInfo = () => {
-    // Check if shift is past scheduled (scheduled but start time has passed)
+    // Check if shift is truly missed (scheduled but ENDED without check-in)
     const now = new Date();
     const startTime = new Date(shift.start_time);
-    const isPastScheduled = shift.status === 'scheduled' && startTime < now;
+    const endTime = new Date(shift.end_time);
+    const isPastScheduled = shift.status === 'scheduled' && endTime < now;
 
     switch (shift.status) {
       case 'in_progress':
@@ -186,6 +188,18 @@ export const ShiftCard: React.FC<ShiftCardProps> = ({ shift, onPress }) => {
         </View>
       )}
 
+      {/* Transfer Status Badge */}
+      {(shift.pending_exchange || shift.pending_release || shift.approved_transfer) && (
+        <View style={styles.transferBadgeContainer}>
+          <TransferStatusBadge
+            exchange={shift.pending_exchange}
+            release={shift.pending_release}
+            approvedTransfer={shift.approved_transfer}
+            compact={true}
+          />
+        </View>
+      )}
+
       {/* Chevron */}
       <Ionicons
         name="chevron-forward"
@@ -264,6 +278,9 @@ const styles = StyleSheet.create({
   },
   syncText: {
     fontSize: 12,
+  },
+  transferBadgeContainer: {
+    marginTop: spacing.md,
   },
   chevron: {
     position: 'absolute',

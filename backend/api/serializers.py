@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from .utils.shift_validators import check_shift_overlap
 from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
@@ -12,7 +13,9 @@ from .models import (
     # Onboarding models
     SecurityCompany, CompanyOnboarding, CompanyIntegration, UserCompanyMembership,
     # Notification models
-    SNSDeviceToken, NotificationPreferences
+    SNSDeviceToken, NotificationPreferences,
+    # Password reset models
+    PasswordResetToken
 )
 
 User = get_user_model() # Ensure User model is fetched
@@ -395,11 +398,14 @@ class ShiftSerializer(serializers.ModelSerializer):
     staff_user_details = UserSerializer(source='staff_user', read_only=True)
     calculated_payment = serializers.ReadOnlyField()
     is_invoiced = serializers.SerializerMethodField()
+    pending_exchange = serializers.SerializerMethodField()
+    pending_release = serializers.SerializerMethodField()
+    approved_transfer = serializers.SerializerMethodField()
 
     class Meta:
         model = Shift
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at', 'calculated_payment', 'is_invoiced', 'auto_checkout')
+        read_only_fields = ('created_at', 'updated_at', 'calculated_payment', 'is_invoiced', 'auto_checkout', 'pending_exchange', 'pending_release', 'approved_transfer')
 
     def validate(self, data):
         # Validate end time is after start time
@@ -408,26 +414,126 @@ class ShiftSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     "end_time": "End time must be after start time"
                 })
-        
+
         # Validate hourly_rate is positive if provided
         if data.get('hourly_rate') is not None and data['hourly_rate'] <= 0:
             raise serializers.ValidationError({
                 "hourly_rate": "Hourly rate must be positive"
             })
-        
+
+        # Get staff_user - either from data or from existing instance (for updates)
+        staff_user = data.get('staff_user') or (self.instance.staff_user if self.instance else None)
+
         # Validate staff eligibility if staff_user is set
-        staff_user = data.get('staff_user')
         if staff_user:
             profile = getattr(staff_user, 'profile', None)
             if not profile or not profile.is_eligible_for_shifts():
                 raise serializers.ValidationError({
                     "staff_user": "Staff must have a valid SIA license and be admin approved to be assigned shifts."
                 })
+
+        # Get time values - either from data or from existing instance (for updates)
+        start_time = data.get('start_time') or (self.instance.start_time if self.instance else None)
+        end_time = data.get('end_time') or (self.instance.end_time if self.instance else None)
+
+        # Check for overlapping shifts (regardless of shift_group)
+        if staff_user and start_time and end_time:
+            exclude_shift_id = self.instance.id if self.instance else None
+            has_overlap, overlapping_shifts = check_shift_overlap(
+                staff_user, start_time, end_time, exclude_shift_id
+            )
+
+            if has_overlap:
+                first_conflict = overlapping_shifts.first()
+                venue_name = first_conflict.venue.name if first_conflict.venue else 'Unknown venue'
+                raise serializers.ValidationError({
+                    "staff_user": f"This staff member already has a shift during this time: "
+                    f"{first_conflict.start_time.strftime('%Y-%m-%d %H:%M')} - "
+                    f"{first_conflict.end_time.strftime('%H:%M')} at {venue_name}"
+                })
+
         return data
-    
+
     def get_is_invoiced(self, obj):
         """Check if shift has been invoiced"""
         return obj.invoice_items.exists()
+
+    def get_pending_exchange(self, obj):
+        """Get pending/in-progress exchange for this shift (if any)"""
+        from .models import ShiftExchange
+
+        # Look for pending/accepted exchanges where this shift is the original_shift
+        exchange = ShiftExchange.objects.filter(
+            original_shift=obj,
+            status__in=['pending', 'accepted_by_target']
+        ).select_related('target_user').first()
+
+        if exchange:
+            return {
+                'id': exchange.id,
+                'status': exchange.status,
+                'target_user': {
+                    'id': exchange.target_user.id,
+                    'first_name': exchange.target_user.first_name,
+                    'last_name': exchange.target_user.last_name,
+                },
+                'created_at': exchange.created_at.isoformat() if exchange.created_at else None,
+                'request_reason': exchange.request_reason,
+            }
+        return None
+
+    def get_pending_release(self, obj):
+        """Get pending open shift request for this shift (if any)"""
+        from .models import OpenShiftRequest
+
+        release = OpenShiftRequest.objects.filter(
+            original_shift=obj,
+            status__in=['open', 'claimed']
+        ).select_related('claimed_by').first()
+
+        if release:
+            result = {
+                'id': release.id,
+                'status': release.status,
+                'created_at': release.created_at.isoformat() if release.created_at else None,
+                'request_reason': release.request_reason,
+            }
+            if release.claimed_by:
+                result['claimed_by'] = {
+                    'id': release.claimed_by.id,
+                    'first_name': release.claimed_by.first_name,
+                    'last_name': release.claimed_by.last_name,
+                }
+            return result
+        return None
+
+    def get_approved_transfer(self, obj):
+        """Get recently approved transfer for this shift (last 7 days)"""
+        from .models import ShiftExchange
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Look for recently approved exchanges (within last 7 days)
+        recent_cutoff = timezone.now() - timedelta(days=7)
+
+        exchange = ShiftExchange.objects.filter(
+            original_shift=obj,
+            status='approved',
+            updated_at__gte=recent_cutoff
+        ).select_related('target_user').first()
+
+        if exchange:
+            return {
+                'id': exchange.id,
+                'target_user': {
+                    'id': exchange.target_user.id,
+                    'first_name': exchange.target_user.first_name,
+                    'last_name': exchange.target_user.last_name,
+                },
+                'approved_at': exchange.updated_at.isoformat() if exchange.updated_at else None,
+                'was_auto_approved': exchange.manager_user is None,
+            }
+        return None
 
 class ShiftTemplateSerializer(serializers.ModelSerializer):
     venue_details = VenueSerializer(source='venue', read_only=True)
@@ -2285,5 +2391,75 @@ class NotificationPreferencesSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     "Final reminder minutes must be between 15 and 180"
                 )
+
+        return data
+
+
+# =====================================================
+# PASSWORD RESET SERIALIZERS
+# =====================================================
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """Serializer for requesting password reset"""
+    email = serializers.EmailField(required=True)
+
+    def validate_email(self, value):
+        """Validate email format"""
+        return value.lower().strip()
+
+
+class PasswordResetValidateSerializer(serializers.Serializer):
+    """Serializer for validating password reset token"""
+    token = serializers.UUIDField(required=True)
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """Serializer for confirming password reset with new password"""
+    token = serializers.UUIDField(required=True)
+    new_password = serializers.CharField(
+        required=True,
+        min_length=8,
+        max_length=128,
+        write_only=True
+    )
+    confirm_password = serializers.CharField(
+        required=True,
+        write_only=True
+    )
+
+    def validate(self, data):
+        """Validate password match and strength"""
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError({
+                'confirm_password': 'Passwords do not match'
+            })
+
+        # Password strength validation
+        password = data['new_password']
+
+        # Check for at least one uppercase letter
+        if not any(char.isupper() for char in password):
+            raise serializers.ValidationError({
+                'new_password': 'Password must contain at least one uppercase letter'
+            })
+
+        # Check for at least one lowercase letter
+        if not any(char.islower() for char in password):
+            raise serializers.ValidationError({
+                'new_password': 'Password must contain at least one lowercase letter'
+            })
+
+        # Check for at least one digit
+        if not any(char.isdigit() for char in password):
+            raise serializers.ValidationError({
+                'new_password': 'Password must contain at least one number'
+            })
+
+        # Check for at least one special character
+        special_characters = "!@#$%^&*()_+-=[]{}|;:,.<>?"
+        if not any(char in special_characters for char in password):
+            raise serializers.ValidationError({
+                'new_password': 'Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)'
+            })
 
         return data

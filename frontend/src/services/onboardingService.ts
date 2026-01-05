@@ -16,7 +16,7 @@ import { mapCountryNameToCode } from '../utils/countryMapping';
  * Service for managing onboarding API calls
  */
 class OnboardingService {
-  private readonly baseUrl = '/onboarding';
+  private readonly baseUrl = '/api/v1/onboarding';
 
   /**
    * Initialize a new onboarding session with company data

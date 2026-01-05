@@ -22,16 +22,14 @@ class ReportService {
       return;
     }
 
-    const token = localStorage.getItem('token');
-    if (token) {
-      reportWebSocketClient.initialize(token);
-      try {
-        await reportWebSocketClient.connect();
-        this.isWebSocketInitialized = true;
-        console.log('Report WebSocket initialized successfully');
-      } catch (error) {
-        console.error('Failed to initialize WebSocket, will use polling fallback:', error);
-      }
+    // Sprint 3: WebSocket authentication needs to be updated for cookie-based auth
+    // For now, WebSocket will use polling fallback
+    try {
+      await reportWebSocketClient.connect();
+      this.isWebSocketInitialized = true;
+      console.log('Report WebSocket initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize WebSocket, will use polling fallback:', error);
     }
   }
 
@@ -86,25 +84,25 @@ class ReportService {
       if (filters.limit) params.append('limit', filters.limit.toString());
     }
 
-    const response = await api.get<ReportJobListResponse>(`/reports/jobs/?${params.toString()}`);
+    const response = await api.get<ReportJobListResponse>(`/api/v1/reports/jobs/?${params.toString()}`);
     return response.data;
   }
 
   // Get specific report job
   async getReportJob(jobId: string): Promise<ReportJob> {
-    const response = await api.get<ReportJob>(`/reports/jobs/${jobId}/`);
+    const response = await api.get<ReportJob>(`/api/v1/reports/jobs/${jobId}/`);
     return response.data;
   }
 
   // Get job progress in real-time
   async getJobProgress(jobId: string): Promise<ReportJobProgress> {
-    const response = await api.get<ReportJobProgress>(`/reports/jobs/${jobId}/progress/`);
+    const response = await api.get<ReportJobProgress>(`/api/v1/reports/jobs/${jobId}/progress/`);
     return response.data;
   }
 
   // Generate a new report (async) with automatic WebSocket subscription
   async generateReport(request: ReportGenerationRequest): Promise<ReportJob> {
-    const response = await api.post<ReportJob>('/reports/jobs/generate_report/', request);
+    const response = await api.post<ReportJob>('/api/v1/reports/jobs/generate_report/', request);
     const job = response.data;
 
     // Initialize WebSocket if not already done
@@ -120,53 +118,53 @@ class ReportService {
 
   // Cancel a running job
   async cancelJob(jobId: string): Promise<void> {
-    await api.delete(`/reports/jobs/${jobId}/cancel/`);
+    await api.delete(`/api/v1/reports/jobs/${jobId}/cancel/`);
   }
 
   // Retry a failed job
   async retryJob(jobId: string): Promise<ReportJob> {
-    const response = await api.post<ReportJob>(`/reports/jobs/${jobId}/retry/`);
+    const response = await api.post<ReportJob>(`/api/v1/reports/jobs/${jobId}/retry/`);
     return response.data;
   }
 
   // Delete a completed job
   async deleteJob(jobId: string): Promise<void> {
-    await api.delete(`/reports/jobs/${jobId}/`);
+    await api.delete(`/api/v1/reports/jobs/${jobId}/`);
   }
 
   // Bulk job operations
   async bulkJobAction(action: BulkJobAction): Promise<{ success: string[]; failed: string[] }> {
-    const response = await api.post<{ success: string[]; failed: string[] }>('/reports/jobs/bulk_action/', action);
+    const response = await api.post<{ success: string[]; failed: string[] }>('/api/v1/reports/jobs/bulk_action/', action);
     return response.data;
   }
 
   // Get job summary/dashboard data
   async getJobSummary(): Promise<ReportJobSummary> {
-    const response = await api.get<ReportJobSummary>('/reports/jobs/summary/');
+    const response = await api.get<ReportJobSummary>('/api/v1/reports/jobs/summary/');
     return response.data;
   }
 
   // Get export format capabilities
   async getExportFormats(): Promise<ExportFormatCapability[]> {
-    const response = await api.get<ExportFormatCapability[]>('/exports/formats/');
+    const response = await api.get<ExportFormatCapability[]>('/api/v1/exports/formats/');
     return response.data;
   }
 
   // Get report templates
   async getReportTemplates(): Promise<ReportTemplate[]> {
-    const response = await api.get<ReportTemplate[]>('/reports/templates/');
+    const response = await api.get<ReportTemplate[]>('/api/v1/reports/templates/');
     return response.data;
   }
 
   // Create report template
   async createReportTemplate(template: Omit<ReportTemplate, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>): Promise<ReportTemplate> {
-    const response = await api.post<ReportTemplate>('/reports/templates/', template);
+    const response = await api.post<ReportTemplate>('/api/v1/reports/templates/', template);
     return response.data;
   }
 
   // Download completed report
   async downloadReport(jobId: string): Promise<Blob> {
-    const response = await api.get(`/reports/jobs/${jobId}/download/`, {
+    const response = await api.get(`/api/v1/reports/jobs/${jobId}/download/`, {
       responseType: 'blob'
     });
     return response.data;
@@ -175,15 +173,15 @@ class ReportService {
   // Get report metrics for analytics
   async getReportMetrics(period?: '7d' | '30d' | '90d'): Promise<ReportMetrics> {
     const params = period ? `?period=${period}` : '';
-    const response = await api.get<ReportMetrics>(`/reports/metrics/${params}`);
+    const response = await api.get<ReportMetrics>(`/api/v1/reports/metrics/${params}`);
     return response.data;
   }
 
   // Get available report types
   async getReportTypes(): Promise<Array<{ id: string; name: string; description: string }>> {
     try {
-      console.log('ReportService: Making API call to /reports/types/');
-      const response = await api.get<Array<{ id: string; name: string; description: string }>>('/reports/types/');
+      console.log('ReportService: Making API call to /api/v1/reports/types/');
+      const response = await api.get<Array<{ id: string; name: string; description: string }>>('/api/v1/reports/types/');
 
       console.log('ReportService: Raw API response:', {
         status: response.status,
