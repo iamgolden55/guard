@@ -227,6 +227,22 @@ export const ProfileScreen = () => {
 
         {/* Quick Actions */}
         <View style={styles.actionsContainer}>
+          <TouchableOpacity
+            style={styles.actionItem}
+            onPress={() => navigation.navigate('Earnings')}
+          >
+            <View style={styles.actionIconCircle}>
+              <Ionicons name="cash" size={22} color="#0066FF" />
+            </View>
+            <View style={styles.actionContent}>
+              <Text style={styles.actionTitle}>Earnings & Statements</Text>
+              <Text style={styles.actionDescription}>
+                View earnings and download statements
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.actionItem} onPress={handleViewVirtualID}>
             <View style={styles.actionIconCircle}>
               <Ionicons name="card" size={22} color="#0066FF" />
@@ -251,22 +267,6 @@ export const ProfileScreen = () => {
               <Text style={styles.actionTitle}>Leave Balance</Text>
               <Text style={styles.actionDescription}>
                 View your available leave days and balances
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionItem}
-            onPress={() => navigation.navigate('Earnings')}
-          >
-            <View style={styles.actionIconCircle}>
-              <Ionicons name="cash" size={22} color="#0066FF" />
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Earnings</Text>
-              <Text style={styles.actionDescription}>
-                View earnings and download statements
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
