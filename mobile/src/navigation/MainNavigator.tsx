@@ -27,6 +27,7 @@ import { VenueTermsScreen } from '../screens/venue/VenueTermsScreen';
 import { VirtualIDScreen } from '../screens/profile/VirtualIDScreen';
 import { EditProfileScreen } from '../screens/profile/EditProfileScreen';
 import { SyncQueueScreen } from '../screens/profile/SyncQueueScreen';
+import { EarningsScreen } from '../screens/profile/EarningsScreen';
 
 // Test/Debug Screens
 import { NotificationTestScreen } from '../screens/NotificationTestScreen';
@@ -79,6 +80,7 @@ export const MainNavigator = () => {
           <Stack.Screen name="VirtualID" component={VirtualIDScreen} />
           <Stack.Screen name="EditProfile" component={EditProfileScreen} />
           <Stack.Screen name="SyncQueue" component={SyncQueueScreen} />
+          <Stack.Screen name="Earnings" component={EarningsScreen} />
 
           {/* Leave Management Screens */}
           <Stack.Screen name="LeaveBalance" component={LeaveBalanceScreen} />

@@ -258,6 +258,22 @@ export const ProfileScreen = () => {
 
           <TouchableOpacity
             style={styles.actionItem}
+            onPress={() => navigation.navigate('Earnings')}
+          >
+            <View style={styles.actionIconCircle}>
+              <Ionicons name="cash" size={22} color="#0066FF" />
+            </View>
+            <View style={styles.actionContent}>
+              <Text style={styles.actionTitle}>Earnings</Text>
+              <Text style={styles.actionDescription}>
+                View earnings and download statements
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionItem}
             onPress={() => navigation.navigate('LeaveRequest')}
           >
             <View style={styles.actionIconCircle}>

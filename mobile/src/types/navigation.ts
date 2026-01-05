@@ -70,6 +70,7 @@ export type MainStackParamList = {
   LeaveRequest: undefined;
   LeaveHistory: undefined;
   LeaveRequestDetail: { requestId: number };
+  Earnings: undefined;
 };
 
 // Tab Navigator (bottom tabs)
