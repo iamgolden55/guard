@@ -25,20 +25,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { apiService } from '../../services/api';
 import { API_ENDPOINTS } from '../../config/api.config';
 import { logger } from '../../utils/logger';
+import { Invoice } from '../../types/invoice';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
-
-// Interface matching the API response
-interface Invoice {
-  id: number;
-  start_date: string;
-  end_date: string;
-  total_amount: string | number;
-  status: 'pending' | 'paid' | 'overdue';
-  pdf_url: string | null;
-  created_at: string;
-  updated_at: string;
-}
 
 export const EarningsScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
@@ -265,7 +254,7 @@ export const EarningsScreen: React.FC = () => {
                             <TouchableOpacity 
                                 key={invoice.id} 
                                 style={styles.statementItem}
-                                onPress={() => handleDownloadStatement(invoice.pdf_url)}
+                                onPress={() => navigation.navigate('InvoiceDetail', { invoiceId: invoice.id })}
                             >
                                 <View style={styles.statementIcon}>
                                     <Ionicons name="document-text-outline" size={24} color="#666" />
@@ -287,9 +276,11 @@ export const EarningsScreen: React.FC = () => {
                                         {formatCurrency(typeof invoice.total_amount === 'string' ? parseFloat(invoice.total_amount) : invoice.total_amount)}
                                     </Text>
                                     {invoice.pdf_url ? (
-                                        <Ionicons name="download-outline" size={20} color="#0066FF" />
+                                        <TouchableOpacity onPress={() => handleDownloadStatement(invoice.pdf_url)} style={{ padding: 4 }}>
+                                            <Ionicons name="download-outline" size={20} color="#0066FF" />
+                                        </TouchableOpacity>
                                     ) : (
-                                        <Text style={{ fontSize: 10, color: '#999' }}>Processing</Text>
+                                        <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
                                     )}
                                 </View>
                             </TouchableOpacity>
