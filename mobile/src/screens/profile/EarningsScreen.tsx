@@ -14,8 +14,11 @@ import {
   Linking,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Container } from '@components/ui';
 import { colors, spacing } from '../../theme';
 import { useNavigation } from '@react-navigation/native';
@@ -31,16 +34,25 @@ type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
 export const EarningsScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
-  const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year'>('month');
+  const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year' | 'custom'>('month');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [displayedInvoices, setDisplayedInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [earningsStats, setEarningsStats] = useState({
     currentMonth: 0,
     lastMonth: 0,
     ytd: 0,
-    shiftsCompleted: 0, // Note: invoices might not have shift count directly unless calculated
+    customTotal: 0,
+    shiftsCompleted: 0, 
   });
+
+  // Custom Report State
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [startDate, setStartDate] = useState(new Date());
+  const [endDate, setEndDate] = useState(new Date());
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
   const fetchInvoices = useCallback(async () => {
     try {
@@ -49,7 +61,14 @@ export const EarningsScreen: React.FC = () => {
       const invoiceList = Array.isArray(response) ? response : response.results || [];
       
       setInvoices(invoiceList);
+      setDisplayedInvoices(invoiceList);
       calculateEarnings(invoiceList);
+
+      // If we were in custom mode and refreshed, reset or re-filter?
+      // Let's reset to avoid confusion
+      if (selectedPeriod === 'custom') {
+        setSelectedPeriod('month');
+      }
     } catch (error) {
       logger.error('Failed to fetch invoices', error);
       Alert.alert('Error', 'Failed to load earnings information.');
@@ -57,7 +76,7 @@ export const EarningsScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [selectedPeriod]);
 
   const calculateEarnings = (invoiceList: Invoice[]) => {
     const now = new Date();
@@ -82,26 +101,20 @@ export const EarningsScreen: React.FC = () => {
         if (invDate.getMonth() === currentMonth) {
           monthTotal += amount;
         }
-        
-        // Last Month
-        if (invDate.getMonth() === lastMonth) { // Logic specific to current year check is tricky for Jan, strictly:
-           // This simple logic assumes filters are applied correctly. 
-           // Better logic below for cross-year:
-        }
       }
       
-      // Strict Last Month Check (could be Dec of prev year)
+      // Last Month Check
       if (invDate.getMonth() === lastMonth && invDate.getFullYear() === lastMonthYear) {
           lastMonthTotal += amount;
       }
     });
 
-    setEarningsStats({
+    setEarningsStats(prev => ({
+      ...prev,
       currentMonth: monthTotal,
       lastMonth: lastMonthTotal,
       ytd: yearTotal,
-      shiftsCompleted: 0, // Not available in invoice summary list typically
-    });
+    }));
   };
 
   useEffect(() => {
@@ -131,14 +144,63 @@ export const EarningsScreen: React.FC = () => {
     }
   };
 
-  const handleGenerateCustomReport = () => {
-    Alert.alert(
-      'Custom Report',
-      'Select date range for your report (Feature coming soon)',
-      [
-        { text: 'OK' }
-      ]
-    );
+  const openCustomReportModal = () => {
+    // Default to current month range
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    setStartDate(start);
+    setEndDate(now);
+    setReportModalVisible(true);
+  };
+
+  const generateReport = () => {
+    setReportModalVisible(false);
+    setSelectedPeriod('custom');
+    setLoading(true); // Artificial loading feeling + ensures UI updates
+
+    // Filter invoices
+    const filtered = invoices.filter(inv => {
+      const invStart = new Date(inv.start_date);
+      // Compare dates (ignoring time)
+      const s = new Date(startDate); s.setHours(0,0,0,0);
+      const e = new Date(endDate); e.setHours(23,59,59,999);
+      const i = new Date(invStart); i.setHours(12,0,0,0); // Mid-day for safety
+      
+      return i >= s && i <= e;
+    });
+
+    setDisplayedInvoices(filtered);
+
+    // Calculate total for this period
+    const total = filtered.reduce((sum, inv) => {
+      const amount = typeof inv.total_amount === 'string' ? parseFloat(inv.total_amount) : inv.total_amount;
+      return sum + amount;
+    }, 0);
+
+    setEarningsStats(prev => ({
+      ...prev,
+      customTotal: total,
+    }));
+
+    // Small timeout to allow UI to render properly
+    setTimeout(() => setLoading(false), 300);
+  };
+
+  const clearReport = () => {
+    setSelectedPeriod('month');
+    setDisplayedInvoices(invoices);
+  };
+
+  const onDateChange = (event: any, selectedDate?: Date, type?: 'start' | 'end') => {
+    if (Platform.OS === 'android') {
+      if (type === 'start') setShowStartDatePicker(false);
+      if (type === 'end') setShowEndDatePicker(false);
+    }
+
+    if (selectedDate) {
+      if (type === 'start') setStartDate(selectedDate);
+      if (type === 'end') setEndDate(selectedDate);
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -201,21 +263,29 @@ export const EarningsScreen: React.FC = () => {
                         </View>
 
                         <View style={styles.amountContainer}>
-                            <Text style={styles.amountLabel}>Total Earnings</Text>
+                            <Text style={styles.amountLabel}>
+                                {selectedPeriod === 'custom' ? 'Custom Period Earnings' : 'Total Earnings'}
+                            </Text>
                             <Text style={styles.amountValue}>
                                 {selectedPeriod === 'month' 
                                     ? formatCurrency(earningsStats.currentMonth) 
-                                    : formatCurrency(earningsStats.ytd)}
+                                    : (selectedPeriod === 'year' 
+                                        ? formatCurrency(earningsStats.ytd)
+                                        : formatCurrency(earningsStats.customTotal))}
                             </Text>
                         </View>
 
                         <View style={styles.statsRow}>
                             <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>{selectedPeriod === 'month' ? 'Last Month' : 'Previous Year'}</Text>
+                                <Text style={styles.statLabel}>
+                                    {selectedPeriod === 'month' ? 'Last Month' : (selectedPeriod === 'year' ? 'Previous Year' : 'Period')}
+                                </Text>
                                 <Text style={styles.statValue}>
                                     {selectedPeriod === 'month' 
                                         ? formatCurrency(earningsStats.lastMonth)
-                                        : 'N/A'} 
+                                        : (selectedPeriod === 'custom' 
+                                            ? `${startDate.toLocaleDateString('en-GB', {month:'short'})}-${endDate.toLocaleDateString('en-GB', {month:'short'})}`
+                                            : 'N/A')} 
                                 </Text>
                             </View>
                             <View style={styles.verticalDivider} />
@@ -229,7 +299,7 @@ export const EarningsScreen: React.FC = () => {
 
                 {/* Actions */}
                 <View style={styles.actionsContainer}>
-                    <TouchableOpacity style={styles.actionButton} onPress={handleGenerateCustomReport}>
+                    <TouchableOpacity style={styles.actionButton} onPress={openCustomReportModal}>
                         <View style={styles.actionIcon}>
                             <Ionicons name="calendar-outline" size={24} color="#0066FF" />
                         </View>
@@ -239,18 +309,35 @@ export const EarningsScreen: React.FC = () => {
                         </View>
                         <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
                     </TouchableOpacity>
+
+                    {selectedPeriod === 'custom' && (
+                        <TouchableOpacity 
+                            style={[styles.actionButton, { marginTop: 10, backgroundColor: '#FFF0F0', borderColor: '#FECACA' }]} 
+                            onPress={clearReport}
+                        >
+                            <View style={[styles.actionIcon, { backgroundColor: '#FEF2F2' }]}>
+                                <Ionicons name="close-circle-outline" size={24} color="#EF4444" />
+                            </View>
+                            <View style={styles.actionTextContainer}>
+                                <Text style={[styles.actionTitle, { color: '#B91C1C' }]}>Clear Report</Text>
+                                <Text style={styles.actionSubtitle}>Show all invoices</Text>
+                            </View>
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 {/* Recent Statements (Invoices) */}
                 <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Invoices & Statements</Text>
+                    <Text style={styles.sectionTitle}>
+                        {selectedPeriod === 'custom' ? 'Filtered Invoices' : 'Invoices & Statements'}
+                    </Text>
                 </View>
 
                 <View style={styles.statementsContainer}>
-                    {invoices.length === 0 ? (
-                        <Text style={{ textAlign: 'center', color: '#666', marginTop: 20 }}>No invoices found.</Text>
+                    {displayedInvoices.length === 0 ? (
+                        <Text style={{ textAlign: 'center', color: '#666', marginTop: 20 }}>No invoices found for this period.</Text>
                     ) : (
-                        invoices.map((invoice) => (
+                        displayedInvoices.map((invoice) => (
                             <TouchableOpacity 
                                 key={invoice.id} 
                                 style={styles.statementItem}
@@ -293,6 +380,69 @@ export const EarningsScreen: React.FC = () => {
         {/* Bottom Spacing */}
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Date Picker Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={reportModalVisible}
+        onRequestClose={() => setReportModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Date Range</Text>
+            
+            <View style={styles.datePickerContainer}>
+              <View style={styles.dateInputGroup}>
+                <Text style={styles.dateLabel}>Start Date</Text>
+                {Platform.OS === 'android' && (
+                  <TouchableOpacity onPress={() => setShowStartDatePicker(true)} style={styles.dateButton}>
+                    <Text style={styles.dateButtonText}>{startDate.toLocaleDateString()}</Text>
+                    <Ionicons name="calendar" size={20} color="#0066FF" />
+                  </TouchableOpacity>
+                )}
+                {(Platform.OS === 'ios' || showStartDatePicker) && (
+                  <DateTimePicker
+                    value={startDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'compact' : 'default'}
+                    onChange={(e, date) => onDateChange(e, date, 'start')}
+                    style={Platform.OS === 'ios' ? { width: 120 } : undefined}
+                  />
+                )}
+              </View>
+
+              <View style={styles.dateInputGroup}>
+                <Text style={styles.dateLabel}>End Date</Text>
+                 {Platform.OS === 'android' && (
+                  <TouchableOpacity onPress={() => setShowEndDatePicker(true)} style={styles.dateButton}>
+                    <Text style={styles.dateButtonText}>{endDate.toLocaleDateString()}</Text>
+                    <Ionicons name="calendar" size={20} color="#0066FF" />
+                  </TouchableOpacity>
+                )}
+                {(Platform.OS === 'ios' || showEndDatePicker) && (
+                  <DateTimePicker
+                    value={endDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'compact' : 'default'}
+                    onChange={(e, date) => onDateChange(e, date, 'end')}
+                    style={Platform.OS === 'ios' ? { width: 120 } : undefined}
+                  />
+                )}
+              </View>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelButton} onPress={() => setReportModalVisible(false)}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.generateButton} onPress={generateReport}>
+                <Text style={styles.generateButtonText}>Generate Report</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Container>
   );
 };
@@ -512,5 +662,86 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: colors.text.primary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: spacing.xl,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: spacing.xl,
+    textAlign: 'center',
+  },
+  datePickerContainer: {
+    marginBottom: spacing.xl,
+    gap: spacing.lg,
+  },
+  dateInputGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dateLabel: {
+    fontSize: 16,
+    color: colors.text.secondary,
+    fontWeight: '600',
+  },
+  dateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F4FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 8,
+  },
+  dateButtonText: {
+    fontSize: 15,
+    color: '#0066FF',
+    fontWeight: '600',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  cancelButton: {
+    flex: 1,
+    padding: spacing.md,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  generateButton: {
+    flex: 1,
+    padding: spacing.md,
+    borderRadius: 12,
+    backgroundColor: '#0066FF',
+    alignItems: 'center',
+  },
+  generateButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'white',
   },
 });
