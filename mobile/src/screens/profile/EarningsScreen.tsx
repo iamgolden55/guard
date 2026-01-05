@@ -26,7 +26,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
 import { LinearGradient } from 'expo-linear-gradient';
 import { apiService } from '../../services/api';
-import { API_ENDPOINTS } from '../../config/api.config';
+import { API_ENDPOINTS, API_BASE_URL } from '../../config/api.config';
 import { logger } from '../../utils/logger';
 import { Invoice } from '../../types/invoice';
 
@@ -132,12 +132,15 @@ export const EarningsScreen: React.FC = () => {
       return;
     }
     
+    // Construct full URL if it's relative
+    const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+
     try {
-      const supported = await Linking.canOpenURL(url);
+      const supported = await Linking.canOpenURL(fullUrl);
       if (supported) {
-        await Linking.openURL(url);
+        await Linking.openURL(fullUrl);
       } else {
-        Alert.alert('Error', 'Cannot open this link: ' + url);
+        Alert.alert('Error', 'Cannot open this link: ' + fullUrl);
       }
     } catch (err) {
       Alert.alert('Error', 'An error occurred while trying to open the PDF.');

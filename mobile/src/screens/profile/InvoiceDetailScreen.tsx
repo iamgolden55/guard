@@ -21,7 +21,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
 import { apiService } from '../../services/api';
-import { API_ENDPOINTS } from '../../config/api.config';
+import { API_ENDPOINTS, API_BASE_URL } from '../../config/api.config';
 import { logger } from '../../utils/logger';
 import { Invoice, InvoiceItem } from '../../types/invoice';
 
@@ -63,10 +63,13 @@ export const InvoiceDetailScreen: React.FC = () => {
   const handleDownloadPDF = async () => {
     if (!invoice?.pdf_url) return;
     
+    // Construct full URL if it's relative
+    const fullUrl = invoice.pdf_url.startsWith('http') ? invoice.pdf_url : `${API_BASE_URL}${invoice.pdf_url}`;
+
     try {
-      const supported = await Linking.canOpenURL(invoice.pdf_url);
+      const supported = await Linking.canOpenURL(fullUrl);
       if (supported) {
-        await Linking.openURL(invoice.pdf_url);
+        await Linking.openURL(fullUrl);
       } else {
         Alert.alert('Error', 'Cannot open this link.');
       }
