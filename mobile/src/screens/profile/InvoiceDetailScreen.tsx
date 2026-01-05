@@ -24,6 +24,9 @@ import { apiService } from '../../services/api';
 import { API_ENDPOINTS, API_BASE_URL } from '../../config/api.config';
 import { logger } from '../../utils/logger';
 import { Invoice, InvoiceItem } from '../../types/invoice';
+import { useAppSelector } from '../../hooks/useRedux';
+import { selectAccessToken } from '../../store/slices/authSlice';
+import { downloadAndShareAuthenticated } from '../../utils/document';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 type RouteProps = RouteProp<MainStackParamList, 'InvoiceDetail'>;
@@ -32,6 +35,7 @@ export const InvoiceDetailScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { invoiceId } = route.params;
+  const token = useAppSelector(selectAccessToken);
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,16 +70,9 @@ export const InvoiceDetailScreen: React.FC = () => {
     // Construct full URL if it's relative
     const fullUrl = invoice.pdf_url.startsWith('http') ? invoice.pdf_url : `${API_BASE_URL}${invoice.pdf_url}`;
 
-    try {
-      const supported = await Linking.canOpenURL(fullUrl);
-      if (supported) {
-        await Linking.openURL(fullUrl);
-      } else {
-        Alert.alert('Error', 'Cannot open this link.');
-      }
-    } catch (err) {
-      Alert.alert('Error', 'An error occurred while trying to open the PDF.');
-    }
+    // Use authenticated download helper
+    const fileName = `invoice-${invoice.id}.pdf`;
+    await downloadAndShareAuthenticated(fullUrl, fileName, token);
   };
 
   const formatCurrency = (amount: string | number) => {

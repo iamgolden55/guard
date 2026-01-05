@@ -29,11 +29,15 @@ import { apiService } from '../../services/api';
 import { API_ENDPOINTS, API_BASE_URL } from '../../config/api.config';
 import { logger } from '../../utils/logger';
 import { Invoice } from '../../types/invoice';
+import { useAppSelector } from '../../hooks/useRedux';
+import { selectAccessToken } from '../../store/slices/authSlice';
+import { downloadAndShareAuthenticated } from '../../utils/document';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
 export const EarningsScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
+  const token = useAppSelector(selectAccessToken);
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year' | 'custom'>('month');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [displayedInvoices, setDisplayedInvoices] = useState<Invoice[]>([]);
@@ -135,16 +139,9 @@ export const EarningsScreen: React.FC = () => {
     // Construct full URL if it's relative
     const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
 
-    try {
-      const supported = await Linking.canOpenURL(fullUrl);
-      if (supported) {
-        await Linking.openURL(fullUrl);
-      } else {
-        Alert.alert('Error', 'Cannot open this link: ' + fullUrl);
-      }
-    } catch (err) {
-      Alert.alert('Error', 'An error occurred while trying to open the PDF.');
-    }
+    // Use authenticated download helper
+    const fileName = `statement-${new Date().getTime()}.pdf`;
+    await downloadAndShareAuthenticated(fullUrl, fileName, token);
   };
 
   const openCustomReportModal = () => {
