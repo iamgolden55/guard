@@ -1753,7 +1753,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
         if user.role == 'staff':
             # Staff can only see their own invoices
-            return Invoice.objects.filter(staff_user=user)
+            queryset = Invoice.objects.filter(staff_user=user)
         elif user.role in ['manager', 'admin']:
             # Managers and admins can see invoices for their company only
             company = self.get_user_company(self.request)
@@ -1766,11 +1766,83 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 is_active=True
             ).values_list('user_id', flat=True)
 
-            return Invoice.objects.filter(staff_user_id__in=company_staff_ids)
+            queryset = Invoice.objects.filter(staff_user_id__in=company_staff_ids)
         else:
             # Default to only user's own invoices
-            return Invoice.objects.filter(staff_user=user)
+            queryset = Invoice.objects.filter(staff_user=user)
+
+        # Filter by date range if provided
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+        
+        if start_date:
+            queryset = queryset.filter(start_date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(end_date__lte=end_date)
+            
+        return queryset
     
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """Get earnings statistics for the current user"""
+        user = request.user
+        
+        # Base filtering (Role & Company) - logic duplicated from get_queryset to avoid Date filtering
+        if user.role == 'staff':
+            base_queryset = Invoice.objects.filter(staff_user=user)
+        elif user.role in ['manager', 'admin']:
+            company = self.get_user_company(request)
+            if not company:
+                base_queryset = Invoice.objects.none()
+            else:
+                company_staff_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+                base_queryset = Invoice.objects.filter(staff_user_id__in=company_staff_ids)
+        else:
+            base_queryset = Invoice.objects.filter(staff_user=user)
+        
+        now = timezone.now()
+        current_year = now.year
+        current_month = now.month
+        
+        # Calculate YTD
+        ytd_total = base_queryset.filter(
+            start_date__year=current_year
+        ).aggregate(total=Sum('total_amount'))['total'] or 0
+        
+        # Calculate Current Month
+        current_month_total = base_queryset.filter(
+            start_date__year=current_year,
+            start_date__month=current_month
+        ).aggregate(total=Sum('total_amount'))['total'] or 0
+        
+        # Calculate Last Month
+        last_month = current_month - 1
+        last_month_year = current_year
+        if last_month == 0:
+            last_month = 12
+            last_month_year = current_year - 1
+            
+        last_month_total = base_queryset.filter(
+            start_date__year=last_month_year,
+            start_date__month=last_month
+        ).aggregate(total=Sum('total_amount'))['total'] or 0
+        
+        # Calculate Custom Period Total if params provided
+        custom_total = 0
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        if start_date and end_date:
+            custom_queryset = base_queryset.filter(start_date__gte=start_date, end_date__lte=end_date)
+            custom_total = custom_queryset.aggregate(total=Sum('total_amount'))['total'] or 0
+        
+        return Response({
+            'ytd': float(ytd_total),
+            'currentMonth': float(current_month_total),
+            'lastMonth': float(last_month_total),
+            'customTotal': float(custom_total)
+        })
+
     @action(detail=False, methods=['post'])
     def generate(self, request):
         """Generate an invoice for a staff member for a specific period"""
