@@ -6,16 +6,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
-  ScrollView,
   StyleSheet,
   TouchableOpacity,
   Text,
   Alert,
-  Linking,
   ActivityIndicator,
   RefreshControl,
   Modal,
   Platform,
+  FlatList,
+  ListRenderItem,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -39,16 +39,20 @@ export const EarningsScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const token = useAppSelector(selectAccessToken);
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year' | 'custom'>('month');
+  
+  // Pagination State
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [displayedInvoices, setDisplayedInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  
   const [earningsStats, setEarningsStats] = useState({
     currentMonth: 0,
     lastMonth: 0,
     ytd: 0,
     customTotal: 0,
-    shiftsCompleted: 0, 
   });
 
   // Custom Report State
@@ -58,77 +62,74 @@ export const EarningsScreen: React.FC = () => {
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
-  const fetchInvoices = useCallback(async () => {
-    try {
-      const response = await apiService.get(API_ENDPOINTS.INVOICES.LIST);
-      // Handle pagination or direct array response
-      const invoiceList = Array.isArray(response) ? response : response.results || [];
-      
-      setInvoices(invoiceList);
-      setDisplayedInvoices(invoiceList);
-      calculateEarnings(invoiceList);
+  // Filter State
+  const [filterStartDate, setFilterStartDate] = useState<Date | null>(null);
+  const [filterEndDate, setFilterEndDate] = useState<Date | null>(null);
 
-      // If we were in custom mode and refreshed, reset or re-filter?
-      // Let's reset to avoid confusion
-      if (selectedPeriod === 'custom') {
-        setSelectedPeriod('month');
+  const fetchStats = useCallback(async (start?: Date, end?: Date) => {
+    try {
+      let url = API_ENDPOINTS.INVOICES.STATS;
+      if (start && end) {
+        url += `?start_date=${start.toISOString().split('T')[0]}&end_date=${end.toISOString().split('T')[0]}`;
       }
+      const response = await apiService.get(url);
+      setEarningsStats(response);
+    } catch (error) {
+      logger.error('Failed to fetch earnings stats', error);
+    }
+  }, []);
+
+  const fetchInvoices = useCallback(async (pageNum: number, start?: Date | null, end?: Date | null, shouldRefresh = false) => {
+    try {
+      if (pageNum === 1) setLoading(true);
+      else setLoadingMore(true);
+
+      let url = `${API_ENDPOINTS.INVOICES.LIST}?page=${pageNum}`;
+      if (start) url += `&start_date=${start.toISOString().split('T')[0]}`;
+      if (end) url += `&end_date=${end.toISOString().split('T')[0]}`;
+
+      const response = await apiService.get(url);
+      
+      const newInvoices = response.results || [];
+      const next = response.next;
+      
+      if (shouldRefresh || pageNum === 1) {
+        setInvoices(newInvoices);
+      } else {
+        setInvoices(prev => [...prev, ...newInvoices]);
+      }
+      
+      setHasMore(!!next);
+      
     } catch (error) {
       logger.error('Failed to fetch invoices', error);
-      Alert.alert('Error', 'Failed to load earnings information.');
+      Alert.alert('Error', 'Failed to load invoices.');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
       setRefreshing(false);
     }
-  }, [selectedPeriod]);
-
-  const calculateEarnings = (invoiceList: Invoice[]) => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-    const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-
-    let monthTotal = 0;
-    let lastMonthTotal = 0;
-    let yearTotal = 0;
-    
-    invoiceList.forEach(inv => {
-      const invDate = new Date(inv.start_date); // Use start date for period
-      const amount = typeof inv.total_amount === 'string' ? parseFloat(inv.total_amount) : inv.total_amount;
-
-      // Current Year (YTD)
-      if (invDate.getFullYear() === currentYear) {
-        yearTotal += amount;
-        
-        // Current Month
-        if (invDate.getMonth() === currentMonth) {
-          monthTotal += amount;
-        }
-      }
-      
-      // Last Month Check
-      if (invDate.getMonth() === lastMonth && invDate.getFullYear() === lastMonthYear) {
-          lastMonthTotal += amount;
-      }
-    });
-
-    setEarningsStats(prev => ({
-      ...prev,
-      currentMonth: monthTotal,
-      lastMonth: lastMonthTotal,
-      ytd: yearTotal,
-    }));
-  };
+  }, []);
 
   useEffect(() => {
-    fetchInvoices();
-  }, [fetchInvoices]);
+    fetchStats();
+    fetchInvoices(1);
+  }, [fetchStats, fetchInvoices]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchInvoices();
-  }, [fetchInvoices]);
+    setPage(1);
+    fetchStats(filterStartDate || undefined, filterEndDate || undefined);
+    fetchInvoices(1, filterStartDate, filterEndDate, true);
+  }, [fetchStats, fetchInvoices, filterStartDate, filterEndDate]);
+
+  const loadMore = () => {
+    if (!loadingMore && hasMore && !loading) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      fetchInvoices(nextPage, filterStartDate, filterEndDate);
+    }
+  };
 
   const handleDownloadStatement = async (url: string | null) => {
     if (!url) {
@@ -156,39 +157,24 @@ export const EarningsScreen: React.FC = () => {
   const generateReport = () => {
     setReportModalVisible(false);
     setSelectedPeriod('custom');
-    setLoading(true); // Artificial loading feeling + ensures UI updates
-
-    // Filter invoices
-    const filtered = invoices.filter(inv => {
-      const invStart = new Date(inv.start_date);
-      // Compare dates (ignoring time)
-      const s = new Date(startDate); s.setHours(0,0,0,0);
-      const e = new Date(endDate); e.setHours(23,59,59,999);
-      const i = new Date(invStart); i.setHours(12,0,0,0); // Mid-day for safety
-      
-      return i >= s && i <= e;
-    });
-
-    setDisplayedInvoices(filtered);
-
-    // Calculate total for this period
-    const total = filtered.reduce((sum, inv) => {
-      const amount = typeof inv.total_amount === 'string' ? parseFloat(inv.total_amount) : inv.total_amount;
-      return sum + amount;
-    }, 0);
-
-    setEarningsStats(prev => ({
-      ...prev,
-      customTotal: total,
-    }));
-
-    // Small timeout to allow UI to render properly
-    setTimeout(() => setLoading(false), 300);
+    setFilterStartDate(startDate);
+    setFilterEndDate(endDate);
+    setPage(1);
+    
+    // Fetch stats for custom period to get total
+    fetchStats(startDate, endDate);
+    // Fetch filtered invoices
+    fetchInvoices(1, startDate, endDate, true);
   };
 
   const clearReport = () => {
     setSelectedPeriod('month');
-    setDisplayedInvoices(invoices);
+    setFilterStartDate(null);
+    setFilterEndDate(null);
+    setPage(1);
+    
+    fetchStats(); // Reset stats
+    fetchInvoices(1, null, null, true);
   };
 
   const onDateChange = (event: any, selectedDate?: Date, type?: 'start' | 'end') => {
@@ -216,6 +202,157 @@ export const EarningsScreen: React.FC = () => {
     return `${start.toLocaleDateString('en-GB', { month: 'short' })} - ${end.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`;
   };
 
+  const renderHeader = () => (
+    <>
+        {/* Header */}
+        <Text style={styles.mainHeading}>EARNINGS</Text>
+        <Text style={styles.subtitle}>Track your income and invoices</Text>
+
+        {/* Total Earnings Card */}
+        <View style={styles.summaryCard}>
+            <LinearGradient
+                colors={['#0066FF', '#0052CC']}
+                style={styles.summaryGradient}
+            >
+                <View style={styles.periodSelector}>
+                    <TouchableOpacity 
+                        style={[styles.periodTab, selectedPeriod === 'month' && styles.periodTabActive]}
+                        onPress={() => setSelectedPeriod('month')}
+                    >
+                        <Text style={[styles.periodText, selectedPeriod === 'month' && styles.periodTextActive]}>This Month</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={[styles.periodTab, selectedPeriod === 'year' && styles.periodTabActive]}
+                        onPress={() => setSelectedPeriod('year')}
+                    >
+                        <Text style={[styles.periodText, selectedPeriod === 'year' && styles.periodTextActive]}>Year to Date</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <View style={styles.amountContainer}>
+                    <Text style={styles.amountLabel}>
+                        {selectedPeriod === 'custom' ? 'Custom Period Earnings' : 'Total Earnings'}
+                    </Text>
+                    <Text style={styles.amountValue}>
+                        {selectedPeriod === 'month' 
+                            ? formatCurrency(earningsStats.currentMonth) 
+                            : (selectedPeriod === 'year' 
+                                ? formatCurrency(earningsStats.ytd)
+                                : formatCurrency(earningsStats.customTotal))}
+                    </Text>
+                </View>
+
+                <View style={styles.statsRow}>
+                    <View style={styles.statItem}>
+                        <Text style={styles.statLabel}>
+                            {selectedPeriod === 'month' ? 'Last Month' : (selectedPeriod === 'year' ? 'Previous Year' : 'Period')}
+                        </Text>
+                        <Text style={styles.statValue}>
+                            {selectedPeriod === 'month' 
+                                ? formatCurrency(earningsStats.lastMonth)
+                                : (selectedPeriod === 'custom' 
+                                    ? `${startDate.toLocaleDateString('en-GB', {month:'short'})}-${endDate.toLocaleDateString('en-GB', {month:'short'})}`
+                                    : 'N/A')} 
+                        </Text>
+                    </View>
+                    <View style={styles.verticalDivider} />
+                    <View style={styles.statItem}>
+                        <Text style={styles.statLabel}>Status</Text>
+                        <Text style={styles.statValue}>Verified</Text>
+                    </View>
+                </View>
+            </LinearGradient>
+        </View>
+
+        {/* Actions */}
+        <View style={styles.actionsContainer}>
+            <TouchableOpacity style={styles.actionButton} onPress={openCustomReportModal}>
+                <View style={styles.actionIcon}>
+                    <Ionicons name="calendar-outline" size={24} color="#0066FF" />
+                </View>
+                <View style={styles.actionTextContainer}>
+                    <Text style={styles.actionTitle}>Custom Report</Text>
+                    <Text style={styles.actionSubtitle}>Generate for specific dates</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+            </TouchableOpacity>
+
+            {selectedPeriod === 'custom' && (
+                <TouchableOpacity 
+                    style={[styles.actionButton, { marginTop: 10, backgroundColor: '#FFF0F0', borderColor: '#FECACA' }]} 
+                    onPress={clearReport}
+                >
+                    <View style={[styles.actionIcon, { backgroundColor: '#FEF2F2' }]}>
+                        <Ionicons name="close-circle-outline" size={24} color="#EF4444" />
+                    </View>
+                    <View style={styles.actionTextContainer}>
+                        <Text style={[styles.actionTitle, { color: '#B91C1C' }]}>Clear Report</Text>
+                        <Text style={styles.actionSubtitle}>Show all invoices</Text>
+                    </View>
+                </TouchableOpacity>
+            )}
+        </View>
+
+        {/* Recent Statements (Invoices) */}
+        <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+                {selectedPeriod === 'custom' ? 'Filtered Invoices' : 'Invoices & Statements'}
+            </Text>
+        </View>
+    </>
+  );
+
+  const renderInvoiceItem: ListRenderItem<Invoice> = ({ item }) => (
+    <TouchableOpacity 
+        style={styles.statementItem}
+        onPress={() => navigation.navigate('InvoiceDetail', { invoiceId: item.id })}
+    >
+        <View style={styles.statementIcon}>
+            <Ionicons name="document-text-outline" size={24} color="#666" />
+        </View>
+        <View style={styles.statementInfo}>
+            <Text style={styles.statementPeriod}>{formatPeriod(item.start_date, item.end_date)}</Text>
+            <Text style={styles.statementDate}>Issued {new Date(item.created_at).toLocaleDateString()}</Text>
+            <View style={{ flexDirection: 'row', marginTop: 2 }}>
+                <Text style={[ 
+                    styles.statusPill, 
+                    { color: item.status === 'paid' ? '#00B67A' : (item.status === 'overdue' ? 'red' : '#F59E0B') }
+                ]}>
+                    {item.status.toUpperCase()}
+                </Text>
+            </View>
+        </View>
+        <View style={styles.statementRight}>
+            <Text style={styles.statementAmount}>
+                {formatCurrency(typeof item.total_amount === 'string' ? parseFloat(item.total_amount) : item.total_amount)}
+            </Text>
+            {item.pdf_url ? (
+                <TouchableOpacity onPress={() => handleDownloadStatement(item.pdf_url)} style={{ padding: 4 }}>
+                    <Ionicons name="download-outline" size={20} color="#0066FF" />
+                </TouchableOpacity>
+            ) : (
+                <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+            )}
+        </View>
+    </TouchableOpacity>
+  );
+
+  const renderFooter = () => {
+    if (!loadingMore) return <View style={{ height: 40 }} />;
+    return (
+      <View style={{ paddingVertical: 20 }}>
+        <ActivityIndicator size="small" color="#0066FF" />
+      </View>
+    );
+  };
+
+  const renderEmpty = () => {
+      if (loading) return null; // Wait for loading indicator in main view or rely on header
+      return (
+        <Text style={{ textAlign: 'center', color: '#666', marginTop: 20 }}>No invoices found for this period.</Text>
+      );
+  }
+
   return (
     <Container style={styles.container}>
       {/* Close Button */}
@@ -223,163 +360,27 @@ export const EarningsScreen: React.FC = () => {
         <Ionicons name="close" size={28} color={colors.text.primary} />
       </TouchableOpacity>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
-        {/* Header */}
-        <Text style={styles.mainHeading}>EARNINGS</Text>
-        <Text style={styles.subtitle}>Track your income and invoices</Text>
-
-        {loading ? (
-            <View style={{ padding: 40 }}>
-                <ActivityIndicator size="large" color="#0066FF" />
-            </View>
-        ) : (
-            <>
-                {/* Total Earnings Card */}
-                <View style={styles.summaryCard}>
-                    <LinearGradient
-                        colors={['#0066FF', '#0052CC']}
-                        style={styles.summaryGradient}
-                    >
-                        <View style={styles.periodSelector}>
-                            <TouchableOpacity 
-                                style={[styles.periodTab, selectedPeriod === 'month' && styles.periodTabActive]}
-                                onPress={() => setSelectedPeriod('month')}
-                            >
-                                <Text style={[styles.periodText, selectedPeriod === 'month' && styles.periodTextActive]}>This Month</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity 
-                                style={[styles.periodTab, selectedPeriod === 'year' && styles.periodTabActive]}
-                                onPress={() => setSelectedPeriod('year')}
-                            >
-                                <Text style={[styles.periodText, selectedPeriod === 'year' && styles.periodTextActive]}>Year to Date</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <View style={styles.amountContainer}>
-                            <Text style={styles.amountLabel}>
-                                {selectedPeriod === 'custom' ? 'Custom Period Earnings' : 'Total Earnings'}
-                            </Text>
-                            <Text style={styles.amountValue}>
-                                {selectedPeriod === 'month' 
-                                    ? formatCurrency(earningsStats.currentMonth) 
-                                    : (selectedPeriod === 'year' 
-                                        ? formatCurrency(earningsStats.ytd)
-                                        : formatCurrency(earningsStats.customTotal))}
-                            </Text>
-                        </View>
-
-                        <View style={styles.statsRow}>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>
-                                    {selectedPeriod === 'month' ? 'Last Month' : (selectedPeriod === 'year' ? 'Previous Year' : 'Period')}
-                                </Text>
-                                <Text style={styles.statValue}>
-                                    {selectedPeriod === 'month' 
-                                        ? formatCurrency(earningsStats.lastMonth)
-                                        : (selectedPeriod === 'custom' 
-                                            ? `${startDate.toLocaleDateString('en-GB', {month:'short'})}-${endDate.toLocaleDateString('en-GB', {month:'short'})}`
-                                            : 'N/A')} 
-                                </Text>
-                            </View>
-                            <View style={styles.verticalDivider} />
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>Status</Text>
-                                <Text style={styles.statValue}>Verified</Text>
-                            </View>
-                        </View>
-                    </LinearGradient>
-                </View>
-
-                {/* Actions */}
-                <View style={styles.actionsContainer}>
-                    <TouchableOpacity style={styles.actionButton} onPress={openCustomReportModal}>
-                        <View style={styles.actionIcon}>
-                            <Ionicons name="calendar-outline" size={24} color="#0066FF" />
-                        </View>
-                        <View style={styles.actionTextContainer}>
-                            <Text style={styles.actionTitle}>Custom Report</Text>
-                            <Text style={styles.actionSubtitle}>Generate for specific dates</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
-                    </TouchableOpacity>
-
-                    {selectedPeriod === 'custom' && (
-                        <TouchableOpacity 
-                            style={[styles.actionButton, { marginTop: 10, backgroundColor: '#FFF0F0', borderColor: '#FECACA' }]} 
-                            onPress={clearReport}
-                        >
-                            <View style={[styles.actionIcon, { backgroundColor: '#FEF2F2' }]}>
-                                <Ionicons name="close-circle-outline" size={24} color="#EF4444" />
-                            </View>
-                            <View style={styles.actionTextContainer}>
-                                <Text style={[styles.actionTitle, { color: '#B91C1C' }]}>Clear Report</Text>
-                                <Text style={styles.actionSubtitle}>Show all invoices</Text>
-                            </View>
-                        </TouchableOpacity>
-                    )}
-                </View>
-
-                {/* Recent Statements (Invoices) */}
-                <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>
-                        {selectedPeriod === 'custom' ? 'Filtered Invoices' : 'Invoices & Statements'}
-                    </Text>
-                </View>
-
-                <View style={styles.statementsContainer}>
-                    {displayedInvoices.length === 0 ? (
-                        <Text style={{ textAlign: 'center', color: '#666', marginTop: 20 }}>No invoices found for this period.</Text>
-                    ) : (
-                        displayedInvoices.map((invoice) => (
-                            <TouchableOpacity 
-                                key={invoice.id} 
-                                style={styles.statementItem}
-                                onPress={() => navigation.navigate('InvoiceDetail', { invoiceId: invoice.id })}
-                            >
-                                <View style={styles.statementIcon}>
-                                    <Ionicons name="document-text-outline" size={24} color="#666" />
-                                </View>
-                                <View style={styles.statementInfo}>
-                                    <Text style={styles.statementPeriod}>{formatPeriod(invoice.start_date, invoice.end_date)}</Text>
-                                    <Text style={styles.statementDate}>Issued {new Date(invoice.created_at).toLocaleDateString()}</Text>
-                                    <View style={{ flexDirection: 'row', marginTop: 2 }}>
-                                        <Text style={[ 
-                                            styles.statusPill, 
-                                            { color: invoice.status === 'paid' ? '#00B67A' : (invoice.status === 'overdue' ? 'red' : '#F59E0B') }
-                                        ]}>
-                                            {invoice.status.toUpperCase()}
-                                        </Text>
-                                    </View>
-                                </View>
-                                <View style={styles.statementRight}>
-                                    <Text style={styles.statementAmount}>
-                                        {formatCurrency(typeof invoice.total_amount === 'string' ? parseFloat(invoice.total_amount) : invoice.total_amount)}
-                                    </Text>
-                                    {invoice.pdf_url ? (
-                                        <TouchableOpacity onPress={() => handleDownloadStatement(invoice.pdf_url)} style={{ padding: 4 }}>
-                                            <Ionicons name="download-outline" size={20} color="#0066FF" />
-                                        </TouchableOpacity>
-                                    ) : (
-                                        <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
-                                    )}
-                                </View>
-                            </TouchableOpacity>
-                        ))
-                    )}
-                </View>
-            </>
-        )}
-
-        {/* Bottom Spacing */}
-        <View style={{ height: 40 }} />
-      </ScrollView>
+      {loading && page === 1 ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+              <ActivityIndicator size="large" color="#0066FF" />
+          </View>
+      ) : (
+          <FlatList
+            data={invoices}
+            renderItem={renderInvoiceItem}
+            keyExtractor={(item) => item.id.toString()}
+            ListHeaderComponent={renderHeader}
+            ListFooterComponent={renderFooter}
+            ListEmptyComponent={renderEmpty}
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.5}
+          />
+      )}
 
       {/* Date Picker Modal */}
       <Modal
@@ -468,9 +469,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
-  },
-  scrollView: {
-    flex: 1,
   },
   content: {
     paddingTop: 60,
@@ -627,6 +625,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    marginBottom: spacing.sm,
   },
   statementIcon: {
     width: 40,

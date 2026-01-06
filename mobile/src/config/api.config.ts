@@ -84,6 +84,7 @@ export const API_ENDPOINTS = {
   INVOICES: {
     LIST: `${API_PREFIX}/invoices/`,
     DETAIL: (id: number) => `${API_PREFIX}/invoices/${id}/`,
+    STATS: `${API_PREFIX}/invoices/stats/`,
   },
 
   // Staff Profile
