@@ -1,0 +1,82 @@
+[
+  {
+    "test_id": "AUTH-API-002",
+    "test_name": "Login with Invalid Username",
+    "platform": "API",
+    "status": "PASS",
+    "notes": "Correctly rejected invalid username",
+    "timestamp": "2025-12-30T19:54:02.874741"
+  },
+  {
+    "test_id": "AUTH-API-003",
+    "test_name": "Login with Invalid Password",
+    "platform": "API",
+    "status": "PASS",
+    "notes": "Correctly rejected invalid password",
+    "timestamp": "2025-12-30T19:54:02.900063"
+  },
+  {
+    "test_id": "AUTH-API-004",
+    "test_name": "Login with Empty Credentials",
+    "platform": "API",
+    "status": "PASS",
+    "notes": "Correctly rejected empty credentials with 400",
+    "timestamp": "2025-12-30T19:54:03.146409"
+  },
+  {
+    "test_id": "AUTH-API-005",
+    "test_name": "SQL Injection Attempt",
+    "platform": "API",
+    "status": "PASS",
+    "notes": "All SQL injection attempts safely rejected",
+    "timestamp": "2025-12-30T19:54:03.149236"
+  },
+  {
+    "test_id": "AUTH-API-007",
+    "test_name": "Token Refresh with Invalid Token",
+    "platform": "API",
+    "status": "PASS",
+    "notes": "Correctly rejected invalid refresh token",
+    "timestamp": "2025-12-30T19:54:03.220100"
+  },
+  {
+    "test_id": "AUTH-API-008",
+    "test_name": "Access Protected Endpoint with Valid Token",
+    "platform": "API",
+    "status": "PASS",
+    "notes": "Successfully accessed protected endpoint (shifts)",
+    "timestamp": "2025-12-30T19:54:03.223413"
+  },
+  {
+    "test_id": "AUTH-API-009",
+    "test_name": "Access Protected Endpoint without Token",
+    "platform": "API",
+    "status": "PASS",
+    "notes": "Correctly rejected request without token",
+    "timestamp": "2025-12-30T19:54:03.252045"
+  },
+  {
+    "test_id": "AUTH-API-010",
+    "test_name": "Access with Expired Token",
+    "platform": "API",
+    "status": "PASS",
+    "notes": "Correctly rejected expired/invalid token",
+    "timestamp": "2025-12-30T19:54:03.254317"
+  },
+  {
+    "test_id": "AUTH-API-011",
+    "test_name": "Login with Inactive Account",
+    "platform": "API",
+    "status": "PASS",
+    "notes": "Correctly rejected inactive account with 403",
+    "timestamp": "2025-12-30T19:54:03.256486"
+  },
+  {
+    "test_id": "AUTH-API-012",
+    "test_name": "Rate Limiting on Failed Logins",
+    "platform": "API",
+    "status": "PASS",
+    "notes": "Rate limiting activated after 12 attempts",
+    "timestamp": "2025-12-30T19:54:03.508949"
+  }
+]
