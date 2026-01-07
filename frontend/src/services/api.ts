@@ -26,10 +26,10 @@ function getCsrfToken(): string | null {
   return cookieValue || null;
 }
 
-// Request interceptor for adding CSRF token (Sprint 3: Cookies for auth, no localStorage)
+// Request interceptor for adding auth headers
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    // Sprint 3: Add CSRF token for non-GET requests (POST, PUT, PATCH, DELETE)
+    // Add CSRF token for non-GET requests (POST, PUT, PATCH, DELETE)
     if (config.method && !['get', 'head', 'options'].includes(config.method.toLowerCase())) {
       const csrfToken = getCsrfToken();
       if (csrfToken && config.headers) {
@@ -37,8 +37,14 @@ api.interceptors.request.use(
       }
     }
 
-    // Sprint 3: No need to add Authorization header - httpOnly cookies are sent automatically
-    // Tokens are now in httpOnly cookies, browser handles this automatically
+    // HYBRID AUTH: Add Authorization header from localStorage as fallback
+    // This handles Safari and other browsers that block cross-site cookies
+    // Cookies are still sent (withCredentials: true), but if they're blocked,
+    // the Authorization header provides a fallback
+    const accessToken = localStorage.getItem('access_token');
+    if (accessToken && config.headers) {
+      config.headers['Authorization'] = `Bearer ${accessToken}`;
+    }
 
     return config;
   },
@@ -74,39 +80,51 @@ api.interceptors.response.use(
       return Promise.reject(enhancedError);
     }
 
-    // Sprint 3: Check if error is 401 and we haven't already tried refreshing (Cookie-based)
+    // HYBRID AUTH: Check if error is 401 and we haven't already tried refreshing
     if (originalRequest && error.response?.status === 401 && !originalRequest.headers?.['X-Retry']) {
       try {
-        // Sprint 3: Call cookie-based refresh endpoint (refresh token is in httpOnly cookie)
-        // Use /api/v1/ prefix to go through Vite proxy to backend
+        // HYBRID AUTH: Send refresh token in body as fallback for Safari
+        const refreshToken = localStorage.getItem('refresh_token');
         const response = await axios.post(
           `/api/v1/auth/refresh/`,
-          {},
+          refreshToken ? { refresh: refreshToken } : {},
           {
-            withCredentials: true, // Send cookies with refresh request
+            withCredentials: true, // Still try cookies
             headers: {
-              'X-CSRFToken': getCsrfToken() || '', // Add CSRF token
+              'X-CSRFToken': getCsrfToken() || '',
             }
           }
         );
 
-        console.log('Token refreshed successfully via cookies');
+        console.log('Token refreshed successfully');
 
-        // Sprint 3: No need to save tokens - they're in httpOnly cookies now
-        // Retry the original request (cookies will be sent automatically)
+        // HYBRID AUTH: Store new tokens in localStorage if returned
+        if (response.data?.access) {
+          localStorage.setItem('access_token', response.data.access);
+        }
+        if (response.data?.refresh) {
+          localStorage.setItem('refresh_token', response.data.refresh);
+        }
+
+        // Retry the original request with new token
         if (originalRequest.headers) {
           originalRequest.headers['X-Retry'] = 'true';
+          // Update Authorization header with new token
+          const newToken = response.data?.access || localStorage.getItem('access_token');
+          if (newToken) {
+            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+          }
         }
 
         return api(originalRequest);
       } catch (refreshError: any) {
         console.error('Token refresh failed:', refreshError?.response?.data || refreshError);
 
-        // Sprint 3: If refresh fails, redirect to login (cookies are invalid/expired)
-        // No need to clear localStorage - tokens are in httpOnly cookies
+        // Clear tokens on refresh failure
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
 
         // Don't redirect immediately if it's an API call during page load
-        // This prevents redirect loops on pages that make multiple API calls
         setTimeout(() => {
           console.log('Redirecting to login page due to authentication failure');
           window.location.href = '/login?expired=true';

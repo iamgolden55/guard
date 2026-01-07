@@ -99,8 +99,17 @@ class AuthService {
         user: user
       };
 
-      // Sprint 3: Only store user data (tokens are in httpOnly cookies, not localStorage)
+      // Store user data
       localStorage.setItem('user', JSON.stringify(formattedResponse.user));
+
+      // HYBRID AUTH: Also store tokens in localStorage as fallback for Safari/browsers
+      // that block cross-site cookies. The backend returns tokens in response body.
+      if (response.data.access) {
+        localStorage.setItem('access_token', response.data.access);
+      }
+      if (response.data.refresh) {
+        localStorage.setItem('refresh_token', response.data.refresh);
+      }
 
       return formattedResponse;
     } catch (error) {
@@ -245,9 +254,11 @@ class AuthService {
       // Continue with local cleanup even if API call fails
     }
 
-    // Sprint 3: Only remove user data from localStorage (tokens are in httpOnly cookies)
+    // Clear all auth data from localStorage
     localStorage.removeItem('user');
-    console.log('User logged out, user data cleared from localStorage');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    console.log('User logged out, all auth data cleared from localStorage');
   }
 
   // Sprint 3: Check if user is authenticated (based on user presence, not tokens)
