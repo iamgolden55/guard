@@ -97,6 +97,13 @@ services:
       - key: DJANGO_SECRET_KEY
         sync: false
 
+  # Redis for caching, Celery broker, and Django Channels
+  - type: redis
+    name: mead-security-redis
+    plan: free
+    region: oregon
+    ipAllowList: []  # Allow all IPs
+
 databases:
   - name: mead-security-db
     plan: free
@@ -104,6 +111,3 @@ databases:
     databaseName: mead_security
     user: mead_admin
     ipAllowList: []  # Allow all IPs (required for free tier)
-
-# Note: Redis is configured as a separate service in Render
-# You'll need to create it manually: New + -> Redis -> name: mead-security-redis
