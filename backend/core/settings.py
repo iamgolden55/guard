@@ -215,6 +215,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3001",
     "https://localhost:3001",
     "https://127.0.0.1:3001",
+    # Production frontend (Vercel)
+    "https://guard-ten.vercel.app",
     # Mobile app development
     "http://10.0.4.21:8081",
     "http://10.0.4.21:8082",
@@ -340,7 +342,7 @@ SIMPLE_JWT = {
     'AUTH_COOKIE_SECURE': not DEBUG,  # Use secure cookies in production (HTTPS only)
     'AUTH_COOKIE_HTTP_ONLY': True,  # Prevent JavaScript access (XSS protection)
     'AUTH_COOKIE_PATH': '/',  # Cookie path
-    'AUTH_COOKIE_SAMESITE': 'Lax',  # CSRF protection (Lax allows navigation)
+    'AUTH_COOKIE_SAMESITE': 'None' if not DEBUG else 'Lax',  # None for cross-site (Vercel→Render), Lax for localhost
     'AUTH_COOKIE_DOMAIN': 'localhost' if DEBUG else None,  # Use localhost for development to work across ports
 }
 
