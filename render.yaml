@@ -100,7 +100,7 @@ services:
   # Redis for caching, Celery broker, and Django Channels
   - type: redis
     name: mead-security-redis
-    plan: free
+    plan: starter  # $10/month - free tier limited to 1 per account
     region: oregon
     ipAllowList: []  # Allow all IPs
 
