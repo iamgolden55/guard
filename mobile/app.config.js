@@ -16,7 +16,7 @@ module.exports = {
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
-    newArchEnabled: false,
+    newArchEnabled: true,
     scheme: "securitystaff",
     updates: {
       url: "https://u.expo.dev/9d8d1bce-0f46-4c87-99c4-503a32be2113"
