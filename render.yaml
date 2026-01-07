@@ -11,7 +11,7 @@ services:
     runtime: python
     rootDir: backend
     region: oregon
-    plan: free
+    plan: starter  # Paid plan for reliable deployment
     buildCommand: ./build.sh
     startCommand: daphne -b 0.0.0.0 -p $PORT core.asgi:application
     healthCheckPath: /api/v1/health/
@@ -47,7 +47,7 @@ services:
     runtime: python
     rootDir: backend
     region: oregon
-    plan: free
+    plan: starter  # Paid plan required for workers
     buildCommand: pip install -r requirements.txt
     startCommand: celery -A core.celery_app worker -l info --concurrency=2
     envVars:
@@ -75,7 +75,7 @@ services:
     runtime: python
     rootDir: backend
     region: oregon
-    plan: free
+    plan: starter  # Paid plan required for workers
     buildCommand: pip install -r requirements.txt
     startCommand: celery -A core.celery_app beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     envVars:
