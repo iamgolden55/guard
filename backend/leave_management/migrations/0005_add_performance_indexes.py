@@ -17,7 +17,7 @@ class Migration(migrations.Migration):
             """
             CREATE INDEX IF NOT EXISTS leave_balance_team_overview_idx
             ON leave_balances (staff_user_id, year, leave_type_id)
-            INCLUDE (current_balance, pending_balance);
+            INCLUDE (opening_balance, accrued_balance, used_balance, pending_balance);
             """,
             reverse_sql="""
             DROP INDEX IF EXISTS leave_balance_team_overview_idx;
