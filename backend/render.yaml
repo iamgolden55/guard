@@ -1,0 +1,103 @@
+# Render Blueprint for Mead Security Backend
+# Deploy using: render.com -> New + -> Blueprint -> Connect GitHub repo
+
+services:
+  # Main web service (Django + WebSockets via Daphne)
+  - type: web
+    name: mead-security-api
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: ./build.sh
+    startCommand: daphne -b 0.0.0.0 -p $PORT core.asgi:application
+    healthCheckPath: /api/v1/health/
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: core.settings
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mead-security-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: mead-security-redis
+          type: redis
+          property: connectionString
+      # Required - set these manually in Render dashboard
+      - key: DJANGO_SECRET_KEY
+        sync: false
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+
+  # Celery worker for background tasks
+  - type: worker
+    name: mead-security-worker
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A core.celery_app worker -l info --concurrency=2
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: core.settings
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mead-security-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: mead-security-redis
+          type: redis
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        sync: false
+
+  # Celery beat for scheduled tasks
+  - type: worker
+    name: mead-security-beat
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A core.celery_app beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: core.settings
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mead-security-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: mead-security-redis
+          type: redis
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        sync: false
+
+databases:
+  - name: mead-security-db
+    plan: free
+    region: oregon
+    databaseName: mead_security
+    user: mead_admin
+    ipAllowList: []  # Allow all IPs (required for free tier)
+
+# Note: Redis is configured as a separate service in Render
+# You'll need to create it manually: New + -> Redis -> name: mead-security-redis

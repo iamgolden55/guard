@@ -18,9 +18,18 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.http import JsonResponse
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+
+
+def health_check(request):
+    """Simple health check endpoint for load balancers and monitoring."""
+    return JsonResponse({
+        'status': 'healthy',
+        'service': 'mead-security-api'
+    })
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -42,6 +51,7 @@ urlpatterns = [
     path('api/shifts/', include('shifts.urls')),  # Keep legacy endpoint for backward compatibility
     path('api/v1/finance/', include('finance_integrations.urls')),  # Add finance integrations under v1 API
     path('api/v1/leave/', include('leave_management.urls')),  # Add leave management
+    path('api/v1/health/', health_check, name='health-check'),  # Health check for Render/load balancers
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]

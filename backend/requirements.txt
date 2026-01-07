@@ -55,3 +55,12 @@ exponent-server-sdk==2.1.0
 # Celery for async tasks
 celery==5.3.6
 django-celery-beat==2.5.0
+django-celery-results==2.5.1
+
+# Production deployment (Render)
+daphne==4.1.0
+gunicorn==23.0.0
+whitenoise[brotli]==6.7.0
+dj-database-url==2.2.0
+django-redis==5.4.0
+flower==2.0.1
