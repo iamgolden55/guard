@@ -1,11 +1,15 @@
 # Render Blueprint for Mead Security Backend
 # Deploy using: render.com -> New + -> Blueprint -> Connect GitHub repo
+#
+# IMPORTANT: This file must be at the repository root.
+# The rootDir property tells Render where the backend code is located.
 
 services:
   # Main web service (Django + WebSockets via Daphne)
   - type: web
     name: mead-security-api
     runtime: python
+    rootDir: backend
     region: oregon
     plan: free
     buildCommand: ./build.sh
@@ -41,6 +45,7 @@ services:
   - type: worker
     name: mead-security-worker
     runtime: python
+    rootDir: backend
     region: oregon
     plan: free
     buildCommand: pip install -r requirements.txt
@@ -68,6 +73,7 @@ services:
   - type: worker
     name: mead-security-beat
     runtime: python
+    rootDir: backend
     region: oregon
     plan: free
     buildCommand: pip install -r requirements.txt
