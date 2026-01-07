@@ -53,8 +53,8 @@ websockets==12.0
 exponent-server-sdk==2.1.0
 
 # Celery for async tasks
-celery==5.3.6
-django-celery-beat==2.5.0
+celery==5.4.0
+django-celery-beat==2.7.0
 django-celery-results==2.5.1
 
 # Production deployment (Render)
