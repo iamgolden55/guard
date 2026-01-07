@@ -18,7 +18,7 @@ import axios from 'axios';
 
 // Read API base URL from environment configuration (.env file)
 const ENV_API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl ?? 'http://localhost:8000';
-const PRODUCTION_API_URL = 'https://api.meadsecurity.com'; // Update this when deploying
+const PRODUCTION_API_URL = 'https://mead-security-api.onrender.com'; // Render production API
 
 // Base URL for display/reference purposes (not used in requests)
 export const API_BASE_URL = __DEV__ ? ENV_API_BASE_URL : PRODUCTION_API_URL;

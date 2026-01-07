@@ -15,12 +15,12 @@ export const API_CONFIG = {
   // Backend API Base URL
   BASE_URL: isDevelopment
     ? 'http://localhost:8000/api/v1'
-    : 'https://api.meadsecurity.com/api/v1',
+    : 'https://mead-security-api.onrender.com/api/v1',
 
   // WebSocket URL (for real-time features)
   WS_URL: isDevelopment
     ? 'ws://localhost:8000/ws'
-    : 'wss://api.meadsecurity.com/ws',
+    : 'wss://mead-security-api.onrender.com/ws',
 
   // API Timeout (milliseconds)
   TIMEOUT: 10000,
