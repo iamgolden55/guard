@@ -1,555 +1,265 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Welcome to {{ company_name }}</title>
-    <!--[if mso]>
-    <noscript>
-        <xml>
-            <o:OfficeDocumentSettings>
-                <o:PixelsPerInch>96</o:PixelsPerInch>
-            </o:OfficeDocumentSettings>
-        </xml>
-    </noscript>
-    <![endif]-->
-    <style>
-        /* Reset */
-        body, table, td, p, a, li { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    <style type="text/css">
+        /* Client-specific resets */
+        body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
         table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
-        img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+        img { -ms-interpolation-mode: bicubic; }
 
+        /* General Styles */
         body {
-            margin: 0 !important;
-            padding: 0 !important;
-            background-color: #0a0a0a;
-            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        .email-wrapper {
-            width: 100%;
-            background-color: #0a0a0a;
-            padding: 40px 20px;
-        }
-
-        .email-container {
-            max-width: 480px;
-            margin: 0 auto;
-            background-color: #0a0a0a;
-        }
-
-        /* Logo Section */
-        .logo-section {
-            text-align: center;
-            padding: 32px 0;
-        }
-
-        .logo-icon {
-            width: 56px;
-            height: 56px;
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-            border-radius: 16px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 16px;
-        }
-
-        .logo-text {
-            font-size: 13px;
-            font-weight: 600;
-            color: #a1a1aa;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-        }
-
-        /* Hero Section */
-        .hero-section {
-            text-align: center;
-            padding: 24px 24px 40px;
-        }
-
-        .hero-title {
-            font-size: 32px;
-            font-weight: 700;
-            color: #ffffff;
-            margin: 0 0 16px 0;
-            line-height: 1.2;
-            letter-spacing: -0.5px;
-        }
-
-        .hero-subtitle {
-            font-size: 17px;
-            color: #a1a1aa;
             margin: 0;
-            line-height: 1.6;
+            padding: 0;
+            background-color: #ffffff;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            color: #333333;
         }
 
-        .hero-name {
-            color: #ffffff;
-            font-weight: 600;
-        }
-
-        /* Card Section */
-        .card {
-            background-color: #18181b;
-            border-radius: 20px;
-            padding: 32px 24px;
-            margin: 0 16px 24px;
-            border: 1px solid #27272a;
-        }
-
-        .card-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #71717a;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin: 0 0 20px 0;
-        }
-
-        .credential-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 16px 0;
-            border-bottom: 1px solid #27272a;
-        }
-
-        .credential-row:last-child {
-            border-bottom: none;
-            padding-bottom: 0;
-        }
-
-        .credential-label {
-            font-size: 14px;
-            color: #71717a;
-            margin: 0;
-        }
-
-        .credential-value {
-            font-size: 15px;
-            color: #ffffff;
-            font-weight: 500;
-            margin: 0;
-            text-align: right;
-        }
-
-        /* CTA Button */
-        .cta-section {
-            padding: 8px 16px 32px;
-            text-align: center;
-        }
-
-        .cta-button {
-            display: inline-block;
-            width: 100%;
-            max-width: 400px;
-            padding: 18px 32px;
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-            color: #ffffff !important;
-            text-decoration: none;
-            font-size: 16px;
-            font-weight: 600;
-            border-radius: 14px;
-            text-align: center;
-            box-sizing: border-box;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .cta-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
-        }
-
-        /* Mobile App Section */
-        .app-section {
-            background: linear-gradient(180deg, #18181b 0%, #0a0a0a 100%);
-            border-radius: 24px;
-            padding: 40px 24px;
-            margin: 0 16px 24px;
-            text-align: center;
-            border: 1px solid #27272a;
-        }
-
-        .app-icon {
-            width: 72px;
-            height: 72px;
-            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-            border-radius: 18px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 24px;
-            box-shadow: 0 8px 24px rgba(34, 197, 94, 0.3);
-        }
-
-        .app-title {
-            font-size: 22px;
-            font-weight: 700;
-            color: #ffffff;
-            margin: 0 0 12px 0;
-        }
-
-        .app-description {
-            font-size: 15px;
-            color: #a1a1aa;
-            margin: 0 0 28px 0;
-            line-height: 1.6;
-        }
-
-        .store-buttons {
-            display: flex;
-            justify-content: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .store-button {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            padding: 12px 20px;
-            background-color: #27272a;
-            border-radius: 12px;
-            text-decoration: none;
-            transition: background-color 0.2s ease;
-        }
-
-        .store-button:hover {
-            background-color: #3f3f46;
-        }
-
-        .store-text {
-            text-align: left;
-        }
-
-        .store-label {
-            font-size: 10px;
-            color: #71717a;
-            display: block;
-            line-height: 1;
-        }
-
-        .store-name {
-            font-size: 14px;
-            color: #ffffff;
-            font-weight: 600;
-            display: block;
-            line-height: 1.3;
-        }
-
-        /* Steps Section */
-        .steps-section {
-            padding: 0 16px 32px;
-        }
-
-        .steps-card {
-            background-color: #18181b;
-            border-radius: 20px;
-            padding: 28px 24px;
-            border: 1px solid #27272a;
-        }
-
-        .steps-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #71717a;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin: 0 0 24px 0;
-        }
-
-        .step {
-            display: flex;
-            align-items: flex-start;
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-
-        .step:last-child {
-            margin-bottom: 0;
-        }
-
-        .step-number {
-            width: 28px;
-            height: 28px;
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 13px;
-            font-weight: 700;
-            color: #ffffff;
-            flex-shrink: 0;
-        }
-
-        .step-content {
-            flex: 1;
-            padding-top: 4px;
-        }
-
-        .step-text {
-            font-size: 15px;
-            color: #e4e4e7;
-            margin: 0;
-            line-height: 1.5;
-        }
-
-        /* Warning Section */
-        .warning-section {
-            padding: 0 16px 32px;
-        }
-
-        .warning-card {
-            background-color: rgba(251, 191, 36, 0.1);
-            border: 1px solid rgba(251, 191, 36, 0.2);
-            border-radius: 16px;
-            padding: 20px 24px;
-        }
-
-        .warning-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-
-        .warning-icon {
-            font-size: 18px;
-        }
-
-        .warning-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: #fbbf24;
-            margin: 0;
-        }
-
-        .warning-text {
-            font-size: 14px;
-            color: #a1a1aa;
-            margin: 0;
-            line-height: 1.6;
-        }
-
-        /* Link Section */
-        .link-section {
-            padding: 0 16px 40px;
-        }
-
-        .link-card {
-            background-color: #18181b;
-            border-radius: 12px;
-            padding: 16px 20px;
-            border: 1px solid #27272a;
-        }
-
-        .link-label {
-            font-size: 12px;
-            color: #71717a;
-            margin: 0 0 8px 0;
-        }
-
-        .link-url {
-            font-size: 12px;
-            color: #6366f1;
-            word-break: break-all;
-            margin: 0;
-            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
-        }
-
-        /* Footer */
-        .footer {
-            padding: 32px 24px;
-            text-align: center;
-            border-top: 1px solid #27272a;
-        }
-
-        .footer-text {
-            font-size: 13px;
-            color: #52525b;
-            margin: 0 0 8px 0;
-            line-height: 1.6;
-        }
-
-        .footer-company {
-            font-size: 12px;
-            color: #3f3f46;
-            margin: 0;
-        }
-
-        /* Responsive */
-        @media only screen and (max-width: 480px) {
-            .email-wrapper {
-                padding: 20px 12px;
-            }
-
-            .hero-title {
-                font-size: 26px;
-            }
-
-            .card, .app-section, .steps-card {
-                margin-left: 8px;
-                margin-right: 8px;
-            }
-
-            .store-buttons {
-                flex-direction: column;
-                align-items: center;
-            }
-
-            .store-button {
-                width: 100%;
-                max-width: 200px;
-                justify-content: center;
-            }
+        /* Responsive Styles */
+        @media only screen and (max-width: 600px) {
+            .container { width: 100% !important; }
+            .mobile-padding { padding-left: 20px !important; padding-right: 20px !important; }
+            .hero-image { height: auto !important; max-width: 100% !important; }
+            .btn-full { width: 100% !important; }
         }
     </style>
 </head>
-<body>
-    <div class="email-wrapper">
-        <div class="email-container">
-            <!-- Logo -->
-            <div class="logo-section">
-                <div class="logo-icon">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M2 17L12 22L22 17" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M2 12L12 17L22 12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-                <p class="logo-text">{{ company_name }}</p>
-            </div>
+<body style="margin: 0; padding: 0; background-color: #ffffff;">
 
-            <!-- Hero -->
-            <div class="hero-section">
-                <h1 class="hero-title">Welcome to the team!</h1>
-                <p class="hero-subtitle">
-                    Hi <span class="hero-name">{{ user.first_name|default:user.username }}</span>, your account is ready.
-                    Set up your password and download the app to get started.
-                </p>
-            </div>
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #ffffff;">
+        <tr>
+            <td align="center" style="padding: 40px 0;">
 
-            <!-- Credentials Card -->
-            <div class="card">
-                <p class="card-title">Your Account</p>
-                <div style="margin: 0;">
-                    <div class="credential-row">
-                        <p class="credential-label">Username</p>
-                        <p class="credential-value">{{ user.username }}</p>
-                    </div>
-                    <div class="credential-row">
-                        <p class="credential-label">Email</p>
-                        <p class="credential-value">{{ user.email }}</p>
-                    </div>
-                </div>
-            </div>
+                <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="width: 600px; max-width: 600px;">
 
-            <!-- CTA Button -->
-            <div class="cta-section">
-                <a href="{{ setup_url }}" class="cta-button">Set Up Your Password</a>
-            </div>
+                    <!-- Logo -->
+                    <tr>
+                        <td align="center" style="padding-bottom: 40px;">
+                            <table border="0" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td style="background-color: #1a1a2e; padding: 12px 24px; border-radius: 8px;">
+                                        <span style="font-size: 20px; font-weight: 700; color: #ffffff; letter-spacing: 1px;">{{ company_name }}</span>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
 
-            <!-- Mobile App Section -->
-            <div class="app-section">
-                <div class="app-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="5" y="2" width="14" height="20" rx="3" stroke="white" stroke-width="2"/>
-                        <line x1="12" y1="18" x2="12" y2="18" stroke="white" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                </div>
-                <h2 class="app-title">Get the Mobile App</h2>
-                <p class="app-description">
-                    Manage shifts, check in/out, view your schedule, and get paid - all from your phone.
-                </p>
-                <div class="store-buttons">
-                    <a href="#" class="store-button">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="#ffffff">
-                            <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
-                        </svg>
-                        <div class="store-text">
-                            <span class="store-label">Download on the</span>
-                            <span class="store-name">App Store</span>
-                        </div>
-                    </a>
-                    <a href="#" class="store-button">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="#ffffff">
-                            <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 01-.61-.92V2.734a1 1 0 01.609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.198l2.807 1.626a1 1 0 010 1.73l-2.808 1.626L15.206 12l2.492-2.491zM5.864 2.658L16.802 8.99l-2.303 2.303-8.635-8.635z"/>
-                        </svg>
-                        <div class="store-text">
-                            <span class="store-label">Get it on</span>
-                            <span class="store-name">Google Play</span>
-                        </div>
-                    </a>
-                </div>
-            </div>
+                    <!-- Headline -->
+                    <tr>
+                        <td align="left" class="mobile-padding" style="padding: 0 10px 30px 10px;">
+                            <h1 style="margin: 0; font-size: 28px; line-height: 1.3; font-weight: 700; color: #111111;">
+                                Congratulations {{ user.first_name|default:user.username }}! You're Now Part of the Team 🎉
+                            </h1>
+                        </td>
+                    </tr>
 
-            <!-- Steps -->
-            <div class="steps-section">
-                <div class="steps-card">
-                    <p class="steps-title">Getting Started</p>
-                    <div class="step">
-                        <div class="step-number">1</div>
-                        <div class="step-content">
-                            <p class="step-text">Click the button above to set your password</p>
-                        </div>
-                    </div>
-                    <div class="step">
-                        <div class="step-number">2</div>
-                        <div class="step-content">
-                            <p class="step-text">Download the mobile app from App Store or Google Play</p>
-                        </div>
-                    </div>
-                    <div class="step">
-                        <div class="step-number">3</div>
-                        <div class="step-content">
-                            <p class="step-text">Log in with your email and new password</p>
-                        </div>
-                    </div>
-                    <div class="step">
-                        <div class="step-number">4</div>
-                        <div class="step-content">
-                            <p class="step-text">Complete your profile and upload required documents</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+                    <!-- Hero Image -->
+                    <tr>
+                        <td align="center" class="mobile-padding" style="padding: 0 10px 30px 10px;">
+                            <img src="https://images.unsplash.com/photo-1521737711867-e3b97375f902?w=580&h=320&fit=crop&crop=faces" alt="Welcome to the team" width="100%" style="display: block; border: 0; max-width: 580px; border-radius: 12px;" />
+                        </td>
+                    </tr>
 
-            <!-- Warning -->
-            <div class="warning-section">
-                <div class="warning-card">
-                    <div class="warning-header">
-                        <span class="warning-icon">⏱</span>
-                        <p class="warning-title">Link expires in {{ expiry_hours }} hours</p>
-                    </div>
-                    <p class="warning-text">
-                        This password setup link can only be used once. Don't share it with anyone.
-                    </p>
-                </div>
-            </div>
+                    <!-- Body Text -->
+                    <tr>
+                        <td align="left" class="mobile-padding" style="padding: 0 10px 25px 10px;">
+                            <p style="margin: 0 0 15px 0; font-size: 16px; line-height: 1.6; color: #555555;">
+                                Hello {{ user.first_name|default:user.username }},
+                            </p>
+                            <p style="margin: 0 0 15px 0; font-size: 16px; line-height: 1.6; color: #555555;">
+                                Great news! Your application has been approved and your staff account is now ready. Welcome to {{ company_name }} — we're excited to have you on board!
+                            </p>
+                            <p style="margin: 0 0 15px 0; font-size: 16px; line-height: 1.6; color: #555555;">
+                                To get started, you'll need to set up your password. Click the button below to create your secure password and activate your account.
+                            </p>
+                        </td>
+                    </tr>
 
-            <!-- Alternative Link -->
-            <div class="link-section">
-                <div class="link-card">
-                    <p class="link-label">Button not working? Copy this link:</p>
-                    <p class="link-url">{{ setup_url }}</p>
-                </div>
-            </div>
+                    <!-- Credentials Box -->
+                    <tr>
+                        <td align="left" class="mobile-padding" style="padding: 0 10px 25px 10px;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8f9fa; border-radius: 8px;">
+                                <tr>
+                                    <td style="padding: 20px;">
+                                        <p style="margin: 0 0 10px 0; font-size: 14px; font-weight: 600; color: #111111; text-transform: uppercase; letter-spacing: 0.5px;">
+                                            Your Account Details
+                                        </p>
+                                        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                            <tr>
+                                                <td style="padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <span style="font-size: 14px; color: #888888;">Username</span>
+                                                </td>
+                                                <td align="right" style="padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+                                                    <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ user.username }}</span>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding: 8px 0;">
+                                                    <span style="font-size: 14px; color: #888888;">Email</span>
+                                                </td>
+                                                <td align="right" style="padding: 8px 0;">
+                                                    <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ user.email }}</span>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
 
-            <!-- Footer -->
-            <div class="footer">
-                <p class="footer-text">
-                    Questions? Contact your manager or reply to this email.
-                </p>
-                <p class="footer-company">
-                    © {{ company_name }} • Automated message
-                </p>
-            </div>
-        </div>
-    </div>
+                    <!-- CTA Button -->
+                    <tr>
+                        <td align="center" class="mobile-padding" style="padding: 0 10px 30px 10px;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td align="center">
+                                        <a href="{{ setup_url }}" target="_blank" style="display: inline-block; background-color: #1a1a2e; color: #ffffff; font-size: 16px; font-weight: 600; text-decoration: none; padding: 18px 40px; border-radius: 50px; text-align: center; width: 80%; box-sizing: border-box;">
+                                            Set Up Your Password
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Next Steps -->
+                    <tr>
+                        <td align="left" class="mobile-padding" style="padding: 0 10px 25px 10px;">
+                            <p style="margin: 0 0 15px 0; font-size: 14px; font-weight: 600; color: #111111; text-transform: uppercase; letter-spacing: 0.5px;">
+                                What's Next?
+                            </p>
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                <tr>
+                                    <td style="padding: 8px 0;">
+                                        <table border="0" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td style="width: 28px; height: 28px; background-color: #1a1a2e; border-radius: 50%; text-align: center; vertical-align: middle;">
+                                                    <span style="color: #ffffff; font-size: 13px; font-weight: 700;">1</span>
+                                                </td>
+                                                <td style="padding-left: 12px;">
+                                                    <span style="font-size: 15px; color: #555555;">Set up your password using the button above</span>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0;">
+                                        <table border="0" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td style="width: 28px; height: 28px; background-color: #1a1a2e; border-radius: 50%; text-align: center; vertical-align: middle;">
+                                                    <span style="color: #ffffff; font-size: 13px; font-weight: 700;">2</span>
+                                                </td>
+                                                <td style="padding-left: 12px;">
+                                                    <span style="font-size: 15px; color: #555555;">Download the mobile app from App Store or Google Play</span>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0;">
+                                        <table border="0" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td style="width: 28px; height: 28px; background-color: #1a1a2e; border-radius: 50%; text-align: center; vertical-align: middle;">
+                                                    <span style="color: #ffffff; font-size: 13px; font-weight: 700;">3</span>
+                                                </td>
+                                                <td style="padding-left: 12px;">
+                                                    <span style="font-size: 15px; color: #555555;">Log in and complete your profile</span>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0;">
+                                        <table border="0" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td style="width: 28px; height: 28px; background-color: #1a1a2e; border-radius: 50%; text-align: center; vertical-align: middle;">
+                                                    <span style="color: #ffffff; font-size: 13px; font-weight: 700;">4</span>
+                                                </td>
+                                                <td style="padding-left: 12px;">
+                                                    <span style="font-size: 15px; color: #555555;">View your shifts and start working!</span>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Warning -->
+                    <tr>
+                        <td align="left" class="mobile-padding" style="padding: 0 10px 25px 10px;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #fff8e6; border-left: 4px solid #f5a623; border-radius: 4px;">
+                                <tr>
+                                    <td style="padding: 15px 20px;">
+                                        <p style="margin: 0 0 5px 0; font-size: 14px; font-weight: 600; color: #111111;">
+                                            ⏱ Important
+                                        </p>
+                                        <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #555555;">
+                                            This link expires in {{ expiry_hours }} hours and can only be used once. Please do not share it with anyone.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Alternative Link -->
+                    <tr>
+                        <td align="left" class="mobile-padding" style="padding: 0 10px 30px 10px;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8f9fa; border-radius: 8px;">
+                                <tr>
+                                    <td style="padding: 15px 20px;">
+                                        <p style="margin: 0 0 8px 0; font-size: 12px; color: #888888;">
+                                            Button not working? Copy and paste this link into your browser:
+                                        </p>
+                                        <p style="margin: 0; font-size: 12px; color: #1a1a2e; word-break: break-all;">
+                                            {{ setup_url }}
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Signature -->
+                    <tr>
+                        <td align="left" class="mobile-padding" style="padding: 0 10px 40px 10px;">
+                            <p style="margin: 0; font-size: 16px; line-height: 1.6; color: #555555;">
+                                We're thrilled to have you join us.<br>
+                                Welcome aboard!<br><br>
+                                Best regards,<br>
+                                <strong style="color: #111111;">The {{ company_name }} Team</strong>
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td align="center" style="padding: 30px 10px; border-top: 1px solid #e9ecef;">
+                            <p style="margin: 0 0 10px 0; font-size: 12px; color: #888888;">
+                                Questions? Contact your manager or reply to this email.
+                            </p>
+                            <p style="margin: 0; font-size: 12px; color: #aaaaaa;">
+                                © {{ company_name }} • This is an automated message
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+
+            </td>
+        </tr>
+    </table>
+
 </body>
 </html>
