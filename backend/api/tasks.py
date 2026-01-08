@@ -1238,6 +1238,93 @@ def send_exchange_status_notification(self, exchange_id: int, event_type: str) -
 
 
 # ==========================================
+# STAFF ONBOARDING EMAIL
+# ==========================================
+
+@shared_task(bind=True, max_retries=3, queue='notifications')
+def send_staff_welcome_email(
+    self,
+    user_id: int,
+    company_name: str,
+    token_uuid: str,
+    admin_ip: str
+) -> Dict[str, Any]:
+    """
+    Send welcome email to newly converted staff member with password setup link.
+
+    This task is triggered when a recruitment application is converted to a user account.
+    The email contains login credentials and a secure link to set up their password.
+
+    Args:
+        user_id: ID of the newly created user
+        company_name: Name of the employing company
+        token_uuid: UUID string of the PasswordResetToken for password setup
+        admin_ip: IP address of admin who triggered conversion (for audit)
+
+    Returns:
+        Dict with send status and details
+    """
+    from django.utils.html import strip_tags
+
+    try:
+        user = User.objects.get(pk=user_id)
+
+        # Build password setup URL using existing password reset frontend route
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+        setup_url = f"{frontend_url}/reset-password/confirm/{token_uuid}"
+
+        # Prepare email context
+        context = {
+            'user': user,
+            'company_name': company_name,
+            'setup_url': setup_url,
+            'expiry_hours': 24
+        }
+
+        # Render email template
+        html_message = render_to_string('staff_welcome_email.html', context)
+        plain_message = strip_tags(html_message)
+
+        # Send email from HR address
+        hr_email = getattr(settings, 'HR_FROM_EMAIL', settings.DEFAULT_FROM_EMAIL)
+        send_mail(
+            subject=f'Welcome to {company_name} - Set Up Your Account',
+            message=plain_message,
+            from_email=hr_email,
+            recipient_list=[user.email],
+            html_message=html_message,
+            fail_silently=False
+        )
+
+        logger.info(
+            f"Staff welcome email sent: user_id={user_id}, email={user.email}, "
+            f"company={company_name}, admin_ip={admin_ip}"
+        )
+
+        return {
+            'status': 'sent',
+            'user_id': user_id,
+            'email': user.email,
+            'company': company_name
+        }
+
+    except User.DoesNotExist:
+        logger.error(f"Cannot send welcome email: User {user_id} not found")
+        return {'status': 'failed', 'error': 'User not found'}
+
+    except Exception as exc:
+        logger.error(f"Failed to send welcome email to user {user_id}: {str(exc)}")
+
+        # Retry with exponential backoff: 60s, 120s, 240s
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (2 ** self.request.retries)
+            logger.info(f"Retrying welcome email in {countdown} seconds (attempt {self.request.retries + 1}/{self.max_retries})")
+            raise self.retry(countdown=countdown, exc=exc)
+
+        return {'status': 'failed', 'error': str(exc)}
+
+
+# ==========================================
 # WEBSOCKET NOTIFICATION FUNCTIONS
 # ==========================================
 
