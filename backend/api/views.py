@@ -2918,13 +2918,43 @@ class RecruitmentApplicationViewSet(viewsets.ModelViewSet):
         try:
             user = application.convert_to_user(request.user)
 
-            # Log successful conversion
-            logger.info(f"Successfully converted recruitment application {pk} to user {user.id} by {request.user.username}")
+            # Get admin IP address for audit trail
+            ip_address = request.META.get('HTTP_X_FORWARDED_FOR')
+            if ip_address:
+                ip_address = ip_address.split(',')[0].strip()
+            else:
+                ip_address = request.META.get('REMOTE_ADDR', '0.0.0.0')
+
+            # Create password setup token for the new user
+            reset_token = PasswordResetToken.objects.create(
+                user=user,
+                ip_address=ip_address
+            )
+
+            # Get company name for welcome email
+            company_name = application.employment_type.company.name
+
+            # Queue welcome email task
+            from .tasks import send_staff_welcome_email
+            send_staff_welcome_email.delay(
+                user_id=user.id,
+                company_name=company_name,
+                token_uuid=str(reset_token.token),
+                admin_ip=ip_address
+            )
+
+            # Log successful conversion with email queued
+            logger.info(
+                f"Successfully converted recruitment application {pk} to user {user.id} "
+                f"by {request.user.username}. Welcome email queued."
+            )
 
             return Response({
-                'message': 'Application converted to user account successfully',
+                'message': 'Application converted to user account successfully. Welcome email sent.',
                 'user': UserSerializer(user).data,
-                'application': RecruitmentApplicationSerializer(application).data
+                'application': RecruitmentApplicationSerializer(application).data,
+                'welcome_email_queued': True,
+                'password_setup_expires_at': reset_token.expires_at.isoformat()
             })
 
         except ValueError as e:
