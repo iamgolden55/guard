@@ -36,7 +36,7 @@ const PasswordResetRequestPage: React.FC = () => {
       setIsLoading(true);
       setError(null);
       try {
-        await axios.post(`${import.meta.env.VITE_API_URL}/password-reset/request/`, {
+        await axios.post(`${import.meta.env.VITE_API_URL}/api/v1/password-reset/request/`, {
           email: values.email
         });
         setIsSuccess(true);
