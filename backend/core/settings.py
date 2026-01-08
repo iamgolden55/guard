@@ -450,12 +450,17 @@ REPORT_TEMP_PATH = os.path.join(REPORT_STORAGE_PATH, 'temp')
 # Email settings for report notifications and password reset
 # IMPORTANT: Set these in your .env file, never commit credentials!
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp-relay.brevo.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'info@meadsecurity.co.uk')
+
+# Multiple sender emails for different purposes
+HR_FROM_EMAIL = os.getenv('HR_FROM_EMAIL', 'hr@meadsecurity.co.uk')
+INFO_FROM_EMAIL = os.getenv('INFO_FROM_EMAIL', 'info@meadsecurity.co.uk')
+PAYMENT_FROM_EMAIL = os.getenv('PAYMENT_FROM_EMAIL', 'payment@meadsecurity.co.uk')
 
 # Frontend URL for password reset emails
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
