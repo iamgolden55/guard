@@ -215,6 +215,21 @@ class ProfileService {
   }
 
   /**
+   * Get SIA licenses for a specific staff profile
+   */
+  async getSIALicensesByProfile(staffProfileId: number): Promise<any[]> {
+    const response = await api.get(`/api/v1/sia-licenses/?staff_profile=${staffProfileId}`);
+    return response.data.results || response.data;
+  }
+
+  /**
+   * Update an existing SIA license by ID (PATCH)
+   */
+  async patchSIALicense(licenseId: number, data: Record<string, any>): Promise<any> {
+    return api.patch(`/api/v1/sia-licenses/${licenseId}/`, data);
+  }
+
+  /**
    * Update an existing SIA license
    */
   async updateSIALicense(licenseId: string, licenseData: SIALicenseUpdateRequest): Promise<SIALicense> {

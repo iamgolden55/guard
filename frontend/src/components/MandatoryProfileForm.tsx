@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Stack,
   Text,
@@ -7,9 +7,11 @@ import {
   TextField,
   DatePicker,
   MessageBar,
-  MessageBarType
+  MessageBarType,
+  Spinner,
+  SpinnerSize
 } from '@fluentui/react';
-import { StaffProfile, SIALicenseType, SIALicense } from '../types';
+import { StaffProfile, SIALicenseType } from '../types';
 import { profileService } from '../services';
 import api from '../services/api';
 
@@ -54,6 +56,39 @@ const MandatoryProfileForm: React.FC<MandatoryProfileFormProps> = ({ profile, on
   const [documentUrl, setDocumentUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [existingLicense, setExistingLicense] = useState<any | null>(null);
+  const [loadingLicense, setLoadingLicense] = useState(true);
+
+  // Fetch existing SIA license on mount (from recruitment conversion)
+  useEffect(() => {
+    const fetchExistingLicense = async () => {
+      try {
+        const licenses = await profileService.getSIALicensesByProfile(profile.id);
+        if (licenses && licenses.length > 0) {
+          const license = licenses[0];
+          setExistingLicense(license);
+          // Pre-fill form fields from existing license
+          setLicenseNumber(license.license_number || license.licenseNumber || '');
+          setLicenseType(license.license_type || license.licenseType);
+          if (license.issue_date || license.issueDate) {
+            setIssueDate(new Date(license.issue_date || license.issueDate));
+          }
+          if (license.expiry_date || license.expiryDate) {
+            setExpiryDate(new Date(license.expiry_date || license.expiryDate));
+          }
+          // If license already has a document, set it
+          if (license.document_url || license.documentUrl) {
+            setDocumentUrl(license.document_url || license.documentUrl);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching existing licenses:', err);
+      } finally {
+        setLoadingLicense(false);
+      }
+    };
+    fetchExistingLicense();
+  }, [profile.id]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files && e.target.files[0];
@@ -88,28 +123,40 @@ const MandatoryProfileForm: React.FC<MandatoryProfileFormProps> = ({ profile, on
       setError('Please select at least one security role.');
       return;
     }
-    if (!licenseNumber || !licenseType || !issueDate || !expiryDate) {
+    // Only validate license fields if no existing license (not pre-filled)
+    if (!existingLicense && (!licenseNumber || !licenseType || !issueDate || !expiryDate)) {
       setError('Please fill in all SIA license fields.');
       return;
     }
-    if (!documentFile || !documentUrl) {
+    if (!documentUrl) {
       setError('Please upload a photo or scan of your SIA license.');
       return;
     }
     setSubmitting(true);
     try {
       await api.patch('/api/v1/users/me', { security_roles: securityRoles });
-      const siaPayload = {
-        licenseNumber,
-        licenseType,
-        issueDate: issueDate.toISOString().slice(0, 10),
-        expiryDate: expiryDate.toISOString().slice(0, 10),
-        status: 'pending',
-        document_url: documentUrl,
-        level: 'qualified',
-      };
-      console.log('SIA License payload:', siaPayload);
-      await profileService.addSIALicense(profile.id, siaPayload);
+
+      if (existingLicense) {
+        // Update existing license with document URL
+        console.log('Updating existing license:', existingLicense.id, 'with document_url:', documentUrl);
+        await profileService.patchSIALicense(existingLicense.id, {
+          document_url: documentUrl,
+        });
+      } else {
+        // Create new license
+        const siaPayload = {
+          licenseNumber,
+          licenseType,
+          issueDate: issueDate.toISOString().slice(0, 10),
+          expiryDate: expiryDate.toISOString().slice(0, 10),
+          status: 'pending',
+          document_url: documentUrl,
+          level: 'qualified',
+        };
+        console.log('SIA License payload:', siaPayload);
+        await profileService.addSIALicense(profile.id, siaPayload);
+      }
+
       setSuccess(true);
       setTimeout(() => {
         onComplete();
@@ -130,11 +177,23 @@ const MandatoryProfileForm: React.FC<MandatoryProfileFormProps> = ({ profile, on
     }
   };
 
+  if (loadingLicense) {
+    return (
+      <div style={{ maxWidth: 500, margin: '0 auto', padding: 24, textAlign: 'center' }}>
+        <Spinner size={SpinnerSize.large} label="Loading your license information..." />
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} style={{ maxWidth: 500, margin: '0 auto', padding: 24, background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px #0001' }}>
       <Stack tokens={{ childrenGap: 16 }}>
         <Text variant="xLarge">Complete Your Profile</Text>
-        <Text>You must provide your security role and SIA license before you can access shift features. Your information will be reviewed by an admin.</Text>
+        {existingLicense ? (
+          <Text>Your SIA license information has been pre-filled from your application. Please upload a photo or scan of your license to complete your profile.</Text>
+        ) : (
+          <Text>You must provide your security role and SIA license before you can access shift features. Your information will be reviewed by an admin.</Text>
+        )}
         <Dropdown
           label="Security Role(s)"
           placeholder="Select your security role(s)"
@@ -156,6 +215,7 @@ const MandatoryProfileForm: React.FC<MandatoryProfileFormProps> = ({ profile, on
           value={licenseNumber}
           onChange={(_, v) => setLicenseNumber(v || '')}
           required
+          disabled={!!existingLicense}
         />
         <Dropdown
           label="SIA License Type"
@@ -164,25 +224,30 @@ const MandatoryProfileForm: React.FC<MandatoryProfileFormProps> = ({ profile, on
           selectedKey={licenseType}
           onChange={(_, option) => setLicenseType(option?.key as string)}
           required
+          disabled={!!existingLicense}
         />
         <DatePicker
           label="Issue Date"
           value={issueDate}
           onSelectDate={setIssueDate}
-          required
+          disabled={!!existingLicense}
         />
         <DatePicker
           label="Expiry Date"
           value={expiryDate}
           onSelectDate={setExpiryDate}
-          required
+          disabled={!!existingLicense}
         />
-        <input
-          type="file"
-          accept="image/*,application/pdf"
-          onChange={handleFileChange}
-          required
-        />
+        <div>
+          <Text style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>
+            Upload SIA License Photo/Scan *
+          </Text>
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            onChange={handleFileChange}
+          />
+        </div>
         {uploading && <Text>Uploading file...</Text>}
         {uploadError && <MessageBar messageBarType={MessageBarType.error}>{uploadError}</MessageBar>}
         {documentUrl && documentFile && (
