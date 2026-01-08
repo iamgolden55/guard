@@ -98,7 +98,7 @@ const MandatoryProfileForm: React.FC<MandatoryProfileFormProps> = ({ profile, on
     }
     setSubmitting(true);
     try {
-      await api.patch('/api/v1/users/me/', { security_roles: securityRoles });
+      await api.patch('/api/v1/users/me', { security_roles: securityRoles });
       const siaPayload = {
         licenseNumber,
         licenseType,
