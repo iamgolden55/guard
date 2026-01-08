@@ -1107,7 +1107,7 @@ class SIALicense(models.Model):
     issue_date = models.DateField()
     expiry_date = models.DateField()
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='valid')
-    document_url = models.URLField(max_length=500)
+    document_url = models.URLField(max_length=500, blank=True, default='')
     additional_certifications = models.JSONField(default=list, help_text="Additional certifications related to this license")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
