@@ -125,7 +125,7 @@ class VenueService {
   // Get a specific venue by ID
   async getVenue(id: number): Promise<Venue> {
     try {
-      const response = await api.get(`/venues/${id}/`);
+      const response = await api.get(`/api/v1/venues/${id}/`);
       return mapToFrontendVenue(response.data);
     } catch (error) {
       console.error(`Error fetching venue with ID ${id}:`, error);
@@ -137,7 +137,7 @@ class VenueService {
   async createVenue(venueData: Venue): Promise<Venue> {
     try {
       const backendData = mapToBackendVenue(venueData);
-      const response = await api.post<VenueResponse>('/venues/', backendData);
+      const response = await api.post<VenueResponse>('/api/v1/venues/', backendData);
       return mapToFrontendVenue(response.data.venue);
     } catch (error) {
       console.error('Error creating venue:', error);
@@ -149,7 +149,7 @@ class VenueService {
   async updateVenue(id: number, venueData: Partial<Venue>): Promise<Venue> {
     try {
       const backendData = mapToBackendVenue(venueData);
-      const response = await api.put<VenueResponse>(`/venues/${id}/`, backendData);
+      const response = await api.put<VenueResponse>(`/api/v1/venues/${id}/`, backendData);
       return mapToFrontendVenue(response.data.venue);
     } catch (error) {
       console.error(`Error updating venue with ID ${id}:`, error);
@@ -160,7 +160,7 @@ class VenueService {
   // Update venue status (active/inactive)
   async updateVenueStatus(id: number, isActive: boolean): Promise<Venue> {
     try {
-      const response = await api.patch<VenueResponse>(`/venues/${id}/`, { is_active: isActive });
+      const response = await api.patch<VenueResponse>(`/api/v1/venues/${id}/`, { is_active: isActive });
       return mapToFrontendVenue(response.data.venue);
     } catch (error) {
       console.error(`Error updating status of venue with ID ${id}:`, error);
@@ -171,7 +171,7 @@ class VenueService {
   // Delete a venue
   async deleteVenue(id: number): Promise<void> {
     try {
-      await api.delete(`/venues/${id}/`);
+      await api.delete(`/api/v1/venues/${id}/`);
     } catch (error) {
       console.error(`Error deleting venue with ID ${id}:`, error);
       throw error;
