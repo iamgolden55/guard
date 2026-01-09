@@ -258,7 +258,7 @@ const VenueLocationPicker: React.FC<VenueLocationPickerProps> = ({
             // Pan map to location
             if (mapRef.current?.panTo) {
               mapRef.current.panTo(location);
-              mapRef.current.setZoom(16);
+              mapRef.current.setZoom(18);
             }
           } else {
             setError('Could not find location details. Please try a different address.');
@@ -497,7 +497,7 @@ const VenueLocationPicker: React.FC<VenueLocationPickerProps> = ({
                 ref={mapRef}
                 apiKey={apiKey}
                 center={selectedLocation || { lat: 51.4545, lng: -2.5879 }}
-                zoom={selectedLocation ? 16 : 13}
+                zoom={selectedLocation ? 18 : 13}
                 height="380px"
                 onMapLoad={handleMapLoad}
                 onLocationSelect={handleMapLocationSelect}

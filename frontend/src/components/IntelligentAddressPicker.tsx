@@ -85,6 +85,9 @@ const IntelligentAddressPicker: React.FC<IntelligentAddressPickerProps> = ({
       address: initialLocation.formattedAddress
     } : null
   );
+  const [verifiedLocationName, setVerifiedLocationName] = useState<string | null>(null);
+  const [distanceFromOriginal, setDistanceFromOriginal] = useState<number | null>(null);
+  const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
 
   const mapRef = useRef<MapComponentRef>(null);
   const markerRef = useRef<google.maps.Marker | null>(null);
@@ -97,6 +100,58 @@ const IntelligentAddressPicker: React.FC<IntelligentAddressPickerProps> = ({
     }, 1000);
 
     return () => clearTimeout(timer);
+  }, []);
+
+  // Calculate distance between two coordinates (Haversine formula)
+  const calculateDistance = useCallback((lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371000; // Earth's radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }, []);
+
+  // Reverse geocode to get location name from coordinates
+  const reverseGeocode = useCallback(async (lat: number, lng: number): Promise<string | null> => {
+    if (!window.google?.maps?.Geocoder) return null;
+
+    try {
+      const geocoder = new google.maps.Geocoder();
+      const response = await geocoder.geocode({ location: { lat, lng } });
+
+      if (response.results && response.results[0]) {
+        // Extract city and country from address components
+        const components = response.results[0].address_components;
+        let city = '';
+        let country = '';
+
+        for (const component of components) {
+          if (component.types.includes('locality') || component.types.includes('postal_town')) {
+            city = component.long_name;
+          }
+          if (component.types.includes('country')) {
+            country = component.long_name;
+          }
+        }
+
+        if (city && country) {
+          return `${city}, ${country}`;
+        } else if (city) {
+          return city;
+        } else if (response.results[0].formatted_address) {
+          // Fallback to first part of formatted address
+          const parts = response.results[0].formatted_address.split(',');
+          return parts.slice(0, 2).join(',').trim();
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('Reverse geocoding failed:', error);
+      return null;
+    }
   }, []);
 
   // Check if address resolution services are ready
@@ -228,13 +283,23 @@ const IntelligentAddressPicker: React.FC<IntelligentAddressPickerProps> = ({
     
     setSelectedLocation(location);
     updateMarker(location);
-    
+
+    // Reset distance warning when selecting new address
+    setDistanceFromOriginal(null);
+
+    // Reverse geocode to verify initial location
+    setIsReverseGeocoding(true);
+    reverseGeocode(address.latitude, address.longitude).then((locationName) => {
+      setVerifiedLocationName(locationName);
+      setIsReverseGeocoding(false);
+    });
+
     // Center map on selected location
     if (mapRef.current?.panTo) {
       mapRef.current.panTo(location);
       mapRef.current.setZoom(18);
     }
-  }, []);
+  }, [reverseGeocode]);
 
   // Update marker on map
   const updateMarker = useCallback((location: MapLocation) => {
@@ -248,18 +313,36 @@ const IntelligentAddressPicker: React.FC<IntelligentAddressPickerProps> = ({
         title: 'Selected Address'
       });
 
-      markerRef.current.addListener('dragend', (event: google.maps.MapMouseEvent) => {
+      markerRef.current.addListener('dragend', async (event: google.maps.MapMouseEvent) => {
         if (event.latLng && selectedAddress) {
+          const newLat = event.latLng.lat();
+          const newLng = event.latLng.lng();
+
           const newLocation: MapLocation = {
-            lat: event.latLng.lat(),
-            lng: event.latLng.lng(),
+            lat: newLat,
+            lng: newLng,
             address: selectedAddress.formattedAddress
           };
           setSelectedLocation(newLocation);
+
+          // Calculate distance from original search result
+          const distance = calculateDistance(
+            selectedAddress.latitude,
+            selectedAddress.longitude,
+            newLat,
+            newLng
+          );
+          setDistanceFromOriginal(Math.round(distance));
+
+          // Reverse geocode to verify new location
+          setIsReverseGeocoding(true);
+          const locationName = await reverseGeocode(newLat, newLng);
+          setVerifiedLocationName(locationName);
+          setIsReverseGeocoding(false);
         }
       });
     }
-  }, [selectedAddress]);
+  }, [selectedAddress, calculateDistance, reverseGeocode]);
 
   // Handle map load
   const handleMapLoad = useCallback((map: google.maps.Map) => {
@@ -581,6 +664,78 @@ const IntelligentAddressPicker: React.FC<IntelligentAddressPickerProps> = ({
           <Text variant="small" style={{ color: '#666' }}>
             Verify the location on the map. You can drag the marker to fine-tune the position.
           </Text>
+
+          {/* Location Verification Badge */}
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '8px',
+            alignItems: 'center'
+          }}>
+            {isReverseGeocoding ? (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                backgroundColor: '#f0f0f0',
+                borderRadius: '16px',
+                fontSize: '13px'
+              }}>
+                <Spinner size={SpinnerSize.xSmall} />
+                Verifying location...
+              </div>
+            ) : verifiedLocationName && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                backgroundColor: '#e8f5e8',
+                border: '1px solid #4caf50',
+                borderRadius: '16px',
+                fontSize: '13px',
+                color: '#2e7d32'
+              }}>
+                <Icon iconName="LocationDot" />
+                <strong>Location:</strong> {verifiedLocationName}
+              </div>
+            )}
+
+            {/* Distance Warning */}
+            {distanceFromOriginal !== null && distanceFromOriginal > 1000 && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                backgroundColor: '#fff3cd',
+                border: '1px solid #ffc107',
+                borderRadius: '16px',
+                fontSize: '13px',
+                color: '#856404'
+              }}>
+                <Icon iconName="Warning" />
+                <strong>Warning:</strong> Marker moved {(distanceFromOriginal / 1000).toFixed(1)}km from original location
+              </div>
+            )}
+            {distanceFromOriginal !== null && distanceFromOriginal <= 1000 && distanceFromOriginal > 100 && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                backgroundColor: '#e3f2fd',
+                border: '1px solid #2196f3',
+                borderRadius: '16px',
+                fontSize: '13px',
+                color: '#1565c0'
+              }}>
+                <Icon iconName="MapPin" />
+                Adjusted: {distanceFromOriginal}m from search result
+              </div>
+            )}
+          </div>
           
           <div style={{ minHeight: '300px' }}>
             {!isMapReady ? (

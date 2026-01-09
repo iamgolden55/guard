@@ -301,7 +301,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
 
     console.log('[ShiftDetails] Parsed coordinates:', { latitude, longitude });
 
-    const zoom = 15;
+    const zoom = 17;
     const width = 600;
     const height = 400;
 
