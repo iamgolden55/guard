@@ -3,7 +3,7 @@ Django signals for the API app.
 Handles automatic setup and lifecycle events for models.
 """
 
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_save, pre_save, pre_delete
 from django.dispatch import receiver
 from datetime import timedelta
 from django.utils import timezone
@@ -80,22 +80,71 @@ def track_shift_assignment(sender, instance, **kwargs):
 @receiver(post_save, sender=Shift)
 def notify_shift_assignment(sender, instance, created, **kwargs):
     """
-    Send push notification when a shift is assigned to a staff member.
+    Send push notification when a shift is assigned, removed, or reassigned.
 
     Triggers when:
-    - New shift created with staff_user assigned
-    - Existing shift updated with new staff_user assignment
+    - New shift created with staff_user assigned → assignment notification
+    - Existing shift updated with new staff_user assignment → assignment notification
+    - Staff removed from shift (staff_user becomes None) → removal notification
+    - Staff reassigned to different user → reassignment + assignment notifications
 
-    Also schedules reminder notifications via Celery.
+    Also schedules reminder notifications via Celery for new assignments.
     """
-    # Skip if no staff assigned
-    if not instance.staff_user:
+    previous_staff = getattr(instance, '_previous_staff_user', None)
+    current_staff = instance.staff_user
+
+    # Format date and time for notifications
+    start_time = instance.start_time
+    formatted_date = start_time.strftime('%B %d, %Y')  # e.g., "December 15, 2025"
+    formatted_time = start_time.strftime('%I:%M %p')   # e.g., "09:00 AM"
+    venue_name = instance.venue.name if instance.venue else 'Unknown Venue'
+
+    # Case 1: Staff removed from shift (had staff, now has none)
+    if previous_staff and not current_staff and not created:
+        try:
+            push_notification_service.send_shift_removal_notification(
+                user_id=previous_staff.id,
+                shift_id=instance.id,
+                venue_name=venue_name,
+                shift_date=formatted_date,
+                shift_time=formatted_time,
+                reason=None  # Could be enhanced to pass a reason if available
+            )
+            logger.info(
+                f"Shift removal notification sent for shift {instance.id} "
+                f"to previous staff user {previous_staff.id}"
+            )
+        except Exception as e:
+            logger.exception(f"Error sending shift removal notification: {e}")
+        return  # No further processing needed
+
+    # Case 2: Staff reassigned to different user
+    if previous_staff and current_staff and previous_staff != current_staff and not created:
+        try:
+            # Get the new staff member's name for the reassignment notification
+            new_staff_name = current_staff.get_full_name() or current_staff.username
+
+            push_notification_service.send_shift_reassignment_notification(
+                user_id=previous_staff.id,
+                shift_id=instance.id,
+                venue_name=venue_name,
+                shift_date=formatted_date,
+                shift_time=formatted_time,
+                new_staff_name=new_staff_name
+            )
+            logger.info(
+                f"Shift reassignment notification sent for shift {instance.id} "
+                f"to previous staff user {previous_staff.id}"
+            )
+        except Exception as e:
+            logger.exception(f"Error sending shift reassignment notification: {e}")
+        # Continue to send assignment notification to new staff
+
+    # Case 3: New assignment (new shift with staff, or staff added/changed)
+    if not current_staff:
         return
 
-    # Check if this is a new assignment
-    previous_staff = getattr(instance, '_previous_staff_user', None)
-    is_new_assignment = created or (previous_staff != instance.staff_user)
-
+    is_new_assignment = created or (previous_staff != current_staff)
     if not is_new_assignment:
         return
 
@@ -104,15 +153,9 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
         return
 
     try:
-        # Format date and time for notification
-        start_time = instance.start_time
-        formatted_date = start_time.strftime('%B %d, %Y')  # e.g., "December 15, 2025"
-        formatted_time = start_time.strftime('%I:%M %p')   # e.g., "09:00 AM"
-        venue_name = instance.venue.name if instance.venue else 'Unknown Venue'
-
-        # Send immediate notification
+        # Send immediate notification to new assignee
         success = push_notification_service.send_shift_assignment_notification(
-            user_id=instance.staff_user.id,
+            user_id=current_staff.id,
             shift_id=instance.id,
             venue_name=venue_name,
             start_time=formatted_time,
@@ -122,7 +165,7 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
         if success:
             logger.info(
                 f"Shift assignment notification sent for shift {instance.id} "
-                f"to user {instance.staff_user.id}"
+                f"to user {current_staff.id}"
             )
         else:
             logger.warning(
@@ -310,3 +353,49 @@ def notify_exchange_status_change(sender, instance, created, **kwargs):
 
     except Exception as e:
         logger.exception(f"Error queuing exchange status notification: {e}")
+
+
+# =============================================================================
+# Shift Deletion Notifications
+# =============================================================================
+
+@receiver(pre_delete, sender=Shift)
+def notify_shift_deletion(sender, instance, **kwargs):
+    """
+    Send push notification when a shift with assigned staff is deleted.
+
+    Uses pre_delete signal to capture shift data before it's removed from database.
+    This ensures the assigned staff member is notified when their shift is deleted.
+    """
+    # Only notify if there's an assigned staff member
+    if not instance.staff_user:
+        return
+
+    # Only notify for future/active shifts (not past completed ones)
+    if instance.status in ['completed', 'cancelled']:
+        return
+
+    try:
+        # Format date and time for notification
+        start_time = instance.start_time
+        formatted_date = start_time.strftime('%B %d, %Y')
+        formatted_time = start_time.strftime('%I:%M %p')
+        venue_name = instance.venue.name if instance.venue else 'Unknown Venue'
+
+        # Send removal notification (shift deleted = removed from staff's schedule)
+        push_notification_service.send_shift_removal_notification(
+            user_id=instance.staff_user.id,
+            shift_id=instance.id,
+            venue_name=venue_name,
+            shift_date=formatted_date,
+            shift_time=formatted_time,
+            reason="Shift has been cancelled"
+        )
+
+        logger.info(
+            f"Shift deletion notification sent for shift {instance.id} "
+            f"to user {instance.staff_user.id}"
+        )
+
+    except Exception as e:
+        logger.exception(f"Error sending shift deletion notification: {e}")

@@ -128,7 +128,7 @@ class PushNotificationService:
         """Send notification when a shift is assigned to a user."""
         return self.send_notification(
             user_id=user_id,
-            title="📅 New Shift Assigned",
+            title="New Shift Assigned",
             body=f"You've been assigned a shift at {venue_name} on {formatted_date} at {start_time}",
             data={
                 'type': 'shift_assigned',
@@ -158,9 +158,9 @@ class PushNotificationService:
             time_until: Formatted time string (e.g., "3 hours", "45 minutes")
         """
         titles = {
-            'advance': '📅 Shift Reminder',
-            'soon': '⏰ Shift Starting Soon!',
-            'imminent': '🚨 Almost Time!',
+            'advance': 'Shift Reminder',
+            'soon': 'Shift Starting Soon',
+            'imminent': 'Almost Time',
         }
 
         bodies = {
@@ -192,12 +192,87 @@ class PushNotificationService:
         """Send reminder to check in after shift start time."""
         return self.send_notification(
             user_id=user_id,
-            title="⚠️ Check-in Reminder",
+            title="Check-in Reminder",
             body=f"Your shift at {venue_name} started {minutes_late} minutes ago. Please check in now!",
             data={
                 'type': 'checkin_reminder',
                 'shiftId': shift_id,
                 'screen': 'ShiftDetails',
+            },
+            priority='high',
+            channel_id='shift-reminders'
+        )
+
+    def send_shift_removal_notification(
+        self,
+        user_id: int,
+        shift_id: int,
+        venue_name: str,
+        shift_date: str,
+        shift_time: str,
+        reason: str = None
+    ) -> bool:
+        """
+        Send notification when a shift is removed/unassigned from a staff member.
+
+        Args:
+            user_id: Staff member who was removed from shift
+            shift_id: The shift ID
+            venue_name: Venue of the shift
+            shift_date: Formatted date of the shift
+            shift_time: Formatted time of the shift
+            reason: Optional reason for removal
+        """
+        body = f"You have been removed from your shift at {venue_name} on {shift_date} at {shift_time}."
+        if reason:
+            body += f" Reason: {reason}"
+
+        return self.send_notification(
+            user_id=user_id,
+            title="Shift Removed",
+            body=body,
+            data={
+                'type': 'shift_removed',
+                'notification_type': 'shift_removed',
+                'shiftId': shift_id,
+                'screen': 'Shifts',
+            },
+            priority='high',
+            channel_id='shift-reminders'
+        )
+
+    def send_shift_reassignment_notification(
+        self,
+        user_id: int,
+        shift_id: int,
+        venue_name: str,
+        shift_date: str,
+        shift_time: str,
+        new_staff_name: str = None
+    ) -> bool:
+        """
+        Send notification when a shift is reassigned to someone else.
+
+        Args:
+            user_id: Original staff member who lost the shift
+            shift_id: The shift ID
+            venue_name: Venue of the shift
+            shift_date: Formatted date of the shift
+            shift_time: Formatted time of the shift
+            new_staff_name: Name of the new assignee (optional)
+        """
+        # Always use generic message for privacy - don't reveal who the shift was reassigned to
+        body = f"Your shift at {venue_name} on {shift_date} at {shift_time} has been reassigned to another staff member."
+
+        return self.send_notification(
+            user_id=user_id,
+            title="Shift Reassigned",
+            body=body,
+            data={
+                'type': 'shift_reassigned',
+                'notification_type': 'shift_reassigned',
+                'shiftId': shift_id,
+                'screen': 'Shifts',
             },
             priority='high',
             channel_id='shift-reminders'
@@ -229,7 +304,7 @@ class PushNotificationService:
 
         return self.send_notification(
             user_id=manager_user_id,
-            title="⚠️ Shift Cancelled by Staff",
+            title="Shift Cancelled by Staff",
             body=f"{staff_name} cancelled their shift at {venue_name} on {shift_date} at {shift_time}.{pool_message}",
             data={
                 'type': 'shift_cancelled',
