@@ -289,8 +289,16 @@ class NotificationService {
         shiftStartTime.getTime() - NOTIFICATION_CONFIG.IMMINENT_REMINDER_MINUTES * 60 * 1000
       );
 
+      // Calculate seconds until each notification (more reliable than date triggers)
+      const advanceSecondsFromNow = Math.floor((advanceReminderTime.getTime() - now.getTime()) / 1000);
+      const soonSecondsFromNow = Math.floor((soonReminderTime.getTime() - now.getTime()) / 1000);
+      const imminentSecondsFromNow = Math.floor((imminentReminderTime.getTime() - now.getTime()) / 1000);
+
+      // Minimum delay of 60 seconds to prevent immediate firing
+      const MIN_DELAY_SECONDS = 60;
+
       // Schedule advance reminder (3 hours before)
-      if (advanceReminderTime > now) {
+      if (advanceSecondsFromNow > MIN_DELAY_SECONDS) {
         const advanceId = await Notifications.scheduleNotificationAsync({
           content: {
             title: '📅 Shift Reminder',
@@ -302,10 +310,14 @@ class NotificationService {
             },
             sound: 'default',
             priority: Notifications.AndroidNotificationPriority.HIGH,
+            ...(Platform.OS === 'android' && {
+              channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
+            }),
           },
           trigger: {
-            channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
-            date: advanceReminderTime,
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: advanceSecondsFromNow,
+            repeats: false,
           },
         });
 
@@ -319,7 +331,7 @@ class NotificationService {
       }
 
       // Schedule soon reminder (45 minutes before)
-      if (soonReminderTime > now) {
+      if (soonSecondsFromNow > MIN_DELAY_SECONDS) {
         const soonId = await Notifications.scheduleNotificationAsync({
           content: {
             title: '⏰ Shift Starting Soon!',
@@ -331,10 +343,14 @@ class NotificationService {
             },
             sound: 'default',
             priority: Notifications.AndroidNotificationPriority.HIGH,
+            ...(Platform.OS === 'android' && {
+              channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
+            }),
           },
           trigger: {
-            channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
-            date: soonReminderTime,
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: soonSecondsFromNow,
+            repeats: false,
           },
         });
 
@@ -348,7 +364,7 @@ class NotificationService {
       }
 
       // Schedule imminent reminder (5 minutes before)
-      if (imminentReminderTime > now) {
+      if (imminentSecondsFromNow > MIN_DELAY_SECONDS) {
         const imminentId = await Notifications.scheduleNotificationAsync({
           content: {
             title: '🚨 Almost Time!',
@@ -360,10 +376,14 @@ class NotificationService {
             },
             sound: 'default',
             priority: Notifications.AndroidNotificationPriority.MAX,
+            ...(Platform.OS === 'android' && {
+              channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
+            }),
           },
           trigger: {
-            channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
-            date: imminentReminderTime,
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: imminentSecondsFromNow,
+            repeats: false,
           },
         });
 
@@ -617,10 +637,13 @@ class NotificationService {
           body: `This notification was scheduled ${delaySeconds} seconds ago`,
           data: { test: true },
           sound: 'default',
+          ...(Platform.OS === 'android' && {
+            channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
+          }),
         },
         trigger: {
           seconds: delaySeconds,
-          channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
+          repeats: false,
         },
       });
       console.log(`Test notification scheduled for ${delaySeconds} seconds from now`);
