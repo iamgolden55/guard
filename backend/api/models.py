@@ -2657,7 +2657,13 @@ class Invoice(models.Model):
 
 class InvoiceItem(models.Model):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='items')
-    shift = models.ForeignKey(Shift, on_delete=models.CASCADE, related_name='invoice_items')
+    shift = models.ForeignKey(
+        Shift,
+        on_delete=models.CASCADE,
+        related_name='invoice_items',
+        unique=True,
+        help_text="Each shift can only be invoiced once"
+    )
     date = models.DateField()
     venue = models.ForeignKey(Venue, on_delete=models.CASCADE, related_name='invoice_items')
     hours_worked = models.DecimalField(max_digits=10, decimal_places=2)
@@ -2668,6 +2674,13 @@ class InvoiceItem(models.Model):
     class Meta:
         db_table = 'invoice_items'
         ordering = ['date']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['shift'],
+                name='unique_shift_per_invoice_item',
+                violation_error_message="This shift has already been added to an invoice."
+            )
+        ]
 
     def __str__(self):
         return f"{self.date} - {self.venue.name} ({self.hours_worked} hours)"
