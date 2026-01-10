@@ -36,7 +36,7 @@ import { apiService, ApiError, ApiTimeoutError, NetworkError } from '../../servi
 import { logger } from '../../utils/logger';
 import { ERROR_MESSAGES } from '../../utils/constants';
 import { shiftsService } from '../../services/shiftsService';
-import { exchangeService } from '../../services/exchangeService';
+import exchangeService from '../../services/exchangeService';
 
 const { width } = Dimensions.get('window');
 const MAP_WIDTH = width * 0.9;
