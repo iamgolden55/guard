@@ -236,8 +236,11 @@ class NotificationService {
 
   /**
    * Schedule shift reminder notifications
-   * Creates two notifications: advance (3h before) and final (45min before)
+   * Creates three notifications: advance (3h before), soon (45min before), imminent (5min before)
    * WITH DEDUPLICATION: Checks if notifications already exist before scheduling
+   *
+   * IMPORTANT: Uses seconds-based triggers to avoid issues with date-based triggers
+   * firing immediately when navigating to the shifts screen.
    */
   async scheduleShiftReminder(shift: Shift): Promise<string[]> {
     try {
@@ -278,7 +281,7 @@ class NotificationService {
       const notificationIds: string[] = [];
       const scheduledNotifications: ScheduledNotification[] = [];
 
-      // Calculate trigger times
+      // Calculate trigger times and seconds from now
       const advanceReminderTime = new Date(
         shiftStartTime.getTime() - NOTIFICATION_CONFIG.ADVANCE_REMINDER_HOURS * 60 * 60 * 1000
       );
@@ -289,8 +292,16 @@ class NotificationService {
         shiftStartTime.getTime() - NOTIFICATION_CONFIG.IMMINENT_REMINDER_MINUTES * 60 * 1000
       );
 
+      // Calculate seconds until each notification (more reliable than date triggers)
+      const advanceSecondsFromNow = Math.floor((advanceReminderTime.getTime() - now.getTime()) / 1000);
+      const soonSecondsFromNow = Math.floor((soonReminderTime.getTime() - now.getTime()) / 1000);
+      const imminentSecondsFromNow = Math.floor((imminentReminderTime.getTime() - now.getTime()) / 1000);
+
+      // Minimum delay of 60 seconds to prevent immediate firing
+      const MIN_DELAY_SECONDS = 60;
+
       // Schedule advance reminder (3 hours before)
-      if (advanceReminderTime > now) {
+      if (advanceSecondsFromNow > MIN_DELAY_SECONDS) {
         const advanceId = await Notifications.scheduleNotificationAsync({
           content: {
             title: '📅 Shift Reminder',
@@ -304,8 +315,9 @@ class NotificationService {
             priority: Notifications.AndroidNotificationPriority.HIGH,
           },
           trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: advanceSecondsFromNow,
             channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
-            date: advanceReminderTime,
           },
         });
 
@@ -319,7 +331,7 @@ class NotificationService {
       }
 
       // Schedule soon reminder (45 minutes before)
-      if (soonReminderTime > now) {
+      if (soonSecondsFromNow > MIN_DELAY_SECONDS) {
         const soonId = await Notifications.scheduleNotificationAsync({
           content: {
             title: '⏰ Shift Starting Soon!',
@@ -333,8 +345,9 @@ class NotificationService {
             priority: Notifications.AndroidNotificationPriority.HIGH,
           },
           trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: soonSecondsFromNow,
             channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
-            date: soonReminderTime,
           },
         });
 
@@ -348,7 +361,7 @@ class NotificationService {
       }
 
       // Schedule imminent reminder (5 minutes before)
-      if (imminentReminderTime > now) {
+      if (imminentSecondsFromNow > MIN_DELAY_SECONDS) {
         const imminentId = await Notifications.scheduleNotificationAsync({
           content: {
             title: '🚨 Almost Time!',
@@ -362,8 +375,9 @@ class NotificationService {
             priority: Notifications.AndroidNotificationPriority.MAX,
           },
           trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: imminentSecondsFromNow,
             channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
-            date: imminentReminderTime,
           },
         });
 
@@ -619,6 +633,7 @@ class NotificationService {
           sound: 'default',
         },
         trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
           seconds: delaySeconds,
           channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
         },
