@@ -99,6 +99,7 @@ interface ShiftsState {
   error: string | null;
   lastFetch: string | null;
   pagination: PaginationState;
+  recentlyCheckedOutShiftIds: number[];  // Track shifts to prevent race condition on refetch
 }
 
 const initialState: ShiftsState = {
@@ -116,6 +117,7 @@ const initialState: ShiftsState = {
     hasMore: false,
     pageSize: 10,
   },
+  recentlyCheckedOutShiftIds: [],
 };
 
 // Async thunk to fetch shifts from API (first page)
@@ -231,14 +233,16 @@ const shiftsSlice = createSlice({
         photo?: string;
         signature?: string;
         syncStatus?: 'synced' | 'pending' | 'failed';
+        checkInTime?: string;  // Server-provided timestamp for consistency
       }>
     ) => {
-      const { shiftId, location, photo, signature, syncStatus } = action.payload;
+      const { shiftId, location, photo, signature, syncStatus, checkInTime } = action.payload;
       const shift = state.upcomingShifts.find(s => s.id === shiftId);
 
       if (shift) {
         shift.status = 'in_progress';
-        shift.check_in_time = new Date().toISOString();
+        // Use server timestamp if available, fallback to local time for offline scenarios
+        shift.check_in_time = checkInTime || new Date().toISOString();
         shift.check_in_location = location;
         shift.check_in_photo = photo;
         shift.check_in_signature = signature;
@@ -268,6 +272,11 @@ const shiftsSlice = createSlice({
         state.activeShift.check_out_photo = photo;
         state.activeShift.check_out_signature = signature;
         state.activeShift.sync_status = syncStatus || 'pending';
+
+        // Track this shift as recently checked out to prevent race condition on refetch
+        if (!state.recentlyCheckedOutShiftIds.includes(shiftId)) {
+          state.recentlyCheckedOutShiftIds.push(shiftId);
+        }
 
         // Move to completed shifts
         state.completedShifts.unshift(state.activeShift);
@@ -342,8 +351,21 @@ const shiftsSlice = createSlice({
         // Categorize shifts (replace existing)
         const now = new Date();
 
-        // Find active shift (in_progress)
-        state.activeShift = shifts.find(s => s.status === 'in_progress') || null;
+        // Find active shift (in_progress), EXCLUDING recently checked-out shifts
+        // This prevents race condition where backend hasn't processed checkout yet
+        const recentlyCheckedOut = state.recentlyCheckedOutShiftIds || [];
+        state.activeShift = shifts.find(
+          s => s.status === 'in_progress' &&
+               !recentlyCheckedOut.includes(s.id)
+        ) || null;
+
+        // Clear tracking for shifts that are now confirmed as completed by backend
+        const confirmedCompletedIds = shifts
+          .filter(s => ['completed', 'approved', 'pending_approval'].includes(s.status))
+          .map(s => s.id);
+        state.recentlyCheckedOutShiftIds = recentlyCheckedOut.filter(
+          id => !confirmedCompletedIds.includes(id)
+        );
 
         // Upcoming shifts (scheduled and future)
         state.upcomingShifts = shifts

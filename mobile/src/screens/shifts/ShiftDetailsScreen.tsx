@@ -33,6 +33,8 @@ import type { MainStackParamList } from '../../types/navigation';
 import { locationService } from '../../services/locationService';
 import { venueTermsService } from '../../services/venueTermsService';
 import { apiService, ApiError, ApiTimeoutError, NetworkError } from '../../services/api';
+import { API_ENDPOINTS } from '../../config/api.config';
+import { syncService } from '../../services/syncService';
 import { logger } from '../../utils/logger';
 import { ERROR_MESSAGES } from '../../utils/constants';
 import { shiftsService } from '../../services/shiftsService';
@@ -77,41 +79,52 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
 
-  // Fetch shift data if only ID was provided (from notification/deep link)
+  // ALWAYS refresh shift data from backend to ensure we have the latest status
+  // This fixes the bug where stale data shows wrong buttons (check-in vs check-out)
   useEffect(() => {
     const fetchShiftData = async () => {
-      if (route.params.shiftId && !shift) {
+      const shiftId = route.params.shiftId || route.params.shift?.id;
+      if (!shiftId) return;
+
+      // Only show loading spinner if we don't have any shift data yet
+      if (!shift) {
         setIsLoadingShift(true);
-        try {
-          console.log('[ShiftDetails] Fetching shift data for ID:', route.params.shiftId);
-          const response = await shiftsService.fetchShifts({
-            page: 1,
-            pageSize: 100
-          });
+      }
 
-          // Find the shift in the response
-          const fetchedShift = response.results.find(s => s.id === route.params.shiftId);
+      try {
+        console.log('[ShiftDetails] Refreshing shift data for ID:', shiftId);
+        const response = await shiftsService.fetchShifts({
+          page: 1,
+          pageSize: 100
+        });
 
-          if (fetchedShift) {
-            console.log('[ShiftDetails] ✅ Shift data loaded');
-            setShift(fetchedShift);
-          } else {
-            console.warn('[ShiftDetails] ⚠️ Shift not found');
+        // Find the shift in the response
+        const fetchedShift = response.results.find(s => s.id === shiftId);
+
+        if (fetchedShift) {
+          console.log('[ShiftDetails] ✅ Shift data loaded, status:', fetchedShift.status);
+          setShift(fetchedShift);
+        } else {
+          console.warn('[ShiftDetails] ⚠️ Shift not found');
+          if (!shift) {
             Alert.alert('Error', 'Shift not found');
             navigation.goBack();
           }
-        } catch (error) {
-          console.error('[ShiftDetails] ❌ Error fetching shift:', error);
+        }
+      } catch (error) {
+        console.error('[ShiftDetails] ❌ Error fetching shift:', error);
+        // Only show error and navigate back if we don't have any shift data
+        if (!shift) {
           Alert.alert('Error', 'Failed to load shift details');
           navigation.goBack();
-        } finally {
-          setIsLoadingShift(false);
         }
+      } finally {
+        setIsLoadingShift(false);
       }
     };
 
     fetchShiftData();
-  }, [route.params.shiftId, route.params.shift]);
+  }, [route.params.shiftId, route.params.shift?.id]);
 
   // Calculate distance to venue with real-time updates
   useEffect(() => {
@@ -439,22 +452,21 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
       }
 
       try {
-        const checkInData = {
-          status: 'in_progress',
-          check_in_time: new Date().toISOString(),
-          check_in_location: {
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
-          },
-          check_in_photo: venuePhoto || null,
-          start_signature: signature || null,
+        // Use dedicated check-in endpoint (POST) for idempotency protection
+        // The dedicated endpoint rejects duplicate check-ins, preventing the bug
+        // where checkout would trigger a new check-in time
+        const checkInPayload = {
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          photo: venuePhoto || null,
+          signature: signature || null,
         };
 
-        logger.info('[ShiftDetails] Sending check-in data to backend...');
+        logger.info('[ShiftDetails] Sending check-in data to dedicated endpoint...');
 
-        await apiService.patch(`/api/v1/shifts/${shift.id}/`, checkInData);
+        const response = await apiService.post(API_ENDPOINTS.SHIFTS.CHECK_IN(shift.id), checkInPayload);
 
-        logger.info('[ShiftDetails] Check-in data saved to backend successfully');
+        logger.info('[ShiftDetails] Check-in data saved to backend successfully', { response });
 
         dispatch(checkInShift({
           shiftId: shift.id,
@@ -462,6 +474,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
           photo: venuePhoto || undefined,
           signature: signature || undefined,
           syncStatus: 'synced',
+          checkInTime: response?.shift?.check_in_time,  // Use server timestamp from response.shift
         }));
 
         logger.info('[ShiftDetails] Redux state updated');
@@ -491,8 +504,20 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
           errorTitle = 'Offline';
           errorMessage = ERROR_MESSAGES.NETWORK_ERROR + '\nYour check-in was saved locally and will sync when you\'re back online.';
         } else if (apiError instanceof ApiError) {
+          // Show the actual server error message for better debugging
+          const serverMessage = apiError.data?.detail || apiError.statusText || 'Unknown error';
+
+          // Check if it's a "already checked in" error - don't save locally in that case
+          if (serverMessage.toLowerCase().includes('already checked in')) {
+            errorTitle = 'Already Checked In';
+            errorMessage = 'You are already checked in to this shift. Please refresh and try checking out instead.';
+            // Don't dispatch checkInShift here - shift is already checked in on server
+            Alert.alert(errorTitle, errorMessage, [{ text: 'OK', onPress: () => navigation.goBack() }]);
+            return;
+          }
+
           errorTitle = 'Server Error';
-          errorMessage = `Server error: ${apiError.statusText}\nYour check-in was saved locally and will retry automatically.`;
+          errorMessage = `Server error: ${serverMessage}\nYour check-in was saved locally and will retry automatically.`;
         }
 
         dispatch(checkInShift({
@@ -589,20 +614,17 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
       }
 
       try {
-        const checkOutData = {
-          status: 'completed',
-          check_out_time: new Date().toISOString(),
-          check_out_location: {
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
-          },
-          check_out_photo: checkOutPhoto || null,
-          end_signature: signatureData || null,
+        // Use dedicated POST endpoint for checkout (not generic PATCH)
+        const checkOutPayload = {
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          photo: checkOutPhoto || null,
+          signature: signatureData || null,
         };
 
-        logger.info('[ShiftDetails] Sending check-out data to backend...');
+        logger.info('[ShiftDetails] Sending check-out data to dedicated endpoint...');
 
-        await apiService.patch(`/api/v1/shifts/${shift.id}/`, checkOutData);
+        await apiService.post(API_ENDPOINTS.SHIFTS.CHECK_OUT(shift.id), checkOutPayload);
 
         logger.info('[ShiftDetails] Check-out data saved to backend successfully');
 
@@ -645,6 +667,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
           errorMessage = `Server error: ${apiError.statusText}\nYour check-out was saved locally and will retry automatically.`;
         }
 
+        // Update Redux state with pending sync status
         dispatch(checkOutShift({
           shiftId: shift.id,
           location: currentLocation,
@@ -653,7 +676,24 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
           syncStatus: 'pending',
         }));
 
-        logger.warn('[ShiftDetails] Check-out saved locally, will sync when online');
+        // Add to sync queue for automatic retry when online
+        const syncPayload = {
+          shift_id: shift.id,
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          photo: checkOutPhoto || null,
+          signature: signatureData || null,
+        };
+
+        await syncService.addToQueue({
+          type: 'check_out',
+          entityType: 'shifts',
+          entityId: shift.id.toString(),
+          payload: syncPayload,
+          priority: 1, // High priority for checkout
+        });
+
+        logger.warn('[ShiftDetails] Check-out added to sync queue, will retry when online');
 
         Alert.alert(
           errorTitle,

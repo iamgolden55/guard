@@ -27,11 +27,16 @@ import { useNotifications } from './src/hooks/useNotifications';
 // Sync Service
 import { syncService } from './src/services/syncService';
 
+// Splash Screen
+import { AnimatedSplash } from './src/components/AnimatedSplash';
+
 /**
  * Main App Component Wrapper
  * Handles notification initialization and sync cleanup after navigation is ready
  */
 function AppContent() {
+  const [showSplash, setShowSplash] = React.useState(true);
+
   // Initialize notifications
   useNotifications();
 
@@ -54,6 +59,11 @@ function AppContent() {
     <>
       <StatusBar style="auto" />
       <AppNavigator />
+      {showSplash && (
+        <AnimatedSplash
+          onAnimationFinish={() => setShowSplash(false)}
+        />
+      )}
     </>
   );
 }

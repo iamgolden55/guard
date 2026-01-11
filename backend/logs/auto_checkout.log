@@ -38994,3 +38994,235 @@ Processed 0 auto-checkouts out of 0 eligible shifts
 Processed 0 auto-checkouts out of 0 eligible shifts
 2026-01-06 15:45:01 - Auto-checkout processing completed successfully
 2026-01-06 15:45:01 - Auto-checkout processing finished
+2026-01-10 23:45:00 - Starting auto-checkout processing
+2026-01-10 23:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-10 23:45:03 - Auto-checkout processing completed successfully
+2026-01-10 23:45:03 - Auto-checkout processing finished
+2026-01-11 00:00:00 - Starting auto-checkout processing
+2026-01-11 00:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-11 00:00:08 - Auto-checkout processing completed successfully
+2026-01-11 00:00:08 - Auto-checkout processing finished
+2026-01-11 00:15:00 - Starting auto-checkout processing
+2026-01-11 00:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-11 00:15:03 - Auto-checkout processing completed successfully
+2026-01-11 00:15:03 - Auto-checkout processing finished
+2026-01-11 00:30:00 - Starting auto-checkout processing
+2026-01-11 00:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Traceback (most recent call last):
+  File "/Users/new/Projects/mead-security/remix2/backend/manage.py", line 22, in <module>
+    main()
+    ~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+    ~~~~~~~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/base.py", line 412, in run_from_argv
+    self.execute(*args, **cmd_options)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/base.py", line 458, in execute
+    output = self.handle(*args, **options)
+  File "/Users/new/Projects/mead-security/remix2/backend/api/management/commands/process_auto_checkouts.py", line 47, in handle
+    success = shift.perform_auto_checkout()
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 2266, in perform_auto_checkout
+    self.save()
+    ~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 1713, in save
+    self.clean()
+    ~~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 1696, in clean
+    raise ValidationError("Check-out time must be after check-in time")
+django.core.exceptions.ValidationError: ['Check-out time must be after check-in time']
+2026-01-11 00:30:03 - ERROR: Auto-checkout processing failed
+2026-01-11 00:30:03 - Auto-checkout processing finished
+2026-01-11 00:45:00 - Starting auto-checkout processing
+2026-01-11 00:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Traceback (most recent call last):
+  File "/Users/new/Projects/mead-security/remix2/backend/manage.py", line 22, in <module>
+    main()
+    ~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+    ~~~~~~~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/base.py", line 412, in run_from_argv
+    self.execute(*args, **cmd_options)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/base.py", line 458, in execute
+    output = self.handle(*args, **options)
+  File "/Users/new/Projects/mead-security/remix2/backend/api/management/commands/process_auto_checkouts.py", line 47, in handle
+    success = shift.perform_auto_checkout()
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 2266, in perform_auto_checkout
+    self.save()
+    ~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 1713, in save
+    self.clean()
+    ~~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 1696, in clean
+    raise ValidationError("Check-out time must be after check-in time")
+django.core.exceptions.ValidationError: ['Check-out time must be after check-in time']
+2026-01-11 00:45:01 - ERROR: Auto-checkout processing failed
+2026-01-11 00:45:01 - Auto-checkout processing finished
+2026-01-11 01:00:01 - Starting auto-checkout processing
+2026-01-11 01:00:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Traceback (most recent call last):
+  File "/Users/new/Projects/mead-security/remix2/backend/manage.py", line 22, in <module>
+    main()
+    ~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+    ~~~~~~~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/base.py", line 412, in run_from_argv
+    self.execute(*args, **cmd_options)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/base.py", line 458, in execute
+    output = self.handle(*args, **options)
+  File "/Users/new/Projects/mead-security/remix2/backend/api/management/commands/process_auto_checkouts.py", line 47, in handle
+    success = shift.perform_auto_checkout()
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 2266, in perform_auto_checkout
+    self.save()
+    ~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 1713, in save
+    self.clean()
+    ~~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 1696, in clean
+    raise ValidationError("Check-out time must be after check-in time")
+django.core.exceptions.ValidationError: ['Check-out time must be after check-in time']
+2026-01-11 01:00:03 - ERROR: Auto-checkout processing failed
+2026-01-11 01:00:03 - Auto-checkout processing finished
+2026-01-11 01:45:00 - Starting auto-checkout processing
+2026-01-11 01:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Traceback (most recent call last):
+  File "/Users/new/Projects/mead-security/remix2/backend/manage.py", line 22, in <module>
+    main()
+    ~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+    ~~~~~~~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/base.py", line 412, in run_from_argv
+    self.execute(*args, **cmd_options)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/base.py", line 458, in execute
+    output = self.handle(*args, **options)
+  File "/Users/new/Projects/mead-security/remix2/backend/api/management/commands/process_auto_checkouts.py", line 47, in handle
+    success = shift.perform_auto_checkout()
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 2266, in perform_auto_checkout
+    self.save()
+    ~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 1713, in save
+    self.clean()
+    ~~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 1696, in clean
+    raise ValidationError("Check-out time must be after check-in time")
+django.core.exceptions.ValidationError: ['Check-out time must be after check-in time']
+2026-01-11 01:45:03 - ERROR: Auto-checkout processing failed
+2026-01-11 01:45:03 - Auto-checkout processing finished
+2026-01-11 02:00:00 - Starting auto-checkout processing
+2026-01-11 02:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-11 02:00:02 - Auto-checkout processing completed successfully
+2026-01-11 02:00:02 - Auto-checkout processing finished
+2026-01-11 02:15:00 - Starting auto-checkout processing
+2026-01-11 02:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-11 02:15:02 - Auto-checkout processing completed successfully
+2026-01-11 02:15:02 - Auto-checkout processing finished
+2026-01-11 02:31:18 - Starting auto-checkout processing
+2026-01-11 02:31:18 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-11 02:31:20 - Auto-checkout processing completed successfully
+2026-01-11 02:31:20 - Auto-checkout processing finished
+2026-01-11 13:00:52 - Starting auto-checkout processing
+2026-01-11 13:00:52 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-11 13:00:54 - Auto-checkout processing completed successfully
+2026-01-11 13:00:54 - Auto-checkout processing finished
+2026-01-11 14:00:00 - Starting auto-checkout processing
+2026-01-11 14:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-11 14:00:02 - Auto-checkout processing completed successfully
+2026-01-11 14:00:02 - Auto-checkout processing finished

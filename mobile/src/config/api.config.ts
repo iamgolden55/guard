@@ -47,10 +47,11 @@ export const API_ENDPOINTS = {
   SHIFTS: {
     LIST: `${API_PREFIX}/shifts/`,
     DETAIL: (id: number) => `${API_PREFIX}/shifts/${id}/`,
-    CHECK_IN: (id: number) => `${API_PREFIX}/shifts/${id}/check-in/`,
-    CHECK_OUT: (id: number) => `${API_PREFIX}/shifts/${id}/check-out/`,
-    START_BREAK: (id: number) => `${API_PREFIX}/shifts/${id}/start-break/`,
-    END_BREAK: (id: number) => `${API_PREFIX}/shifts/${id}/end-break/`,
+    // Use underscore format to match DRF's default action URL naming
+    CHECK_IN: (id: number) => `${API_PREFIX}/shifts/${id}/check_in/`,
+    CHECK_OUT: (id: number) => `${API_PREFIX}/shifts/${id}/check_out/`,
+    START_BREAK: (id: number) => `${API_PREFIX}/shifts/${id}/start_break/`,
+    END_BREAK: (id: number) => `${API_PREFIX}/shifts/${id}/end_break/`,
     UPCOMING: `${API_PREFIX}/shifts/upcoming/`,
     ACTIVE: `${API_PREFIX}/shifts/active/`,
     COMPLETED: `${API_PREFIX}/shifts/completed/`,
