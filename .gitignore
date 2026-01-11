@@ -34,4 +34,5 @@ yarn-error.log*
 *.sw?
 
 # Playwright MCP test artifacts
-.playwright-mcp/ 
+.playwright-mcp/ frontend/dist/
+mobile/.expo/
