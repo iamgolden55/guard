@@ -17,7 +17,7 @@ const STORAGE_KEYS = {
 
 export interface SyncQueueItem {
   id: string;
-  type: 'check_in' | 'check_out' | 'incident' | 'shift_check' | 'create';
+  type: 'check_in' | 'check_out' | 'start_break' | 'end_break' | 'incident' | 'shift_check' | 'create';
   entityType: string;
   entityId: string;
   payload: any;
@@ -244,7 +244,7 @@ class DatabaseService {
       const filtered = queue.filter((item) => {
         // Keep items that don't match our criteria
         const isTargetShift = item.entityType === 'shifts' && item.entityId === shiftIdStr;
-        const isTargetType = types.includes(item.type as any);
+        const isTargetType = (types as readonly string[]).includes(item.type);
         return !(isTargetShift && isTargetType);
       });
 
