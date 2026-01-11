@@ -4,9 +4,10 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { Container, Heading1, Body } from '@components/ui';
+import { Ionicons } from '@expo/vector-icons';
+import { Container, Heading1, Body, BodySmall, Caption } from '@components/ui';
 import { useAppSelector, useAppDispatch } from '../../hooks/useRedux';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
@@ -37,6 +38,9 @@ export const WiseDashboardScreen = () => {
     capacityChecks: any[];
     toiletChecks: any[];
   } | null>(null);
+
+  // Get the next upcoming shift for display on the flip card
+  const nextUpcomingShift = upcomingShifts.length > 0 ? upcomingShifts[0] : null;
 
   // DEBUG: Log user object to diagnose first_name issue
   React.useEffect(() => {
@@ -174,6 +178,20 @@ export const WiseDashboardScreen = () => {
     navigation.navigate('ShiftDetails', { shift });
   };
 
+  const handleEndShift = () => {
+    if (activeShift) {
+      logger.info('[WiseDashboard] End shift pressed, navigating to ShiftDetails for checkout');
+      navigation.navigate('ShiftDetails', { shift: activeShift });
+    }
+  };
+
+  const handleStartShift = () => {
+    if (nextUpcomingShift) {
+      logger.info('[WiseDashboard] Start shift pressed, navigating to ShiftDetails for check-in');
+      navigation.navigate('ShiftDetails', { shift: nextUpcomingShift });
+    }
+  };
+
   return (
     <Container scrollable={false} safeArea={false} style={styles.container}>
       <ScrollView
@@ -193,7 +211,46 @@ export const WiseDashboardScreen = () => {
 
         {/* Hero Status Card with 3D Flip */}
         <View style={styles.heroSection}>
-          <HeroStatusCard activeShift={activeShift} onPress={handleCardPress} />
+          <HeroStatusCard
+            activeShift={activeShift}
+            upcomingShift={nextUpcomingShift}
+            onPress={handleCardPress}
+          />
+
+          {/* Action Buttons Below Card */}
+          {activeShift && (
+            <TouchableOpacity
+              style={styles.endShiftButton}
+              onPress={handleEndShift}
+              activeOpacity={0.8}
+            >
+              <View style={styles.endShiftIconCircle}>
+                <Ionicons name="log-out-outline" size={24} color="#D32F2F" />
+              </View>
+              <View style={styles.buttonTextContainer}>
+                <BodySmall style={styles.endShiftTitle}>End Shift</BodySmall>
+                <Caption style={styles.endShiftSubtitle}>Complete checkout with photo</Caption>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+            </TouchableOpacity>
+          )}
+
+          {!activeShift && nextUpcomingShift && (
+            <TouchableOpacity
+              style={styles.startShiftButton}
+              onPress={handleStartShift}
+              activeOpacity={0.8}
+            >
+              <View style={styles.startShiftIconCircle}>
+                <Ionicons name="log-in-outline" size={24} color="#1E88E5" />
+              </View>
+              <View style={styles.buttonTextContainer}>
+                <BodySmall style={styles.startShiftTitle}>Check In</BodySmall>
+                <Caption style={styles.startShiftSubtitle}>Start your shift at {nextUpcomingShift.venue_name}</Caption>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Stats Row with Count-up Animation */}
@@ -269,6 +326,84 @@ const styles = StyleSheet.create({
   heroSection: {
     marginBottom: spacing.lg,
     alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  // End Shift Button Styles
+  endShiftButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 16,
+    width: '100%',
+    shadowColor: '#D32F2F',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(211, 47, 47, 0.1)',
+  },
+  endShiftIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(211, 47, 47, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  endShiftTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#D32F2F',
+  },
+  endShiftSubtitle: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginTop: 2,
+  },
+  // Start Shift Button Styles
+  startShiftButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 16,
+    width: '100%',
+    shadowColor: '#1E88E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(30, 136, 229, 0.1)',
+  },
+  startShiftIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(30, 136, 229, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  startShiftTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E88E5',
+  },
+  startShiftSubtitle: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    marginTop: 2,
+  },
+  buttonTextContainer: {
+    flex: 1,
   },
   section: {
     paddingHorizontal: spacing.xl,

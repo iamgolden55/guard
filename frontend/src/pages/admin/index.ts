@@ -1,6 +1,6 @@
 import Dashboard from './Dashboard';
 import InvoiceGeneration from './InvoiceGeneration';
-import ShiftScheduling from './ShiftScheduling';
+import { ShiftSchedulingPage as ShiftScheduling } from './scheduling';
 import Settings from './Settings';
 import FinanceIntegrations from './FinanceIntegrations';
 

@@ -17,17 +17,22 @@ const CARD_HEIGHT = CARD_WIDTH / 1.586; // Credit card ratio
 
 interface HeroStatusCardProps {
   activeShift?: Shift | null;
+  upcomingShift?: Shift | null;
   onPress?: () => void;
   onFlip?: (isFlipped: boolean) => void;
 }
 
 export const HeroStatusCard: React.FC<HeroStatusCardProps> = ({
   activeShift,
+  upcomingShift,
   onPress,
   onFlip,
 }) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const flipAnim = useRef(new Animated.Value(0)).current;
+
+  // Determine card state
+  const cardState = activeShift ? 'active' : upcomingShift ? 'upcoming' : 'empty';
 
   // Calculate shift duration if active
   const getShiftDuration = () => {
@@ -43,25 +48,61 @@ export const HeroStatusCard: React.FC<HeroStatusCardProps> = ({
     return `${hours}h ${mins}m`;
   };
 
-  // Get status info
+  // Format time for upcoming shift
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+
+  // Get time until upcoming shift
+  const getTimeUntilShift = () => {
+    if (!upcomingShift?.start_time) return '';
+    const start = new Date(upcomingShift.start_time);
+    const now = new Date();
+    const diffMs = start.getTime() - now.getTime();
+
+    if (diffMs < 0) return 'Starting now';
+
+    const diffMins = Math.floor(diffMs / 60000);
+    const hours = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+
+    if (hours > 24) {
+      const days = Math.floor(hours / 24);
+      return `In ${days} day${days > 1 ? 's' : ''}`;
+    }
+    if (hours > 0) {
+      return `In ${hours}h ${mins}m`;
+    }
+    return `In ${mins}m`;
+  };
+
+  // Get status info based on card state
   const isOnBreak = activeShift?.break_start_time && !activeShift?.break_end_time;
-  const statusText = activeShift
+
+  const statusText = cardState === 'active'
     ? isOnBreak
       ? 'On Break'
       : 'Active Shift'
-    : 'No Active Shift';
+    : cardState === 'upcoming'
+      ? 'Upcoming Shift'
+      : 'No Active Shift';
 
-  const statusIcon = activeShift
+  const statusIcon = cardState === 'active'
     ? isOnBreak
       ? 'pause-circle'
       : 'checkmark-circle'
-    : 'time-outline';
+    : cardState === 'upcoming'
+      ? 'time'
+      : 'time-outline';
 
-  const gradientColors = activeShift
+  const gradientColors = cardState === 'active'
     ? isOnBreak
       ? ['#FFA726', '#FB8C00'] // Orange for break
       : ['#66BB6A', '#43A047'] // Green for active
-    : ['#78909C', '#546E7A']; // Gray for no shift
+    : cardState === 'upcoming'
+      ? ['#42A5F5', '#1E88E5'] // Blue for upcoming
+      : ['#78909C', '#546E7A']; // Gray for no shift
 
   // Flip animation effect
   useEffect(() => {
@@ -143,16 +184,26 @@ export const HeroStatusCard: React.FC<HeroStatusCardProps> = ({
                 <Caption style={styles.statusBadgeText}>{statusText.toUpperCase()}</Caption>
               </View>
 
-              {activeShift && (
+              {cardState === 'active' && (
                 <>
-                  <Heading2 style={styles.cardTitle}>{activeShift.venue_name || 'Shift'}</Heading2>
+                  <Heading2 style={styles.cardTitle}>{activeShift?.venue_name || 'Shift'}</Heading2>
                   <BodySmall style={styles.cardSubtitle}>
-                    {activeShift.role || 'Security Staff'} • {getShiftDuration()}
+                    {activeShift?.role || 'Security Staff'} • {getShiftDuration()}
                   </BodySmall>
                 </>
               )}
 
-              {!activeShift && (
+              {cardState === 'upcoming' && (
+                <>
+                  <Heading2 style={styles.cardTitle}>{upcomingShift?.venue_name || 'Shift'}</Heading2>
+                  <BodySmall style={styles.cardSubtitle}>
+                    {upcomingShift?.role || 'Security Staff'} • Starts {formatTime(upcomingShift?.start_time || '')}
+                  </BodySmall>
+                  <BodySmall style={styles.countdownText}>{getTimeUntilShift()}</BodySmall>
+                </>
+              )}
+
+              {cardState === 'empty' && (
                 <Heading3 style={styles.cardTitle}>Ready for your shift</Heading3>
               )}
             </View>
@@ -189,14 +240,22 @@ export const HeroStatusCard: React.FC<HeroStatusCardProps> = ({
             <View style={styles.statsGrid}>
               <View style={styles.statItem}>
                 <Heading3 style={styles.statNumber}>
-                  {activeShift ? getShiftDuration() : '0h'}
+                  {cardState === 'active'
+                    ? getShiftDuration()
+                    : cardState === 'upcoming'
+                      ? getTimeUntilShift()
+                      : '0h'}
                 </Heading3>
-                <Caption style={styles.statLabel}>Duration</Caption>
+                <Caption style={styles.statLabel}>
+                  {cardState === 'active' ? 'Duration' : cardState === 'upcoming' ? 'Starts' : 'Duration'}
+                </Caption>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
                 <Heading3 style={styles.statNumber}>
-                  {activeShift?.venue_name?.substring(0, 3).toUpperCase() || '—'}
+                  {activeShift?.venue_name?.substring(0, 3).toUpperCase()
+                    || upcomingShift?.venue_name?.substring(0, 3).toUpperCase()
+                    || '—'}
                 </Heading3>
                 <Caption style={styles.statLabel}>Venue</Caption>
               </View>
@@ -312,6 +371,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'rgba(255,255,255,0.85)',
     letterSpacing: 0.3,
+  },
+  countdownText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.95)',
+    marginTop: spacing.xs,
+    letterSpacing: 0.5,
   },
   footer: {
     flexDirection: 'row',
