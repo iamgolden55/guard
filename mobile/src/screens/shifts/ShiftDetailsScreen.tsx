@@ -513,7 +513,8 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
           errorMessage = ERROR_MESSAGES.NETWORK_ERROR + '\nYour check-in was saved locally and will sync when you\'re back online.';
         } else if (apiError instanceof ApiError) {
           // Show the actual server error message for better debugging
-          const serverMessage = apiError.data?.detail || apiError.statusText || 'Unknown error';
+          // Note: ApiError stores response data in .response, not .data
+          const serverMessage = apiError.response?.detail || apiError.response?.error || apiError.statusText || 'Unknown error';
 
           // Check if it's a "already checked in" error - don't save locally in that case
           if (serverMessage.toLowerCase().includes('already checked in')) {
@@ -678,8 +679,20 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
           errorTitle = 'Offline';
           errorMessage = ERROR_MESSAGES.NETWORK_ERROR + '\nYour check-out was saved locally and will sync when you\'re back online.';
         } else if (apiError instanceof ApiError) {
+          // Note: ApiError stores response data in .response, not .data
+          const serverMessage = apiError.response?.detail || apiError.response?.error || apiError.statusText || 'Unknown error';
+
+          // Check if it's a "already checked out" error - don't save locally in that case
+          if (serverMessage.toLowerCase().includes('already checked out')) {
+            errorTitle = 'Already Checked Out';
+            errorMessage = 'This shift has already been checked out.';
+            Alert.alert(errorTitle, errorMessage, [{ text: 'OK', onPress: () => navigation.goBack() }]);
+            setIsCheckingOut(false);
+            return;
+          }
+
           errorTitle = 'Server Error';
-          errorMessage = `Server error: ${apiError.statusText}\nYour check-out was saved locally and will retry automatically.`;
+          errorMessage = `Server error: ${serverMessage}\nYour check-out was saved locally and will retry automatically.`;
         }
 
         // Update Redux state with pending sync status
@@ -1106,7 +1119,8 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
         visible={showCameraModal}
         onClose={() => {
           setShowCameraModal(false);
-          setIsCheckingOut(false);
+          // Don't reset isCheckingOut here - it's reset after checkout completes
+          // Resetting here causes the signature flow to route to check-in instead of check-out
         }}
         onPhotoTaken={handlePhotoTaken}
         title={isCheckingOut ? 'Check-Out Venue Photo' : 'Venue Entrance Photo'}
