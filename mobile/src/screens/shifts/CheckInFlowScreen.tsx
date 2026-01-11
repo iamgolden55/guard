@@ -228,6 +228,12 @@ export const CheckInFlowScreen: React.FC<CheckInFlowScreenProps> = ({ route }) =
 
       logger.info('[CheckInFlow] Processing check-in...');
 
+      // 0. Clear any stale check_in entries from sync queue to prevent duplicate retries
+      const removedCount = await database.removeSyncQueueItemsForShift(shiftId, ['check_in']);
+      if (removedCount > 0) {
+        logger.info('[CheckInFlow] Cleared stale check_in entries from sync queue', { removedCount });
+      }
+
       // 1. Update shift in local database
       await database.updateShift(shiftId, {
         status: 'in_progress',

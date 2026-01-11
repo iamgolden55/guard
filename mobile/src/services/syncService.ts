@@ -228,9 +228,47 @@ class SyncService {
   }
 
   /**
+   * Check if an error indicates the action is already completed (stale entry)
+   * These errors mean we can safely remove the queue item instead of retrying
+   */
+  private isAlreadyCompletedError(error: any, actionType: SyncActionType): boolean {
+    const errorMessage = (error?.message || error?.response?.detail || '').toLowerCase();
+
+    // Check for common "already done" error patterns
+    if (actionType === 'check_in') {
+      return errorMessage.includes('already checked in') ||
+             errorMessage.includes('shift already checked in');
+    }
+    if (actionType === 'check_out') {
+      return errorMessage.includes('already checked out') ||
+             errorMessage.includes('shift already checked out');
+    }
+    if (actionType === 'start_break') {
+      return errorMessage.includes('already on break');
+    }
+    if (actionType === 'end_break') {
+      return errorMessage.includes('not on break');
+    }
+
+    return false;
+  }
+
+  /**
    * Handle action failure with exponential backoff
    */
   private async handleActionFailure(queueItem: SyncQueueItem, error: any) {
+    // Check if this is an "already done" error - if so, remove the stale entry
+    if (this.isAlreadyCompletedError(error, queueItem.type)) {
+      logger.info('[SyncService] Action already completed on server, removing stale queue entry', {
+        type: queueItem.type,
+        entityId: queueItem.entityId,
+      });
+      await database.removeSyncQueueItem(queueItem.id);
+      // Update entity sync status to synced since server confirms it's done
+      await this.updateEntitySyncStatus(queueItem.entityType, queueItem.entityId, 'synced');
+      return;
+    }
+
     const newAttempts = queueItem.attempts + 1;
 
     if (newAttempts >= this.maxRetries) {

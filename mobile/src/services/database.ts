@@ -229,6 +229,39 @@ class DatabaseService {
     }
   }
 
+  /**
+   * Remove sync queue items for a specific shift by entity ID and action types
+   * This prevents stale check_in/check_out entries from being retried after successful operations
+   */
+  async removeSyncQueueItemsForShift(
+    shiftId: number,
+    types: Array<'check_in' | 'check_out' | 'start_break' | 'end_break'>
+  ): Promise<number> {
+    try {
+      const queue = await this.getSyncQueue();
+      const shiftIdStr = shiftId.toString();
+
+      const filtered = queue.filter((item) => {
+        // Keep items that don't match our criteria
+        const isTargetShift = item.entityType === 'shifts' && item.entityId === shiftIdStr;
+        const isTargetType = types.includes(item.type as any);
+        return !(isTargetShift && isTargetType);
+      });
+
+      const removedCount = queue.length - filtered.length;
+
+      if (removedCount > 0) {
+        await AsyncStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(filtered));
+        console.log(`[Database] Removed ${removedCount} stale sync queue items for shift ${shiftId}`);
+      }
+
+      return removedCount;
+    } catch (error) {
+      console.error('[Database] Error removing sync queue items for shift:', error);
+      return 0;
+    }
+  }
+
   // ============== LAST SYNC ==============
 
   async getLastSync(): Promise<Date | null> {

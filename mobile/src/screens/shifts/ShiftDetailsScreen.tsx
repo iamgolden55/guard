@@ -35,6 +35,7 @@ import { venueTermsService } from '../../services/venueTermsService';
 import { apiService, ApiError, ApiTimeoutError, NetworkError } from '../../services/api';
 import { API_ENDPOINTS } from '../../config/api.config';
 import { syncService } from '../../services/syncService';
+import { database } from '../../services/database';
 import { logger } from '../../utils/logger';
 import { ERROR_MESSAGES } from '../../utils/constants';
 import { shiftsService } from '../../services/shiftsService';
@@ -452,6 +453,13 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
       }
 
       try {
+        // Clear any stale check_in entries from sync queue to prevent duplicate retries
+        // This fixes the bug where old queued check_in entries would be retried and fail
+        const removedCount = await database.removeSyncQueueItemsForShift(shift.id, ['check_in']);
+        if (removedCount > 0) {
+          logger.info('[ShiftDetails] Cleared stale check_in entries from sync queue', { removedCount });
+        }
+
         // Use dedicated check-in endpoint (POST) for idempotency protection
         // The dedicated endpoint rejects duplicate check-ins, preventing the bug
         // where checkout would trigger a new check-in time
@@ -614,6 +622,13 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
       }
 
       try {
+        // Clear any stale check_in or check_out entries from sync queue to prevent duplicate retries
+        // This fixes the bug where old queued check_in entries would be retried when trying to check out
+        const removedCount = await database.removeSyncQueueItemsForShift(shift.id, ['check_in', 'check_out']);
+        if (removedCount > 0) {
+          logger.info('[ShiftDetails] Cleared stale sync queue entries before check-out', { removedCount });
+        }
+
         // Use dedicated POST endpoint for checkout (not generic PATCH)
         const checkOutPayload = {
           latitude: currentLocation.latitude,
