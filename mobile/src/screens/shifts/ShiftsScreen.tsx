@@ -81,16 +81,20 @@ export const ShiftsScreen = () => {
     }, [dispatch, user?.id])
   );
 
-  // Combine all shifts
+  // Combine all shifts with priority ordering:
+  // 1. Active shift always first
+  // 2. Upcoming shifts (soonest first - already sorted in Redux)
+  // 3. Past scheduled shifts (missed - most recent first)
+  // 4. Completed shifts (most recent first)
   const allShifts = useMemo(() => {
     const combined: Shift[] = [];
 
-    // Add active shift first
+    // Add active shift first (highest priority)
     if (activeShift) {
       combined.push(activeShift);
     }
 
-    // Add upcoming shifts
+    // Add upcoming shifts (already sorted soonest first in Redux)
     combined.push(...upcomingShifts);
 
     // Add past scheduled shifts (missed/overdue)
@@ -99,10 +103,8 @@ export const ShiftsScreen = () => {
     // Add completed shifts
     combined.push(...completedShifts);
 
-    // Sort by start time (most recent first)
-    return combined.sort((a, b) => {
-      return new Date(b.start_time).getTime() - new Date(a.start_time).getTime();
-    });
+    // DO NOT re-sort - preserve priority order established above
+    return combined;
   }, [activeShift, upcomingShifts, pastScheduledShifts, completedShifts]);
 
   // Filter shifts based on active filter
