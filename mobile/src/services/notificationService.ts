@@ -159,40 +159,39 @@ class NotificationService {
    */
   async registerPushToken(): Promise<string | null> {
     try {
-      // Skip push token registration in Expo Go (not supported on Android SDK 53+)
-      const isExpoGo = Constants.executionEnvironment === 'storeClient';
-      if (isExpoGo && Platform.OS === 'android') {
-        console.log('[Notifications] 📱 Running in Expo Go - remote push not available');
-        console.log('[Notifications] ✅ Local shift reminders will work offline!');
-        console.log('[Notifications] 💡 Use a development build for remote push notifications');
-        return null;
-      }
+      console.log('[Notifications] 🔄 Starting push token registration...');
+      console.log('[Notifications] Environment:', Constants.executionEnvironment);
+      console.log('[Notifications] Platform:', Platform.OS);
+      console.log('[Notifications] Project ID:', API_CONFIG.EXPO_PROJECT_ID);
+      console.log('[Notifications] Is Device:', Device.isDevice);
 
       // Skip push token registration if no valid project ID configured
-      // This is expected in development - local notifications will still work!
       if (!API_CONFIG.EXPO_PROJECT_ID || API_CONFIG.EXPO_PROJECT_ID === 'your-expo-project-id') {
-        console.log('[Notifications] Skipping push token registration (no project ID configured)');
+        console.log('[Notifications] ⏭️ Skipping push token registration (no project ID configured)');
         console.log('[Notifications] ✅ Local notifications will still work!');
         return null;
       }
 
       if (!Device.isDevice) {
-        console.log('[Notifications] Push tokens only work on physical devices (simulator detected)');
+        console.log('[Notifications] ⏭️ Push tokens only work on physical devices (simulator detected)');
         return null;
       }
 
       // Check permissions first
       const hasPermission = await this.hasPermissions();
+      console.log('[Notifications] Has permission:', hasPermission);
       if (!hasPermission) {
-        console.warn('[Notifications] Cannot register push token without permissions');
+        console.warn('[Notifications] ⏭️ Cannot register push token without permissions');
         return null;
       }
 
       // Get Expo push token
+      console.log('[Notifications] 🔑 Requesting Expo push token...');
       const tokenData = await Notifications.getExpoPushTokenAsync({
         projectId: API_CONFIG.EXPO_PROJECT_ID,
       });
       const token = tokenData.data;
+      console.log('[Notifications] 🔑 Got token:', token);
 
       this.pushToken = token;
 
@@ -200,13 +199,13 @@ class NotificationService {
       await AsyncStorage.setItem(STORAGE_KEY.PUSH_TOKEN, token);
 
       // Register token with backend
+      console.log('[Notifications] 📤 Registering token with backend...');
       await this.registerTokenWithBackend(token);
 
-      console.log('[Notifications] ✅ Push token registered:', token);
+      console.log('[Notifications] ✅ Push token registered successfully!');
       return token;
-    } catch (error) {
-      // Don't spam console with errors - this is expected without valid project ID
-      console.log('[Notifications] Push token registration skipped');
+    } catch (error: any) {
+      console.error('[Notifications] ❌ Push token registration failed:', error?.message || error);
       console.log('[Notifications] ✅ Local notifications will still work!');
       return null;
     }
@@ -217,18 +216,22 @@ class NotificationService {
    */
   private async registerTokenWithBackend(token: string): Promise<void> {
     try {
-      await api.post('/api/v1/notifications/devices/', {
+      const payload = {
         token,
         platform: Platform.OS,
         device_id: Device.osInternalBuildId || 'unknown',
-      });
-      console.log('Push token registered with backend successfully');
+      };
+      console.log('[Notifications] 📤 Sending to backend:', JSON.stringify(payload));
+
+      const response = await api.post('/api/v1/notifications/devices/', payload);
+      console.log('[Notifications] ✅ Backend registration successful:', response);
     } catch (error: any) {
       // Handle duplicate token gracefully (HTTP 400)
       if (error?.statusCode === 400) {
-        console.log('[Notifications] Push token already registered (skipping)');
+        console.log('[Notifications] ℹ️ Push token already registered (skipping)');
       } else {
-        console.error('Error registering token with backend:', error);
+        console.error('[Notifications] ❌ Backend registration failed:', error?.message || error);
+        console.error('[Notifications] Error details:', JSON.stringify(error));
       }
       // Don't throw - local notifications will still work
     }

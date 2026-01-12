@@ -2333,21 +2333,27 @@ class SNSDeviceTokenSerializer(serializers.ModelSerializer):
         """Create or update device token for the user"""
         user = self.context['request'].user
         token = validated_data['token']
-        
-        # Check if token already exists for this user
-        existing_token = SNSDeviceToken.objects.filter(
-            user=user,
-            token=token
-        ).first()
-        
+
+        # Check if token already exists (for any user)
+        # A device can only be registered to one user at a time
+        existing_token = SNSDeviceToken.objects.filter(token=token).first()
+
         if existing_token:
-            # Update existing token
+            # Update existing token - reassign to current user if different
+            # This handles the case where a device was previously used by another user
+            if existing_token.user != user:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(
+                    f"Reassigning device token from user {existing_token.user_id} to user {user.id}"
+                )
+            existing_token.user = user
             existing_token.is_active = True
             existing_token.platform = validated_data.get('platform', existing_token.platform)
             existing_token.device_id = validated_data.get('device_id', existing_token.device_id)
             existing_token.activate()
             return existing_token
-        
+
         # Create new token
         validated_data['user'] = user
         return super().create(validated_data)
