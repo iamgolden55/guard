@@ -1,7 +1,9 @@
 import datetime
 import logging
+import re
 import uuid
 from decimal import Decimal
+from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -2730,21 +2732,41 @@ class FileUploadView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
+    def sanitize_filename(self, filename):
+        """
+        Sanitize filename by replacing spaces and special characters.
+        Preserves the file extension.
+        """
+        # Split filename and extension
+        name, ext = os.path.splitext(filename)
+        # Replace spaces with underscores
+        name = name.replace(' ', '_')
+        # Remove any other problematic characters (keep alphanumeric, underscores, hyphens, dots)
+        name = re.sub(r'[^\w\-.]', '_', name)
+        # Remove multiple consecutive underscores
+        name = re.sub(r'_+', '_', name)
+        # Strip leading/trailing underscores
+        name = name.strip('_')
+        return f"{name}{ext}"
+
     def post(self, request, format=None):
         file_obj = request.FILES.get('file')
         if not file_obj:
             return Response({'error': 'No file provided.'}, status=400)
+        # Sanitize filename to remove spaces and special characters
+        sanitized_filename = self.sanitize_filename(file_obj.name)
         # Save the file to MEDIA_ROOT/sia_licenses/
         upload_dir = 'sia_licenses/'
-        file_path = os.path.join(upload_dir, file_obj.name)
+        file_path = os.path.join(upload_dir, sanitized_filename)
         path = default_storage.save(file_path, ContentFile(file_obj.read()))
-        # Build absolute URL
+        # Build absolute URL with proper URL encoding for the path
+        encoded_path = quote(path, safe='/')
         if settings.MEDIA_URL.startswith('http'):
-            file_url = settings.MEDIA_URL + path
+            file_url = settings.MEDIA_URL + encoded_path
         else:
             scheme = request.scheme
             host = request.get_host()
-            file_url = f"{scheme}://{host}{settings.MEDIA_URL}{path}"
+            file_url = f"{scheme}://{host}{settings.MEDIA_URL}{encoded_path}"
         return Response({'url': file_url}, status=201)
 
 
