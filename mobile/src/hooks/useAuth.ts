@@ -43,6 +43,11 @@ export const useAuth = () => {
           })
         );
 
+        // Process any pending token deactivations from failed logouts (non-blocking)
+        notificationService.processPendingDeactivation().catch((error) => {
+          console.log('[useAuth] Pending deactivation processing failed (non-critical):', error);
+        });
+
         // Register push notification token (non-blocking)
         notificationService.registerPushToken().catch((error) => {
           console.log('[useAuth] Push token registration failed (non-critical):', error);
@@ -84,6 +89,11 @@ export const useAuth = () => {
           refreshToken: tokens.refresh,
         })
       );
+
+      // Process any pending token deactivations from failed logouts (non-blocking)
+      notificationService.processPendingDeactivation().catch((error) => {
+        console.log('[useAuth] Pending deactivation processing failed (non-critical):', error);
+      });
 
       // Register push notification token (non-blocking)
       notificationService.registerPushToken().catch((error) => {
@@ -190,6 +200,11 @@ export const useAuth = () => {
         accessToken,
         refreshToken,
       }));
+
+      // Process any pending token deactivations from failed logouts (non-blocking)
+      notificationService.processPendingDeactivation().catch((error) => {
+        console.log('[useAuth] Pending deactivation processing failed (non-critical):', error);
+      });
 
       // Register push notification token (non-blocking)
       notificationService.registerPushToken().catch((error) => {
