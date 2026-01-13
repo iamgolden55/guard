@@ -49,18 +49,40 @@ class AccountingProviderViewSet(viewsets.ReadOnlyModelViewSet):
 
 class ProviderConnectionViewSet(viewsets.ModelViewSet):
     """ViewSet for provider connections"""
-    
+
     serializer_class = ProviderConnectionSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
-        """Filter connections by user permissions"""
+        """Filter connections by user's company (multi-tenant isolation)"""
         user = self.request.user
-        if hasattr(user, 'role') and user.role in ['admin']:
-            return ProviderConnection.objects.all()
-        else:
-            # Non-admin users can only see connections they created
-            return ProviderConnection.objects.filter(created_by=user)
+
+        # Get current company from tenant middleware or user's active membership
+        current_company_id = getattr(self.request, 'current_company_id', None)
+
+        if current_company_id:
+            # Filter by users who belong to the same company
+            return ProviderConnection.objects.filter(
+                created_by__company_memberships__company_id=current_company_id,
+                created_by__company_memberships__is_active=True
+            ).distinct().select_related('provider', 'created_by')
+
+        # Fallback: If no company context, filter by user's companies
+        if hasattr(user, 'company_memberships'):
+            user_company_ids = user.company_memberships.filter(
+                is_active=True
+            ).values_list('company_id', flat=True)
+
+            if user_company_ids:
+                return ProviderConnection.objects.filter(
+                    created_by__company_memberships__company_id__in=user_company_ids,
+                    created_by__company_memberships__is_active=True
+                ).distinct().select_related('provider', 'created_by')
+
+        # Final fallback: Only show connections created by the current user
+        return ProviderConnection.objects.filter(
+            created_by=user
+        ).select_related('provider', 'created_by')
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -187,122 +209,166 @@ class ProviderConnectionViewSet(viewsets.ModelViewSet):
             )
 
 
+def get_user_company_connection_filter(request):
+    """
+    Helper to get company-filtered connections for the current user.
+    Returns a queryset of connection IDs the user has access to.
+    """
+    user = request.user
+    current_company_id = getattr(request, 'current_company_id', None)
+
+    if current_company_id:
+        return ProviderConnection.objects.filter(
+            created_by__company_memberships__company_id=current_company_id,
+            created_by__company_memberships__is_active=True
+        ).values_list('id', flat=True)
+
+    if hasattr(user, 'company_memberships'):
+        user_company_ids = user.company_memberships.filter(
+            is_active=True
+        ).values_list('company_id', flat=True)
+
+        if user_company_ids:
+            return ProviderConnection.objects.filter(
+                created_by__company_memberships__company_id__in=user_company_ids,
+                created_by__company_memberships__is_active=True
+            ).values_list('id', flat=True)
+
+    # Fallback: only connections created by current user
+    return ProviderConnection.objects.filter(created_by=user).values_list('id', flat=True)
+
+
 class AccountMappingViewSet(viewsets.ModelViewSet):
     """ViewSet for account mappings"""
-    
+
     serializer_class = AccountMappingSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
+        # Get company-filtered connections
+        allowed_connection_ids = get_user_company_connection_filter(self.request)
+
         connection_id = self.request.query_params.get('connection')
-        queryset = AccountMapping.objects.all()
-        
+        queryset = AccountMapping.objects.filter(connection_id__in=allowed_connection_ids)
+
         if connection_id:
             queryset = queryset.filter(connection_id=connection_id)
-        
+
         return queryset.select_related('connection')
 
 
 class VATCodeMappingViewSet(viewsets.ModelViewSet):
     """ViewSet for VAT code mappings"""
-    
+
     serializer_class = VATCodeMappingSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
+        allowed_connection_ids = get_user_company_connection_filter(self.request)
+
         connection_id = self.request.query_params.get('connection')
-        queryset = VATCodeMapping.objects.all()
-        
+        queryset = VATCodeMapping.objects.filter(connection_id__in=allowed_connection_ids)
+
         if connection_id:
             queryset = queryset.filter(connection_id=connection_id)
-        
+
         return queryset.select_related('connection')
 
 
 class EarningsTypeMappingViewSet(viewsets.ModelViewSet):
     """ViewSet for earnings type mappings"""
-    
+
     serializer_class = EarningsTypeMappingSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
+        allowed_connection_ids = get_user_company_connection_filter(self.request)
+
         connection_id = self.request.query_params.get('connection')
-        queryset = EarningsTypeMapping.objects.all()
-        
+        queryset = EarningsTypeMapping.objects.filter(connection_id__in=allowed_connection_ids)
+
         if connection_id:
             queryset = queryset.filter(connection_id=connection_id)
-        
+
         return queryset.select_related('connection')
 
 
 class ContactMappingViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for contact mappings (read-only, created automatically)"""
-    
+
     serializer_class = ContactMappingSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
+        allowed_connection_ids = get_user_company_connection_filter(self.request)
+
         connection_id = self.request.query_params.get('connection')
-        queryset = ContactMapping.objects.all()
-        
+        queryset = ContactMapping.objects.filter(connection_id__in=allowed_connection_ids)
+
         if connection_id:
             queryset = queryset.filter(connection_id=connection_id)
-        
+
         return queryset.select_related('connection', 'local_user')
 
 
 class InvoiceExportViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for invoice exports"""
-    
+
     serializer_class = InvoiceExportSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
+        allowed_connection_ids = get_user_company_connection_filter(self.request)
+
         connection_id = self.request.query_params.get('connection')
-        queryset = InvoiceExport.objects.all()
-        
+        queryset = InvoiceExport.objects.filter(connection_id__in=allowed_connection_ids)
+
         if connection_id:
             queryset = queryset.filter(connection_id=connection_id)
-        
+
         return queryset.select_related('connection', 'local_invoice', 'exported_by')
 
 
 class PayrollExportViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for payroll exports"""
-    
+
     serializer_class = PayrollExportSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
+        allowed_connection_ids = get_user_company_connection_filter(self.request)
+
         connection_id = self.request.query_params.get('connection')
-        queryset = PayrollExport.objects.all()
-        
+        queryset = PayrollExport.objects.filter(connection_id__in=allowed_connection_ids)
+
         if connection_id:
             queryset = queryset.filter(connection_id=connection_id)
-        
+
         return queryset.select_related('connection', 'exported_by').prefetch_related('staff_users')
 
 
 class SyncLogViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for sync logs"""
-    
+
     serializer_class = SyncLogSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_queryset(self):
+        allowed_connection_ids = get_user_company_connection_filter(self.request)
+
         connection_id = self.request.query_params.get('connection')
         operation = self.request.query_params.get('operation')
         level = self.request.query_params.get('level')
-        
-        queryset = SyncLog.objects.all()
-        
+
+        queryset = SyncLog.objects.filter(connection_id__in=allowed_connection_ids)
+
         if connection_id:
             queryset = queryset.filter(connection_id=connection_id)
         if operation:
             queryset = queryset.filter(operation=operation)
         if level:
             queryset = queryset.filter(level=level)
-        
+
         return queryset.select_related('connection', 'created_by')[:100]  # Limit to recent 100
 
 

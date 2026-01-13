@@ -195,7 +195,8 @@ class FinanceIntegrationsService {
   
   // Create axios instance with auth token
   private createAuthenticatedRequest = () => {
-    const token = localStorage.getItem('token');
+    // Use 'access_token' to match the key used by AuthContext and api.ts
+    const token = localStorage.getItem('access_token');
     return axios.create({
       baseURL: this.baseUrl,
       headers: {
@@ -203,6 +204,7 @@ class FinanceIntegrationsService {
         ...(token && { 'Authorization': `Bearer ${token}` })
       },
       timeout: 15000,
+      withCredentials: true, // Enable credentials for cookie-based auth fallback
     });
   };
 
