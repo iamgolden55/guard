@@ -344,12 +344,12 @@ class NotificationService {
         );
         console.log('[Notifications] ✅ Pending token deactivation completed');
       } catch (error: any) {
-        // If it fails with 404 or success, the token is already gone/reassigned
-        if (error?.statusCode === 404 || error?.statusCode === 200) {
-          console.log('[Notifications] ℹ️ Token already deactivated or reassigned');
+        // 404 means token doesn't exist - already deactivated or reassigned to another user
+        if (error?.statusCode === 404) {
+          console.log('[Notifications] ℹ️ Token already deactivated or reassigned (404)');
         } else {
+          // Other errors - keep the pending record to retry on next login
           console.warn('[Notifications] ⚠️ Pending deactivation failed:', error?.message);
-          // Keep the pending record for next attempt
           return;
         }
       }
