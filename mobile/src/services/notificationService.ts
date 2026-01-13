@@ -238,6 +238,44 @@ class NotificationService {
   }
 
   /**
+   * Unregister push token from backend on logout
+   * This prevents notifications from being sent to a device after the user logs out
+   */
+  async unregisterPushToken(): Promise<void> {
+    try {
+      // Get stored token
+      const token = await AsyncStorage.getItem(STORAGE_KEY.PUSH_TOKEN);
+
+      if (!token) {
+        console.log('[Notifications] No push token to unregister');
+        return;
+      }
+
+      console.log('[Notifications] 🔄 Unregistering push token on logout...');
+
+      // Call backend to deactivate the token
+      try {
+        await api.post('/api/v1/notifications/devices/deactivate_by_token/', {
+          token,
+        });
+        console.log('[Notifications] ✅ Push token deactivated on backend');
+      } catch (error: any) {
+        // Log but don't throw - logout should still proceed
+        console.warn('[Notifications] ⚠️ Failed to deactivate token on backend:', error?.message || error);
+      }
+
+      // Clear local storage
+      await AsyncStorage.removeItem(STORAGE_KEY.PUSH_TOKEN);
+      this.pushToken = null;
+
+      console.log('[Notifications] ✅ Push token unregistered successfully');
+    } catch (error: any) {
+      console.error('[Notifications] ❌ Error unregistering push token:', error?.message || error);
+      // Don't throw - logout should still proceed
+    }
+  }
+
+  /**
    * Schedule shift reminder notifications
    * Creates two notifications: advance (3h before) and final (45min before)
    * WITH DEDUPLICATION: Checks if notifications already exist before scheduling

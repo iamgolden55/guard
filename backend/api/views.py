@@ -6254,6 +6254,41 @@ class SNSDeviceTokenViewSet(viewsets.ModelViewSet):
         token.deactivate()
         return Response({'status': 'Device token deactivated'})
 
+    @action(detail=False, methods=['post'])
+    def deactivate_by_token(self, request):
+        """
+        Deactivate a device token by its value.
+
+        This is used during logout to deactivate the device's push token
+        without needing to know the database ID.
+
+        Request body:
+        {
+            "token": "ExponentPushToken[xxx]"
+        }
+        """
+        token_value = request.data.get('token')
+        if not token_value:
+            return Response(
+                {'error': 'Token value is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Find and deactivate the token for the current user
+        device_token = SNSDeviceToken.objects.filter(
+            token=token_value,
+            user=request.user
+        ).first()
+
+        if device_token:
+            device_token.deactivate()
+            logger.info(f"Deactivated device token {device_token.id} for user {request.user.id} on logout")
+            return Response({'status': 'Device token deactivated'})
+        else:
+            # Token not found for this user - might already be reassigned or doesn't exist
+            # This is not an error condition - just means nothing to deactivate
+            return Response({'status': 'No matching token found for user'})
+
 
 class NotificationPreferencesViewSet(viewsets.ModelViewSet):
     """
