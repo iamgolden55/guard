@@ -179,11 +179,16 @@ class SNSDeviceTokenViewSetTests(APITestCase):
         response = self.client.get('/api/v1/notifications/devices/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # API returns paginated response with 'count' and 'results'
+        results = response.data.get('results', response.data)
+        count = response.data.get('count', len(results))
+
         # User1 has 2 tokens
-        self.assertEqual(len(response.data), 2)
+        self.assertEqual(count, 2)
+        self.assertEqual(len(results), 2)
 
         # Verify only user1's tokens are returned
-        token_values = [t['token'] for t in response.data]
+        token_values = [t['token'] for t in results]
         self.assertIn('ExponentPushToken[test-token-user1-device1]', token_values)
         self.assertIn('ExponentPushToken[test-token-user1-device2]', token_values)
         self.assertNotIn('ExponentPushToken[test-token-user2-device1]', token_values)
