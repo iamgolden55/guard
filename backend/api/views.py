@@ -29,6 +29,8 @@ from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django.db import models, IntegrityError
 import os
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
@@ -6253,6 +6255,75 @@ class SNSDeviceTokenViewSet(viewsets.ModelViewSet):
         token = self.get_object()
         token.deactivate()
         return Response({'status': 'Device token deactivated'})
+
+    @swagger_auto_schema(
+        operation_description="Deactivate a device push token by its value. Used during logout to prevent notifications being sent to the device after user logs out.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['token'],
+            properties={
+                'token': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='The Expo push token to deactivate',
+                    example='ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]'
+                ),
+            },
+        ),
+        responses={
+            200: openapi.Response(
+                description='Token deactivated successfully',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'status': openapi.Schema(type=openapi.TYPE_STRING, example='Device token deactivated'),
+                    },
+                ),
+            ),
+            400: openapi.Response(
+                description='Token value is required',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING, example='Token value is required'),
+                    },
+                ),
+            ),
+        },
+    )
+    @action(detail=False, methods=['post'])
+    def deactivate_by_token(self, request):
+        """
+        Deactivate a device token by its value.
+
+        This is used during logout to deactivate the device's push token
+        without needing to know the database ID.
+
+        Request body:
+        {
+            "token": "ExponentPushToken[xxx]"
+        }
+        """
+        token_value = request.data.get('token')
+        if not token_value:
+            return Response(
+                {'error': 'Token value is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Find and deactivate the token for the current user
+        device_token = SNSDeviceToken.objects.filter(
+            token=token_value,
+            user=request.user
+        ).first()
+
+        if device_token:
+            device_token.deactivate()
+            logger.info(f"Deactivated device token {device_token.id} for user {request.user.id} on logout")
+            return Response({'status': 'Device token deactivated'})
+        else:
+            # Token not found for this user - might already be reassigned or doesn't exist
+            # This is not an error condition - just means nothing to deactivate
+            return Response({'status': 'No matching token found for user'})
 
 
 class NotificationPreferencesViewSet(viewsets.ModelViewSet):

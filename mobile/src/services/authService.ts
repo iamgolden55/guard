@@ -3,6 +3,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 import { API_ENDPOINTS, getAuthHeaders } from '../config/api.config';
+import notificationService from './notificationService';
 
 export interface LoginCredentials {
   username: string;
@@ -129,9 +130,18 @@ class AuthService {
   }
 
   /**
-   * Logout - clear all stored data
+   * Logout - clear all stored data and unregister push token
    */
   async logout(): Promise<void> {
+    // Unregister push token to prevent notifications being sent to this device
+    // This must be done BEFORE clearing tokens (needs auth token for API call)
+    try {
+      await notificationService.unregisterPushToken();
+    } catch (error) {
+      // Log but don't prevent logout
+      console.warn('[AuthService] Failed to unregister push token:', error);
+    }
+
     await SecureStore.deleteItemAsync('accessToken');
     await SecureStore.deleteItemAsync('refreshToken');
     await SecureStore.deleteItemAsync('biometricEnabled');

@@ -2320,7 +2320,7 @@ class CompanyIntegrationSerializer(serializers.ModelSerializer):
 
 class SNSDeviceTokenSerializer(serializers.ModelSerializer):
     """Serializer for device push notification tokens"""
-    
+
     class Meta:
         model = SNSDeviceToken
         fields = [
@@ -2328,6 +2328,11 @@ class SNSDeviceTokenSerializer(serializers.ModelSerializer):
             'endpoint_arn', 'is_active', 'created_at', 'updated_at', 'last_used_at'
         ]
         read_only_fields = ['id', 'user', 'endpoint_arn', 'created_at', 'updated_at', 'last_used_at']
+        # Remove auto-generated UniqueValidator for token field
+        # We handle uniqueness manually in create() to support token reassignment
+        extra_kwargs = {
+            'token': {'validators': []}
+        }
     
     def create(self, validated_data):
         """Create or update device token for the user"""

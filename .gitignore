@@ -36,3 +36,12 @@ yarn-error.log*
 # Playwright MCP test artifacts
 .playwright-mcp/ frontend/dist/
 mobile/.expo/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/

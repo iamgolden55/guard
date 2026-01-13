@@ -238,6 +238,129 @@ class NotificationService {
   }
 
   /**
+   * Unregister push token from backend on logout
+   * This prevents notifications from being sent to a device after the user logs out
+   */
+  async unregisterPushToken(): Promise<void> {
+    try {
+      // Get stored token
+      const token = await AsyncStorage.getItem(STORAGE_KEY.PUSH_TOKEN);
+
+      if (!token) {
+        console.log('[Notifications] No push token to unregister');
+        return;
+      }
+
+      console.log('[Notifications] 🔄 Unregistering push token on logout...');
+
+      // Call backend to deactivate the token with retry logic
+      // IMPORTANT: Pass retryOnAuth=false to prevent infinite recursion:
+      // api.post 401 → refreshToken → logout → unregisterPushToken → api.post 401 → ...
+      const maxRetries = 3;
+      let lastError: any = null;
+      let deactivationSucceeded = false;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          // Use retryOnAuth=false to prevent recursion during logout
+          await api.post(
+            '/api/v1/notifications/devices/deactivate_by_token/',
+            { token },
+            30000, // timeout
+            false // retryOnAuth - CRITICAL: must be false to prevent infinite loop
+          );
+          console.log('[Notifications] ✅ Push token deactivated on backend');
+          deactivationSucceeded = true;
+          lastError = null;
+          break;
+        } catch (error: any) {
+          lastError = error;
+          // Don't retry on 401 - the user is logging out anyway
+          if (error?.statusCode === 401) {
+            console.log('[Notifications] ⚠️ Token expired during logout, skipping deactivation');
+            // Mark as "succeeded" for cleanup purposes - the token will be
+            // reassigned when another user logs in on this device
+            deactivationSucceeded = true;
+            break;
+          }
+          console.warn(
+            `[Notifications] ⚠️ Failed to deactivate token (attempt ${attempt}/${maxRetries}):`,
+            error?.message || error
+          );
+
+          // Wait before retrying (exponential backoff: 500ms, 1000ms, 2000ms)
+          if (attempt < maxRetries) {
+            const delay = 500 * Math.pow(2, attempt - 1);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+        }
+      }
+
+      if (deactivationSucceeded) {
+        // Clear local storage only on success to prevent stale token issues
+        await AsyncStorage.removeItem(STORAGE_KEY.PUSH_TOKEN);
+        this.pushToken = null;
+        console.log('[Notifications] ✅ Push token unregistered successfully');
+      } else {
+        // Backend deactivation failed - store pending deactivation for next login
+        console.warn('[Notifications] ⚠️ All retry attempts failed, storing for later cleanup');
+        await AsyncStorage.setItem(
+          '@pending_token_deactivation',
+          JSON.stringify({ token, timestamp: Date.now() })
+        );
+      }
+    } catch (error: any) {
+      console.error('[Notifications] ❌ Error unregistering push token:', error?.message || error);
+      // Don't throw - logout should still proceed
+    }
+  }
+
+  /**
+   * Check for and process any pending token deactivations from failed logouts
+   * Should be called during app initialization after login
+   */
+  async processPendingDeactivation(): Promise<void> {
+    try {
+      const pendingData = await AsyncStorage.getItem('@pending_token_deactivation');
+      if (!pendingData) return;
+
+      const { token, timestamp } = JSON.parse(pendingData);
+
+      // Only process if less than 7 days old
+      const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+      if (Date.now() - timestamp > maxAge) {
+        await AsyncStorage.removeItem('@pending_token_deactivation');
+        return;
+      }
+
+      console.log('[Notifications] 🔄 Processing pending token deactivation...');
+
+      try {
+        await api.post(
+          '/api/v1/notifications/devices/deactivate_by_token/',
+          { token },
+          30000,
+          false // Don't retry on 401
+        );
+        console.log('[Notifications] ✅ Pending token deactivation completed');
+      } catch (error: any) {
+        // 404 means token doesn't exist - already deactivated or reassigned to another user
+        if (error?.statusCode === 404) {
+          console.log('[Notifications] ℹ️ Token already deactivated or reassigned (404)');
+        } else {
+          // Other errors - keep the pending record to retry on next login
+          console.warn('[Notifications] ⚠️ Pending deactivation failed:', error?.message);
+          return;
+        }
+      }
+
+      await AsyncStorage.removeItem('@pending_token_deactivation');
+    } catch (error) {
+      console.error('[Notifications] ❌ Error processing pending deactivation:', error);
+    }
+  }
+
+  /**
    * Schedule shift reminder notifications
    * Creates two notifications: advance (3h before) and final (45min before)
    * WITH DEDUPLICATION: Checks if notifications already exist before scheduling
