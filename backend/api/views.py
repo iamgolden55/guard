@@ -29,6 +29,8 @@ from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django.db import models, IntegrityError
 import os
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
@@ -6254,6 +6256,40 @@ class SNSDeviceTokenViewSet(viewsets.ModelViewSet):
         token.deactivate()
         return Response({'status': 'Device token deactivated'})
 
+    @swagger_auto_schema(
+        operation_description="Deactivate a device push token by its value. Used during logout to prevent notifications being sent to the device after user logs out.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['token'],
+            properties={
+                'token': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='The Expo push token to deactivate',
+                    example='ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]'
+                ),
+            },
+        ),
+        responses={
+            200: openapi.Response(
+                description='Token deactivated successfully',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'status': openapi.Schema(type=openapi.TYPE_STRING, example='Device token deactivated'),
+                    },
+                ),
+            ),
+            400: openapi.Response(
+                description='Token value is required',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING, example='Token value is required'),
+                    },
+                ),
+            ),
+        },
+    )
     @action(detail=False, methods=['post'])
     def deactivate_by_token(self, request):
         """

@@ -253,18 +253,38 @@ class NotificationService {
 
       console.log('[Notifications] 🔄 Unregistering push token on logout...');
 
-      // Call backend to deactivate the token
-      try {
-        await api.post('/api/v1/notifications/devices/deactivate_by_token/', {
-          token,
-        });
-        console.log('[Notifications] ✅ Push token deactivated on backend');
-      } catch (error: any) {
-        // Log but don't throw - logout should still proceed
-        console.warn('[Notifications] ⚠️ Failed to deactivate token on backend:', error?.message || error);
+      // Call backend to deactivate the token with retry logic
+      const maxRetries = 3;
+      let lastError: any = null;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          await api.post('/api/v1/notifications/devices/deactivate_by_token/', {
+            token,
+          });
+          console.log('[Notifications] ✅ Push token deactivated on backend');
+          lastError = null;
+          break;
+        } catch (error: any) {
+          lastError = error;
+          console.warn(
+            `[Notifications] ⚠️ Failed to deactivate token (attempt ${attempt}/${maxRetries}):`,
+            error?.message || error
+          );
+
+          // Wait before retrying (exponential backoff: 500ms, 1000ms, 2000ms)
+          if (attempt < maxRetries) {
+            const delay = 500 * Math.pow(2, attempt - 1);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+        }
       }
 
-      // Clear local storage
+      if (lastError) {
+        console.warn('[Notifications] ⚠️ All retry attempts failed, proceeding with logout anyway');
+      }
+
+      // Clear local storage regardless of backend result
       await AsyncStorage.removeItem(STORAGE_KEY.PUSH_TOKEN);
       this.pushToken = null;
 
