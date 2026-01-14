@@ -85,6 +85,9 @@ CSRF_TRUSTED_ORIGINS = [
     'http://10.0.4.21:19000',
     'http://10.0.4.27:8081',
     'http://10.0.4.27:19000',
+    # Production admin dashboard
+    'https://admin.meadsecurity.co.uk',
+    'https://guard-ten.vercel.app',
 ]
 
 ROOT_URLCONF = 'core.urls'
@@ -217,6 +220,8 @@ CORS_ALLOWED_ORIGINS = [
     "https://127.0.0.1:3001",
     # Production frontend (Vercel)
     "https://guard-ten.vercel.app",
+    # Production admin dashboard (custom domain)
+    "https://admin.meadsecurity.co.uk",
     # Mobile app development
     "http://10.0.4.21:8081",
     "http://10.0.4.21:8082",
@@ -226,6 +231,28 @@ CORS_ALLOWED_ORIGINS = [
     "http://10.0.4.27:8082",
     "http://10.0.4.27:19000",
     "http://10.0.4.27:19001",
+]
+
+# CORS headers and methods configuration
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
 ]
 
 # Add any additional production origins from environment
