@@ -548,12 +548,14 @@ if not DEBUG:
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
 
-    # Update CORS for production - parse from environment
+    # Update CORS for production - extend existing list with environment values
     cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', '')
     if cors_origins:
-        CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins.split(',') if origin.strip()]
+        env_origins = [origin.strip() for origin in cors_origins.split(',') if origin.strip()]
+        CORS_ALLOWED_ORIGINS = list(set(CORS_ALLOWED_ORIGINS + env_origins))
 
-    # Update CSRF trusted origins for production
+    # Update CSRF trusted origins for production - extend existing list
     csrf_origins = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
     if csrf_origins:
-        CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins.split(',') if origin.strip()]
+        env_csrf_origins = [origin.strip() for origin in csrf_origins.split(',') if origin.strip()]
+        CSRF_TRUSTED_ORIGINS = list(set(CSRF_TRUSTED_ORIGINS + env_csrf_origins))
