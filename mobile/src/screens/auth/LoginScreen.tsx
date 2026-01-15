@@ -28,12 +28,15 @@ import Constants from 'expo-constants';
 
 import { Logo } from '@components/Logo';
 import { useAuth } from '../../hooks/useAuth';
+import { useAppDispatch } from '../../hooks/useRedux';
+import { setCredentials } from '../../store/slices/authSlice';
 import { logger } from '../../utils/logger';
 import { ApiError, ApiTimeoutError, NetworkError } from '../../services/api';
 import { ERROR_MESSAGES } from '../../utils/constants';
 import type { AuthStackParamList } from '../../types/navigation';
 import socialAuthService from '../../services/socialAuthService';
 import authService from '../../services/authService';
+import notificationService from '../../services/notificationService';
 
 // Required for Google auth to complete properly
 WebBrowser.maybeCompleteAuthSession();
@@ -43,8 +46,17 @@ type LoginScreenNavigationProp = NativeStackNavigationProp<AuthStackParamList, '
 // Get Google OAuth client IDs from expo config
 const googleConfig = Constants.expoConfig?.extra?.google || {};
 
+// Check if Google Sign-In is properly configured
+// DISABLED: Google OAuth not configured yet - set to false to hide button
+const isGoogleConfigured = false;
+// To enable, set this to:
+// const isGoogleConfigured = Boolean(
+//   googleConfig.iosClientId || googleConfig.androidClientId || googleConfig.expoClientId
+// );
+
 export const LoginScreen = () => {
   const navigation = useNavigation<LoginScreenNavigationProp>();
+  const dispatch = useAppDispatch();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -65,14 +77,18 @@ export const LoginScreen = () => {
     biometricEnabled,
   } = useAuth();
 
-  // Google Auth Session hook
-  const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
-    expoClientId: googleConfig.expoClientId,
-    iosClientId: googleConfig.iosClientId,
-    androidClientId: googleConfig.androidClientId,
-    webClientId: googleConfig.webClientId,
-    scopes: ['profile', 'email'],
-  });
+  // Google Auth Session hook - DISABLED until Google OAuth is configured
+  // To enable: Add Google client IDs to app.config.js under extra.google
+  // const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
+  //   expoClientId: googleConfig.expoClientId,
+  //   iosClientId: googleConfig.iosClientId,
+  //   androidClientId: googleConfig.androidClientId,
+  //   webClientId: googleConfig.webClientId,
+  //   scopes: ['profile', 'email'],
+  // });
+  const googleRequest = null;
+  const googleResponse = null;
+  const googlePromptAsync = null;
 
   // Check if biometric and Apple Sign-In are available on mount
   useEffect(() => {
@@ -86,45 +102,38 @@ export const LoginScreen = () => {
     checkAvailability();
   }, [biometricEnabled]);
 
-  // Handle Google auth response
-  useEffect(() => {
-    const handleGoogleResponse = async () => {
-      if (googleResponse?.type === 'success') {
-        setIsGoogleLoading(true);
-        try {
-          const { authentication } = googleResponse;
-          if (authentication?.idToken && authentication?.accessToken) {
-            const result = await socialAuthService.exchangeGoogleToken(
-              authentication.idToken,
-              authentication.accessToken
-            );
-
-            if (result.success && result.tokens) {
-              // Store tokens and update auth state
-              await authService.storeTokens(result.tokens);
-              const userProfile = await authService.fetchUserProfile(result.tokens.access);
-
-              logger.logAuth('google', userProfile?.id);
-              // Navigation will happen automatically via Redux state change
-              // Trigger a re-check of auth status
-              window.location?.reload?.(); // For web
-            } else {
-              Alert.alert('Sign In Failed', result.error || 'Unable to sign in with Google');
-            }
-          }
-        } catch (error: any) {
-          logger.error('Google Sign-In error', error);
-          Alert.alert('Error', 'Unable to complete Google sign in. Please try again.');
-        } finally {
-          setIsGoogleLoading(false);
-        }
-      } else if (googleResponse?.type === 'error') {
-        Alert.alert('Error', 'Google sign in failed. Please try again.');
-      }
-    };
-
-    handleGoogleResponse();
-  }, [googleResponse]);
+  // Handle Google auth response - DISABLED until Google OAuth is configured
+  // useEffect(() => {
+  //   const handleGoogleResponse = async () => {
+  //     if (googleResponse?.type === 'success') {
+  //       setIsGoogleLoading(true);
+  //       try {
+  //         const { authentication } = googleResponse;
+  //         if (authentication?.idToken && authentication?.accessToken) {
+  //           const result = await socialAuthService.exchangeGoogleToken(
+  //             authentication.idToken,
+  //             authentication.accessToken
+  //           );
+  //           if (result.success && result.tokens) {
+  //             await authService.storeTokens(result.tokens);
+  //             const userProfile = await authService.fetchUserProfile(result.tokens.access);
+  //             logger.logAuth('google', userProfile?.id);
+  //           } else {
+  //             Alert.alert('Sign In Failed', result.error || 'Unable to sign in with Google');
+  //           }
+  //         }
+  //       } catch (error: any) {
+  //         logger.error('Google Sign-In error', error);
+  //         Alert.alert('Error', 'Unable to complete Google sign in. Please try again.');
+  //       } finally {
+  //         setIsGoogleLoading(false);
+  //       }
+  //     } else if (googleResponse?.type === 'error') {
+  //       Alert.alert('Error', 'Google sign in failed. Please try again.');
+  //     }
+  //   };
+  //   handleGoogleResponse();
+  // }, [googleResponse]);
 
   const handleLogin = async () => {
     // Validation
@@ -216,6 +225,20 @@ export const LoginScreen = () => {
         // Fetch user profile to complete auth
         const userProfile = await authService.fetchUserProfile(result.tokens.access);
 
+        // Update Redux state - THIS triggers automatic navigation
+        dispatch(
+          setCredentials({
+            user: userProfile,
+            accessToken: result.tokens.access,
+            refreshToken: result.tokens.refresh,
+          })
+        );
+
+        // Register push notification token (non-blocking)
+        notificationService.registerPushToken().catch((error) => {
+          console.log('[LoginScreen] Push token registration failed (non-critical):', error);
+        });
+
         logger.logAuth('apple', userProfile?.id);
         // Navigation will happen automatically via Redux state change
       } else {
@@ -294,21 +317,24 @@ export const LoginScreen = () => {
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity
-          style={[styles.googleButton, isGoogleLoading && styles.buttonDisabled]}
-          onPress={handleGoogleSignIn}
-          disabled={isAnyLoading}
-          activeOpacity={0.8}
-        >
-          {isGoogleLoading ? (
-            <ActivityIndicator color="#4285F4" size="small" />
-          ) : (
-            <>
-              <AntDesign name="google" size={20} color="#4285F4" style={styles.buttonIcon} />
-              <Text style={styles.googleButtonText}>Continue with Google</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/* Google Sign-In - Only show when properly configured */}
+        {isGoogleConfigured && (
+          <TouchableOpacity
+            style={[styles.googleButton, isGoogleLoading && styles.buttonDisabled]}
+            onPress={handleGoogleSignIn}
+            disabled={isAnyLoading}
+            activeOpacity={0.8}
+          >
+            {isGoogleLoading ? (
+              <ActivityIndicator color="#4285F4" size="small" />
+            ) : (
+              <>
+                <AntDesign name="google" size={20} color="#4285F4" style={styles.buttonIcon} />
+                <Text style={styles.googleButtonText}>Continue with Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
 
         {/* Divider */}
         <View style={styles.dividerContainer}>
