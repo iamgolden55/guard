@@ -1,6 +1,7 @@
 /**
  * Login Screen - Clean Modern Design
  * Dropbox-inspired simple and professional
+ * With Apple Sign-In and Google Sign-In support
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -21,6 +22,9 @@ import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AntDesign, FontAwesome, Ionicons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 
 import { Logo } from '@components/Logo';
 import { useAuth } from '../../hooks/useAuth';
@@ -28,8 +32,16 @@ import { logger } from '../../utils/logger';
 import { ApiError, ApiTimeoutError, NetworkError } from '../../services/api';
 import { ERROR_MESSAGES } from '../../utils/constants';
 import type { AuthStackParamList } from '../../types/navigation';
+import socialAuthService from '../../services/socialAuthService';
+import authService from '../../services/authService';
+
+// Required for Google auth to complete properly
+WebBrowser.maybeCompleteAuthSession();
 
 type LoginScreenNavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
+
+// Get Google OAuth client IDs from expo config
+const googleConfig = Constants.expoConfig?.extra?.google || {};
 
 export const LoginScreen = () => {
   const navigation = useNavigation<LoginScreenNavigationProp>();
@@ -41,6 +53,7 @@ export const LoginScreen = () => {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showBiometric, setShowBiometric] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isAppleAvailable, setIsAppleAvailable] = useState(false);
 
   const emailInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
@@ -52,14 +65,66 @@ export const LoginScreen = () => {
     biometricEnabled,
   } = useAuth();
 
-  // Check if biometric is available on mount
+  // Google Auth Session hook
+  const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
+    expoClientId: googleConfig.expoClientId,
+    iosClientId: googleConfig.iosClientId,
+    androidClientId: googleConfig.androidClientId,
+    webClientId: googleConfig.webClientId,
+    scopes: ['profile', 'email'],
+  });
+
+  // Check if biometric and Apple Sign-In are available on mount
   useEffect(() => {
-    const checkBiometric = async () => {
-      const supported = await checkBiometricSupport();
-      setShowBiometric(supported && biometricEnabled);
+    const checkAvailability = async () => {
+      const biometricSupported = await checkBiometricSupport();
+      setShowBiometric(biometricSupported && biometricEnabled);
+
+      const appleAvailable = await socialAuthService.isAppleSignInAvailable();
+      setIsAppleAvailable(appleAvailable);
     };
-    checkBiometric();
+    checkAvailability();
   }, [biometricEnabled]);
+
+  // Handle Google auth response
+  useEffect(() => {
+    const handleGoogleResponse = async () => {
+      if (googleResponse?.type === 'success') {
+        setIsGoogleLoading(true);
+        try {
+          const { authentication } = googleResponse;
+          if (authentication?.idToken && authentication?.accessToken) {
+            const result = await socialAuthService.exchangeGoogleToken(
+              authentication.idToken,
+              authentication.accessToken
+            );
+
+            if (result.success && result.tokens) {
+              // Store tokens and update auth state
+              await authService.storeTokens(result.tokens);
+              const userProfile = await authService.fetchUserProfile(result.tokens.access);
+
+              logger.logAuth('google', userProfile?.id);
+              // Navigation will happen automatically via Redux state change
+              // Trigger a re-check of auth status
+              window.location?.reload?.(); // For web
+            } else {
+              Alert.alert('Sign In Failed', result.error || 'Unable to sign in with Google');
+            }
+          }
+        } catch (error: any) {
+          logger.error('Google Sign-In error', error);
+          Alert.alert('Error', 'Unable to complete Google sign in. Please try again.');
+        } finally {
+          setIsGoogleLoading(false);
+        }
+      } else if (googleResponse?.type === 'error') {
+        Alert.alert('Error', 'Google sign in failed. Please try again.');
+      }
+    };
+
+    handleGoogleResponse();
+  }, [googleResponse]);
 
   const handleLogin = async () => {
     // Validation
@@ -142,15 +207,22 @@ export const LoginScreen = () => {
     setIsAppleLoading(true);
 
     try {
-      // TODO: Implement Apple Sign-In with expo-apple-authentication
-      // For now, show a message that this feature is coming soon
-      await new Promise(resolve => setTimeout(resolve, 500)); // Brief loading state for feedback
+      const result = await socialAuthService.signInWithApple();
 
-      Alert.alert(
-        'Coming Soon',
-        'Sign in with Apple will be available in a future update. Please use email and password to sign in.',
-        [{ text: 'OK', style: 'default' }]
-      );
+      if (result.success && result.tokens) {
+        // Store tokens
+        await authService.storeTokens(result.tokens);
+
+        // Fetch user profile to complete auth
+        const userProfile = await authService.fetchUserProfile(result.tokens.access);
+
+        logger.logAuth('apple', userProfile?.id);
+        // Navigation will happen automatically via Redux state change
+      } else {
+        if (result.error !== 'Sign in was cancelled') {
+          Alert.alert('Sign In Failed', result.error || 'Unable to sign in with Apple');
+        }
+      }
     } catch (error: any) {
       logger.error('Apple Sign-In error', error);
       Alert.alert('Error', 'Unable to sign in with Apple. Please try again.');
@@ -160,22 +232,22 @@ export const LoginScreen = () => {
   };
 
   const handleGoogleSignIn = async () => {
-    setIsGoogleLoading(true);
-
-    try {
-      // TODO: Implement Google Sign-In with expo-auth-session or @react-native-google-signin
-      // For now, show a message that this feature is coming soon
-      await new Promise(resolve => setTimeout(resolve, 500)); // Brief loading state for feedback
-
+    if (!googleRequest) {
       Alert.alert(
-        'Coming Soon',
-        'Continue with Google will be available in a future update. Please use email and password to sign in.',
-        [{ text: 'OK', style: 'default' }]
+        'Configuration Required',
+        'Google Sign-In is not configured. Please contact support.',
+        [{ text: 'OK' }]
       );
+      return;
+    }
+
+    setIsGoogleLoading(true);
+    try {
+      await googlePromptAsync();
+      // Response will be handled by the useEffect above
     } catch (error: any) {
-      logger.error('Google Sign-In error', error);
-      Alert.alert('Error', 'Unable to sign in with Google. Please try again.');
-    } finally {
+      logger.error('Google Sign-In prompt error', error);
+      Alert.alert('Error', 'Unable to start Google sign in. Please try again.');
       setIsGoogleLoading(false);
     }
   };
@@ -183,6 +255,8 @@ export const LoginScreen = () => {
   const handleForgotPassword = () => {
     navigation.navigate('ForgotPassword');
   };
+
+  const isAnyLoading = isLoading || isAppleLoading || isGoogleLoading;
 
   return (
     <KeyboardAvoidingView
@@ -201,26 +275,29 @@ export const LoginScreen = () => {
         </View>
 
         {/* Social Login Buttons */}
-        <TouchableOpacity
-          style={[styles.appleButton, isAppleLoading && styles.buttonDisabled]}
-          onPress={handleAppleSignIn}
-          disabled={isAppleLoading || isGoogleLoading || isLoading}
-          activeOpacity={0.8}
-        >
-          {isAppleLoading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <>
-              <FontAwesome name="apple" size={20} color="#FFFFFF" style={styles.buttonIcon} />
-              <Text style={styles.appleButtonText}>Sign in with Apple</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/* Apple Sign-In - Only show on iOS when available */}
+        {Platform.OS === 'ios' && (
+          <TouchableOpacity
+            style={[styles.appleButton, isAppleLoading && styles.buttonDisabled]}
+            onPress={handleAppleSignIn}
+            disabled={isAnyLoading || !isAppleAvailable}
+            activeOpacity={0.8}
+          >
+            {isAppleLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <FontAwesome name="apple" size={20} color="#FFFFFF" style={styles.buttonIcon} />
+                <Text style={styles.appleButtonText}>Sign in with Apple</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={[styles.googleButton, isGoogleLoading && styles.buttonDisabled]}
           onPress={handleGoogleSignIn}
-          disabled={isAppleLoading || isGoogleLoading || isLoading}
+          disabled={isAnyLoading}
           activeOpacity={0.8}
         >
           {isGoogleLoading ? (
@@ -233,8 +310,15 @@ export const LoginScreen = () => {
           )}
         </TouchableOpacity>
 
+        {/* Divider */}
+        <View style={styles.dividerContainer}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
         {/* Sign in heading */}
-        <Text style={styles.heading}>Sign in</Text>
+        <Text style={styles.heading}>Sign in with email</Text>
 
         {/* Email or Username Input */}
         <TouchableWithoutFeedback onPress={() => emailInputRef.current?.focus()}>
@@ -250,7 +334,7 @@ export const LoginScreen = () => {
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
-              editable={!isLoading}
+              editable={!isAnyLoading}
               returnKeyType="next"
               onSubmitEditing={() => passwordInputRef.current?.focus()}
             />
@@ -272,7 +356,7 @@ export const LoginScreen = () => {
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
                 autoComplete="password"
-                editable={!isLoading}
+                editable={!isAnyLoading}
                 returnKeyType="go"
                 onSubmitEditing={handleLogin}
               />
@@ -294,16 +378,16 @@ export const LoginScreen = () => {
         {/* Forgot Password Link */}
         <TouchableOpacity
           onPress={handleForgotPassword}
-          disabled={isLoading}
+          disabled={isAnyLoading}
         >
           <Text style={styles.forgotPassword}>Having trouble signing in?</Text>
         </TouchableOpacity>
 
         {/* Sign In Button */}
         <TouchableOpacity
-          style={styles.signInButton}
+          style={[styles.signInButton, isLoading && styles.buttonDisabled]}
           onPress={handleLogin}
-          disabled={isLoading}
+          disabled={isAnyLoading}
           activeOpacity={0.8}
         >
           {isLoading ? (
@@ -312,6 +396,19 @@ export const LoginScreen = () => {
             <Text style={styles.signInButtonText}>Sign in</Text>
           )}
         </TouchableOpacity>
+
+        {/* Biometric Login */}
+        {showBiometric && (
+          <TouchableOpacity
+            style={styles.biometricButton}
+            onPress={handleBiometricLogin}
+            disabled={isAnyLoading}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="finger-print" size={24} color="#0061FF" />
+            <Text style={styles.biometricText}>Use Face ID / Touch ID</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -339,6 +436,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
+    minHeight: 54,
   },
   appleButtonText: {
     color: '#FFFFFF',
@@ -355,7 +453,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 32,
+    marginBottom: 24,
+    minHeight: 54,
   },
   googleButtonText: {
     color: '#000000',
@@ -369,13 +468,28 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.7,
   },
-  heading: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#000000',
-    marginBottom: 32,
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E5E5',
+  },
+  dividerText: {
+    paddingHorizontal: 16,
+    color: '#999999',
+    fontSize: 14,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-    letterSpacing: -0.5,
+  },
+  heading: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 24,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
   inputRow: {
     flexDirection: 'row',
@@ -429,12 +543,27 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
+    minHeight: 58,
   },
   signInButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  biometricButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    marginBottom: 24,
+  },
+  biometricText: {
+    color: '#0061FF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
 });

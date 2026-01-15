@@ -1,9 +1,10 @@
 /**
  * Register Screen - Account Creation
  * Matches the clean modern design of the Login Screen
+ * With Apple Sign-In and Google Sign-In support
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -21,14 +22,25 @@ import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AntDesign, FontAwesome, Ionicons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 import axios from 'axios';
 
 import { Logo } from '@components/Logo';
 import { logger } from '../../utils/logger';
-import { API_ENDPOINTS } from '../../config/api.config';
+import { API_ENDPOINTS, API_BASE_URL } from '../../config/api.config';
 import type { AuthStackParamList } from '../../types/navigation';
+import socialAuthService from '../../services/socialAuthService';
+import authService from '../../services/authService';
+
+// Required for Google auth to complete properly
+WebBrowser.maybeCompleteAuthSession();
 
 type RegisterScreenNavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Register'>;
+
+// Get Google OAuth client IDs from expo config
+const googleConfig = Constants.expoConfig?.extra?.google || {};
 
 export const RegisterScreen = () => {
   const navigation = useNavigation<RegisterScreenNavigationProp>();
@@ -43,12 +55,69 @@ export const RegisterScreen = () => {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isAppleAvailable, setIsAppleAvailable] = useState(false);
 
   const firstNameInputRef = useRef<TextInput>(null);
   const lastNameInputRef = useRef<TextInput>(null);
   const emailInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
   const confirmPasswordInputRef = useRef<TextInput>(null);
+
+  // Google Auth Session hook
+  const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
+    expoClientId: googleConfig.expoClientId,
+    iosClientId: googleConfig.iosClientId,
+    androidClientId: googleConfig.androidClientId,
+    webClientId: googleConfig.webClientId,
+    scopes: ['profile', 'email'],
+  });
+
+  // Check if Apple Sign-In is available on mount
+  useEffect(() => {
+    const checkAvailability = async () => {
+      const appleAvailable = await socialAuthService.isAppleSignInAvailable();
+      setIsAppleAvailable(appleAvailable);
+    };
+    checkAvailability();
+  }, []);
+
+  // Handle Google auth response
+  useEffect(() => {
+    const handleGoogleResponse = async () => {
+      if (googleResponse?.type === 'success') {
+        setIsGoogleLoading(true);
+        try {
+          const { authentication } = googleResponse;
+          if (authentication?.idToken && authentication?.accessToken) {
+            const result = await socialAuthService.exchangeGoogleToken(
+              authentication.idToken,
+              authentication.accessToken
+            );
+
+            if (result.success && result.tokens) {
+              // Store tokens and update auth state
+              await authService.storeTokens(result.tokens);
+              const userProfile = await authService.fetchUserProfile(result.tokens.access);
+
+              logger.logAuth('google_signup', userProfile?.id);
+              // Navigation will happen automatically via Redux state change
+            } else {
+              Alert.alert('Sign Up Failed', result.error || 'Unable to sign up with Google');
+            }
+          }
+        } catch (error: any) {
+          logger.error('Google Sign-Up error', error);
+          Alert.alert('Error', 'Unable to complete Google sign up. Please try again.');
+        } finally {
+          setIsGoogleLoading(false);
+        }
+      } else if (googleResponse?.type === 'error') {
+        Alert.alert('Error', 'Google sign up failed. Please try again.');
+      }
+    };
+
+    handleGoogleResponse();
+  }, [googleResponse]);
 
   const validateEmail = (email: string) => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -96,7 +165,7 @@ export const RegisterScreen = () => {
 
     try {
       // Call registration API
-      await axios.post(API_ENDPOINTS.AUTH.REGISTER, {
+      await axios.post(`${API_BASE_URL}${API_ENDPOINTS.AUTH.REGISTER}`, {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         email: email.trim().toLowerCase(),
@@ -135,14 +204,22 @@ export const RegisterScreen = () => {
     setIsAppleLoading(true);
 
     try {
-      // TODO: Implement Apple Sign-In with expo-apple-authentication
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const result = await socialAuthService.signInWithApple();
 
-      Alert.alert(
-        'Coming Soon',
-        'Sign up with Apple will be available in a future update. Please create an account with email and password.',
-        [{ text: 'OK', style: 'default' }]
-      );
+      if (result.success && result.tokens) {
+        // Store tokens
+        await authService.storeTokens(result.tokens);
+
+        // Fetch user profile to complete auth
+        const userProfile = await authService.fetchUserProfile(result.tokens.access);
+
+        logger.logAuth('apple_signup', userProfile?.id);
+        // Navigation will happen automatically via Redux state change
+      } else {
+        if (result.error !== 'Sign in was cancelled') {
+          Alert.alert('Sign Up Failed', result.error || 'Unable to sign up with Apple');
+        }
+      }
     } catch (error: any) {
       logger.error('Apple Sign-Up error', error);
       Alert.alert('Error', 'Unable to sign up with Apple. Please try again.');
@@ -152,21 +229,22 @@ export const RegisterScreen = () => {
   };
 
   const handleGoogleSignUp = async () => {
-    setIsGoogleLoading(true);
-
-    try {
-      // TODO: Implement Google Sign-In with expo-auth-session
-      await new Promise(resolve => setTimeout(resolve, 500));
-
+    if (!googleRequest) {
       Alert.alert(
-        'Coming Soon',
-        'Sign up with Google will be available in a future update. Please create an account with email and password.',
-        [{ text: 'OK', style: 'default' }]
+        'Configuration Required',
+        'Google Sign-Up is not configured. Please contact support.',
+        [{ text: 'OK' }]
       );
+      return;
+    }
+
+    setIsGoogleLoading(true);
+    try {
+      await googlePromptAsync();
+      // Response will be handled by the useEffect above
     } catch (error: any) {
-      logger.error('Google Sign-Up error', error);
-      Alert.alert('Error', 'Unable to sign up with Google. Please try again.');
-    } finally {
+      logger.error('Google Sign-Up prompt error', error);
+      Alert.alert('Error', 'Unable to start Google sign up. Please try again.');
       setIsGoogleLoading(false);
     }
   };
@@ -190,21 +268,24 @@ export const RegisterScreen = () => {
         </View>
 
         {/* Social Sign Up Buttons */}
-        <TouchableOpacity
-          style={[styles.appleButton, isAppleLoading && styles.buttonDisabled]}
-          onPress={handleAppleSignUp}
-          disabled={isAnyLoading}
-          activeOpacity={0.8}
-        >
-          {isAppleLoading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <>
-              <FontAwesome name="apple" size={20} color="#FFFFFF" style={styles.buttonIcon} />
-              <Text style={styles.appleButtonText}>Sign up with Apple</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/* Apple Sign-Up - Only show on iOS when available */}
+        {Platform.OS === 'ios' && (
+          <TouchableOpacity
+            style={[styles.appleButton, isAppleLoading && styles.buttonDisabled]}
+            onPress={handleAppleSignUp}
+            disabled={isAnyLoading || !isAppleAvailable}
+            activeOpacity={0.8}
+          >
+            {isAppleLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <FontAwesome name="apple" size={20} color="#FFFFFF" style={styles.buttonIcon} />
+                <Text style={styles.appleButtonText}>Sign up with Apple</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={[styles.googleButton, isGoogleLoading && styles.buttonDisabled]}
@@ -222,8 +303,15 @@ export const RegisterScreen = () => {
           )}
         </TouchableOpacity>
 
+        {/* Divider */}
+        <View style={styles.dividerContainer}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
         {/* Create Account heading */}
-        <Text style={styles.heading}>Create an account</Text>
+        <Text style={styles.heading}>Create with email</Text>
 
         {/* First Name Input */}
         <TouchableWithoutFeedback onPress={() => firstNameInputRef.current?.focus()}>
@@ -408,6 +496,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
+    minHeight: 54,
   },
   appleButtonText: {
     color: '#FFFFFF',
@@ -425,6 +514,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 24,
+    minHeight: 54,
   },
   googleButtonText: {
     color: '#000000',
@@ -438,13 +528,28 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.7,
   },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E5E5',
+  },
+  dividerText: {
+    paddingHorizontal: 16,
+    color: '#999999',
+    fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
   heading: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '600',
     color: '#000000',
     marginBottom: 24,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-    letterSpacing: -0.5,
   },
   inputRow: {
     flexDirection: 'row',
@@ -498,6 +603,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    minHeight: 58,
   },
   createButtonText: {
     color: '#FFFFFF',
