@@ -37,6 +37,7 @@ export const API_ENDPOINTS = {
   // Authentication
   AUTH: {
     LOGIN: `${API_PREFIX}/login/`,
+    REGISTER: `${API_PREFIX}/register/`,
     LOGOUT: `${API_PREFIX}/logout/`,
     REFRESH_TOKEN: `${API_PREFIX}/token/refresh/`,
     PROFILE: `${API_PREFIX}/profiles/me`,

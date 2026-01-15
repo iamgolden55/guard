@@ -18,6 +18,8 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AntDesign, FontAwesome, Ionicons } from '@expo/vector-icons';
 
 import { Logo } from '@components/Logo';
@@ -25,11 +27,18 @@ import { useAuth } from '../../hooks/useAuth';
 import { logger } from '../../utils/logger';
 import { ApiError, ApiTimeoutError, NetworkError } from '../../services/api';
 import { ERROR_MESSAGES } from '../../utils/constants';
+import type { AuthStackParamList } from '../../types/navigation';
+
+type LoginScreenNavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
 
 export const LoginScreen = () => {
+  const navigation = useNavigation<LoginScreenNavigationProp>();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isAppleLoading, setIsAppleLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showBiometric, setShowBiometric] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -129,6 +138,52 @@ export const LoginScreen = () => {
     }
   };
 
+  const handleAppleSignIn = async () => {
+    setIsAppleLoading(true);
+
+    try {
+      // TODO: Implement Apple Sign-In with expo-apple-authentication
+      // For now, show a message that this feature is coming soon
+      await new Promise(resolve => setTimeout(resolve, 500)); // Brief loading state for feedback
+
+      Alert.alert(
+        'Coming Soon',
+        'Sign in with Apple will be available in a future update. Please use email and password to sign in.',
+        [{ text: 'OK', style: 'default' }]
+      );
+    } catch (error: any) {
+      logger.error('Apple Sign-In error', error);
+      Alert.alert('Error', 'Unable to sign in with Apple. Please try again.');
+    } finally {
+      setIsAppleLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoading(true);
+
+    try {
+      // TODO: Implement Google Sign-In with expo-auth-session or @react-native-google-signin
+      // For now, show a message that this feature is coming soon
+      await new Promise(resolve => setTimeout(resolve, 500)); // Brief loading state for feedback
+
+      Alert.alert(
+        'Coming Soon',
+        'Continue with Google will be available in a future update. Please use email and password to sign in.',
+        [{ text: 'OK', style: 'default' }]
+      );
+    } catch (error: any) {
+      logger.error('Google Sign-In error', error);
+      Alert.alert('Error', 'Unable to sign in with Google. Please try again.');
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const handleForgotPassword = () => {
+    navigation.navigate('ForgotPassword');
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -146,14 +201,36 @@ export const LoginScreen = () => {
         </View>
 
         {/* Social Login Buttons */}
-        <TouchableOpacity style={styles.appleButton}>
-          <FontAwesome name="apple" size={20} color="#FFFFFF" style={styles.buttonIcon} />
-          <Text style={styles.appleButtonText}>Sign in with Apple</Text>
+        <TouchableOpacity
+          style={[styles.appleButton, isAppleLoading && styles.buttonDisabled]}
+          onPress={handleAppleSignIn}
+          disabled={isAppleLoading || isGoogleLoading || isLoading}
+          activeOpacity={0.8}
+        >
+          {isAppleLoading ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <>
+              <FontAwesome name="apple" size={20} color="#FFFFFF" style={styles.buttonIcon} />
+              <Text style={styles.appleButtonText}>Sign in with Apple</Text>
+            </>
+          )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.googleButton}>
-          <AntDesign name="google" size={20} color="#4285F4" style={styles.buttonIcon} />
-          <Text style={styles.googleButtonText}>Continue with Google</Text>
+        <TouchableOpacity
+          style={[styles.googleButton, isGoogleLoading && styles.buttonDisabled]}
+          onPress={handleGoogleSignIn}
+          disabled={isAppleLoading || isGoogleLoading || isLoading}
+          activeOpacity={0.8}
+        >
+          {isGoogleLoading ? (
+            <ActivityIndicator color="#4285F4" size="small" />
+          ) : (
+            <>
+              <AntDesign name="google" size={20} color="#4285F4" style={styles.buttonIcon} />
+              <Text style={styles.googleButtonText}>Continue with Google</Text>
+            </>
+          )}
         </TouchableOpacity>
 
         {/* Sign in heading */}
@@ -216,7 +293,8 @@ export const LoginScreen = () => {
 
         {/* Forgot Password Link */}
         <TouchableOpacity
-          onPress={() => navigation.navigate('ForgotPassword')}
+          onPress={handleForgotPassword}
+          disabled={isLoading}
         >
           <Text style={styles.forgotPassword}>Having trouble signing in?</Text>
         </TouchableOpacity>
@@ -287,6 +365,9 @@ const styles = StyleSheet.create({
   },
   buttonIcon: {
     marginRight: 8,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   heading: {
     fontSize: 28,
