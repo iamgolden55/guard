@@ -246,7 +246,7 @@ export const WiseDashboardScreen = () => {
               </View>
               <View style={styles.buttonTextContainer}>
                 <BodySmall style={styles.startShiftTitle}>Check In</BodySmall>
-                <Caption style={styles.startShiftSubtitle}>Start your shift at {nextUpcomingShift.venue_name}</Caption>
+                <Caption style={styles.startShiftSubtitle}>Start your shift at {nextUpcomingShift.venue?.name}</Caption>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
             </TouchableOpacity>
