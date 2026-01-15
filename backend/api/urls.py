@@ -32,6 +32,7 @@ from .views import (
     # Password reset views
     PasswordResetRequestView, PasswordResetValidateView, PasswordResetConfirmView,
 )
+from .social_auth import apple_auth, google_auth
 
 router = DefaultRouter()
 # Register your viewsets here
@@ -107,4 +108,7 @@ urlpatterns = [
     path('password-reset/request/', PasswordResetRequestView.as_view(), name='password-reset-request'),
     path('password-reset/validate/<uuid:token>/', PasswordResetValidateView.as_view(), name='password-reset-validate'),
     path('password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
+    # Social authentication endpoints
+    path('auth/apple/', apple_auth, name='apple-auth'),
+    path('auth/google/', google_auth, name='google-auth'),
 ] 
