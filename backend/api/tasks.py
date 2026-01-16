@@ -694,6 +694,13 @@ def send_shift_reminder(self, shift_id: int, reminder_type: str) -> Dict[str, An
     """
     from .models import Shift
     from .services import push_notification_service
+    from django.core.cache import cache
+
+    # DEDUPLICATION: Check if we already sent this reminder
+    cache_key = f"shift_reminder_sent_{shift_id}_{reminder_type}"
+    if cache.get(cache_key):
+        logger.info(f"Skipping duplicate {reminder_type} reminder for shift {shift_id}")
+        return {'status': 'skipped', 'message': 'Reminder already sent (deduplicated)'}
 
     try:
         shift = Shift.objects.select_related('venue', 'staff_user').get(pk=shift_id)
@@ -737,6 +744,11 @@ def send_shift_reminder(self, shift_id: int, reminder_type: str) -> Dict[str, An
         time_until=time_until
     )
 
+    # DEDUPLICATION: Mark this reminder as sent (expires after 24 hours)
+    if success:
+        cache.set(cache_key, True, timeout=86400)  # 24 hours
+        logger.info(f"Sent {reminder_type} reminder for shift {shift_id}, marked in cache")
+
     return {
         'status': 'success' if success else 'failed',
         'shift_id': shift_id,
@@ -752,6 +764,13 @@ def send_checkin_reminder(self, shift_id: int) -> Dict[str, Any]:
     """
     from .models import Shift
     from .services import push_notification_service
+    from django.core.cache import cache
+
+    # DEDUPLICATION: Check if we already sent this check-in reminder
+    cache_key = f"shift_checkin_reminder_sent_{shift_id}"
+    if cache.get(cache_key):
+        logger.info(f"Skipping duplicate check-in reminder for shift {shift_id}")
+        return {'status': 'skipped', 'message': 'Check-in reminder already sent (deduplicated)'}
 
     try:
         shift = Shift.objects.select_related('venue', 'staff_user').get(pk=shift_id)
@@ -783,6 +802,11 @@ def send_checkin_reminder(self, shift_id: int) -> Dict[str, Any]:
         venue_name=venue_name,
         minutes_late=minutes_late
     )
+
+    # DEDUPLICATION: Mark this check-in reminder as sent (expires after 12 hours)
+    if success:
+        cache.set(cache_key, True, timeout=43200)  # 12 hours
+        logger.info(f"Sent check-in reminder for shift {shift_id}, marked in cache")
 
     return {
         'status': 'success' if success else 'failed',
@@ -977,12 +1001,15 @@ def check_shift_reminders(self) -> Dict[str, Any]:
     Runs every minute via Celery beat.
 
     This is a backup mechanism - primary reminders are scheduled when shift is assigned.
+    Uses cache-based deduplication to prevent duplicate notifications.
     """
     from .models import Shift
     from .services import push_notification_service
+    from django.core.cache import cache
 
     now = timezone.now()
     sent_count = 0
+    skipped_count = 0
 
     # Define reminder windows (check within 1 minute of each reminder time)
     reminder_windows = [
@@ -1004,6 +1031,13 @@ def check_shift_reminders(self) -> Dict[str, Any]:
         ).select_related('venue', 'staff_user')
 
         for shift in shifts:
+            # DEDUPLICATION: Check if we already sent this reminder
+            cache_key = f"shift_reminder_sent_{shift.id}_{reminder_type}"
+            if cache.get(cache_key):
+                logger.debug(f"Skipping duplicate {reminder_type} reminder for shift {shift.id} (periodic check)")
+                skipped_count += 1
+                continue
+
             time_diff = shift.start_time - now
             hours = int(time_diff.total_seconds() // 3600)
             minutes = int((time_diff.total_seconds() % 3600) // 60)
@@ -1024,9 +1058,12 @@ def check_shift_reminders(self) -> Dict[str, Any]:
             )
 
             if success:
+                # DEDUPLICATION: Mark this reminder as sent (expires after 24 hours)
+                cache.set(cache_key, True, timeout=86400)  # 24 hours
                 sent_count += 1
+                logger.info(f"Sent {reminder_type} reminder for shift {shift.id} via periodic check")
 
-    return {'status': 'success', 'reminders_sent': sent_count}
+    return {'status': 'success', 'reminders_sent': sent_count, 'duplicates_skipped': skipped_count}
 
 
 @shared_task(bind=True, queue='notifications')
@@ -1035,11 +1072,14 @@ def check_missed_checkins(self) -> Dict[str, Any]:
     Periodic task to check for shifts where staff hasn't checked in.
     Sends reminder 4 minutes after shift start time.
     Runs every minute via Celery beat.
+    Uses cache-based deduplication to prevent duplicate notifications.
     """
     from .models import Shift
     from .services import push_notification_service
+    from django.core.cache import cache
 
     now = timezone.now()
+    skipped_count = 0
 
     # Find shifts that started 4-5 minutes ago without check-in
     window_start = now - timedelta(minutes=5)
@@ -1055,6 +1095,13 @@ def check_missed_checkins(self) -> Dict[str, Any]:
 
     sent_count = 0
     for shift in shifts:
+        # DEDUPLICATION: Check if we already sent this check-in reminder
+        cache_key = f"shift_checkin_reminder_sent_{shift.id}"
+        if cache.get(cache_key):
+            logger.debug(f"Skipping duplicate check-in reminder for shift {shift.id} (periodic check)")
+            skipped_count += 1
+            continue
+
         minutes_late = int((now - shift.start_time).total_seconds() // 60)
         venue_name = shift.venue.name if shift.venue else 'Unknown Venue'
 
@@ -1066,9 +1113,12 @@ def check_missed_checkins(self) -> Dict[str, Any]:
         )
 
         if success:
+            # DEDUPLICATION: Mark this check-in reminder as sent (expires after 12 hours)
+            cache.set(cache_key, True, timeout=43200)  # 12 hours
             sent_count += 1
+            logger.info(f"Sent check-in reminder for shift {shift.id} via periodic check")
 
-    return {'status': 'success', 'checkin_reminders_sent': sent_count}
+    return {'status': 'success', 'checkin_reminders_sent': sent_count, 'duplicates_skipped': skipped_count}
 
 
 # ==========================================
