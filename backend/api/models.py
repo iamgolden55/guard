@@ -1195,7 +1195,7 @@ class Venue(models.Model):
     capacity = models.IntegerField()
     latitude = models.DecimalField(max_digits=18, decimal_places=15, null=True, blank=True)
     longitude = models.DecimalField(max_digits=18, decimal_places=15, null=True, blank=True)
-    check_radius = models.IntegerField(default=50, help_text="Radius in meters for location verification")
+    check_radius = models.IntegerField(default=100, help_text="Radius in meters for location verification")
     contact_name = models.CharField(max_length=255)
     contact_phone = models.CharField(max_length=20)
     contact_email = models.EmailField()
