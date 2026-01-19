@@ -12,10 +12,11 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<MainStackParamList>;
 };
 
-// Auth Stack (welcome, login, biometric setup, forgot password)
+// Auth Stack (welcome, login, register, biometric setup, forgot password)
 export type AuthStackParamList = {
   Welcome: undefined;
   Login: undefined;
+  Register: undefined;
   BiometricSetup: undefined;
   ForgotPassword: undefined;
 };

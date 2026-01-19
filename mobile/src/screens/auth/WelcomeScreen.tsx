@@ -53,10 +53,7 @@ export const WelcomeScreen = () => {
 
         <TouchableOpacity
           style={styles.createAccountButton}
-          onPress={() => {
-            // TODO: Navigate to sign up screen
-            console.log('Create account');
-          }}
+          onPress={() => navigation.navigate('Register')}
           activeOpacity={0.8}
         >
           <Text style={styles.createAccountButtonText}>Create an account</Text>

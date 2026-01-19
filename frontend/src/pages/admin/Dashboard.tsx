@@ -29,11 +29,15 @@ interface StatCardProps {
   icon: string;
   color: string;
   isLoading?: boolean;
+  onClick?: () => void;
 }
 
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color, isLoading = false }) => {
+const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color, isLoading = false, onClick }) => {
   return (
-    <Card className="flex-1 min-w-[200px]">
+    <Card
+      className={`flex-1 min-w-[200px] transition-all duration-200 ${onClick ? 'cursor-pointer hover:shadow-lg hover:scale-[1.02]' : ''}`}
+      onClick={onClick}
+    >
       <Stack horizontal tokens={{ childrenGap: 16 }} verticalAlign="center">
         <div
           className="rounded-full p-2 flex items-center justify-center"
@@ -260,6 +264,7 @@ const AdminDashboard: React.FC = () => {
               icon="Clock"
               color="#0078d4"
               isLoading={isLoading}
+              onClick={() => navigate('/staff-shifts')}
             />
             <StatCard
               title="Pending Approvals"
@@ -267,6 +272,7 @@ const AdminDashboard: React.FC = () => {
               icon="Permissions"
               color="#107c10"
               isLoading={isLoading}
+              onClick={() => navigate('/shifts/exchange')}
             />
             <StatCard
               title="Total Staff"
@@ -274,6 +280,7 @@ const AdminDashboard: React.FC = () => {
               icon="People"
               color="#5c2d91"
               isLoading={isLoading}
+              onClick={() => navigate('/admin/staff')}
             />
             <StatCard
               title="Pending Invoices"
@@ -281,6 +288,7 @@ const AdminDashboard: React.FC = () => {
               icon="PaymentCard"
               color="#d83b01"
               isLoading={isLoading}
+              onClick={() => navigate('/admin/invoices')}
             />
             <StatCard
               title="Total Venues"
@@ -288,6 +296,7 @@ const AdminDashboard: React.FC = () => {
               icon="POI"
               color="#008272"
               isLoading={isLoading}
+              onClick={() => navigate('/admin/venues')}
             />
           </div>
         </Stack>

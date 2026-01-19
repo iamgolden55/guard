@@ -19,6 +19,7 @@ import shiftsReducer from './slices/shiftsSlice';
 import incidentsReducer from './slices/incidentsSlice';
 import syncReducer from './slices/syncSlice';
 import leaveReducer from './slices/leaveSlice';
+import onboardingReducer from './slices/onboardingSlice';
 
 // Import API
 import { api } from './api/baseApi';
@@ -28,7 +29,7 @@ const persistConfig = {
   key: 'root',
   version: 2, // Incremented from 1 to 2 to force data migration
   storage: AsyncStorage,
-  whitelist: ['auth', 'shifts', 'incidents', 'sync', 'leave'], // Only persist these reducers
+  whitelist: ['auth', 'shifts', 'incidents', 'sync', 'leave', 'onboarding'], // Only persist these reducers
   migrate: (state: any) => {
     // Migration from version 1 to version 2
     // Fix: Clear corrupted auth data where user.id was set to StaffProfile ID instead of User ID
@@ -66,6 +67,7 @@ const rootReducer = combineReducers({
   incidents: incidentsReducer,
   sync: syncReducer,
   leave: leaveReducer,
+  onboarding: onboardingReducer,
   [api.reducerPath]: api.reducer,
 });
 

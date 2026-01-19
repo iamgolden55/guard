@@ -186,18 +186,18 @@ export const HeroStatusCard: React.FC<HeroStatusCardProps> = ({
 
               {cardState === 'active' && (
                 <>
-                  <Heading2 style={styles.cardTitle}>{activeShift?.venue_name || 'Shift'}</Heading2>
+                  <Heading2 style={styles.cardTitle}>{activeShift?.venue?.name || 'Shift'}</Heading2>
                   <BodySmall style={styles.cardSubtitle}>
-                    {activeShift?.role || 'Security Staff'} • {getShiftDuration()}
+                    {activeShift?.required_security_role || 'Security Staff'} • {getShiftDuration()}
                   </BodySmall>
                 </>
               )}
 
               {cardState === 'upcoming' && (
                 <>
-                  <Heading2 style={styles.cardTitle}>{upcomingShift?.venue_name || 'Shift'}</Heading2>
+                  <Heading2 style={styles.cardTitle}>{upcomingShift?.venue?.name || 'Shift'}</Heading2>
                   <BodySmall style={styles.cardSubtitle}>
-                    {upcomingShift?.role || 'Security Staff'} • Starts {formatTime(upcomingShift?.start_time || '')}
+                    {upcomingShift?.required_security_role || 'Security Staff'} • Starts {formatTime(upcomingShift?.start_time || '')}
                   </BodySmall>
                   <BodySmall style={styles.countdownText}>{getTimeUntilShift()}</BodySmall>
                 </>
@@ -253,8 +253,8 @@ export const HeroStatusCard: React.FC<HeroStatusCardProps> = ({
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
                 <Heading3 style={styles.statNumber}>
-                  {activeShift?.venue_name?.substring(0, 3).toUpperCase()
-                    || upcomingShift?.venue_name?.substring(0, 3).toUpperCase()
+                  {activeShift?.venue?.name?.substring(0, 3).toUpperCase()
+                    || upcomingShift?.venue?.name?.substring(0, 3).toUpperCase()
                     || '—'}
                 </Heading3>
                 <Caption style={styles.statLabel}>Venue</Caption>

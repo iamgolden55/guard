@@ -10,6 +10,7 @@ import type { AuthStackParamList } from '../types/navigation';
 // Screens
 import { WelcomeScreen } from '../screens/auth/WelcomeScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
+import { RegisterScreen } from '../screens/auth/RegisterScreen';
 import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
 // import { BiometricSetupScreen } from '../screens/auth/BiometricSetupScreen';
 
@@ -34,6 +35,28 @@ export const AuthNavigator = () => {
       <Stack.Screen
         name="Login"
         component={LoginScreen}
+        options={{
+          animationEnabled: true,
+          headerShown: true,
+          headerTitle: '',
+          headerBackTitle: 'Back',
+          headerBackTitleStyle: {
+            fontSize: 18,
+            fontWeight: 'bold',
+          },
+          headerStyle: {
+            backgroundColor: '#FFFFFF',
+            elevation: 0,
+            shadowOpacity: 0,
+            borderBottomWidth: 0,
+          },
+          headerTintColor: '#000000',
+          headerBackTitleVisible: true,
+        }}
+      />
+      <Stack.Screen
+        name="Register"
+        component={RegisterScreen}
         options={{
           animationEnabled: true,
           headerShown: true,

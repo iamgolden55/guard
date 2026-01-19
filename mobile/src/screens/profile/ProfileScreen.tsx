@@ -13,6 +13,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
 import { useAppSelector, useAppDispatch } from '../../hooks/useRedux';
 import { selectCurrentUser, fetchUserProfile } from '../../store/slices/authSlice';
+import { resetOnboarding } from '../../store/slices/onboardingSlice';
 import { fetchShifts } from '../../store/slices/shiftsSlice';
 import { colors, spacing, layout } from '../../theme';
 import { logger } from '../../utils/logger';
@@ -91,6 +92,25 @@ export const ProfileScreen = () => {
         },
       },
     ]);
+  };
+
+  const handleReplayOnboarding = () => {
+    logger.info('Replay onboarding initiated from profile');
+    Alert.alert(
+      'Replay Onboarding',
+      'Would you like to view the onboarding tutorial again?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Replay',
+          onPress: () => {
+            dispatch(resetOnboarding());
+            logger.info('[Profile] Onboarding reset - will show on next app restart');
+            Alert.alert('Success', 'Onboarding will be shown when you restart the app.');
+          },
+        },
+      ]
+    );
   };
 
   const handleClearLocalData = () => {
@@ -333,6 +353,14 @@ export const ProfileScreen = () => {
         {/* Account Actions */}
         <View style={styles.accountSection}>
           <Text style={styles.sectionHeading}>Account</Text>
+
+          <TouchableOpacity style={styles.accountItem} onPress={handleReplayOnboarding}>
+            <View style={[styles.accountIcon, { backgroundColor: '#E3F2FD' }]}>
+              <Ionicons name="play-circle" size={20} color="#2196F3" />
+            </View>
+            <Text style={styles.accountText}>Replay Onboarding</Text>
+            <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+          </TouchableOpacity>
 
           <TouchableOpacity style={styles.accountItem} onPress={handleClearLocalData}>
             <View style={[styles.accountIcon, { backgroundColor: '#FFF3E0' }]}>

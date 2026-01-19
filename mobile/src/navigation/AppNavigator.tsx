@@ -18,6 +18,10 @@ import { MainNavigator } from './MainNavigator';
 import { useAuth } from '../hooks/useAuth';
 import { useAppSelector } from '../hooks/useRedux';
 import { selectIsAuthenticated } from '../store/slices/authSlice';
+import { selectHasCompletedOnboarding } from '../store/slices/onboardingSlice';
+
+// Onboarding
+import { OnboardingCarousel } from '../screens/onboarding';
 
 // Navigation Ref
 import { navigationRef } from './navigationRef';
@@ -28,6 +32,7 @@ export const AppNavigator = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const hasCompletedOnboarding = useAppSelector(selectHasCompletedOnboarding);
   const { checkAuthStatus } = useAuth();
 
   // Check if user is already authenticated on app startup
@@ -72,6 +77,15 @@ export const AppNavigator = () => {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#1E3A8A" />
       </View>
+    );
+  }
+
+  // Show onboarding first for new users
+  if (!hasCompletedOnboarding) {
+    return (
+      <NavigationContainer ref={navigationRef}>
+        <OnboardingCarousel />
+      </NavigationContainer>
     );
   }
 
