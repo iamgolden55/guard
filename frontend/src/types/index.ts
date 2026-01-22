@@ -6,6 +6,7 @@ export * from './venue';
 export * from './leave';
 export * from './reports';
 export * from './onboarding';
+export * from './attendance';
 
 // Export shift types with aliases to avoid conflicts
 export type {

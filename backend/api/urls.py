@@ -14,7 +14,7 @@ from .views import (
     DeputyConfigViewSet, DeputyEmployeeViewSet, DeputyTimesheetViewSet,
     ShiftTemplateViewSet, DeputyConfigView, SystemSettingsView,
     my_profile, update_my_user, change_password,
-    FileUploadView, payroll_preview, payroll_generate,
+    FileUploadView, ProfilePhotoUploadView, payroll_preview, payroll_generate,
     EmploymentTypeViewSet, RecruitmentApplicationViewSet, RecruitmentApplicationPublicViewSet,
     # Compliance system views
     WorkingHoursRegulationViewSet, ComplianceProfileViewSet, ComplianceViolationViewSet,
@@ -31,6 +31,8 @@ from .views import (
     SNSDeviceTokenViewSet, NotificationPreferencesViewSet,
     # Password reset views
     PasswordResetRequestView, PasswordResetValidateView, PasswordResetConfirmView,
+    # Leave management / contractor availability views
+    ContractorUnavailabilityViewSet, BankHolidayViewSet, StaffLeaveDailyRateViewSet,
 )
 from .social_auth import apple_auth, google_auth
 
@@ -83,6 +85,10 @@ router.register('company-recruitment', CompanyRecruitmentViewSet, basename='comp
 # Notification system endpoints
 router.register('notifications/devices', SNSDeviceTokenViewSet, basename='notification-devices')
 router.register('notifications/preferences', NotificationPreferencesViewSet, basename='notification-preferences')
+# Leave management / contractor availability endpoints
+router.register('contractor-unavailability', ContractorUnavailabilityViewSet, basename='contractor-unavailability')
+router.register('bank-holidays', BankHolidayViewSet, basename='bank-holidays')
+router.register('staff-leave-rates', StaffLeaveDailyRateViewSet, basename='staff-leave-rates')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -99,6 +105,7 @@ urlpatterns = [
     path('users/me', update_my_user, name='update-my-user'),
     path('accounts/change-password/', change_password, name='change-password'),
     path('upload/', FileUploadView.as_view(), name='file-upload'),
+    path('staff/profile/upload-photo/', ProfilePhotoUploadView.as_view(), name='profile-photo-upload'),
     path('admin/payroll/preview/', payroll_preview, name='payroll-preview'),
     path('admin/payroll/generate/', payroll_generate, name='payroll-generate'),
     # Compliance system endpoints

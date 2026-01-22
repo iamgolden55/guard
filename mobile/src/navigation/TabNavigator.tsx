@@ -1,92 +1,53 @@
 /**
  * Tab Navigator
  * Bottom tabs for main app navigation
- * Wise-inspired design with circular active icons
+ * Uber-inspired minimalist design with black/white theme
  */
 
-import React, { useRef, useEffect } from 'react';
-import { View, Animated, Text } from 'react-native';
+import React from 'react';
+import { View, Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { TabParamList } from '../types/navigation';
+import { uberColors } from '../theme';
 
 // Screens
-import { WiseDashboardScreen } from '../screens/dashboard/WiseDashboardScreen';
-import { ShiftsScreen } from '../screens/shifts/ShiftsScreen';
+import { UberDashboardScreen } from '../screens/dashboard/UberDashboardScreen';
+import { UberShiftsScreen } from '../screens/shifts/uber/UberShiftsScreen';
 import { TeamScreen } from '../screens/team/TeamScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
-// Modern Tab Icon with Wise-inspired circular background
-const ModernTabIcon = ({
+// Uber-style Tab Icon - simple, clean, no animations
+const UberTabIcon = ({
   name,
-  focused
+  focused,
 }: {
   name: keyof typeof Ionicons.glyphMap;
   focused: boolean;
 }) => {
-  const scaleAnim = useRef(new Animated.Value(focused ? 1 : 0)).current;
-
-  useEffect(() => {
-    Animated.spring(scaleAnim, {
-      toValue: focused ? 1 : 0,
-      friction: 6,
-      tension: 40,
-      useNativeDriver: true,
-    }).start();
-  }, [focused]);
-
-  const iconScale = scaleAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.1],
-  });
-
-  const circleOpacity = scaleAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 1],
-  });
-
   return (
-    <View style={{ alignItems: 'center', justifyContent: 'center', width: 48, height: 48 }}>
-      {/* Circular background for active state */}
-      <Animated.View
-        style={{
-          position: 'absolute',
-          width: 48,
-          height: 48,
-          borderRadius: 24,
-          backgroundColor: '#F0F4FF',
-          opacity: circleOpacity,
-        }}
+    <View style={{ alignItems: 'center', justifyContent: 'center', width: 32, height: 32 }}>
+      <Ionicons
+        name={name}
+        size={24}
+        color={focused ? uberColors.primary : uberColors.text.muted}
       />
-
-      {/* Icon with scale animation */}
-      <Animated.View
-        style={{
-          transform: [{ scale: iconScale }],
-        }}
-      >
-        <Ionicons
-          name={name}
-          size={24}
-          color={focused ? '#007AFF' : '#94A3B8'}
-        />
-      </Animated.View>
     </View>
   );
 };
 
-// Custom Tab Label with bold for active state
-const TabLabel = ({ label, focused }: { label: string; focused: boolean }) => {
+// Uber-style Tab Label - clean typography
+const UberTabLabel = ({ label, focused }: { label: string; focused: boolean }) => {
   return (
     <Text
       style={{
-        fontSize: 12,
-        fontWeight: focused ? '700' : '600',
-        color: focused ? '#007AFF' : '#94A3B8',
-        marginTop: 4,
+        fontSize: 10,
+        fontWeight: '600',
+        color: focused ? uberColors.primary : uberColors.text.muted,
+        marginTop: 2,
       }}
     >
       {label}
@@ -100,56 +61,54 @@ export const TabNavigator = () => {
   return (
     <Tab.Navigator
       screenOptions={{
+        // Hide header for Home - MapHeader handles it
         headerShown: true,
         headerStyle: {
-          backgroundColor: '#FFFFFF',
+          backgroundColor: uberColors.background.surface,
           elevation: 0,
           shadowOpacity: 0,
           borderBottomWidth: 1,
-          borderBottomColor: '#E2E8F0',
+          borderBottomColor: uberColors.border.light,
         },
         headerTitleStyle: {
           fontSize: 18,
           fontWeight: '700',
-          color: '#1E293B',
+          color: uberColors.text.primary,
         },
-
+        // Uber-style tab bar: clean white with top border
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
+          backgroundColor: uberColors.background.surface,
           borderTopWidth: 1,
-          borderTopColor: '#E2E8F0',
-          height: 60 + insets.bottom,
+          borderTopColor: uberColors.border.light,
+          height: 56 + insets.bottom,
           paddingBottom: insets.bottom,
-          paddingTop: 8,
+          paddingTop: 6,
+          elevation: 0,
+          shadowOpacity: 0,
         },
-        tabBarActiveTintColor: '#007AFF',
-        tabBarInactiveTintColor: '#94A3B8',
-        tabBarLabelStyle: {
-          fontSize: 12,
-          marginTop: 4,
-        },
-        // Make active label bold
+        tabBarActiveTintColor: uberColors.primary,
+        tabBarInactiveTintColor: uberColors.text.muted,
         tabBarItemStyle: {
-          gap: 4,
+          gap: 2,
         },
       }}
     >
       <Tab.Screen
         name="Home"
-        component={WiseDashboardScreen}
+        component={UberDashboardScreen}
         options={{
-          headerTitle: 'Dashboard',
-          tabBarLabel: ({ focused }) => <TabLabel label="Home" focused={focused} />,
-          tabBarIcon: ({ focused }) => <ModernTabIcon name="home" focused={focused} />,
+          headerShown: false, // MapHeader serves as header
+          tabBarLabel: ({ focused }) => <UberTabLabel label="Home" focused={focused} />,
+          tabBarIcon: ({ focused }) => <UberTabIcon name="home" focused={focused} />,
         }}
       />
       <Tab.Screen
         name="Calendar"
-        component={ShiftsScreen}
+        component={UberShiftsScreen}
         options={{
-          headerTitle: 'My Shifts',
-          tabBarLabel: ({ focused }) => <TabLabel label="Shifts" focused={focused} />,
-          tabBarIcon: ({ focused }) => <ModernTabIcon name="calendar" focused={focused} />,
+          headerShown: false, // UberShiftsScreen has its own header
+          tabBarLabel: ({ focused }) => <UberTabLabel label="Shifts" focused={focused} />,
+          tabBarIcon: ({ focused }) => <UberTabIcon name="calendar-outline" focused={focused} />,
         }}
       />
       <Tab.Screen
@@ -157,8 +116,8 @@ export const TabNavigator = () => {
         component={TeamScreen}
         options={{
           headerTitle: 'Team',
-          tabBarLabel: ({ focused }) => <TabLabel label="Team" focused={focused} />,
-          tabBarIcon: ({ focused }) => <ModernTabIcon name="people" focused={focused} />,
+          tabBarLabel: ({ focused }) => <UberTabLabel label="Stats" focused={focused} />,
+          tabBarIcon: ({ focused }) => <UberTabIcon name="bar-chart-outline" focused={focused} />,
         }}
       />
       <Tab.Screen
@@ -166,8 +125,8 @@ export const TabNavigator = () => {
         component={ProfileScreen}
         options={{
           headerTitle: 'Profile',
-          tabBarLabel: ({ focused }) => <TabLabel label="Profile" focused={focused} />,
-          tabBarIcon: ({ focused }) => <ModernTabIcon name="person" focused={focused} />,
+          tabBarLabel: ({ focused }) => <UberTabLabel label="Profile" focused={focused} />,
+          tabBarIcon: ({ focused }) => <UberTabIcon name="person-outline" focused={focused} />,
         }}
       />
     </Tab.Navigator>

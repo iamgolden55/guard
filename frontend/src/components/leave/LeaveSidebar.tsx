@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Text, Icon } from '@fluentui/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserRole } from '../../types';
+import { useStaffProfile } from '../../hooks/useStaffProfile';
 
 interface NavigationItem {
   id: string;
@@ -12,11 +13,14 @@ interface NavigationItem {
   iconColor?: string; // Tasteful color for each icon
   roles: UserRole[];
   description?: string;
+  contractorOnly?: boolean; // Only show for contractors/temporary workers
+  permanentOnly?: boolean;  // Only show for permanent employees
 }
 
 const LeaveSidebar: React.FC = () => {
   const { authState, isUserRole } = useAuth();
   const location = useLocation();
+  const { isContractor, isPermanentEmployee, isLoading: profileLoading } = useStaffProfile();
 
   // Navigation sections organized by role
   const navigationSections: { title: string; items: NavigationItem[] }[] = [
@@ -38,13 +42,24 @@ const LeaveSidebar: React.FC = () => {
       title: 'My Leave',
       items: [
         {
+          id: 'unavailability',
+          label: 'My Availability',
+          path: '/leave/unavailability',
+          icon: 'EventDeclined',
+          iconColor: '#c239b3', // Purple
+          roles: [UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN],
+          description: 'Mark unavailable dates',
+          contractorOnly: true
+        },
+        {
           id: 'request',
           label: 'Request Leave',
           path: '/leave/request',
           icon: 'Add',
           iconColor: '#107c10', // Green
           roles: [UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN],
-          description: 'Submit new leave request'
+          description: 'Submit new leave request',
+          permanentOnly: true
         },
         {
           id: 'balance',
@@ -53,7 +68,8 @@ const LeaveSidebar: React.FC = () => {
           icon: 'TimeEntry',
           iconColor: '#018574', // Teal
           roles: [UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN],
-          description: 'View leave balances'
+          description: 'View leave balances',
+          permanentOnly: true
         },
         {
           id: 'history',
@@ -62,7 +78,8 @@ const LeaveSidebar: React.FC = () => {
           icon: 'History',
           iconColor: '#986f0b', // Gold
           roles: [UserRole.STAFF, UserRole.MANAGER, UserRole.ADMIN],
-          description: 'View past leave requests'
+          description: 'View past leave requests',
+          permanentOnly: true
         }
       ]
     },
@@ -134,7 +151,20 @@ const LeaveSidebar: React.FC = () => {
 
   // Check if user has access to a navigation item
   const hasAccess = (item: NavigationItem): boolean => {
-    return item.roles.some(role => isUserRole(role));
+    // First check role access
+    const hasRoleAccess = item.roles.some(role => isUserRole(role));
+    if (!hasRoleAccess) return false;
+
+    // Check contractor-only items (only show for contractors/temporary workers)
+    // Hide if user is confirmed as permanent employee, or if employment type is unknown (safe default)
+    if (item.contractorOnly && !isContractor) return false;
+
+    // Check permanent-only items (only show for CONFIRMED permanent employees)
+    // Hide if user is contractor OR if employment type is unknown (safe default)
+    // This ensures users without assigned employment types don't see permanent features
+    if (item.permanentOnly && (isContractor || !isPermanentEmployee)) return false;
+
+    return true;
   };
 
   // Check if current path matches the item path

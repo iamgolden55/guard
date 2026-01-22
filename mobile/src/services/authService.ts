@@ -301,18 +301,24 @@ class AuthService {
         console.log('[AuthService] StaffProfile ID:', profileData.id);
         console.log('[AuthService] User ID:', profileData.user.id);
 
+        // Get the first SIA license if available (backend returns array)
+        const firstSiaLicense = profileData.siaLicenses?.[0] || profileData.sia_licenses?.[0];
+
         // Extract user data and move StaffProfile data to staff_profile property
         const userData = {
           ...profileData.user,
           staff_profile: {
             id: profileData.id,
-            phone_number: profileData.phone_number,
+            phone_number: profileData.phone_number || '',
+            profile_image_url: profileData.profile_image_url || null,
             emergency_contact_name: profileData.emergency_contact_name,
             emergency_contact_phone: profileData.emergency_contact_phone,
-            sia_license_number: profileData.sia_license_number,
-            sia_license_expiry: profileData.sia_license_expiry,
-            is_approved: profileData.is_approved,
-            security_roles: profileData.security_roles,
+            // Map SIA license from the first license in the array
+            sia_license_number: firstSiaLicense?.license_number || firstSiaLicense?.licenseNumber || '',
+            sia_license_expiry: firstSiaLicense?.expiry_date || firstSiaLicense?.expiryDate || '',
+            sia_licenses: profileData.siaLicenses || profileData.sia_licenses || [],
+            is_approved: profileData.is_approved ?? profileData.isApproved,
+            security_roles: profileData.securityRoles || profileData.security_roles || [],
           }
         };
 
@@ -326,6 +332,134 @@ class AuthService {
     } catch (error) {
       console.error('[AuthService] Failed to fetch user profile:', error);
       throw new Error('Failed to fetch user profile');
+    }
+  }
+
+  /**
+   * Helper to transform StaffProfile response to User structure
+   */
+  private transformProfileResponse(profileData: any): any {
+    if (profileData.user && profileData.user.id) {
+      const firstSiaLicense = profileData.siaLicenses?.[0] || profileData.sia_licenses?.[0];
+
+      return {
+        ...profileData.user,
+        staff_profile: {
+          id: profileData.id,
+          phone_number: profileData.phone_number || '',
+          profile_image_url: profileData.profile_image_url || null,
+          emergency_contact_name: profileData.emergency_contact_name,
+          emergency_contact_phone: profileData.emergency_contact_phone,
+          sia_license_number: firstSiaLicense?.license_number || firstSiaLicense?.licenseNumber || '',
+          sia_license_expiry: firstSiaLicense?.expiry_date || firstSiaLicense?.expiryDate || '',
+          sia_licenses: profileData.siaLicenses || profileData.sia_licenses || [],
+          is_approved: profileData.is_approved ?? profileData.isApproved,
+          security_roles: profileData.securityRoles || profileData.security_roles || [],
+          employment_type: profileData.employment_type || profileData.employmentType || null,
+        }
+      };
+    }
+    return profileData;
+  }
+
+  /**
+   * Upload profile photo
+   * 
+   * @param token - Authentication token
+   * @param photoUri - Local URI of the photo to upload
+   * @returns Object containing the uploaded photo URL
+   */
+  async uploadProfilePhoto(token: string, photoUri: string): Promise<{ url: string }> {
+    try {
+      console.log('[AuthService] Uploading profile photo:', photoUri);
+
+      // Create form data for multipart upload
+      const formData = new FormData();
+      
+      // Get the filename from the URI
+      const filename = photoUri.split('/').pop() || 'photo.jpg';
+      
+      // Determine the mime type from the extension
+      const ext = filename.split('.').pop()?.toLowerCase();
+      let mimeType = 'image/jpeg';
+      if (ext === 'png') mimeType = 'image/png';
+      else if (ext === 'gif') mimeType = 'image/gif';
+      else if (ext === 'webp') mimeType = 'image/webp';
+
+      // Append the photo file
+      formData.append('photo', {
+        uri: photoUri,
+        name: filename,
+        type: mimeType,
+      } as any);
+
+      const response = await axios.post(
+        `${API_ENDPOINTS.PROFILE.UPLOAD_PHOTO}`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+          timeout: 30000, // 30 seconds for upload
+        }
+      );
+
+      console.log('[AuthService] Profile photo uploaded:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('[AuthService] Failed to upload profile photo:', error);
+      if (error.response?.data) {
+        const errorData = error.response.data;
+        const message = typeof errorData === 'string'
+          ? errorData
+          : errorData.error || errorData.detail || 'Failed to upload photo';
+        throw new Error(message);
+      }
+      throw new Error('Failed to upload profile photo');
+    }
+  }
+
+  /**
+   * Update user profile
+   * 
+   * @param token - Authentication token
+   * @param data - Profile data to update (firstName, lastName, email, phone_number)
+   * @returns Updated user profile
+   */
+  async updateProfile(token: string, data: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phone_number?: string;
+  }): Promise<any> {
+    try {
+      console.log('[AuthService] Updating profile with data:', data);
+      
+      const response = await axios.patch(
+        API_ENDPOINTS.AUTH.PROFILE,
+        data,
+        {
+          headers: getAuthHeaders(token),
+          timeout: 10000,
+        }
+      );
+
+      console.log('[AuthService] Profile update response:', response.data);
+
+      // Transform the response same way as fetchUserProfile
+      return this.transformProfileResponse(response.data);
+    } catch (error: any) {
+      console.error('[AuthService] Failed to update profile:', error);
+      if (error.response?.data) {
+        // Extract error message from response
+        const errorData = error.response.data;
+        const message = typeof errorData === 'string' 
+          ? errorData 
+          : errorData.detail || errorData.error || JSON.stringify(errorData);
+        throw new Error(message);
+      }
+      throw new Error('Failed to update profile');
     }
   }
 }

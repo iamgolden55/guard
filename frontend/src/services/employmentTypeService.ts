@@ -1,10 +1,20 @@
 import api from './api';
 
+export type EmploymentCategory = 'permanent' | 'contractor' | 'temporary';
+
+export const EMPLOYMENT_CATEGORY_OPTIONS = [
+  { key: 'permanent', text: 'Permanent Employee', description: 'Gets leave balances, paid holidays on invoices' },
+  { key: 'contractor', text: 'Contractor', description: 'Marks availability only, no paid leave' },
+  { key: 'temporary', text: 'Temporary Staff', description: 'Configurable (defaults to contractor behavior)' },
+] as const;
+
 export interface EmploymentType {
   id: number;
   name: string;
   description: string;
   is_active: boolean;
+  employment_category: EmploymentCategory;
+  employment_category_display?: string;
   created_at: string;
   updated_at: string;
   application_count: number;
@@ -14,12 +24,14 @@ export interface CreateEmploymentTypeRequest {
   name: string;
   description: string;
   is_active?: boolean;
+  employment_category?: EmploymentCategory;
 }
 
 export interface UpdateEmploymentTypeRequest {
   name?: string;
   description?: string;
   is_active?: boolean;
+  employment_category?: EmploymentCategory;
 }
 
 export const employmentTypeService = {

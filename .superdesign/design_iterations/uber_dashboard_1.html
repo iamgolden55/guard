@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Uber-Style Dashboard - Security Staff</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+      background: #F8F8F8 !important;
+      min-height: 100vh;
+    }
+
+    /* ============================================
+       UBER DESIGN TOKENS
+       ============================================ */
+
+    :root {
+      --uber-black: #000000;
+      --uber-slate: #2D3E50;
+      --uber-blue: #276EF1;
+      --bg-light: #F8F8F8;
+      --bg-surface: #FFFFFF;
+      --text-primary: #111827;
+      --text-secondary: #6B7280;
+      --text-muted: #9CA3AF;
+      --border-light: #E5E7EB;
+      --success: #22C55E;
+      --success-light: #DCFCE7;
+    }
+
+    /* ============================================
+       MOBILE CONTAINER
+       ============================================ */
+
+    .mobile-container {
+      max-width: 390px;
+      margin: 0 auto;
+      min-height: 100vh;
+      background: var(--bg-light);
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* ============================================
+       MAP HEADER
+       ============================================ */
+
+    .map-header {
+      height: 380px;
+      background: #EAECEF;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Street grid pattern */
+    .street {
+      position: absolute;
+      background: #FFFFFF;
+    }
+
+    .street-h {
+      left: 0;
+      right: 0;
+      height: 8px;
+    }
+
+    .street-v {
+      top: 0;
+      bottom: 0;
+      width: 8px;
+    }
+
+    /* City blocks */
+    .block {
+      position: absolute;
+      background: #D8DBDF;
+      border-radius: 4px;
+      opacity: 0.5;
+    }
+
+    /* Gradient overlay */
+    .map-gradient {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, transparent 0%, rgba(248,248,248,0.3) 50%, rgba(248,248,248,0.95) 100%);
+    }
+
+    /* Location pins */
+    .pin-active {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pin-pulse {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--uber-black);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.6; }
+      50% { transform: scale(1.3); opacity: 0; }
+    }
+
+    .pin-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--uber-black);
+      border: 2px solid white;
+      position: relative;
+      z-index: 1;
+    }
+
+    .pin-static {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      border: 2px solid white;
+    }
+
+    /* Status badge */
+    .status-badge {
+      position: absolute;
+      top: 50px;
+      right: 16px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: white;
+      padding: 6px 12px;
+      border-radius: 9999px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    /* Greeting card */
+    .greeting-card {
+      position: absolute;
+      bottom: 24px;
+      left: 16px;
+      right: 16px;
+      background: white;
+      border-radius: 20px;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+    }
+
+    .greeting-text {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.5px;
+      margin-bottom: 4px;
+    }
+
+    .date-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--border-light);
+    }
+
+    /* ============================================
+       CHECK ACTION CARDS
+       ============================================ */
+
+    .check-card {
+      display: flex;
+      align-items: center;
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      border: 1px solid var(--border-light);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+      margin-bottom: 12px;
+    }
+
+    .check-card.completed {
+      background: var(--success-light);
+      border-color: var(--success);
+    }
+
+    .check-card.disabled {
+      opacity: 0.6;
+    }
+
+    .icon-circle {
+      width: 48px;
+      height: 48px;
+      border-radius: 24px;
+      background: var(--border-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+
+    .icon-circle.completed {
+      background: var(--success-light);
+    }
+
+    .card-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 2px;
+    }
+
+    .card-subtitle {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text-secondary);
+    }
+
+    .card-right {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .time-display {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      font-family: 'SF Mono', monospace;
+      margin-bottom: 8px;
+    }
+
+    .time-display.empty {
+      color: var(--text-muted);
+    }
+
+    .btn-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 8px 16px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      min-width: 90px;
+    }
+
+    .btn-action.active {
+      background: var(--uber-black);
+      color: white;
+    }
+
+    .btn-action.completed {
+      background: var(--success-light);
+      color: var(--success);
+      border: 1px solid var(--success);
+    }
+
+    .btn-action.disabled {
+      background: var(--border-light);
+      color: var(--text-muted);
+      cursor: not-allowed;
+    }
+
+    /* ============================================
+       OVERVIEW STATS
+       ============================================ */
+
+    .stats-card {
+      display: flex;
+      align-items: center;
+      background: white;
+      border-radius: 12px;
+      padding: 20px 16px;
+      border: 1px solid var(--border-light);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    }
+
+    .stat-item {
+      flex: 1;
+      text-align: center;
+    }
+
+    .stat-number {
+      font-size: 30px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-divider {
+      width: 1px;
+      height: 40px;
+      background: var(--border-light);
+    }
+
+    /* ============================================
+       TAB BAR
+       ============================================ */
+
+    .tab-bar {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 390px;
+      background: white;
+      border-top: 1px solid var(--border-light);
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 6px 0 26px;
+    }
+
+    .tab-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 4px 12px;
+    }
+
+    .tab-item.active {
+      color: var(--uber-black);
+    }
+
+    .tab-label {
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    /* ============================================
+       STATE CONTROLS (Demo)
+       ============================================ */
+
+    .state-controls {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .state-btn {
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: #1a1a1a;
+      color: white;
+      transition: all 150ms ease;
+    }
+
+    .state-btn:hover {
+      background: #333;
+    }
+
+    .state-btn.active {
+      background: var(--uber-blue);
+    }
+  </style>
+</head>
+<body>
+  <!-- State Controls (Demo Only) -->
+  <div class="state-controls">
+    <button class="state-btn" onclick="showState('initial')">Initial</button>
+    <button class="state-btn active" onclick="showState('checkedIn')">Checked In</button>
+    <button class="state-btn" onclick="showState('completed')">Completed</button>
+  </div>
+
+  <!-- Mobile Container -->
+  <div class="mobile-container">
+
+    <!-- Map Header -->
+    <div class="map-header">
+      <!-- Street grid -->
+      <div class="street street-h" style="top: 25%;"></div>
+      <div class="street street-h" style="top: 50%;"></div>
+      <div class="street street-h" style="top: 75%;"></div>
+      <div class="street street-v" style="left: 20%;"></div>
+      <div class="street street-v" style="left: 45%;"></div>
+      <div class="street street-v" style="left: 70%;"></div>
+      <div class="street street-v" style="left: 90%;"></div>
+
+      <!-- City blocks -->
+      <div class="block" style="top: 40px; left: 30px; width: 60px; height: 50px;"></div>
+      <div class="block" style="top: 100px; left: 180px; width: 80px; height: 40px;"></div>
+      <div class="block" style="top: 160px; left: 50px; width: 50px; height: 60px;"></div>
+      <div class="block" style="top: 80px; right: 40px; width: 70px; height: 55px;"></div>
+
+      <!-- Gradient overlay -->
+      <div class="map-gradient"></div>
+
+      <!-- Location pins -->
+      <div class="pin-active" style="top: 80px; left: 100px;">
+        <div class="pin-pulse"></div>
+        <div class="pin-dot"></div>
+      </div>
+      <div class="pin-static" style="top: 120px; right: 80px;"></div>
+      <div class="pin-static" style="top: 180px; left: 60px;"></div>
+      <div class="pin-static" style="top: 140px; right: 140px;"></div>
+
+      <!-- Status badge -->
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Online</span>
+      </div>
+
+      <!-- Greeting card -->
+      <div class="greeting-card">
+        <div>
+          <div class="greeting-text">Good Morning, John</div>
+          <div class="date-text">Sunday 13 March, 2023</div>
+        </div>
+        <img
+          src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face"
+          alt="Profile"
+          class="avatar"
+        />
+      </div>
+    </div>
+
+    <!-- Content Area -->
+    <div style="padding: 0 16px; margin-top: -8px; padding-bottom: 100px;">
+
+      <!-- Check In Card -->
+      <div class="check-card completed" id="checkInCard">
+        <div class="icon-circle completed" id="checkInIcon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 6L9 17l-5-5"/>
+          </svg>
+        </div>
+        <div class="card-content">
+          <div class="card-title">Check In</div>
+          <div class="card-subtitle" id="checkInSubtitle">Shift started</div>
+        </div>
+        <div class="card-right">
+          <div class="time-display" id="checkInTime">08:45 AM</div>
+          <button class="btn-action completed" id="checkInBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+              <path d="M20 6L9 17l-5-5"/>
+            </svg>
+            Done
+          </button>
+        </div>
+      </div>
+
+      <!-- Check Out Card -->
+      <div class="check-card" id="checkOutCard">
+        <div class="icon-circle" id="checkOutIcon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16,17 21,12 16,7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </div>
+        <div class="card-content">
+          <div class="card-title">Check Out</div>
+          <div class="card-subtitle" id="checkOutSubtitle">Complete your shift</div>
+        </div>
+        <div class="card-right">
+          <div class="time-display empty" id="checkOutTime">--:--</div>
+          <button class="btn-action active" id="checkOutBtn">Check Out</button>
+        </div>
+      </div>
+
+      <!-- Overview Stats -->
+      <div class="stats-card" style="margin-top: 24px;">
+        <div class="stat-item">
+          <div class="stat-number" id="hoursValue">15</div>
+          <div class="stat-label">Hours</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <div class="stat-number" id="checksValue">03</div>
+          <div class="stat-label">Checks</div>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <div class="stat-number" id="shiftsValue">02</div>
+          <div class="stat-label">Shifts</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <a href="#" class="tab-item active">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+        </svg>
+        <span class="tab-label">Home</span>
+      </a>
+      <a href="#" class="tab-item">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <path d="M14 2v6h6"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+        <span class="tab-label">Docs</span>
+      </a>
+      <a href="#" class="tab-item">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10"/>
+          <line x1="12" y1="20" x2="12" y2="4"/>
+          <line x1="6" y1="20" x2="6" y2="14"/>
+        </svg>
+        <span class="tab-label">Stats</span>
+      </a>
+      <a href="#" class="tab-item">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        <span class="tab-label">Profile</span>
+      </a>
+    </div>
+
+  </div>
+
+  <script>
+    // Initialize Lucide icons
+    lucide.createIcons();
+
+    // State management for demo
+    function showState(state) {
+      // Update control buttons
+      document.querySelectorAll('.state-btn').forEach(btn => btn.classList.remove('active'));
+      if (event && event.target) event.target.classList.add('active');
+
+      const checkInCard = document.getElementById('checkInCard');
+      const checkOutCard = document.getElementById('checkOutCard');
+      const checkInIcon = document.getElementById('checkInIcon');
+      const checkOutIcon = document.getElementById('checkOutIcon');
+      const checkInBtn = document.getElementById('checkInBtn');
+      const checkOutBtn = document.getElementById('checkOutBtn');
+      const checkInTime = document.getElementById('checkInTime');
+      const checkOutTime = document.getElementById('checkOutTime');
+      const checkInSubtitle = document.getElementById('checkInSubtitle');
+      const checkOutSubtitle = document.getElementById('checkOutSubtitle');
+
+      switch(state) {
+        case 'initial':
+          checkInCard.classList.remove('completed');
+          checkOutCard.classList.add('disabled');
+          checkOutCard.classList.remove('completed');
+
+          checkInIcon.classList.remove('completed');
+          checkInIcon.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10,17 15,12 10,7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>';
+
+          checkInBtn.className = 'btn-action active';
+          checkInBtn.innerHTML = 'Check In';
+
+          checkOutBtn.className = 'btn-action disabled';
+          checkOutBtn.textContent = 'Check Out';
+
+          checkInTime.textContent = '--:--';
+          checkInTime.classList.add('empty');
+          checkOutTime.textContent = '--:--';
+
+          checkInSubtitle.textContent = 'Scan QR to start';
+          checkOutSubtitle.textContent = 'Check in first';
+          break;
+
+        case 'checkedIn':
+          checkInCard.classList.add('completed');
+          checkOutCard.classList.remove('disabled', 'completed');
+
+          checkInIcon.classList.add('completed');
+          checkInIcon.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+
+          checkInBtn.className = 'btn-action completed';
+          checkInBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg> Done';
+
+          checkOutIcon.classList.remove('completed');
+          checkOutIcon.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>';
+
+          checkOutBtn.className = 'btn-action active';
+          checkOutBtn.textContent = 'Check Out';
+
+          checkInTime.textContent = '08:45 AM';
+          checkInTime.classList.remove('empty');
+          checkOutTime.textContent = '--:--';
+          checkOutTime.classList.add('empty');
+
+          checkInSubtitle.textContent = 'Shift started';
+          checkOutSubtitle.textContent = 'Complete your shift';
+          break;
+
+        case 'completed':
+          checkInCard.classList.add('completed');
+          checkOutCard.classList.remove('disabled');
+          checkOutCard.classList.add('completed');
+
+          checkInIcon.classList.add('completed');
+          checkInIcon.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+
+          checkOutIcon.classList.add('completed');
+          checkOutIcon.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+
+          checkInBtn.className = 'btn-action completed';
+          checkInBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg> Done';
+
+          checkOutBtn.className = 'btn-action completed';
+          checkOutBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg> Done';
+
+          checkInTime.textContent = '08:45 AM';
+          checkInTime.classList.remove('empty');
+          checkOutTime.textContent = '05:30 PM';
+          checkOutTime.classList.remove('empty');
+
+          checkInSubtitle.textContent = 'Shift started';
+          checkOutSubtitle.textContent = 'Shift completed';
+          break;
+      }
+    }
+
+    // Initialize with checked in state
+    showState('checkedIn');
+  </script>
+</body>
+</html>

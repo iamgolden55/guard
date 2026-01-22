@@ -931,7 +931,7 @@ const StaffManagement: React.FC = () => {
 
       // Update the staff profile with the selected employment type
       await api.patch(`/api/v1/staff-profiles/${staffProfile.id}/`, {
-        employment_type: selectedEmploymentType
+        employmentType: selectedEmploymentType
       });
       
       // Update the local state

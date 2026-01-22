@@ -3,7 +3,7 @@
  * Clean, minimal profile editing with hero photo
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -14,52 +14,77 @@ import {
   Image,
   Text,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { Container, Body, Caption } from '@components/ui';
-import { colors, spacing, layout } from '../../theme';
+import { Container, Caption } from '@components/ui';
+import { colors, spacing } from '../../theme';
 import { useNavigation } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../hooks/useRedux';
 import { RootState } from '../../store';
 import { updateProfile } from '../../store/slices/authSlice';
 import { logger } from '../../utils/logger';
+import authService from '../../services/authService';
+
+// Helper to format security roles for display
+const formatSecurityRoles = (roles: string[] | undefined): string => {
+  if (!roles || roles.length === 0) return 'Not assigned';
+  
+  const roleLabels: Record<string, string> = {
+    'door_supervisor': 'Door Supervisor',
+    'security_guard': 'Security Guard',
+    'cctv_operator': 'CCTV Operator',
+    'close_protection': 'Close Protection',
+    'dog_handler': 'Dog Handler',
+    'ds': 'Door Supervisor',
+    'sg': 'Security Guard',
+    'cctv': 'CCTV Operator',
+    'cp': 'Close Protection',
+    'k9': 'Dog Handler',
+  };
+  
+  return roles.map(role => roleLabels[role] || role).join(', ');
+};
 
 export const EditProfileScreen: React.FC = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const dispatch = useAppDispatch();
   const user = useAppSelector((state: RootState) => state.auth.user);
-  const profile = useAppSelector((state: RootState) => state.auth.profile);
+  const accessToken = useAppSelector((state: RootState) => state.auth.accessToken);
+  
+  // Get staff profile data from the correct location
+  const staffProfile = user?.staff_profile;
 
-  // Form state
+  // Form state - editable fields
   const [firstName, setFirstName] = useState(user?.first_name || '');
   const [lastName, setLastName] = useState(user?.last_name || '');
   const [email, setEmail] = useState(user?.email || '');
-  const [phone, setPhone] = useState(profile?.phone_number || '');
-  const [siaLicense, setSiaLicense] = useState(profile?.sia_license_number || '');
-  const [siaExpiry, setSiaExpiry] = useState(profile?.sia_expiry_date || '');
-  const [role, setRole] = useState(profile?.role || '');
-  const [bio, setBio] = useState(profile?.bio || '');
-  const [profilePhoto, setProfilePhoto] = useState<string | null>(profile?.profile_photo || null);
+  const [phone, setPhone] = useState(staffProfile?.phone_number || '');
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(
+    staffProfile?.profile_image_url || null
+  );
+
+  // Read-only fields derived from user data
+  const siaLicenseNumber = staffProfile?.sia_license_number || '';
+  const siaExpiryDate = staffProfile?.sia_license_expiry || '';
+  const securityRoles = useMemo(() => 
+    formatSecurityRoles(staffProfile?.security_roles || user?.security_roles),
+    [staffProfile?.security_roles, user?.security_roles]
+  );
 
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Track changes
+  // Track changes - only for editable fields
   React.useEffect(() => {
     const changed =
       firstName !== (user?.first_name || '') ||
       lastName !== (user?.last_name || '') ||
       email !== (user?.email || '') ||
-      phone !== (profile?.phone_number || '') ||
-      siaLicense !== (profile?.sia_license_number || '') ||
-      siaExpiry !== (profile?.sia_expiry_date || '') ||
-      role !== (profile?.role || '') ||
-      bio !== (profile?.bio || '') ||
-      profilePhoto !== (profile?.profile_photo || null);
+      phone !== (staffProfile?.phone_number || '') ||
+      profilePhoto !== (staffProfile?.profile_image_url || null);
 
     setHasChanges(changed);
-  }, [firstName, lastName, email, phone, siaLicense, siaExpiry, role, bio, profilePhoto, user, profile]);
+  }, [firstName, lastName, email, phone, profilePhoto, user, staffProfile]);
 
   const handleChoosePhoto = async () => {
     try {
@@ -170,22 +195,39 @@ export const EditProfileScreen: React.FC = () => {
       setIsSaving(true);
       logger.info('[EditProfile] Saving profile changes');
 
-      // Prepare profile data
+      // Check if profile photo changed and is a local file (needs upload)
+      const photoChanged = profilePhoto !== (staffProfile?.profile_image_url || null);
+      const isLocalPhoto = profilePhoto && !profilePhoto.startsWith('http');
+
+      if (photoChanged && isLocalPhoto && profilePhoto && accessToken) {
+        logger.info('[EditProfile] Uploading new profile photo');
+        try {
+          const uploadResult = await authService.uploadProfilePhoto(accessToken, profilePhoto);
+          logger.info('[EditProfile] Photo uploaded successfully:', uploadResult.url);
+          // The profile photo URL will be updated on the server, 
+          // it will be reflected when we fetch the profile again
+        } catch (photoError: any) {
+          logger.error('[EditProfile] Failed to upload photo', { error: photoError });
+          // Show warning but continue with other updates
+          Alert.alert(
+            'Photo Upload Failed',
+            'Your profile photo could not be uploaded, but other changes will be saved.',
+            [{ text: 'OK' }]
+          );
+        }
+      }
+
+      // Prepare profile data in the format expected by the backend
+      // Backend expects camelCase for user fields: firstName, lastName, email
+      // And snake_case for profile fields: phone_number
       const profileData = {
-        user: {
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          email: email.trim(),
-        },
-        profile: {
-          phone_number: phone.trim() || null,
-          sia_license_number: siaLicense.trim() || null,
-          sia_expiry_date: siaExpiry.trim() || null,
-          role: role.trim() || null,
-          bio: bio.trim() || null,
-          profile_photo: profilePhoto,
-        },
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim(),
+        phone_number: phone.trim() || null,
       };
+
+      logger.info('[EditProfile] Sending data:', profileData);
 
       // Dispatch update action
       await dispatch(updateProfile(profileData)).unwrap();
@@ -323,61 +365,54 @@ export const EditProfileScreen: React.FC = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Professional Information</Text>
 
+          {/* SIA License - Read Only */}
           <View style={styles.fieldGroup}>
             <Caption style={styles.fieldLabel}>SIA License Number</Caption>
-            <TextInput
-              style={styles.input}
-              placeholder="SIA license number"
-              placeholderTextColor={colors.text.tertiary}
-              value={siaLicense}
-              onChangeText={setSiaLicense}
-              autoCapitalize="characters"
-            />
+            <View style={styles.readOnlyField}>
+              <Text style={styles.readOnlyText}>
+                {siaLicenseNumber || 'Not provided'}
+              </Text>
+              <Ionicons name="lock-closed-outline" size={16} color={colors.text.tertiary} />
+            </View>
           </View>
 
+          {/* SIA Expiry - Read Only */}
           <View style={styles.fieldGroup}>
             <Caption style={styles.fieldLabel}>SIA License Expiry</Caption>
-            <TextInput
-              style={styles.input}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.text.tertiary}
-              value={siaExpiry}
-              onChangeText={setSiaExpiry}
-            />
-            <Caption color={colors.text.tertiary} style={styles.fieldHint}>
-              Format: YYYY-MM-DD (e.g., 2025-12-31)
-            </Caption>
+            <View style={styles.readOnlyField}>
+              <Text style={styles.readOnlyText}>
+                {siaExpiryDate || 'Not provided'}
+              </Text>
+              <Ionicons name="lock-closed-outline" size={16} color={colors.text.tertiary} />
+            </View>
           </View>
 
+          {/* Role/Position - Read Only */}
           <View style={styles.fieldGroup}>
             <Caption style={styles.fieldLabel}>Role/Position</Caption>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Security Officer, Door Supervisor"
-              placeholderTextColor={colors.text.tertiary}
-              value={role}
-              onChangeText={setRole}
-            />
+            <View style={styles.readOnlyField}>
+              <Text style={styles.readOnlyText}>
+                {securityRoles}
+              </Text>
+              <Ionicons name="lock-closed-outline" size={16} color={colors.text.tertiary} />
+            </View>
           </View>
-        </View>
 
-        {/* Bio */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bio</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Tell us about yourself..."
-            placeholderTextColor={colors.text.tertiary}
-            value={bio}
-            onChangeText={setBio}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-            maxLength={500}
-          />
-          <Caption color={colors.text.tertiary} style={styles.charCount}>
-            {bio.length}/500
-          </Caption>
+          {/* Manage SIA Licenses Button */}
+          <TouchableOpacity
+            style={styles.manageButton}
+            onPress={() => {
+              Alert.alert(
+                'Manage SIA Licenses',
+                'SIA license management will be available in a future update. Please contact your administrator to update license information.',
+                [{ text: 'OK' }]
+              );
+            }}
+          >
+            <Ionicons name="card-outline" size={20} color="#0066FF" />
+            <Text style={styles.manageButtonText}>Manage SIA Licenses</Text>
+            <Ionicons name="chevron-forward" size={20} color="#0066FF" />
+          </TouchableOpacity>
         </View>
 
         {/* Info Note */}
@@ -525,16 +560,37 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     fontWeight: '500',
   },
-  textArea: {
-    minHeight: 120,
-    paddingTop: spacing.base + 2,
+  readOnlyField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    borderRadius: 12,
+    padding: spacing.base + 2,
+    backgroundColor: colors.gray[50] || '#F9FAFB',
   },
-  charCount: {
-    textAlign: 'right',
-    marginTop: spacing.sm,
-    fontSize: 13,
+  readOnlyText: {
+    fontSize: 16,
+    color: colors.text.secondary,
     fontWeight: '500',
-    color: colors.text.tertiary,
+    flex: 1,
+  },
+  manageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.base,
+    marginTop: spacing.sm,
+    backgroundColor: '#F0F4FF',
+    borderRadius: 12,
+    gap: 8,
+  },
+  manageButtonText: {
+    color: '#0066FF',
+    fontWeight: '600',
+    fontSize: 15,
+    flex: 1,
   },
   infoBox: {
     flexDirection: 'row',

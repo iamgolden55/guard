@@ -27,14 +27,15 @@ const DeputyIntegration = lazy(() => import('./pages/admin/DeputyIntegration'));
 const RecruitmentManagement = lazy(() => import('./pages/admin/RecruitmentManagement'));
 const RecruitmentApplication = lazy(() => import('./pages/public/RecruitmentApplication'));
 const EmploymentTypesManagement = lazy(() => import('./pages/admin/EmploymentTypesManagement'));
-const Reports = lazy(() => import('./pages/admin/Reports'));
-const ReportsPage = lazy(() => import('./pages/reports/ReportsPage'));
+// Reports feature removed
+const Attendance = lazy(() => import('./pages/admin/Attendance'));
+const BankHolidayManagement = lazy(() => import('./pages/admin/BankHolidayManagement'));
 const ComplianceSettings = lazy(() => import('./components/compliance/ComplianceSettings'));
 
 // Leave Management Pages - Lazy Loading
 const TeamOverview = lazy(() => import('./pages/manager/TeamOverview'));
 const LeavePolicies = lazy(() => import('./pages/admin/LeavePolicies'));
-const LeaveReports = lazy(() => import('./pages/admin/LeaveReports'));
+// Leave reports removed
 const LeaveSettings = lazy(() => import('./pages/admin/LeaveSettings'));
 
 // Onboarding Components - Lazy Loading
@@ -176,29 +177,22 @@ const Router: React.FC = () => {
           }
         />
         <Route
-          path="/admin/reports"
+          path="/admin/bank-holidays"
           element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading reports...</span></div>}>
-              <Reports />
+            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading bank holidays...</span></div>}>
+              <BankHolidayManagement />
             </Suspense>
           }
         />
         <Route
-          path="/reports"
+          path="/admin/attendance"
           element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading reports dashboard...</span></div>}>
-              <ReportsPage />
+            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading attendance analytics...</span></div>}>
+              <Attendance />
             </Suspense>
           }
         />
-        <Route
-          path="/reports/*"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading reports...</span></div>}>
-              <ReportsPage />
-            </Suspense>
-          }
-        />
+        {/* Reports routes removed */}
         <Route path="/admin/finance-integrations" element={<FinanceIntegrations />} />
         <Route path="/admin/finance-integrations/oauth-callback" element={<FinanceIntegrationsOAuthCallback />} />
 

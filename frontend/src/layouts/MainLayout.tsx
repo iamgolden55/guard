@@ -13,7 +13,7 @@ import {
   useTheme
 } from '@fluentui/react';
 import { useAuth } from '../contexts/AuthContext';
-import { UserRole } from '../types';
+
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -59,9 +59,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     // Handle compliance routes
     if (path.startsWith('/compliance')) return '/compliance';
 
-    // Handle reports routes
-    if (path.startsWith('/reports')) return '/reports';
-    if (path.startsWith('/admin/reports')) return '/reports';
+    // Reports routes removed
 
     // Handle admin routes
     if (path.startsWith('/admin/staff')) return '/admin/staff';
@@ -71,6 +69,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     if (path.startsWith('/admin/invoices')) return '/admin/invoices';
     if (path.startsWith('/admin/deputy')) return '/admin/deputy';
     if (path.startsWith('/admin/compliance-settings')) return '/admin/compliance-settings';
+    if (path.startsWith('/admin/bank-holidays')) return '/admin/bank-holidays';
     if (path.startsWith('/admin/settings')) return '/admin/settings';
 
     // Handle other routes
@@ -183,19 +182,20 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         icon: 'AddFriend',
         isExpanded: location.pathname.startsWith('/admin/recruitment')
       },
-      {
-        name: 'Reports & Analytics',
-        url: '/reports',
-        key: '/reports',
-        icon: 'ReportLock',
-        isExpanded: location.pathname.startsWith('/reports') || location.pathname.startsWith('/admin/reports')
-      },
+      
       {
         name: 'Invoices',
         url: '/admin/invoices',
         key: '/admin/invoices',
         icon: 'Money',
         isExpanded: location.pathname.startsWith('/admin/invoices')
+      },
+      {
+        name: 'Bank Holidays',
+        url: '/admin/bank-holidays',
+        key: '/admin/bank-holidays',
+        icon: 'EventDateMissed12',
+        isExpanded: location.pathname.startsWith('/admin/bank-holidays')
       },
       {
         name: 'Deputy Integration',

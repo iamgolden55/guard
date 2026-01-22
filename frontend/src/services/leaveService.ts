@@ -183,13 +183,10 @@ const LEAVE_ENDPOINTS = {
   LEAVE_REQUESTS: '/leave/requests/',
   LEAVE_BALANCES: '/leave/balances/',
   LEAVE_APPROVALS: '/leave/approvals/',
-  LEAVE_STATISTICS: '/leave/reports/statistics/',
   LEAVE_CALENDAR: '/leave/calendar/',
   TEAM_OVERVIEW: '/leave/team/overview/',
   TEAM_BALANCES: '/leave/team/balances/',
   TEAM_CALENDAR: '/leave/team/calendar/',
-  LEAVE_ANALYTICS: '/leave/reports/analytics/',
-  LEAVE_REPORTS: '/leave/reports/',
   LEAVE_SETTINGS: '/leave/settings/',
   BLACKOUT_PERIODS: '/leave/blackout-periods/'
 } as const;
@@ -741,50 +738,7 @@ class LeaveService {
     await api.delete(`${LEAVE_ENDPOINTS.LEAVE_POLICIES}/${id}`);
   }
 
-  // ============ Leave Reports Methods ============
-  /**
-   * Get leave analytics data for reporting
-   */
-  async getLeaveAnalytics(filters: AnalyticsFilters): Promise<AnalyticsData> {
-    const response = await api.post<AnalyticsData>(LEAVE_ENDPOINTS.LEAVE_ANALYTICS, filters);
-    return response.data;
-  }
-
-  /**
-   * Get leave report summary
-   */
-  async getLeaveReportSummary(filters: ReportFilters): Promise<ReportSummary> {
-    const response = await api.post<ReportSummary>(`${LEAVE_ENDPOINTS.LEAVE_REPORTS}/summary`, filters);
-    return response.data;
-  }
-
-  /**
-   * Export leave report in specified format
-   */
-  async exportLeaveReport(format: 'csv' | 'pdf', filters: ReportFilters): Promise<Blob> {
-    const response = await api.post(
-      `${LEAVE_ENDPOINTS.LEAVE_REPORTS}/export`,
-      { ...filters, format },
-      { responseType: 'blob' }
-    );
-    return response.data;
-  }
-
-  /**
-   * Get detailed leave report data
-   */
-  async getLeaveReportData(filters: ReportFilters): Promise<{
-    requests: LeaveRequest[];
-    summary: ReportSummary;
-    charts: {
-      byLeaveType: Array<{ name: string; value: number; color: string }>;
-      byDepartment: Array<{ name: string; value: number }>;
-      byMonth: Array<{ month: string; requests: number; days: number }>;
-    };
-  }> {
-    const response = await api.post(`${LEAVE_ENDPOINTS.LEAVE_REPORTS}/detailed`, filters);
-    return response.data;
-  }
+  // Reports & analytics for leave removed
 
   // ============ Leave Settings Methods ============
   /**

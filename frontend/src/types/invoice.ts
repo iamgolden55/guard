@@ -1,3 +1,5 @@
+export type InvoiceSource = 'system' | 'admin';
+
 export interface Invoice {
   id: number;
   staff_user: number;
@@ -15,11 +17,20 @@ export interface Invoice {
   total_amount: number;
   status: InvoiceStatus;
   pdf_url: string | null;
+  source: InvoiceSource;
+  created_by: number | null;
+  created_by_details?: {
+    id: number;
+    username: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  } | null;
   created_at: string;
   updated_at: string;
   items?: InvoiceItem[];
   payment_breakdown?: PaymentBreakdown;
-  
+
   // Legacy fields for backward compatibility
   staffUser?: number;
   staffName?: string;
@@ -99,4 +110,57 @@ export interface PayRate {
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TimeAdjustment {
+  id: number;
+  shift: number;
+  original_check_in_time: string | null;
+  original_check_out_time: string | null;
+  original_actual_hours: number;
+  adjusted_check_in_time: string | null;
+  adjusted_check_out_time: string | null;
+  adjusted_actual_hours: number;
+  reason: string;
+  adjusted_by: number;
+  adjusted_by_details?: {
+    id: number;
+    username: string;
+    first_name: string;
+    last_name: string;
+  };
+  manager_signature: string;
+  created_at: string;
+  payment_impact?: {
+    original_hours: number;
+    adjusted_hours: number;
+    original_payment: number;
+    adjusted_payment: number;
+    payment_difference: number;
+  };
+}
+
+export interface AdjustmentData {
+  adjusted_check_in_time: string;
+  adjusted_check_out_time: string;
+  adjusted_actual_hours: number;
+  reason: string;
+  manager_signature: string;
+}
+
+export interface AdjustmentResponse {
+  id: number;
+  shift: number;
+  original_hours: number;
+  adjusted_hours: number;
+  payment_impact: {
+    original_hours: number;
+    adjusted_hours: number;
+    original_payment: number;
+    adjusted_payment: number;
+    payment_difference: number;
+  };
+  invoice_updated: boolean;
+  invoice_id: number | null;
+  created_at: string;
 }

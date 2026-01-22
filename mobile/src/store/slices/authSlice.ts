@@ -1,5 +1,36 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '../index';
+import authService from '../../services/authService';
+
+export type EmploymentCategory = 'permanent' | 'contractor' | 'temporary';
+
+export interface EmploymentType {
+  id: number;
+  name: string;
+  description?: string;
+  employment_category: EmploymentCategory;
+  is_active: boolean;
+}
+
+export interface StaffProfile {
+  id: number;
+  phone_number: string;
+  profile_image_url?: string | null;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  sia_license_number?: string;
+  sia_license_expiry?: string;
+  sia_licenses?: Array<{
+    id: number;
+    license_number: string;
+    license_type: string;
+    expiry_date: string;
+    is_valid?: boolean;
+  }>;
+  is_approved?: boolean;
+  security_roles?: string[];
+  employment_type?: EmploymentType;
+}
 
 export interface User {
   id: number;
@@ -8,15 +39,57 @@ export interface User {
   first_name: string;
   last_name: string;
   role: 'staff' | 'manager' | 'admin';
-  staff_profile?: {
-    id: number;
-    phone_number: string;
-    emergency_contact_name?: string;
-    emergency_contact_phone?: string;
-    sia_license_number?: string;
-    sia_license_expiry?: string;
-  };
+  security_roles?: string[];
+  staff_profile?: StaffProfile;
 }
+
+// Async thunk for fetching user profile
+export const fetchUserProfile = createAsyncThunk<
+  User,
+  void,
+  { state: RootState; rejectValue: string }
+>(
+  'auth/fetchUserProfile',
+  async (_, { getState, rejectWithValue }) => {
+    try {
+      const state = getState();
+      const token = state.auth.accessToken;
+      
+      if (!token) {
+        return rejectWithValue('No access token available');
+      }
+
+      const user = await authService.fetchUserProfile(token);
+      return user;
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Failed to fetch profile');
+    }
+  }
+);
+
+// Async thunk for updating profile
+export const updateProfile = createAsyncThunk<
+  User,
+  { firstName?: string; lastName?: string; email?: string; phone_number?: string },
+  { state: RootState; rejectValue: string }
+>(
+  'auth/updateProfile',
+  async (data, { getState, rejectWithValue }) => {
+    try {
+      const state = getState();
+      const token = state.auth.accessToken;
+      
+      if (!token) {
+        return rejectWithValue('No access token available');
+      }
+
+      const updatedUser = await authService.updateProfile(token, data);
+      return updatedUser;
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Failed to update profile');
+    }
+  }
+);
 
 interface AuthState {
   user: User | null;
@@ -82,6 +155,31 @@ const authSlice = createSlice({
     setLastSync: (state, action: PayloadAction<string>) => {
       state.lastSync = action.payload;
     },
+  },
+  extraReducers: (builder) => {
+    builder
+      // Fetch user profile
+      .addCase(fetchUserProfile.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(fetchUserProfile.fulfilled, (state, action) => {
+        state.user = action.payload;
+        state.isLoading = false;
+      })
+      .addCase(fetchUserProfile.rejected, (state) => {
+        state.isLoading = false;
+      })
+      // Update profile
+      .addCase(updateProfile.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(updateProfile.fulfilled, (state, action) => {
+        state.user = action.payload;
+        state.isLoading = false;
+      })
+      .addCase(updateProfile.rejected, (state) => {
+        state.isLoading = false;
+      });
   },
 });
 

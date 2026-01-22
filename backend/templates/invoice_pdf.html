@@ -300,21 +300,37 @@
                     <table class="table-invoice">
                         <thead>
                             <tr>
-                                <th>VENUE & SERVICE DESCRIPTION</th>
+                                <th>DESCRIPTION</th>
                                 <th class="text-center" width="12%">RATE</th>
-                                <th class="text-center" width="10%">HOURS</th>
+                                <th class="text-center" width="10%">QUANTITY</th>
                                 <th class="text-right" width="15%">LINE TOTAL</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for item in invoice_items %}
                             <tr>
+                                {% if item.item_type == 'bank_holiday' %}
+                                <td>
+                                    <span class="text-inverse">Bank Holiday: {{ item.description|default:item.bank_holiday.name }}</span><br>
+                                    <small>Bank holiday pay for {{ item.bank_holiday.date|date:"M j, Y" }}</small>
+                                </td>
+                                <td class="text-center">£{{ item.rate|floatformat:2 }}/day</td>
+                                <td class="text-center">1 day</td>
+                                {% elif item.item_type == 'annual_leave' %}
+                                <td>
+                                    <span class="text-inverse">Annual Leave</span><br>
+                                    <small>{{ item.description|default:"Paid annual leave" }}</small>
+                                </td>
+                                <td class="text-center">£{{ item.rate|floatformat:2 }}/day</td>
+                                <td class="text-center">1 day</td>
+                                {% else %}
                                 <td>
                                     <span class="text-inverse">{{ item.venue.name }}</span><br>
                                     <small>Security services provided at {{ item.venue.name }} for the period {{ invoice.start_date|date:"M j" }} - {{ invoice.end_date|date:"M j, Y" }}</small>
                                 </td>
-                                <td class="text-center">£{{ item.rate|floatformat:2 }}</td>
-                                <td class="text-center">{{ item.hours_worked|floatformat:2 }}</td>
+                                <td class="text-center">£{{ item.rate|floatformat:2 }}/hr</td>
+                                <td class="text-center">{{ item.hours_worked|floatformat:2 }} hrs</td>
+                                {% endif %}
                                 <td class="text-right">£{{ item.amount|floatformat:2 }}</td>
                             </tr>
                             {% endfor %}
@@ -342,7 +358,8 @@
             <!-- Invoice Note -->
             <div class="invoice-note">
                 * Payment will be processed according to your employment terms and conditions<br>
-                * Total hours worked: {{ invoice.total_hours|floatformat:2 }} hours<br>
+                {% if invoice.total_hours %}* Total hours worked: {{ invoice.total_hours|floatformat:2 }} hours<br>{% endif %}
+                {% if total_leave_days %}* Total paid leave days: {{ total_leave_days }} day{% if total_leave_days != 1 %}s{% endif %}<br>{% endif %}
                 * If you have any questions concerning this invoice, contact accounts@meadsecurity.co.uk
             </div>
             

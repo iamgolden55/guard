@@ -15,12 +15,15 @@ import {
   DialogContent,
   TextField,
   Toggle,
+  Dropdown,
+  IDropdownOption,
   MessageBar,
   MessageBarType,
   Spinner,
-  SpinnerSize
+  SpinnerSize,
+  TooltipHost
 } from '@fluentui/react';
-import { employmentTypeService, EmploymentType, CreateEmploymentTypeRequest, UpdateEmploymentTypeRequest } from '../services/employmentTypeService';
+import { employmentTypeService, EmploymentType, CreateEmploymentTypeRequest, UpdateEmploymentTypeRequest, EMPLOYMENT_CATEGORY_OPTIONS, EmploymentCategory } from '../services/employmentTypeService';
 
 interface EmploymentTypesManagementProps {
   onRefresh?: () => void;
@@ -42,8 +45,16 @@ const EmploymentTypesManagement: React.FC<EmploymentTypesManagementProps> = ({ o
   const [formData, setFormData] = useState<CreateEmploymentTypeRequest>({
     name: '',
     description: '',
-    is_active: true
+    is_active: true,
+    employment_category: 'contractor'
   });
+
+  // Dropdown options for employment category
+  const employmentCategoryOptions: IDropdownOption[] = EMPLOYMENT_CATEGORY_OPTIONS.map(opt => ({
+    key: opt.key,
+    text: opt.text,
+    data: { description: opt.description }
+  }));
   
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -79,7 +90,8 @@ const EmploymentTypesManagement: React.FC<EmploymentTypesManagementProps> = ({ o
     setFormData({
       name: '',
       description: '',
-      is_active: true
+      is_active: true,
+      employment_category: 'contractor'
     });
     setFormErrors({});
   };
@@ -131,13 +143,14 @@ const EmploymentTypesManagement: React.FC<EmploymentTypesManagementProps> = ({ o
 
   const handleEdit = async () => {
     if (!selectedEmploymentType || !validateForm()) return;
-    
+
     try {
       setSubmitting(true);
       const updateData: UpdateEmploymentTypeRequest = {
         name: formData.name,
         description: formData.description,
-        is_active: formData.is_active
+        is_active: formData.is_active,
+        employment_category: formData.employment_category
       };
       
       await employmentTypeService.updateEmploymentType(selectedEmploymentType.id, updateData);
@@ -195,7 +208,8 @@ const EmploymentTypesManagement: React.FC<EmploymentTypesManagementProps> = ({ o
     setFormData({
       name: item.name,
       description: item.description,
-      is_active: item.is_active
+      is_active: item.is_active,
+      employment_category: item.employment_category || 'contractor'
     });
     setIsEditDialogOpen(true);
   };
@@ -205,13 +219,32 @@ const EmploymentTypesManagement: React.FC<EmploymentTypesManagementProps> = ({ o
     setIsDeleteDialogOpen(true);
   };
 
+  // Helper to get category badge color
+  const getCategoryBadgeStyle = (category: EmploymentCategory) => {
+    switch (category) {
+      case 'permanent':
+        return { backgroundColor: '#107c10', color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' };
+      case 'contractor':
+        return { backgroundColor: '#0078d4', color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' };
+      case 'temporary':
+        return { backgroundColor: '#ffaa44', color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' };
+      default:
+        return { backgroundColor: '#605e5c', color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' };
+    }
+  };
+
+  const getCategoryDisplayText = (category: EmploymentCategory) => {
+    const option = EMPLOYMENT_CATEGORY_OPTIONS.find(opt => opt.key === category);
+    return option?.text || category;
+  };
+
   const columns: IColumn[] = [
     {
       key: 'name',
       name: 'Name',
       fieldName: 'name',
       minWidth: 150,
-      maxWidth: 250,
+      maxWidth: 200,
       isResizable: true,
       onRender: (item: EmploymentType) => (
         <Stack>
@@ -227,11 +260,26 @@ const EmploymentTypesManagement: React.FC<EmploymentTypesManagementProps> = ({ o
       )
     },
     {
+      key: 'category',
+      name: 'Category',
+      fieldName: 'employment_category',
+      minWidth: 130,
+      maxWidth: 160,
+      isResizable: true,
+      onRender: (item: EmploymentType) => (
+        <TooltipHost content={EMPLOYMENT_CATEGORY_OPTIONS.find(opt => opt.key === item.employment_category)?.description || ''}>
+          <span style={getCategoryBadgeStyle(item.employment_category || 'contractor')}>
+            {getCategoryDisplayText(item.employment_category || 'contractor')}
+          </span>
+        </TooltipHost>
+      )
+    },
+    {
       key: 'description',
       name: 'Description',
       fieldName: 'description',
       minWidth: 200,
-      maxWidth: 400,
+      maxWidth: 350,
       isResizable: true,
       isMultiline: true,
       onRender: (item: EmploymentType) => (
@@ -243,7 +291,7 @@ const EmploymentTypesManagement: React.FC<EmploymentTypesManagementProps> = ({ o
       name: 'Applications',
       fieldName: 'application_count',
       minWidth: 100,
-      maxWidth: 150,
+      maxWidth: 120,
       isResizable: true,
       onRender: (item: EmploymentType) => (
         <Text variant="medium">{item.application_count}</Text>
@@ -360,6 +408,26 @@ const EmploymentTypesManagement: React.FC<EmploymentTypesManagementProps> = ({ o
               rows={3}
               required
             />
+            <Dropdown
+              label="Employment Category"
+              selectedKey={formData.employment_category}
+              options={employmentCategoryOptions}
+              onChange={(_, option) => setFormData({ ...formData, employment_category: option?.key as EmploymentCategory })}
+              onRenderOption={(option) => (
+                <Stack>
+                  <Text>{option?.text}</Text>
+                  <Text variant="small" style={{ color: '#605e5c' }}>
+                    {option?.data?.description}
+                  </Text>
+                </Stack>
+              )}
+              required
+            />
+            <MessageBar messageBarType={MessageBarType.info}>
+              <strong>Permanent Employee:</strong> Gets leave balances, paid holidays appear on invoices<br />
+              <strong>Contractor:</strong> Can mark availability only, no paid leave<br />
+              <strong>Temporary Staff:</strong> Similar to contractor behavior
+            </MessageBar>
             <Toggle
               label="Active"
               checked={formData.is_active}
@@ -412,6 +480,26 @@ const EmploymentTypesManagement: React.FC<EmploymentTypesManagementProps> = ({ o
               rows={3}
               required
             />
+            <Dropdown
+              label="Employment Category"
+              selectedKey={formData.employment_category}
+              options={employmentCategoryOptions}
+              onChange={(_, option) => setFormData({ ...formData, employment_category: option?.key as EmploymentCategory })}
+              onRenderOption={(option) => (
+                <Stack>
+                  <Text>{option?.text}</Text>
+                  <Text variant="small" style={{ color: '#605e5c' }}>
+                    {option?.data?.description}
+                  </Text>
+                </Stack>
+              )}
+              required
+            />
+            <MessageBar messageBarType={MessageBarType.info}>
+              <strong>Permanent Employee:</strong> Gets leave balances, paid holidays appear on invoices<br />
+              <strong>Contractor:</strong> Can mark availability only, no paid leave<br />
+              <strong>Temporary Staff:</strong> Similar to contractor behavior
+            </MessageBar>
             <Toggle
               label="Active"
               checked={formData.is_active}

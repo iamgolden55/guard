@@ -11,3 +11,11 @@ export { UpcomingShiftCard } from './UpcomingShiftCard';
 export { HeroStatusCard } from './HeroStatusCard';
 export { StatsRow } from './StatsRow';
 export { WiseQuickActions } from './WiseQuickActions';
+
+// Uber-inspired components
+export { MapHeader } from './MapHeader';
+export { CheckActionCard } from './CheckActionCard';
+export { OverviewStats } from './OverviewStats';
+export { UberQuickActions } from './UberQuickActions';
+export { UberUpcomingShifts } from './UberUpcomingShifts';
+export { LiveShiftTimer } from './LiveShiftTimer';

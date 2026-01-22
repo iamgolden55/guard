@@ -17,8 +17,8 @@ import { NetworkStatusBanner, SyncStatusBanner } from '../components/common';
 // Shift Screens
 import { ShiftDetailsScreen } from '../screens/shifts/ShiftDetailsScreen';
 import { CheckInFlowScreen } from '../screens/shifts/CheckInFlowScreen';
-import { AvailableShiftsScreen } from '../screens/shifts/AvailableShiftsScreen';
-import { ShiftExchangesScreen } from '../screens/shifts/ShiftExchangesScreen';
+import { UberAvailableShiftsScreen } from '../screens/shifts/uber/UberAvailableShiftsScreen';
+import { UberShiftExchangesScreen } from '../screens/shifts/uber/UberShiftExchangesScreen';
 
 // Venue Screens
 import { VenueTermsScreen } from '../screens/venue/VenueTermsScreen';
@@ -38,6 +38,7 @@ import { LeaveBalanceScreen } from '../screens/leave/LeaveBalanceScreen';
 import { LeaveRequestScreen } from '../screens/leave/LeaveRequestScreen';
 import { LeaveHistoryScreen } from '../screens/leave/LeaveHistoryScreen';
 import { LeaveRequestDetailScreen } from '../screens/leave/LeaveRequestDetailScreen';
+import { ContractorUnavailabilityScreen } from '../screens/leave/ContractorUnavailabilityScreen';
 
 // Incident Screens
 import { IncidentReportScreen } from '../screens/incidents/IncidentReportScreen';
@@ -67,8 +68,8 @@ export const MainNavigator = () => {
         <Stack.Group screenOptions={{ presentation: 'modal' }}>
           <Stack.Screen name="ShiftDetails" component={ShiftDetailsScreen} />
           <Stack.Screen name="CheckInFlow" component={CheckInFlowScreen} />
-          <Stack.Screen name="AvailableShifts" component={AvailableShiftsScreen} />
-          <Stack.Screen name="ShiftExchanges" component={ShiftExchangesScreen} />
+          <Stack.Screen name="AvailableShifts" component={UberAvailableShiftsScreen} />
+          <Stack.Screen name="ShiftExchanges" component={UberShiftExchangesScreen} />
           <Stack.Screen name="VenueTerms" component={VenueTermsScreen} />
 
           {/* Shift Checks Screens */}
@@ -90,6 +91,7 @@ export const MainNavigator = () => {
           <Stack.Screen name="LeaveRequest" component={LeaveRequestScreen} />
           <Stack.Screen name="LeaveHistory" component={LeaveHistoryScreen} />
           <Stack.Screen name="LeaveRequestDetail" component={LeaveRequestDetailScreen} />
+          <Stack.Screen name="ContractorUnavailability" component={ContractorUnavailabilityScreen} />
 
           {/* Test/Debug Screens */}
           <Stack.Screen

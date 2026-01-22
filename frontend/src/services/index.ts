@@ -10,10 +10,12 @@ import userService from './userService';
 import financeIntegrationsService from './financeIntegrationsService';
 import leaveService from './leaveService';
 import holidayService from './holidayService';
-import reportService from './reportService';
 import onboardingService from './onboardingService';
 import companyService from './companyService';
 import { employmentTypeService } from './employmentTypeService';
+import { bankHolidayService } from './bankHolidayService';
+import { staffLeaveRateService } from './staffLeaveRateService';
+import { contractorUnavailabilityService } from './contractorUnavailabilityService';
 
 export {
   api,
@@ -28,8 +30,10 @@ export {
   financeIntegrationsService,
   leaveService,
   holidayService,
-  reportService,
   onboardingService,
   companyService,
-  employmentTypeService
+  employmentTypeService,
+  bankHolidayService,
+  staffLeaveRateService,
+  contractorUnavailabilityService
 };

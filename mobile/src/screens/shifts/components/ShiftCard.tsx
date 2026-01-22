@@ -167,6 +167,22 @@ export const ShiftCard: React.FC<ShiftCardProps> = ({ shift, onPress }) => {
             {calculateDuration()} shift
           </BodySmall>
         </View>
+
+        {/* Co-workers (Multi-staff shift) */}
+        {shift.coworkers && shift.coworkers.length > 0 && (
+          <View style={styles.detailRow}>
+            <Ionicons name="people-outline" size={16} color={colors.text.secondary} />
+            <BodySmall color={colors.text.secondary} style={styles.detailText}>
+              Working with:{' '}
+              {shift.coworkers.map((c, i) => (
+                <BodySmall key={c.id} color={colors.primary}>
+                  {c.first_name} {c.last_name?.charAt(0)}.
+                  {i < shift.coworkers!.length - 1 ? ', ' : ''}
+                </BodySmall>
+              ))}
+            </BodySmall>
+          </View>
+        )}
       </View>
 
       {/* Sync Status Indicator (if pending) */}

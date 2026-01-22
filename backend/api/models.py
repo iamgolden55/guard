@@ -1689,24 +1689,76 @@ class Shift(models.Model):
     def clean(self):
         """Validate shift data"""
         from django.core.exceptions import ValidationError
-        
+
         # Validate check-in/check-out times
         if self.check_in_time and self.check_out_time:
             if self.check_out_time <= self.check_in_time:
                 raise ValidationError("Check-out time must be after check-in time")
-            
+
             # Validate realistic hours (max 24 hours)
             duration = self.check_out_time - self.check_in_time
             hours_worked = duration.total_seconds() / 3600
             if hours_worked > 24:
                 raise ValidationError(f"Shift duration cannot exceed 24 hours. Current duration: {hours_worked:.2f} hours")
-            
+
             # Validate check-out is within reasonable time of scheduled end
             if self.end_time:
                 # Allow check-out up to 12 hours after scheduled end time
                 max_checkout = self.end_time + timezone.timedelta(hours=12)
                 if self.check_out_time > max_checkout:
                     raise ValidationError(f"Check-out time is too far from scheduled end time. Check-out: {self.check_out_time}, Scheduled end: {self.end_time}")
+
+        # Validate staff availability/leave for assigned shifts
+        if self.staff_user and self.start_time:
+            shift_date = self.start_time.date() if hasattr(self.start_time, 'date') else self.start_time
+            self._validate_staff_availability(shift_date)
+
+    def _validate_staff_availability(self, shift_date):
+        """
+        Check if staff is available on the shift date.
+        - Contractors: Check ContractorUnavailability
+        - Permanent employees: Check approved LeaveRequests
+        """
+        from django.core.exceptions import ValidationError
+
+        # Get staff's employment category
+        employment_category = None
+        if hasattr(self.staff_user, 'profile') and self.staff_user.profile:
+            employment_type = self.staff_user.profile.employment_type
+            if employment_type:
+                employment_category = getattr(employment_type, 'employment_category', None)
+
+        # Check contractor unavailability (hard block)
+        if employment_category in ('contractor', 'temporary', None):
+            if not ContractorUnavailability.is_user_available(self.staff_user, shift_date):
+                unavailability = ContractorUnavailability.objects.filter(
+                    staff_user=self.staff_user,
+                    start_date__lte=shift_date,
+                    end_date__gte=shift_date
+                ).first()
+                reason = f" Reason: {unavailability.reason}" if unavailability and unavailability.reason else ""
+                raise ValidationError(
+                    f"Staff member {self.staff_user.username} is marked as unavailable on {shift_date}.{reason}"
+                )
+
+        # Check permanent employee leave (hard block)
+        if employment_category == 'permanent':
+            # Import here to avoid circular imports
+            from leave_management.models import LeaveRequest as LeaveManagementRequest
+
+            approved_leave = LeaveManagementRequest.objects.filter(
+                staff_user=self.staff_user,
+                status='approved',
+                start_date__lte=shift_date,
+                end_date__gte=shift_date
+            ).first()
+
+            if approved_leave:
+                raise ValidationError(
+                    f"Staff member {self.staff_user.username} has approved leave from "
+                    f"{approved_leave.start_date} to {approved_leave.end_date}. "
+                    f"Cannot assign shift on {shift_date}."
+                )
 
     def save(self, *args, **kwargs):
         # Validate before saving
@@ -2057,36 +2109,63 @@ class Shift(models.Model):
             request_reason=reason
         )
 
+    def get_latest_time_adjustment(self):
+        """Get the most recent time adjustment for this shift"""
+        return self.time_adjustments.first()  # Already ordered by -created_at
+
+    def get_effective_check_in_time(self):
+        """Return adjusted check-in time if exists, otherwise original"""
+        adjustment = self.get_latest_time_adjustment()
+        if adjustment and adjustment.adjusted_check_in_time:
+            return adjustment.adjusted_check_in_time
+        return self.check_in_time
+
+    def get_effective_check_out_time(self):
+        """Return adjusted check-out time if exists, otherwise original"""
+        adjustment = self.get_latest_time_adjustment()
+        if adjustment and adjustment.adjusted_check_out_time:
+            return adjustment.adjusted_check_out_time
+        return self.check_out_time
+
+    def get_effective_actual_hours(self):
+        """Return adjusted hours if exists, otherwise calculated hours"""
+        adjustment = self.get_latest_time_adjustment()
+        if adjustment and adjustment.adjusted_actual_hours:
+            return adjustment.adjusted_actual_hours
+        return self.actual_hours_worked
+
     def calculate_payment(self):
         """Calculate the payment for this shift based on actual hours worked and effective hourly rate
-        
+
         Payment is capped at scheduled hours to prevent overtime exploitation from late checkouts.
         Only auto-checkout and manager-approved overtime can exceed scheduled hours.
+        Uses adjusted hours from TimeAdjustment if available.
         """
-        if not self.actual_hours_worked:
+        # Use adjusted hours if they exist
+        effective_hours = self.get_effective_actual_hours()
+
+        if not effective_hours:
             return None
-        
+
         from decimal import Decimal
         # Use effective hourly rate which checks PayRate model
         effective_rate = self.get_effective_hourly_rate()
         if not effective_rate:
             return None
-            
+
         # Calculate scheduled hours (excluding breaks)
         scheduled_duration = self.end_time - self.start_time
         scheduled_hours = Decimal(str(scheduled_duration.total_seconds() / 3600))
         break_hours = Decimal(str(self.break_duration / 60))
         max_payable_hours = scheduled_hours - break_hours
-        
-        # Use actual hours worked, but cap at scheduled hours unless:
-        # 1. This was an auto-checkout (already uses scheduled time)
-        # 2. Overtime is explicitly approved (future feature)
-        hours = Decimal(str(self.actual_hours_worked))
-        
-        # Cap payment at scheduled hours for manual checkouts to prevent exploitation
-        if not self.auto_checkout:
+
+        hours = Decimal(str(effective_hours))
+
+        # Apply same capping logic, but adjusted hours are already validated
+        # Only cap if no time adjustment exists
+        if not self.get_latest_time_adjustment() and not self.auto_checkout:
             hours = min(hours, max_payable_hours)
-            
+
         rate = Decimal(str(effective_rate))
         return hours * rate
     
@@ -2267,6 +2346,91 @@ class Shift(models.Model):
         
         return True
 
+
+class TimeAdjustment(models.Model):
+    """Records manual time adjustments made by managers/admins
+
+    Preserves original shift times while allowing corrections when staff were present
+    on time but signed in late due to technical issues. All adjustments require
+    manager digital signature and reason.
+    """
+
+    shift = models.ForeignKey(Shift, on_delete=models.CASCADE, related_name='time_adjustments')
+
+    # Original times (copied from shift at time of adjustment)
+    original_check_in_time = models.DateTimeField(null=True, blank=True, help_text="Original check-in time before adjustment")
+    original_check_out_time = models.DateTimeField(null=True, blank=True, help_text="Original check-out time before adjustment")
+    original_actual_hours = models.DecimalField(max_digits=5, decimal_places=2, help_text="Original actual hours worked")
+
+    # Adjusted times (corrected values)
+    adjusted_check_in_time = models.DateTimeField(null=True, blank=True, help_text="Corrected check-in time")
+    adjusted_check_out_time = models.DateTimeField(null=True, blank=True, help_text="Corrected check-out time")
+    adjusted_actual_hours = models.DecimalField(max_digits=5, decimal_places=2, help_text="Corrected actual hours worked")
+
+    # Audit fields
+    reason = models.TextField(help_text="Explanation for the adjustment (required)")
+    adjusted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='time_adjustments_made')
+    manager_signature = models.TextField(help_text="Base64 encoded signature image")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'time_adjustments'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['shift', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"Time Adjustment for Shift {self.shift.id} by {self.adjusted_by.username if self.adjusted_by else 'Unknown'}"
+
+    def clean(self):
+        """Validate time adjustment constraints"""
+        from django.core.exceptions import ValidationError
+        from datetime import timedelta
+
+        errors = {}
+
+        # Validate check-in time adjustment
+        if self.adjusted_check_in_time:
+            # Cannot be more than 2 hours before scheduled start
+            max_early_checkin = self.shift.start_time - timedelta(hours=2)
+            if self.adjusted_check_in_time < max_early_checkin:
+                errors['adjusted_check_in_time'] = f"Adjusted check-in cannot be more than 2 hours before scheduled start time ({self.shift.start_time})"
+
+        # Validate check-out time adjustment
+        if self.adjusted_check_out_time:
+            # Cannot be more than 4 hours after scheduled end
+            max_late_checkout = self.shift.end_time + timedelta(hours=4)
+            if self.adjusted_check_out_time > max_late_checkout:
+                errors['adjusted_check_out_time'] = f"Adjusted check-out cannot be more than 4 hours after scheduled end time ({self.shift.end_time})"
+
+        # Check-out must be after check-in
+        if self.adjusted_check_in_time and self.adjusted_check_out_time:
+            if self.adjusted_check_out_time <= self.adjusted_check_in_time:
+                errors['adjusted_check_out_time'] = "Check-out time must be after check-in time"
+
+        # Adjusted hours cannot exceed 24
+        if self.adjusted_actual_hours and self.adjusted_actual_hours > 24:
+            errors['adjusted_actual_hours'] = "Adjusted hours cannot exceed 24 hours"
+
+        # Validate adjusted hours match calculated hours from times
+        if self.adjusted_check_in_time and self.adjusted_check_out_time and self.adjusted_actual_hours:
+            from decimal import Decimal
+            duration = self.adjusted_check_out_time - self.adjusted_check_in_time
+            calculated_hours = Decimal(str(duration.total_seconds() / 3600))
+            # Allow small rounding differences
+            if abs(calculated_hours - self.adjusted_actual_hours) > Decimal('0.1'):
+                errors['adjusted_actual_hours'] = f"Adjusted hours ({self.adjusted_actual_hours}) don't match calculated hours from times ({calculated_hours:.2f})"
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        """Run validation before saving"""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
 class ShiftCheck(models.Model):
     """Abstract base class for all types of checks during a shift"""
     shift = models.ForeignKey(Shift, on_delete=models.CASCADE)
@@ -2276,6 +2440,23 @@ class ShiftCheck(models.Model):
     notes = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Multi-staff shift support: share checks across grouped shifts
+    shift_group = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Links check to all shifts in a group for multi-staff visibility"
+    )
+    performed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='%(class)s_performed',
+        help_text="Staff member who performed this check"
+    )
+
     class Meta:
         abstract = True
         ordering = ['-timestamp']
@@ -2283,6 +2464,12 @@ class ShiftCheck(models.Model):
     def save(self, *args, **kwargs):
         if not self.timestamp:
             self.timestamp = timezone.now()
+        # Auto-populate shift_group from the associated shift
+        if not self.shift_group and self.shift and self.shift.shift_group:
+            self.shift_group = self.shift.shift_group
+        # Auto-populate performed_by from the shift's staff_user if not set
+        if not self.performed_by and self.shift and self.shift.staff_user:
+            self.performed_by = self.shift.staff_user
         super().save(*args, **kwargs)
 
 class FireExitCheck(ShiftCheck):
@@ -2513,6 +2700,11 @@ class Invoice(models.Model):
         ('rejected', 'Rejected'),
     )
 
+    SOURCE_CHOICES = (
+        ('system', 'System/Shift Generated'),
+        ('admin', 'Admin Generated'),
+    )
+
     staff_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='invoices')
     start_date = models.DateField()
     end_date = models.DateField()
@@ -2521,6 +2713,10 @@ class Invoice(models.Model):
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     pdf_url = models.URLField(max_length=500, null=True, blank=True)
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='system')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_invoices')
+    version = models.IntegerField(default=1, help_text="Increments on each recalculation")
+    last_recalculated_at = models.DateTimeField(null=True, blank=True, help_text="Last time invoice was recalculated from shift adjustments")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -2532,21 +2728,29 @@ class Invoice(models.Model):
         return f"Invoice for {self.staff_user.username} ({self.start_date} to {self.end_date})"
     
     @classmethod
-    def generate_for_staff_period(cls, staff_user, start_date, end_date):
-        """Generate an invoice for a staff member for a specific period using shift-specific payments"""
+    def generate_for_staff_period(cls, staff_user, start_date, end_date, source='system', created_by=None):
+        """Generate an invoice for a staff member for a specific period using shift-specific payments
+
+        Args:
+            staff_user: The staff member the invoice is for
+            start_date: Start date of the invoice period
+            end_date: End date of the invoice period
+            source: 'system' for shift-generated, 'admin' for admin-generated (default: 'system')
+            created_by: User who created the invoice (for admin-generated invoices)
+        """
         from decimal import Decimal
-        
+
         # Check if an invoice already exists for this staff member and period
         existing_invoice = cls.objects.filter(
             staff_user=staff_user,
             start_date=start_date,
             end_date=end_date
         ).first()
-        
+
         if existing_invoice:
             # Invoice already exists - skip creation
             return existing_invoice
-        
+
         # Get all approved shifts for the staff member in the date range
         shifts = Shift.objects.filter(
             staff_user=staff_user,
@@ -2555,16 +2759,75 @@ class Invoice(models.Model):
             status='approved',
             actual_hours_worked__isnull=False
         ).order_by('start_time')
-        
-        if not shifts:
-            raise ValueError(f"No approved shifts found for {staff_user.username} between {start_date} and {end_date}")
-        
+
+        # Determine if staff is a permanent employee (for leave items)
+        is_permanent = False
+        daily_rate = None
+        company = None
+
+        if hasattr(staff_user, 'profile') and staff_user.profile:
+            company = staff_user.profile.company
+            employment_type = staff_user.profile.employment_type
+            if employment_type and getattr(employment_type, 'employment_category', None) == 'permanent':
+                is_permanent = True
+                # Get the staff's leave daily rate
+                if hasattr(staff_user, 'leave_daily_rate'):
+                    daily_rate_obj = staff_user.leave_daily_rate
+                    if daily_rate_obj and daily_rate_obj.effective_from <= end_date:
+                        daily_rate = daily_rate_obj.daily_rate
+
+        # Get bank holidays and approved leave for permanent employees
+        bank_holidays = []
+        approved_leave_days = []
+
+        if is_permanent and daily_rate and company:
+            # Get bank holidays in the period
+            bank_holidays = list(BankHoliday.objects.filter(
+                company=company,
+                date__gte=start_date,
+                date__lte=end_date,
+                is_active=True
+            ).order_by('date'))
+
+            # Get approved leave requests in the period
+            try:
+                from leave_management.models import LeaveRequest
+                leave_requests = LeaveRequest.objects.filter(
+                    staff_user=staff_user,
+                    status='approved',
+                    start_date__lte=end_date,
+                    end_date__gte=start_date
+                )
+                # Generate individual leave days
+                for leave_req in leave_requests:
+                    leave_start = max(leave_req.start_date, start_date)
+                    leave_end = min(leave_req.end_date, end_date)
+                    current_date = leave_start
+                    while current_date <= leave_end:
+                        # Don't duplicate bank holidays as annual leave
+                        if not any(bh.date == current_date for bh in bank_holidays):
+                            approved_leave_days.append({
+                                'date': current_date,
+                                'leave_request': leave_req
+                            })
+                        current_date += timedelta(days=1)
+            except ImportError:
+                # leave_management app not installed
+                pass
+
+        # Check if we have any items to invoice
+        has_shifts = bool(shifts)
+        has_leave_items = bool(bank_holidays or approved_leave_days)
+
+        if not has_shifts and not has_leave_items:
+            raise ValueError(f"No approved shifts or leave items found for {staff_user.username} between {start_date} and {end_date}")
+
         # Calculate totals from individual shifts
         total_hours = Decimal('0.00')
         total_amount = Decimal('0.00')
         regular_hours = Decimal('0.00')
         special_event_hours = Decimal('0.00')
-        
+
         for shift in shifts:
             if shift.actual_hours_worked:
                 total_hours += shift.actual_hours_worked
@@ -2572,15 +2835,21 @@ class Invoice(models.Model):
                     special_event_hours += shift.actual_hours_worked
                 else:
                     regular_hours += shift.actual_hours_worked
-                    
+
                 # Use shift-specific payment calculation
                 shift_payment = shift.calculate_payment()
                 if shift_payment:
                     total_amount += shift_payment
-        
+
+        # Add leave amounts to total
+        leave_total = Decimal('0.00')
+        if daily_rate:
+            leave_total = daily_rate * (len(bank_holidays) + len(approved_leave_days))
+            total_amount += leave_total
+
         # Calculate average hourly rate for the invoice (for display purposes)
         average_rate = total_amount / total_hours if total_hours > 0 else Decimal('0.00')
-        
+
         # Create the invoice
         invoice = cls.objects.create(
             staff_user=staff_user,
@@ -2589,14 +2858,17 @@ class Invoice(models.Model):
             total_hours=total_hours,
             hourly_rate=average_rate,  # This is now an average of all shift rates
             total_amount=total_amount,
-            status='pending'
+            status='pending',
+            source=source,
+            created_by=created_by
         )
-        
+
         # Create invoice items for each shift
         for shift in shifts:
             if shift.actual_hours_worked and shift.calculate_payment():
                 InvoiceItem.objects.create(
                     invoice=invoice,
+                    item_type='shift',
                     shift=shift,
                     date=shift.start_time.date(),
                     venue=shift.venue,
@@ -2604,37 +2876,123 @@ class Invoice(models.Model):
                     rate=shift.get_effective_hourly_rate(),
                     amount=shift.calculate_payment()
                 )
-        
+
+        # Create invoice items for bank holidays (permanent employees only)
+        for bank_holiday in bank_holidays:
+            InvoiceItem.objects.create(
+                invoice=invoice,
+                item_type='bank_holiday',
+                bank_holiday=bank_holiday,
+                date=bank_holiday.date,
+                description=f"Bank Holiday: {bank_holiday.name}",
+                days=Decimal('1'),
+                rate=daily_rate,
+                amount=daily_rate
+            )
+
+        # Create invoice items for approved annual leave (permanent employees only)
+        for leave_day in approved_leave_days:
+            InvoiceItem.objects.create(
+                invoice=invoice,
+                item_type='annual_leave',
+                leave_request=leave_day['leave_request'],
+                date=leave_day['date'],
+                description='Annual Leave',
+                days=Decimal('1'),
+                rate=daily_rate,
+                amount=daily_rate
+            )
+
         return invoice
-    
+
+    def recalculate_from_shifts(self):
+        """Recalculate invoice totals from all linked shifts and leave items
+
+        This method is automatically called when a TimeAdjustment is created for any shift
+        in this invoice. It updates the invoice totals to reflect the adjusted hours.
+        Leave items (bank holidays, annual leave) are included but not recalculated.
+        """
+        from decimal import Decimal
+        from django.utils import timezone
+
+        total_hours = Decimal('0.00')
+        total_amount = Decimal('0.00')
+
+        # Update each invoice item
+        for item in self.items.all():
+            if item.item_type == 'shift' and item.shift:
+                # Recalculate shift items from their shifts
+                item.hours_worked = item.shift.get_effective_actual_hours()
+                item.amount = item.shift.calculate_payment()
+                item.save()
+                total_hours += item.hours_worked or Decimal('0.00')
+                total_amount += item.amount or Decimal('0.00')
+            elif item.item_type in ('bank_holiday', 'annual_leave'):
+                # Leave items don't change - just add to totals
+                total_amount += item.amount or Decimal('0.00')
+
+        # Update invoice totals
+        self.total_hours = total_hours
+        self.total_amount = total_amount
+        self.hourly_rate = total_amount / total_hours if total_hours > 0 else Decimal('0.00')
+
+        # Track recalculation for audit
+        self.version = (self.version or 0) + 1
+        self.last_recalculated_at = timezone.now()
+
+        self.save()
+
+        return self
+
     @property
     def payment_breakdown(self):
         """Get detailed payment breakdown by rate type"""
         return self.get_payment_breakdown()
     
     def get_payment_breakdown(self):
-        """Get detailed payment breakdown by rate type"""
+        """Get detailed payment breakdown by rate type including leave items"""
         from decimal import Decimal
-        
-        regular_shifts = self.items.filter(shift__is_special_event=False)
-        special_event_shifts = self.items.filter(shift__is_special_event=True)
-        
+
+        # Filter shift items
+        regular_shifts = self.items.filter(item_type='shift', shift__is_special_event=False)
+        special_event_shifts = self.items.filter(item_type='shift', shift__is_special_event=True)
+
+        # Filter leave items
+        bank_holiday_items = self.items.filter(item_type='bank_holiday')
+        annual_leave_items = self.items.filter(item_type='annual_leave')
+
         regular_hours = regular_shifts.aggregate(
             total_hours=models.Sum('hours_worked')
         )['total_hours'] or Decimal('0.00')
-        
+
         regular_amount = regular_shifts.aggregate(
             total_amount=models.Sum('amount')
         )['total_amount'] or Decimal('0.00')
-        
+
         special_hours = special_event_shifts.aggregate(
             total_hours=models.Sum('hours_worked')
         )['total_hours'] or Decimal('0.00')
-        
+
         special_amount = special_event_shifts.aggregate(
             total_amount=models.Sum('amount')
         )['total_amount'] or Decimal('0.00')
-        
+
+        bank_holiday_days = bank_holiday_items.aggregate(
+            total_days=models.Sum('days')
+        )['total_days'] or Decimal('0.00')
+
+        bank_holiday_amount = bank_holiday_items.aggregate(
+            total_amount=models.Sum('amount')
+        )['total_amount'] or Decimal('0.00')
+
+        annual_leave_days = annual_leave_items.aggregate(
+            total_days=models.Sum('days')
+        )['total_days'] or Decimal('0.00')
+
+        annual_leave_amount = annual_leave_items.aggregate(
+            total_amount=models.Sum('amount')
+        )['total_amount'] or Decimal('0.00')
+
         return {
             'regular_shifts': {
                 'count': regular_shifts.count(),
@@ -2648,6 +3006,18 @@ class Invoice(models.Model):
                 'amount': special_amount,
                 'average_rate': special_amount / special_hours if special_hours > 0 else Decimal('0.00')
             },
+            'bank_holidays': {
+                'count': bank_holiday_items.count(),
+                'days': bank_holiday_days,
+                'amount': bank_holiday_amount,
+                'daily_rate': bank_holiday_amount / bank_holiday_days if bank_holiday_days > 0 else Decimal('0.00')
+            },
+            'annual_leave': {
+                'count': annual_leave_items.count(),
+                'days': annual_leave_days,
+                'amount': annual_leave_amount,
+                'daily_rate': annual_leave_amount / annual_leave_days if annual_leave_days > 0 else Decimal('0.00')
+            },
             'total': {
                 'count': self.items.count(),
                 'hours': self.total_hours,
@@ -2655,35 +3025,150 @@ class Invoice(models.Model):
             }
         }
 
+INVOICE_ITEM_TYPE_CHOICES = (
+    ('shift', 'Shift Work'),
+    ('bank_holiday', 'Bank Holiday Pay'),
+    ('annual_leave', 'Annual Leave Pay'),
+)
+
+
 class InvoiceItem(models.Model):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='items')
+
+    # Item type to differentiate between shifts and leave items
+    item_type = models.CharField(
+        max_length=20,
+        choices=INVOICE_ITEM_TYPE_CHOICES,
+        default='shift',
+        help_text="Type of invoice item"
+    )
+
+    # Shift reference (required for shift items, null for leave items)
     shift = models.ForeignKey(
         Shift,
         on_delete=models.CASCADE,
         related_name='invoice_items',
-        unique=True,
-        help_text="Each shift can only be invoiced once"
+        null=True,
+        blank=True,
+        help_text="Shift for shift items (null for leave items)"
     )
+
+    # Leave references (for leave items)
+    leave_request = models.ForeignKey(
+        'leave_management.LeaveRequest',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='invoice_items',
+        help_text="Leave request for annual leave items"
+    )
+    bank_holiday = models.ForeignKey(
+        'BankHoliday',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='invoice_items',
+        help_text="Bank holiday for bank holiday pay items"
+    )
+
+    # Common fields
     date = models.DateField()
-    venue = models.ForeignKey(Venue, on_delete=models.CASCADE, related_name='invoice_items')
-    hours_worked = models.DecimalField(max_digits=10, decimal_places=2)
-    rate = models.DecimalField(max_digits=10, decimal_places=2)
+    venue = models.ForeignKey(
+        Venue,
+        on_delete=models.CASCADE,
+        related_name='invoice_items',
+        null=True,
+        blank=True,
+        help_text="Venue for shift items (null for leave items)"
+    )
+    description = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Description for the line item (e.g., 'Bank Holiday: Christmas Day')"
+    )
+    hours_worked = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Hours worked for shift items (null for leave items)"
+    )
+    days = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Days for leave items (e.g., 1 for full day, 0.5 for half day)"
+    )
+    rate = models.DecimalField(max_digits=10, decimal_places=2, help_text="Hourly rate for shifts or daily rate for leave")
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'invoice_items'
-        ordering = ['date']
+        ordering = ['date', 'item_type']
         constraints = [
+            # Shift uniqueness only applies when shift is not null
             models.UniqueConstraint(
                 fields=['shift'],
                 name='unique_shift_per_invoice_item',
+                condition=models.Q(shift__isnull=False),
                 violation_error_message="This shift has already been added to an invoice."
-            )
+            ),
+            # Bank holiday uniqueness per invoice
+            models.UniqueConstraint(
+                fields=['invoice', 'bank_holiday'],
+                name='unique_bank_holiday_per_invoice',
+                condition=models.Q(bank_holiday__isnull=False),
+                violation_error_message="This bank holiday has already been added to this invoice."
+            ),
+            # Leave request uniqueness per invoice and date
+            models.UniqueConstraint(
+                fields=['invoice', 'leave_request', 'date'],
+                name='unique_leave_request_date_per_invoice',
+                condition=models.Q(leave_request__isnull=False),
+                violation_error_message="This leave day has already been added to this invoice."
+            ),
         ]
 
     def __str__(self):
-        return f"{self.date} - {self.venue.name} ({self.hours_worked} hours)"
+        if self.item_type == 'shift' and self.venue:
+            return f"{self.date} - {self.venue.name} ({self.hours_worked} hours)"
+        elif self.item_type == 'bank_holiday':
+            return f"{self.date} - Bank Holiday: {self.description or 'Holiday'} ({self.days} day)"
+        elif self.item_type == 'annual_leave':
+            return f"{self.date} - Annual Leave ({self.days} day)"
+        return f"{self.date} - {self.description or self.item_type}"
+
+    def clean(self):
+        """Validate the invoice item based on its type"""
+        from django.core.exceptions import ValidationError
+        errors = {}
+
+        if self.item_type == 'shift':
+            if not self.shift:
+                errors['shift'] = 'Shift is required for shift items'
+            if not self.venue:
+                errors['venue'] = 'Venue is required for shift items'
+            if self.hours_worked is None:
+                errors['hours_worked'] = 'Hours worked is required for shift items'
+        elif self.item_type == 'bank_holiday':
+            if not self.bank_holiday:
+                errors['bank_holiday'] = 'Bank holiday is required for bank holiday items'
+            if self.days is None:
+                errors['days'] = 'Days is required for leave items'
+        elif self.item_type == 'annual_leave':
+            if not self.leave_request:
+                errors['leave_request'] = 'Leave request is required for annual leave items'
+            if self.days is None:
+                errors['days'] = 'Days is required for leave items'
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
 class PayRate(models.Model):
     staff_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pay_rates')
@@ -3001,6 +3486,13 @@ class SystemSettings(models.Model):
             return settings
 
 
+EMPLOYMENT_CATEGORY_CHOICES = (
+    ('permanent', 'Permanent Employee'),
+    ('contractor', 'Contractor'),
+    ('temporary', 'Temporary Staff'),
+)
+
+
 class EmploymentType(models.Model):
     # Company relationship for multi-tenancy
     company = models.ForeignKey(
@@ -3012,6 +3504,12 @@ class EmploymentType(models.Model):
     )
     name = models.CharField(max_length=100, help_text="Employment type name (e.g., 'Contract Workers', 'Temporary Staff')")
     description = models.TextField(help_text="Description of this employment type")
+    employment_category = models.CharField(
+        max_length=20,
+        choices=EMPLOYMENT_CATEGORY_CHOICES,
+        default='contractor',
+        help_text="Category determining leave/availability behavior: permanent gets paid leave, contractors mark availability"
+    )
     is_active = models.BooleanField(default=True, help_text="Whether this employment type is currently available")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -3024,6 +3522,287 @@ class EmploymentType(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class ContractorUnavailability(models.Model):
+    """
+    Tracks periods when contractors mark themselves as unavailable.
+    No approval needed - purely informational for scheduling.
+    Hard blocks shift assignment during these periods.
+    """
+    staff_user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='unavailability_periods',
+        help_text="Contractor who is marking unavailability"
+    )
+    company = models.ForeignKey(
+        SecurityCompany,
+        on_delete=models.CASCADE,
+        related_name='contractor_unavailability',
+        help_text="Company this record belongs to"
+    )
+    start_date = models.DateField(help_text="First day of unavailability")
+    end_date = models.DateField(help_text="Last day of unavailability")
+    reason = models.TextField(blank=True, help_text="Optional reason for unavailability")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'contractor_unavailability'
+        ordering = ['-start_date']
+        verbose_name = 'Contractor Unavailability'
+        verbose_name_plural = 'Contractor Unavailability Periods'
+        indexes = [
+            models.Index(fields=['staff_user', 'start_date', 'end_date']),
+            models.Index(fields=['company', 'start_date']),
+        ]
+
+    def __str__(self):
+        return f"{self.staff_user.username}: {self.start_date} to {self.end_date}"
+
+    def clean(self):
+        """Validate the unavailability period"""
+        from django.core.exceptions import ValidationError
+        errors = {}
+
+        # Validate date range
+        if self.end_date < self.start_date:
+            errors['end_date'] = 'End date must be on or after start date'
+
+        # Check for overlapping periods (excluding self for updates)
+        overlapping = ContractorUnavailability.objects.filter(
+            staff_user=self.staff_user,
+            start_date__lte=self.end_date,
+            end_date__gte=self.start_date
+        )
+        if self.pk:
+            overlapping = overlapping.exclude(pk=self.pk)
+
+        if overlapping.exists():
+            errors['start_date'] = 'This period overlaps with an existing unavailability period'
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def is_user_available(cls, user, date):
+        """Check if a user is available on a specific date"""
+        return not cls.objects.filter(
+            staff_user=user,
+            start_date__lte=date,
+            end_date__gte=date
+        ).exists()
+
+    @classmethod
+    def get_unavailable_dates_in_range(cls, user, start_date, end_date):
+        """Get all unavailable dates for a user in a date range"""
+        from datetime import timedelta
+
+        periods = cls.objects.filter(
+            staff_user=user,
+            start_date__lte=end_date,
+            end_date__gte=start_date
+        )
+
+        unavailable_dates = set()
+        for period in periods:
+            current_date = max(period.start_date, start_date)
+            end = min(period.end_date, end_date)
+            while current_date <= end:
+                unavailable_dates.add(current_date)
+                current_date += timedelta(days=1)
+
+        return sorted(unavailable_dates)
+
+
+class BankHoliday(models.Model):
+    """
+    Bank holidays for a company. Permanent employees get paid for these.
+    Admin can manage custom holidays or use UK defaults.
+    """
+    company = models.ForeignKey(
+        SecurityCompany,
+        on_delete=models.CASCADE,
+        related_name='bank_holidays',
+        help_text="Company this holiday belongs to"
+    )
+    name = models.CharField(max_length=100, help_text="Holiday name (e.g., 'Christmas Day')")
+    date = models.DateField(help_text="Date of the holiday")
+    is_active = models.BooleanField(default=True, help_text="Whether this holiday is active")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'bank_holidays'
+        ordering = ['date']
+        verbose_name = 'Bank Holiday'
+        verbose_name_plural = 'Bank Holidays'
+        unique_together = [['company', 'date']]
+        indexes = [
+            models.Index(fields=['company', 'date', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.date})"
+
+    @classmethod
+    def populate_uk_defaults(cls, company, year=None):
+        """
+        Pre-populate UK bank holidays for a company.
+        If year is None, populates for current year.
+        """
+        from datetime import date
+        import calendar
+
+        if year is None:
+            year = date.today().year
+
+        # Calculate UK bank holidays for the given year
+        holidays = []
+
+        # New Year's Day (Jan 1, or substitute if weekend)
+        new_years = date(year, 1, 1)
+        if new_years.weekday() == 5:  # Saturday
+            new_years = date(year, 1, 3)
+        elif new_years.weekday() == 6:  # Sunday
+            new_years = date(year, 1, 2)
+        holidays.append(('New Year\'s Day', new_years))
+
+        # Good Friday (varies - need Easter calculation)
+        # Using anonymous algorithm for Easter
+        a = year % 19
+        b = year // 100
+        c = year % 100
+        d = b // 4
+        e = b % 4
+        f = (b + 8) // 25
+        g = (b - f + 1) // 3
+        h = (19 * a + b - d - g + 15) % 30
+        i = c // 4
+        k = c % 4
+        l = (32 + 2 * e + 2 * i - h - k) % 7
+        m = (a + 11 * h + 22 * l) // 451
+        month = (h + l - 7 * m + 114) // 31
+        day = ((h + l - 7 * m + 114) % 31) + 1
+        easter = date(year, month, day)
+        good_friday = easter - timedelta(days=2)
+        holidays.append(('Good Friday', good_friday))
+
+        # Easter Monday
+        easter_monday = easter + timedelta(days=1)
+        holidays.append(('Easter Monday', easter_monday))
+
+        # Early May Bank Holiday (first Monday of May)
+        may_first = date(year, 5, 1)
+        days_until_monday = (7 - may_first.weekday()) % 7
+        early_may = may_first + timedelta(days=days_until_monday)
+        holidays.append(('Early May Bank Holiday', early_may))
+
+        # Spring Bank Holiday (last Monday of May)
+        may_last = date(year, 5, 31)
+        days_since_monday = may_last.weekday()
+        if days_since_monday == 0:
+            spring_bank = may_last
+        else:
+            spring_bank = may_last - timedelta(days=days_since_monday)
+        holidays.append(('Spring Bank Holiday', spring_bank))
+
+        # Summer Bank Holiday (last Monday of August)
+        aug_last = date(year, 8, 31)
+        days_since_monday = aug_last.weekday()
+        if days_since_monday == 0:
+            summer_bank = aug_last
+        else:
+            summer_bank = aug_last - timedelta(days=days_since_monday)
+        holidays.append(('Summer Bank Holiday', summer_bank))
+
+        # Christmas Day (Dec 25, or substitute if weekend)
+        christmas = date(year, 12, 25)
+        if christmas.weekday() == 5:  # Saturday
+            christmas = date(year, 12, 27)
+        elif christmas.weekday() == 6:  # Sunday
+            christmas = date(year, 12, 27)
+        holidays.append(('Christmas Day', christmas))
+
+        # Boxing Day (Dec 26, or substitute if weekend)
+        boxing_day = date(year, 12, 26)
+        if boxing_day.weekday() == 5:  # Saturday
+            boxing_day = date(year, 12, 28)
+        elif boxing_day.weekday() == 6:  # Sunday
+            boxing_day = date(year, 12, 28)
+        holidays.append(('Boxing Day', boxing_day))
+
+        created_holidays = []
+        for name, holiday_date in holidays:
+            holiday, created = cls.objects.get_or_create(
+                company=company,
+                date=holiday_date,
+                defaults={'name': name, 'is_active': True}
+            )
+            if created:
+                created_holidays.append(holiday)
+
+        return created_holidays
+
+    @classmethod
+    def get_holidays_in_range(cls, company, start_date, end_date):
+        """Get all active bank holidays for a company in a date range"""
+        return cls.objects.filter(
+            company=company,
+            date__gte=start_date,
+            date__lte=end_date,
+            is_active=True
+        )
+
+
+class StaffLeaveDailyRate(models.Model):
+    """
+    Daily rate for calculating paid leave on invoices.
+    Admin manually sets this per employee.
+    """
+    staff_user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='leave_daily_rate',
+        help_text="Staff member this rate applies to"
+    )
+    company = models.ForeignKey(
+        SecurityCompany,
+        on_delete=models.CASCADE,
+        related_name='staff_leave_rates',
+        help_text="Company this rate belongs to"
+    )
+    daily_rate = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Daily rate for paid leave calculation"
+    )
+    effective_from = models.DateField(help_text="Date from which this rate is effective")
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='updated_leave_rates',
+        help_text="Admin who last updated this rate"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'staff_leave_daily_rates'
+        verbose_name = 'Staff Leave Daily Rate'
+        verbose_name_plural = 'Staff Leave Daily Rates'
+        indexes = [
+            models.Index(fields=['company', 'staff_user']),
+        ]
+
+    def __str__(self):
+        return f"{self.staff_user.username}: £{self.daily_rate}/day"
 
 
 class RecruitmentApplication(models.Model):

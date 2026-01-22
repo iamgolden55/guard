@@ -49,6 +49,9 @@ class ShiftsService {
       check_in_time: shift.check_in_time,
       check_out_time: shift.check_out_time,
       sync_status: 'synced',
+      // Multi-staff shift fields
+      shift_group: shift.shift_group || null,
+      coworkers: shift.coworkers || [],
       // Transfer status fields
       pending_exchange: shift.pending_exchange,
       pending_release: shift.pending_release,
@@ -69,8 +72,11 @@ class ShiftsService {
         page_size: pageSize.toString(),
       });
 
+      // Use my_shifts endpoint to only fetch the current user's shifts
+      // This is critical for admin/manager users who should only see their
+      // own shifts in the mobile app, not all company shifts
       const response = await apiService.get<PaginatedResponse<any>>(
-        `/api/v1/shifts/?${queryParams.toString()}`
+        `/api/v1/shifts/my_shifts/?${queryParams.toString()}`
       );
 
       // Check if response is valid

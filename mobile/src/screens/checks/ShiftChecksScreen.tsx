@@ -27,6 +27,13 @@ interface CheckItem {
   completed: boolean;
   route: keyof MainStackParamList;
   color: string;
+  // Multi-staff shift attribution
+  performedBy?: {
+    id: number;
+    first_name: string;
+    last_name: string;
+  } | null;
+  timestamp?: string;
 }
 
 export const ShiftChecksScreen = () => {
@@ -56,6 +63,11 @@ export const ShiftChecksScreen = () => {
       // Define available checks based on venue requirements
       const availableChecks: CheckItem[] = [];
 
+      // Get the most recent check from each type for attribution
+      const latestFireExitCheck = shiftChecks.fireExitChecks[0];
+      const latestCapacityCheck = shiftChecks.capacityChecks[0];
+      const latestToiletCheck = shiftChecks.toiletChecks[0];
+
       if (activeShift?.venue.requires_fire_exit_check) {
         availableChecks.push({
           id: 'fire_exit',
@@ -65,6 +77,8 @@ export const ShiftChecksScreen = () => {
           completed: shiftChecks.fireExitChecks.length > 0,
           route: 'FireExitCheck' as keyof MainStackParamList,
           color: colors.error,
+          performedBy: latestFireExitCheck?.performed_by_details || null,
+          timestamp: latestFireExitCheck?.timestamp,
         });
       }
 
@@ -77,6 +91,8 @@ export const ShiftChecksScreen = () => {
           completed: shiftChecks.capacityChecks.length > 0,
           route: 'CapacityCheck' as keyof MainStackParamList,
           color: colors.warning,
+          performedBy: latestCapacityCheck?.performed_by_details || null,
+          timestamp: latestCapacityCheck?.timestamp,
         });
       }
 
@@ -89,6 +105,8 @@ export const ShiftChecksScreen = () => {
         completed: shiftChecks.toiletChecks.length > 0,
         route: 'ToiletCheck' as keyof MainStackParamList,
         color: colors.info,
+        performedBy: latestToiletCheck?.performed_by_details || null,
+        timestamp: latestToiletCheck?.timestamp,
       });
 
       setChecks(availableChecks);
@@ -228,8 +246,20 @@ export const ShiftChecksScreen = () => {
                       )}
                     </View>
                     <Body color={colors.text.secondary}>
-                      {check.completed ? 'Completed' : 'Not completed yet'}
+                      {check.completed
+                        ? check.performedBy
+                          ? `Completed by ${check.performedBy.first_name} ${check.performedBy.last_name?.charAt(0)}.`
+                          : 'Completed'
+                        : 'Not completed yet'}
                     </Body>
+                    {check.completed && check.timestamp && (
+                      <Body color={colors.text.tertiary} style={styles.checkTimestamp}>
+                        {new Date(check.timestamp).toLocaleTimeString('en-US', {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </Body>
+                    )}
                   </View>
                   <View style={styles.checkAction}>
                     {check.completed ? (
@@ -371,6 +401,10 @@ const styles = StyleSheet.create({
   },
   checkAction: {
     marginLeft: spacing.md,
+  },
+  checkTimestamp: {
+    fontSize: 12,
+    marginTop: 2,
   },
   emptyState: {
     alignItems: 'center',

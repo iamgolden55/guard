@@ -16,7 +16,7 @@ import {
 import { MainLayout } from '../../layouts';
 import { Card, BulkPayrollGeneration, SwipeableTabs } from '../../components';
 import { useAuth } from '../../contexts/AuthContext';
-import { shiftService, invoiceService, deputyService, venueService, employmentTypeService } from '../../services';
+import { shiftService, invoiceService, deputyService, venueService, employmentTypeService, exchangeService } from '../../services';
 import api from '../../services/api';
 import type { DeputyStatus, User, Venue, Shift, Invoice } from '../../types';
 import { UserRole } from '../../types';
@@ -74,7 +74,8 @@ const AdminDashboard: React.FC = () => {
     pendingApprovals: 0,
     totalStaff: 0,
     pendingInvoices: 0,
-    venueCount: 0
+    venueCount: 0,
+    onTimePercentage: 0
   });
   const [deputyStatus, setDeputyStatus] = useState<DeputyStatus | null>(null);
   const [employmentTypes, setEmploymentTypes] = useState<any[]>([]);
@@ -116,6 +117,11 @@ const AdminDashboard: React.FC = () => {
       try {
         setIsLoading(true);
 
+        // Calculate date range for attendance (last 30 days)
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30);
+
         // Fetch all data in parallel for better performance
         const [
           shiftsResult,
@@ -123,26 +129,40 @@ const AdminDashboard: React.FC = () => {
           deputyStatusDataResult,
           usersResult, // Fetch the full user list
           venuesResult, // Fetch the full venue list
-          employmentTypesResult // Fetch employment types
+          employmentTypesResult, // Fetch employment types
+          pendingApprovalsResult, // Fetch pending approvals (exchange requests + shift claims)
+          attendanceResult // Fetch attendance analytics
         ] = await Promise.allSettled([
           shiftService.getShifts(),
           invoiceService.getInvoices(),
           deputyService.getDeputyStatus(),
           api.get<User[]>('/api/v1/users/'), // Sprint 3: Use /api/v1/ prefix for cookie authentication
           venueService.getAllVenues(), // Use venueService to fetch venues
-          employmentTypeService.getEmploymentTypes() // Check employment types
+          employmentTypeService.getEmploymentTypes(), // Check employment types
+          exchangeService.getPendingApprovals(), // Get pending exchange requests and shift claims
+          shiftService.getAttendanceReport({
+            startDate: startDate.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0],
+            pageSize: 1 // We only need the summary
+          })
         ]);
 
         // Process shifts - Assuming shiftService returns Shift[] directly
         const shiftsData = shiftsResult.status === 'fulfilled' && Array.isArray(shiftsResult.value) ? shiftsResult.value : [];
-        const activeShifts = shiftsData.filter((shift: Shift) => 
+        const activeShifts = shiftsData.filter((shift: Shift) =>
           shift.status === 'active' || shift.status === 'in_progress'
-        ).length;
-        const pendingApprovals = shiftsData.filter(
-          (shift: Shift) => shift.status === 'completed' && !shift.managerApproved
         ).length;
         if (shiftsResult.status === 'rejected') {
             console.error("Failed to load shifts:", shiftsResult.reason);
+        }
+
+        // Process pending approvals (exchange requests + shift claims) - matches Approvals page
+        let pendingApprovals = 0;
+        if (pendingApprovalsResult.status === 'fulfilled') {
+          const approvals = pendingApprovalsResult.value;
+          pendingApprovals = (approvals.exchange_requests?.length || 0) + (approvals.shift_claims?.length || 0);
+        } else {
+          console.error("Failed to load pending approvals:", pendingApprovalsResult.reason);
         }
 
         // Process invoices - Assuming invoiceService returns Invoice[] directly
@@ -202,13 +222,22 @@ const AdminDashboard: React.FC = () => {
         setEmploymentTypes(employmentTypesData);
         setShowEmploymentTypePrompt(employmentTypesData.length === 0);
 
+        // Process attendance data
+        let onTimePercentage = 0;
+        if (attendanceResult.status === 'fulfilled') {
+          onTimePercentage = attendanceResult.value?.summary?.onTimePercentage || 0;
+        } else {
+          console.error('Failed to load attendance data:', attendanceResult.reason);
+        }
+
         // Set stats
         setStats({
           activeShifts,
           pendingApprovals,
           totalStaff,
           pendingInvoices,
-          venueCount // Use fetched value
+          venueCount, // Use fetched value
+          onTimePercentage
         });
 
       } catch (error) {
@@ -220,7 +249,8 @@ const AdminDashboard: React.FC = () => {
           pendingApprovals: 0,
           totalStaff: 0, // Indicate error or N/A
           pendingInvoices: 0,
-          venueCount: 0 // Indicate error or N/A
+          venueCount: 0, // Indicate error or N/A
+          onTimePercentage: 0
         });
       } finally {
         setIsLoading(false);
@@ -257,7 +287,7 @@ const AdminDashboard: React.FC = () => {
         <Stack tokens={{ childrenGap: 16 }}>
           <Text variant="xLarge">System Overview</Text>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             <StatCard
               title="Active Shifts"
               value={stats.activeShifts}
@@ -272,7 +302,7 @@ const AdminDashboard: React.FC = () => {
               icon="Permissions"
               color="#107c10"
               isLoading={isLoading}
-              onClick={() => navigate('/shifts/exchange')}
+              onClick={() => navigate('/approvals')}
             />
             <StatCard
               title="Total Staff"
@@ -297,6 +327,14 @@ const AdminDashboard: React.FC = () => {
               color="#008272"
               isLoading={isLoading}
               onClick={() => navigate('/admin/venues')}
+            />
+            <StatCard
+              title="On-time Rate"
+              value={`${stats.onTimePercentage.toFixed(0)}%`}
+              icon="Timer"
+              color="#10B981"
+              isLoading={isLoading}
+              onClick={() => navigate('/admin/attendance')}
             />
           </div>
         </Stack>
