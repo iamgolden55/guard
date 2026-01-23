@@ -24,7 +24,7 @@ import {
   SearchBox
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
-import { shiftService, exchangeService } from '../../services';
+import { shiftService, exchangeService, api } from '../../services';
 import type { ShiftExchange, OpenShiftRequest } from '../../services/exchangeService';
 import AdjustTimeDialog from '../../components/AdjustTimeDialog';
 import type { Shift } from '../../types';
@@ -642,22 +642,21 @@ const Approvals: React.FC = () => {
 
     setIsProcessingManual(true);
     try {
-      const baseUrl = 'http://localhost:8000/api/shifts';
       let endpoint = '';
-      const requestData: any = {
+      const requestData: Record<string, unknown> = {
         manager_signature: manualSignature,
         manager_notes: manualNotes,
       };
 
       switch (manualAction) {
         case 'checkin':
-          endpoint = `${baseUrl}/${selectedShiftForManual.id}/manual_checkin/`;
+          endpoint = `/api/v1/shifts/${selectedShiftForManual.id}/manual_checkin/`;
           if (manualCheckinTime) {
             requestData.checkin_time = manualCheckinTime;
           }
           break;
         case 'checkout':
-          endpoint = `${baseUrl}/${selectedShiftForManual.id}/manual_checkout/`;
+          endpoint = `/api/v1/shifts/${selectedShiftForManual.id}/manual_checkout/`;
           if (manualCheckoutTime) {
             requestData.checkout_time = manualCheckoutTime;
           }
@@ -666,7 +665,7 @@ const Approvals: React.FC = () => {
           }
           break;
         case 'force_complete':
-          endpoint = `${baseUrl}/${selectedShiftForManual.id}/force_complete/`;
+          endpoint = `/api/v1/shifts/${selectedShiftForManual.id}/force_complete/`;
           requestData.actual_hours = parseFloat(manualHours);
           if (manualCheckinTime) {
             requestData.checkin_time = manualCheckinTime;
@@ -677,19 +676,8 @@ const Approvals: React.FC = () => {
           break;
       }
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to process manual action');
-      }
+      // Use api instance which handles auth and base URL properly for both dev and production
+      await api.post(endpoint, requestData);
 
       // Success - reload data and close dialog
       await loadIncompleteShifts();
@@ -700,9 +688,11 @@ const Approvals: React.FC = () => {
       setManualHours('');
       setManualCheckinTime('');
       setManualCheckoutTime('');
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to process manual action:', error);
-      setError(`Failed to process manual action: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const axiosError = error as { response?: { data?: { detail?: string } }; message?: string };
+      const errorMessage = axiosError?.response?.data?.detail || axiosError?.message || 'Unknown error';
+      setError(`Failed to process manual action: ${errorMessage}`);
     } finally {
       setIsProcessingManual(false);
     }
