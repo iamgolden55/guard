@@ -21,7 +21,13 @@ import {
   DefaultButton,
   Pivot,
   PivotItem,
-  SearchBox
+  SearchBox,
+  TooltipHost,
+  DirectionalHint,
+  Icon,
+  IconButton,
+  DetailsRow,
+  type IDetailsRowProps
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
 import { shiftService, exchangeService, api } from '../../services';
@@ -427,6 +433,61 @@ const Approvals: React.FC = () => {
       ),
     },
     {
+      key: 'urgency',
+      name: 'Action Required',
+      minWidth: 160,
+      maxWidth: 180,
+      isResizable: true,
+      onRender: (item: IncompleteShift) => {
+        const urgencyConfig = {
+          critical: {
+            text: 'Immediate action required',
+            color: '#dc2626',
+            bgColor: '#fef2f2',
+            icon: 'WarningSolid'
+          },
+          high: {
+            text: 'Action within 2 hours',
+            color: '#ea580c',
+            bgColor: '#fff7ed',
+            icon: 'Warning'
+          },
+          medium: {
+            text: 'Action within 4 hours',
+            color: '#d97706',
+            bgColor: '#fffbeb',
+            icon: 'Clock'
+          },
+          low: {
+            text: 'Action recommended',
+            color: '#059669',
+            bgColor: '#ecfdf5',
+            icon: 'Info'
+          }
+        };
+
+        const urgency = urgencyConfig[item.priority];
+
+        return (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              backgroundColor: urgency.bgColor,
+              padding: '4px 8px',
+              borderRadius: '6px'
+            }}
+          >
+            <Icon iconName={urgency.icon} style={{ color: urgency.color, fontSize: 14 }} />
+            <Text style={{ color: urgency.color, fontSize: 12, fontWeight: 500 }}>
+              {urgency.text}
+            </Text>
+          </div>
+        );
+      },
+    },
+    {
       key: 'auto_checkout',
       name: 'Auto-Checkout',
       minWidth: 100,
@@ -434,8 +495,8 @@ const Approvals: React.FC = () => {
       isResizable: true,
       onRender: (item: IncompleteShift) => (
         <Text>
-          {item.auto_checkout_eligible ? 
-            <span style={{ color: '#10B981' }}>✓ Eligible</span> : 
+          {item.auto_checkout_eligible ?
+            <span style={{ color: '#10B981' }}>✓ Eligible</span> :
             <span style={{ color: '#EF4444' }}>✗ Not Eligible</span>
           }
         </Text>
@@ -459,28 +520,124 @@ const Approvals: React.FC = () => {
     {
       key: 'actions',
       name: 'Actions',
-      minWidth: 250,
-      maxWidth: 250,
+      minWidth: 300,
+      maxWidth: 350,
       isResizable: true,
       onRender: (item: IncompleteShift) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
+        <Stack horizontal tokens={{ childrenGap: 8 }} verticalAlign="center">
           {item.type === 'no_checkin' && (
-            <Link onClick={() => handleManualCheckin(item)}>
-              Manual Check-in
-            </Link>
+            <TooltipHost
+              content="Record a manual check-in time for this staff member. Use this when staff forgot to check in or had technical issues."
+              directionalHint={DirectionalHint.topCenter}
+            >
+              <PrimaryButton
+                text="Check In"
+                iconProps={{ iconName: 'BoxCheckmarkSolid' }}
+                onClick={() => handleManualCheckin(item)}
+                styles={{
+                  root: {
+                    backgroundColor: '#059669',
+                    borderColor: '#059669',
+                    borderRadius: '6px',
+                    height: '32px',
+                    padding: '0 12px'
+                  },
+                  rootHovered: {
+                    backgroundColor: '#047857',
+                    borderColor: '#047857'
+                  },
+                  rootPressed: {
+                    backgroundColor: '#065f46',
+                    borderColor: '#065f46'
+                  }
+                }}
+              />
+            </TooltipHost>
           )}
           {item.type === 'no_checkout' && (
-            <Link onClick={() => handleManualCheckout(item)}>
-              Manual Check-out
-            </Link>
+            <TooltipHost
+              content="Record a manual check-out time for this staff member. Use this when staff forgot to check out or had technical issues."
+              directionalHint={DirectionalHint.topCenter}
+            >
+              <PrimaryButton
+                text="Check Out"
+                iconProps={{ iconName: 'BoxCheckmarkSolid' }}
+                onClick={() => handleManualCheckout(item)}
+                styles={{
+                  root: {
+                    backgroundColor: '#0078d4',
+                    borderColor: '#0078d4',
+                    borderRadius: '6px',
+                    height: '32px',
+                    padding: '0 12px'
+                  },
+                  rootHovered: {
+                    backgroundColor: '#106ebe',
+                    borderColor: '#106ebe'
+                  },
+                  rootPressed: {
+                    backgroundColor: '#005a9e',
+                    borderColor: '#005a9e'
+                  }
+                }}
+              />
+            </TooltipHost>
           )}
-          <Link onClick={() => handleForceComplete(item)}>
-            Force Complete
-          </Link>
-          {(item.check_in_time || item.check_out_time) && (
-            <Link onClick={() => handleAdjustTimes(item)} style={{ color: '#0078D4', fontWeight: 600 }}>
-              Adjust Times
-            </Link>
+          <TooltipHost
+            content="Administratively complete this shift. Use this when the shift cannot be resolved normally and needs to be marked complete for payroll."
+            directionalHint={DirectionalHint.topCenter}
+          >
+            <DefaultButton
+              text="Force Complete"
+              iconProps={{ iconName: 'CompletedSolid' }}
+              onClick={() => handleForceComplete(item)}
+              styles={{
+                root: {
+                  borderColor: '#dc2626',
+                  color: '#dc2626',
+                  borderRadius: '6px',
+                  height: '32px',
+                  padding: '0 12px'
+                },
+                rootHovered: {
+                  borderColor: '#b91c1c',
+                  color: '#b91c1c',
+                  backgroundColor: '#fef2f2'
+                },
+                rootPressed: {
+                  borderColor: '#991b1b',
+                  color: '#991b1b',
+                  backgroundColor: '#fee2e2'
+                }
+              }}
+            />
+          </TooltipHost>
+          {item.check_in_time && (
+            <TooltipHost
+              content="Adjust the recorded check-in or check-out times. Use this to correct time tracking errors."
+              directionalHint={DirectionalHint.topCenter}
+            >
+              <IconButton
+                iconProps={{ iconName: 'Clock' }}
+                title="Adjust Times"
+                onClick={() => handleAdjustTimes(item)}
+                styles={{
+                  root: {
+                    backgroundColor: '#eff6ff',
+                    borderRadius: '6px',
+                    height: '32px',
+                    width: '32px'
+                  },
+                  rootHovered: {
+                    backgroundColor: '#dbeafe'
+                  },
+                  icon: {
+                    color: '#0078d4',
+                    fontSize: 16
+                  }
+                }}
+              />
+            </TooltipHost>
           )}
         </Stack>
       ),
@@ -667,11 +824,14 @@ const Approvals: React.FC = () => {
         case 'force_complete':
           endpoint = `/api/v1/shifts/${selectedShiftForManual.id}/force_complete/`;
           requestData.actual_hours = parseFloat(manualHours);
-          if (manualCheckinTime) {
-            requestData.checkin_time = manualCheckinTime;
-          }
-          if (manualCheckoutTime) {
-            requestData.checkout_time = manualCheckoutTime;
+          // Only send times if hours > 0 (not a no-show)
+          if (parseFloat(manualHours) > 0) {
+            if (manualCheckinTime) {
+              requestData.checkin_time = manualCheckinTime;
+            }
+            if (manualCheckoutTime) {
+              requestData.checkout_time = manualCheckoutTime;
+            }
           }
           break;
       }
@@ -828,6 +988,39 @@ const Approvals: React.FC = () => {
                     columns={incompleteColumns}
                     layoutMode={DetailsListLayoutMode.justified}
                     selectionMode={SelectionMode.none}
+                    onRenderRow={(props?: IDetailsRowProps) => {
+                      if (!props) return null;
+                      const item = props.item as IncompleteShift;
+                      const isCritical = item.priority === 'critical';
+                      const isHigh = item.priority === 'high';
+
+                      const rowStyles = {
+                        root: {
+                          backgroundColor: isCritical
+                            ? '#fef2f2'
+                            : isHigh
+                            ? '#fff7ed'
+                            : undefined,
+                          borderLeft: isCritical
+                            ? '4px solid #dc2626'
+                            : isHigh
+                            ? '4px solid #f59e0b'
+                            : undefined,
+                          transition: 'all 0.2s ease',
+                          selectors: {
+                            '&:hover': {
+                              backgroundColor: isCritical
+                                ? '#fee2e2'
+                                : isHigh
+                                ? '#ffedd5'
+                                : '#f9fafb'
+                            }
+                          }
+                        }
+                      };
+
+                      return <DetailsRow {...props} styles={rowStyles} />;
+                    }}
                   />
                 </div>
               )}
@@ -840,125 +1033,266 @@ const Approvals: React.FC = () => {
       <Dialog
         hidden={!showManualDialog}
         dialogContentProps={{
-          type: DialogType.normal,
+          type: DialogType.largeHeader,
           title: `${
-            manualAction === 'checkin' ? 'Manual Check-in' : 
-            manualAction === 'checkout' ? 'Manual Check-out' : 
+            manualAction === 'checkin' ? 'Manual Check-in' :
+            manualAction === 'checkout' ? 'Manual Check-out' :
             'Force Complete Shift'
-          }`,
-          subText: selectedShiftForManual ? 
-            `Processing ${manualAction} for ${selectedShiftForManual.staff_details.first_name} ${selectedShiftForManual.staff_details.last_name} at ${selectedShiftForManual.venue_details.name}` : 
-            ''
+          }`
         }}
         onDismiss={() => setShowManualDialog(false)}
-        minWidth={500}
+        minWidth={560}
+        maxWidth={600}
       >
-        <Stack tokens={{ childrenGap: 10 }}>
-          <TextField
-            label="Manager Signature (required)"
-            value={manualSignature}
-            onChange={(_, newValue) => setManualSignature(newValue || '')}
-            placeholder="Enter your full name as digital signature"
-            required
-          />
-
-          <TextField
-            label="Manager Notes"
-            value={manualNotes}
-            onChange={(_, newValue) => setManualNotes(newValue || '')}
-            placeholder="Reason for manual intervention (e.g., Network issues, Staff emergency)"
-            multiline
-            rows={2}
-          />
-
-          {manualAction === 'checkin' && (
-            <TextField
-              label="Check-in Time"
-              type="datetime-local"
-              value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
-              onChange={(_, newValue) => setManualCheckinTime(newValue ? new Date(newValue).toISOString() : '')}
-            />
+        <Stack tokens={{ childrenGap: 16 }}>
+          {/* Context Card - Staff & Shift Info */}
+          {selectedShiftForManual && (
+            <div
+              style={{
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '12px 16px'
+              }}
+            >
+              <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 12 }}>
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: '50%',
+                    backgroundColor: '#e2e8f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 600,
+                    color: '#475569',
+                    fontSize: 16
+                  }}
+                >
+                  {selectedShiftForManual.staff_details.first_name[0]}
+                  {selectedShiftForManual.staff_details.last_name[0]}
+                </div>
+                <Stack tokens={{ childrenGap: 4 }}>
+                  <Text style={{ fontWeight: 600, fontSize: 15 }}>
+                    {selectedShiftForManual.staff_details.first_name} {selectedShiftForManual.staff_details.last_name}
+                  </Text>
+                  <Text style={{ color: '#64748b', fontSize: 13 }}>
+                    {selectedShiftForManual.venue_details.name}
+                  </Text>
+                  <Text style={{ color: '#94a3b8', fontSize: 12 }}>
+                    Scheduled: {new Date(selectedShiftForManual.start_time).toLocaleString()} - {new Date(selectedShiftForManual.end_time).toLocaleTimeString()}
+                  </Text>
+                </Stack>
+              </Stack>
+            </div>
           )}
 
-          {(manualAction === 'checkout' || manualAction === 'force_complete') && (
-            <>
-              <TextField
-                label="Actual Hours Worked"
-                type="number"
-                value={manualHours}
-                onChange={(_, newValue) => {
-                  setManualHours(newValue || '');
+          {/* Force Complete Warning */}
+          {manualAction === 'force_complete' && (
+            <MessageBar
+              messageBarType={MessageBarType.warning}
+              styles={{
+                root: { borderRadius: '6px' }
+              }}
+            >
+              <Stack tokens={{ childrenGap: 4 }}>
+                <Text style={{ fontWeight: 600 }}>Administrative Action</Text>
+                <Text style={{ fontSize: 13 }}>
+                  This will mark the shift as complete and process it for payroll.
+                  This action cannot be easily undone without creating a manual adjustment.
+                </Text>
+              </Stack>
+            </MessageBar>
+          )}
 
-                  // Auto-calculate checkout time if we have check-in time (checkout action only)
-                  if (manualAction === 'checkout') {
-                    const hours = parseFloat(newValue || '0');
-                    if (hours > 0 && hours <= 24 && selectedShiftForManual?.check_in_time) {
-                      const newCheckoutTime = calculateCheckoutTime(selectedShiftForManual.check_in_time, hours);
-                      setManualCheckoutTime(newCheckoutTime);
-                    }
-                  }
-                }}
-                placeholder="8.5"
-                step="0.5"
-                min="0"
-                max="24"
-                required={manualAction === 'force_complete'}
-              />
-              
-              {manualAction === 'checkout' && (
-                <TextField
-                  label="Check-out Time"
-                  type="datetime-local"
-                  value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
-                  onChange={(_, newValue) => {
-                    const newCheckoutTime = newValue ? new Date(newValue).toISOString() : '';
-                    setManualCheckoutTime(newCheckoutTime);
-
-                    // Auto-calculate hours if we have check-in time
-                    if (newCheckoutTime && selectedShiftForManual?.check_in_time) {
-                      const hours = calculateHoursWorked(selectedShiftForManual.check_in_time, newCheckoutTime);
-                      if (hours > 0 && hours <= 24) {
-                        setManualHours(hours.toString());
-                      }
-                    }
+          {/* What This Will Do Section */}
+          <div
+            style={{
+              backgroundColor: manualAction === 'force_complete' ? '#fef3c7' : '#eff6ff',
+              border: `1px solid ${manualAction === 'force_complete' ? '#fcd34d' : '#bfdbfe'}`,
+              borderRadius: '8px',
+              padding: '12px 16px'
+            }}
+          >
+            <Stack tokens={{ childrenGap: 8 }}>
+              <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 6 }}>
+                <Icon
+                  iconName="Info"
+                  style={{
+                    color: manualAction === 'force_complete' ? '#d97706' : '#3b82f6',
+                    fontSize: 14
                   }}
                 />
-              )}
-            </>
-          )}
+                <Text style={{ fontWeight: 600, fontSize: 13 }}>What this will do:</Text>
+              </Stack>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: '#334155' }}>
+                {manualAction === 'checkin' && (
+                  <>
+                    <li>Record a manual check-in time for this staff member</li>
+                    <li>Update shift status to "In Progress"</li>
+                    <li>Your signature will be logged as the authorizing manager</li>
+                  </>
+                )}
+                {manualAction === 'checkout' && (
+                  <>
+                    <li>Record a manual check-out time based on hours worked</li>
+                    <li>Mark shift as "Completed" and ready for approval</li>
+                    <li>Calculate payment based on the hours specified</li>
+                    <li>Your signature will be logged as the authorizing manager</li>
+                  </>
+                )}
+                {manualAction === 'force_complete' && (
+                  <>
+                    <li>Set both check-in and check-out times administratively</li>
+                    <li>Mark shift as "Completed" immediately</li>
+                    <li>Process hours for payroll calculation</li>
+                    <li>Skip normal approval workflow</li>
+                    <li>Create an audit record of this administrative action</li>
+                  </>
+                )}
+              </ul>
+            </Stack>
+          </div>
 
-          {manualAction === 'force_complete' && (
-            <>
+          {/* Form Fields */}
+          <Stack tokens={{ childrenGap: 12 }}>
+            <TextField
+              label="Manager Signature"
+              value={manualSignature}
+              onChange={(_, newValue) => setManualSignature(newValue || '')}
+              placeholder="Enter your full name as digital signature"
+              required
+              description="Your name will be recorded as authorization for this action"
+            />
+
+            <TextField
+              label="Reason for Manual Intervention"
+              value={manualNotes}
+              onChange={(_, newValue) => setManualNotes(newValue || '')}
+              placeholder="e.g., Network issues, Staff emergency, App malfunction"
+              multiline
+              rows={2}
+              description="Explain why this manual action is needed"
+            />
+
+            {manualAction === 'checkin' && (
               <TextField
                 label="Check-in Time"
                 type="datetime-local"
                 value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
                 onChange={(_, newValue) => setManualCheckinTime(newValue ? new Date(newValue).toISOString() : '')}
+                description="When did the staff member actually start work?"
               />
-              
-              <TextField
-                label="Check-out Time"
-                type="datetime-local"
-                value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
-                onChange={(_, newValue) => setManualCheckoutTime(newValue ? new Date(newValue).toISOString() : '')}
-              />
-            </>
-          )}
+            )}
+
+            {(manualAction === 'checkout' || manualAction === 'force_complete') && (
+              <>
+                <TextField
+                  label="Actual Hours Worked"
+                  type="number"
+                  value={manualHours}
+                  onChange={(_, newValue) => {
+                    setManualHours(newValue || '');
+
+                    // Auto-calculate checkout time if we have check-in time (checkout action only)
+                    if (manualAction === 'checkout') {
+                      const hours = parseFloat(newValue || '0');
+                      if (hours > 0 && hours <= 24 && selectedShiftForManual?.check_in_time) {
+                        const newCheckoutTime = calculateCheckoutTime(selectedShiftForManual.check_in_time, hours);
+                        setManualCheckoutTime(newCheckoutTime);
+                      }
+                    }
+                  }}
+                  placeholder="8.5"
+                  step="0.5"
+                  min="0"
+                  max="24"
+                  required={manualAction === 'force_complete'}
+                  description="Hours to be used for payroll calculation"
+                />
+
+                {manualAction === 'checkout' && (
+                  <TextField
+                    label="Check-out Time"
+                    type="datetime-local"
+                    value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
+                    onChange={(_, newValue) => {
+                      const newCheckoutTime = newValue ? new Date(newValue).toISOString() : '';
+                      setManualCheckoutTime(newCheckoutTime);
+
+                      // Auto-calculate hours if we have check-in time
+                      if (newCheckoutTime && selectedShiftForManual?.check_in_time) {
+                        const hours = calculateHoursWorked(selectedShiftForManual.check_in_time, newCheckoutTime);
+                        if (hours > 0 && hours <= 24) {
+                          setManualHours(hours.toString());
+                        }
+                      }
+                    }}
+                    description="When did the staff member finish work?"
+                  />
+                )}
+              </>
+            )}
+
+            {manualAction === 'force_complete' && manualHours === '0' && (
+              <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded border border-amber-200">
+                ⚠️ No-show: Check-in/check-out times will not be recorded for 0 hours worked.
+              </div>
+            )}
+
+            {manualAction === 'force_complete' && parseFloat(manualHours || '0') > 0 && (
+              <>
+                <TextField
+                  label="Check-in Time"
+                  type="datetime-local"
+                  value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
+                  onChange={(_, newValue) => setManualCheckinTime(newValue ? new Date(newValue).toISOString() : '')}
+                  description="Administrative start time for this shift"
+                />
+
+                <TextField
+                  label="Check-out Time"
+                  type="datetime-local"
+                  value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
+                  onChange={(_, newValue) => setManualCheckoutTime(newValue ? new Date(newValue).toISOString() : '')}
+                  description="Administrative end time for this shift"
+                />
+              </>
+            )}
+          </Stack>
         </Stack>
-        
+
         <DialogFooter>
           <PrimaryButton
             text={
-              manualAction === 'checkin' ? 'Check In' : 
-              manualAction === 'checkout' ? 'Check Out' : 
-              'Force Complete'
+              manualAction === 'checkin' ? 'Record Check-in' :
+              manualAction === 'checkout' ? 'Record Check-out' :
+              'Force Complete Shift'
             }
+            iconProps={{
+              iconName: manualAction === 'force_complete' ? 'Warning' : 'CheckMark'
+            }}
             onClick={processManualAction}
             disabled={
-              isProcessingManual || 
-              !manualSignature.trim() || 
+              isProcessingManual ||
+              !manualSignature.trim() ||
               (manualAction === 'force_complete' && !manualHours.trim())
             }
+            styles={manualAction === 'force_complete' ? {
+              root: {
+                backgroundColor: '#dc2626',
+                borderColor: '#dc2626'
+              },
+              rootHovered: {
+                backgroundColor: '#b91c1c',
+                borderColor: '#b91c1c'
+              },
+              rootPressed: {
+                backgroundColor: '#991b1b',
+                borderColor: '#991b1b'
+              }
+            } : undefined}
           />
           <DefaultButton
             text="Cancel"

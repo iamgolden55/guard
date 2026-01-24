@@ -763,9 +763,9 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        if not actual_hours:
+        if actual_hours is None:
             return Response(
-                {"detail": "Actual hours worked is required for force complete"}, 
+                {"detail": "Actual hours worked is required for force complete"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -773,19 +773,22 @@ class ShiftViewSet(viewsets.ModelViewSet):
             from django.utils import timezone
             from datetime import datetime
             import logging
-            
-            # Set check-in time if not already set
-            if not shift.check_in_time and checkin_time:
-                shift.check_in_time = datetime.fromisoformat(checkin_time.replace('Z', '+00:00'))
-            elif not shift.check_in_time:
-                shift.check_in_time = shift.start_time
-            
-            # Set check-out time
-            if checkout_time:
-                shift.check_out_time = datetime.fromisoformat(checkout_time.replace('Z', '+00:00'))
-            else:
-                shift.check_out_time = timezone.now()
-            
+
+            # Only set check-in/check-out times if actual hours > 0 (not a no-show)
+            if float(actual_hours) > 0:
+                # Set check-in time if not already set
+                if not shift.check_in_time and checkin_time:
+                    shift.check_in_time = datetime.fromisoformat(checkin_time.replace('Z', '+00:00'))
+                elif not shift.check_in_time:
+                    shift.check_in_time = shift.start_time
+
+                # Set check-out time
+                if checkout_time:
+                    shift.check_out_time = datetime.fromisoformat(checkout_time.replace('Z', '+00:00'))
+                else:
+                    shift.check_out_time = timezone.now()
+            # else: No-show - leave check_in_time and check_out_time as None/unset
+
             # Set status and hours
             shift.status = 'completed'
             shift.actual_hours_worked = float(actual_hours)
