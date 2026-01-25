@@ -34,8 +34,14 @@ yarn-error.log*
 *.sw?
 
 # Playwright MCP test artifacts
-.playwright-mcp/ frontend/dist/
+.playwright-mcp/
 mobile/.expo/
+
+# Build outputs (should never be committed)
+frontend/dist/
+frontend/node_modules/
+**/node_modules/
+**/dist/
 
 # Python
 __pycache__/

@@ -778,6 +778,44 @@ class ShiftService {
     const response = await shiftApi.post('/api/v1/shifts/create_multi_staff/', data);
     return response.data;
   }
+
+  // Time adjustment methods
+  async adjustTime(shiftId: number, adjustmentData: {
+    adjusted_check_in_time?: string;
+    adjusted_check_out_time?: string;
+    adjusted_actual_hours: number;
+    reason: string;
+    manager_signature: string;
+  }): Promise<any> {
+    const response = await shiftApi.post(`/api/v1/shifts/${shiftId}/adjust_time/`, adjustmentData);
+    return response.data;
+  }
+
+  async getTimeAdjustments(shiftId: number): Promise<any[]> {
+    const response = await shiftApi.get(`/api/v1/shifts/${shiftId}/time_adjustments/`);
+    return response.data;
+  }
+
+  // Attendance Analytics
+  async getAttendanceReport(params: {
+    startDate: string;
+    endDate: string;
+    venueId?: number;
+    page?: number;
+    pageSize?: number;
+  }): Promise<any> {
+    const queryParams = new URLSearchParams();
+
+    queryParams.append('startDate', params.startDate);
+    queryParams.append('endDate', params.endDate);
+    if (params.venueId) queryParams.append('venueId', params.venueId.toString());
+    if (params.page) queryParams.append('page', params.page.toString());
+    if (params.pageSize) queryParams.append('pageSize', params.pageSize.toString());
+
+    const url = `/api/v1/shifts/reports/attendance/?${queryParams.toString()}`;
+    const response = await shiftApi.get<any>(url);
+    return response.data;
+  }
 }
 
 export default new ShiftService();

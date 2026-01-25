@@ -5,11 +5,6 @@ import {
   DetailsListLayoutMode,
   SelectionMode,
   type IColumn,
-  CommandBar,
-  type ICommandBarItemProps,
-  SearchBox,
-  Dropdown,
-  type IDropdownOption,
   Stack,
   Text,
   StackItem,
@@ -18,9 +13,6 @@ import {
   MessageBar,
   MessageBarType,
   Link,
-  CheckboxVisibility,
-  MarqueeSelection,
-  Selection,
   PrimaryButton,
   Dialog,
   DialogType,
@@ -28,13 +20,20 @@ import {
   TextField,
   DefaultButton,
   Pivot,
-  PivotItem
+  PivotItem,
+  SearchBox,
+  TooltipHost,
+  DirectionalHint,
+  Icon,
+  IconButton,
+  DetailsRow,
+  type IDetailsRowProps
 } from '@fluentui/react';
-import { useNavigate } from 'react-router-dom';
 import { MainLayout } from '../../layouts';
-import { ShiftStatus } from '../../types';
-import { shiftService, exchangeService } from '../../services';
+import { shiftService, exchangeService, api } from '../../services';
 import type { ShiftExchange, OpenShiftRequest } from '../../services/exchangeService';
+import AdjustTimeDialog from '../../components/AdjustTimeDialog';
+import type { Shift } from '../../types';
 
 interface IncompleteShift {
   id: number;
@@ -54,125 +53,31 @@ interface IncompleteShift {
   end_time: string;
   check_in_time?: string;
   hours_overdue: number;
+  hours_overdue_raw?: number;
+  requires_manual_resolution?: boolean;
   status: string;
   auto_checkout_eligible: boolean;
   force_timeout_eligible: boolean;
-  priority: 'low' | 'medium' | 'high';
+  priority: 'low' | 'medium' | 'high' | 'critical';
 }
-
-interface Staff {
-  id: number;
-  firstName: string;
-  lastName: string;
-  email: string;
-}
-
-interface Shift {
-  id: number;
-  staff: Staff;
-  venue: {
-    id: number;
-    name: string;
-  };
-  startTime: string;
-  endTime: string;
-  duration: number; // in hours
-  status: ShiftStatus;
-  managerApproved: boolean;
-  firesExitChecksCompleted: boolean;
-  capacityChecksCompleted: boolean;
-  toiletChecksCompleted: boolean;
-  enforcementVisitsLogged: boolean;
-}
-
-// Status indicator pill component
-const StatusPill: React.FC<{status: ShiftStatus}> = ({ status }) => {
-  let backgroundColor = '';
-  let color = 'white';
-
-  switch(status) {
-    case ShiftStatus.ACTIVE:
-      backgroundColor = '#10B981'; // Green
-      break;
-    case ShiftStatus.COMPLETED:
-      backgroundColor = '#F59E0B'; // Yellow
-      color = 'black';
-      break;
-    case ShiftStatus.APPROVED:
-      backgroundColor = '#3B82F6'; // Blue
-      break;
-    case ShiftStatus.REJECTED:
-      backgroundColor = '#EF4444'; // Red
-      break;
-    default:
-      backgroundColor = '#9CA3AF'; // Gray
-  }
-
-  return (
-    <div
-      style={{
-        backgroundColor,
-        color,
-        padding: '4px 8px',
-        borderRadius: '12px',
-        display: 'inline-block',
-        fontSize: '12px',
-        fontWeight: 'bold',
-        textTransform: 'uppercase'
-      }}
-    >
-      {status}
-    </div>
-  );
-};
-
-// Completion status component
-const CompletionStatus: React.FC<{completed: boolean}> = ({ completed }) => (
-  <Text>
-    {completed ?
-      <span style={{ color: '#10B981' }}>✓ Complete</span> :
-      <span style={{ color: '#EF4444' }}>✗ Incomplete</span>
-    }
-  </Text>
-);
 
 const Approvals: React.FC = () => {
-  const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('shift-approvals');
-  
-  // Shift Approvals State
-  const [shifts, setShifts] = useState<Shift[]>([]);
-  const [filteredShifts, setFilteredShifts] = useState<Shift[]>([]);
+  const [activeTab, setActiveTab] = useState('exchange-approvals');
+
+  // Common State
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchText, setSearchText] = useState('');
-  const [venueFilter, setVenueFilter] = useState<string>('');
-  const [venueOptions, setVenueOptions] = useState<IDropdownOption[]>([{ key: '', text: 'All Venues' }]);
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
-  const [showBulkApproveDialog, setShowBulkApproveDialog] = useState(false);
-  const [showBulkRejectDialog, setShowBulkRejectDialog] = useState(false);
-  const [rejectionReason, setRejectionReason] = useState('');
-  const [isApproving, setIsApproving] = useState(false);
-  const [isRejecting, setIsRejecting] = useState(false);
 
   // Exchange Approvals State
   const [exchanges, setExchanges] = useState<ShiftExchange[]>([]);
   const [openShiftRequests, setOpenShiftRequests] = useState<OpenShiftRequest[]>([]);
   const [filteredExchanges, setFilteredExchanges] = useState<ShiftExchange[]>([]);
   const [filteredOpenRequests, setFilteredOpenRequests] = useState<OpenShiftRequest[]>([]);
-  const [exchangeSearchText, setExchangeSearchText] = useState('');
-  const [selectedExchanges, setSelectedExchanges] = useState<ShiftExchange[]>([]);
-  const [selectedOpenRequests, setSelectedOpenRequests] = useState<OpenShiftRequest[]>([]);
-  const [exchangeSelection, setExchangeSelection] = useState<Selection | null>(null);
-  const [openRequestSelection, setOpenRequestSelection] = useState<Selection | null>(null);
 
   // Incomplete Shifts State
   const [incompleteShifts, setIncompleteShifts] = useState<IncompleteShift[]>([]);
   const [filteredIncompleteShifts, setFilteredIncompleteShifts] = useState<IncompleteShift[]>([]);
   const [incompleteSearchText, setIncompleteSearchText] = useState('');
-  const [selectedIncompleteShifts, setSelectedIncompleteShifts] = useState<IncompleteShift[]>([]);
-  const [incompleteSelection, setIncompleteSelection] = useState<Selection | null>(null);
   const [showManualDialog, setShowManualDialog] = useState(false);
   const [manualAction, setManualAction] = useState<'checkin' | 'checkout' | 'force_complete'>('checkin');
   const [selectedShiftForManual, setSelectedShiftForManual] = useState<IncompleteShift | null>(null);
@@ -183,109 +88,25 @@ const Approvals: React.FC = () => {
   const [manualCheckoutTime, setManualCheckoutTime] = useState('');
   const [isProcessingManual, setIsProcessingManual] = useState(false);
 
-  // Set up columns for the DetailsList
-  const columns: IColumn[] = [
-    {
-      key: 'id',
-      name: 'ID',
-      fieldName: 'id',
-      minWidth: 50,
-      maxWidth: 50,
-      isResizable: true,
-    },
-    {
-      key: 'staff',
-      name: 'Staff Member',
-      fieldName: 'staff',
-      minWidth: 150,
-      maxWidth: 170,
-      isResizable: true,
-      onRender: (item: Shift) => <Text>{`${item.staff.firstName} ${item.staff.lastName}`}</Text>,
-    },
-    {
-      key: 'venue',
-      name: 'Venue',
-      fieldName: 'venue',
-      minWidth: 120,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: Shift) => <Text>{item.venue.name}</Text>,
-    },
-    {
-      key: 'date',
-      name: 'Date',
-      fieldName: 'startTime',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: Shift) => <Text>{new Date(item.startTime).toLocaleDateString()}</Text>,
-    },
-    {
-      key: 'duration',
-      name: 'Duration',
-      fieldName: 'duration',
-      minWidth: 70,
-      maxWidth: 80,
-      isResizable: true,
-      onRender: (item: Shift) => <Text>{item.duration.toFixed(2)} hrs</Text>,
-    },
-    {
-      key: 'status',
-      name: 'Status',
-      fieldName: 'status',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: Shift) => <StatusPill status={item.status} />,
-    },
-    {
-      key: 'firesExitChecks',
-      name: 'Fire Exits',
-      fieldName: 'firesExitChecksCompleted',
-      minWidth: 80,
-      maxWidth: 80,
-      isResizable: true,
-      onRender: (item: Shift) => <CompletionStatus completed={item.firesExitChecksCompleted} />,
-    },
-    {
-      key: 'capacityChecks',
-      name: 'Capacity',
-      fieldName: 'capacityChecksCompleted',
-      minWidth: 80,
-      maxWidth: 80,
-      isResizable: true,
-      onRender: (item: Shift) => <CompletionStatus completed={item.capacityChecksCompleted} />,
-    },
-    {
-      key: 'toiletChecks',
-      name: 'Toilets',
-      fieldName: 'toiletChecksCompleted',
-      minWidth: 80,
-      maxWidth: 80,
-      isResizable: true,
-      onRender: (item: Shift) => <CompletionStatus completed={item.toiletChecksCompleted} />,
-    },
-    {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 150,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: Shift) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
-          <Link onClick={() => handleApproveShift(item.id)}>
-            Approve
-          </Link>
-          <Link onClick={() => handleRejectShift(item.id)}>
-            Reject
-          </Link>
-          <Link onClick={() => handleViewShift(item.id)}>
-            Details
-          </Link>
-        </Stack>
-      ),
-    },
-  ];
+  // Time Adjustment State
+  const [showAdjustTimeDialog, setShowAdjustTimeDialog] = useState(false);
+  const [selectedShiftForAdjustment, setSelectedShiftForAdjustment] = useState<Shift | null>(null);
+
+  // Helper function to calculate hours between two times
+  const calculateHoursWorked = (checkInTime: string, checkOutTime: string): number => {
+    const checkIn = new Date(checkInTime);
+    const checkOut = new Date(checkOutTime);
+    const diffMs = checkOut.getTime() - checkIn.getTime();
+    const hours = diffMs / (1000 * 60 * 60);
+    return Math.round(hours * 2) / 2; // Round to nearest 0.5
+  };
+
+  // Helper function to calculate checkout time from check-in time and hours
+  const calculateCheckoutTime = (checkInTime: string, hours: number): string => {
+    const checkIn = new Date(checkInTime);
+    const checkOut = new Date(checkIn.getTime() + hours * 60 * 60 * 1000);
+    return checkOut.toISOString();
+  };
 
   // Exchange columns
   const exchangeColumns: IColumn[] = [
@@ -489,11 +310,14 @@ const Approvals: React.FC = () => {
   ];
 
   // Priority indicator component
-  const PriorityPill: React.FC<{priority: 'low' | 'medium' | 'high'}> = ({ priority }) => {
+  const PriorityPill: React.FC<{priority: 'low' | 'medium' | 'high' | 'critical'}> = ({ priority }) => {
     let backgroundColor = '';
     let color = 'white';
 
     switch(priority) {
+      case 'critical':
+        backgroundColor = '#7C2D12'; // Dark red/maroon
+        break;
       case 'high':
         backgroundColor = '#EF4444'; // Red
         break;
@@ -588,14 +412,80 @@ const Approvals: React.FC = () => {
     {
       key: 'hours_overdue',
       name: 'Hours Overdue',
-      minWidth: 100,
-      maxWidth: 100,
+      minWidth: 120,
+      maxWidth: 140,
       isResizable: true,
       onRender: (item: IncompleteShift) => (
-        <Text style={{ color: item.hours_overdue > 2 ? '#EF4444' : '#F59E0B', fontWeight: 'bold' }}>
-          {item.hours_overdue.toFixed(1)}
-        </Text>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Text style={{
+            color: item.requires_manual_resolution ? '#DC2626' : item.hours_overdue > 2 ? '#EF4444' : '#F59E0B',
+            fontWeight: 'bold'
+          }}>
+            {item.requires_manual_resolution ? '24+' : item.hours_overdue.toFixed(1)}
+          </Text>
+          {item.requires_manual_resolution && (
+            <span title={`Actual: ${item.hours_overdue_raw?.toFixed(1) || '24+'} hours - Requires manual resolution`}
+                  style={{ color: '#DC2626', cursor: 'help' }}>
+              ⚠️
+            </span>
+          )}
+        </div>
       ),
+    },
+    {
+      key: 'urgency',
+      name: 'Action Required',
+      minWidth: 160,
+      maxWidth: 180,
+      isResizable: true,
+      onRender: (item: IncompleteShift) => {
+        const urgencyConfig = {
+          critical: {
+            text: 'Immediate action required',
+            color: '#dc2626',
+            bgColor: '#fef2f2',
+            icon: 'WarningSolid'
+          },
+          high: {
+            text: 'Action within 2 hours',
+            color: '#ea580c',
+            bgColor: '#fff7ed',
+            icon: 'Warning'
+          },
+          medium: {
+            text: 'Action within 4 hours',
+            color: '#d97706',
+            bgColor: '#fffbeb',
+            icon: 'Clock'
+          },
+          low: {
+            text: 'Action recommended',
+            color: '#059669',
+            bgColor: '#ecfdf5',
+            icon: 'Info'
+          }
+        };
+
+        const urgency = urgencyConfig[item.priority];
+
+        return (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              backgroundColor: urgency.bgColor,
+              padding: '4px 8px',
+              borderRadius: '6px'
+            }}
+          >
+            <Icon iconName={urgency.icon} style={{ color: urgency.color, fontSize: 14 }} />
+            <Text style={{ color: urgency.color, fontSize: 12, fontWeight: 500 }}>
+              {urgency.text}
+            </Text>
+          </div>
+        );
+      },
     },
     {
       key: 'auto_checkout',
@@ -605,8 +495,8 @@ const Approvals: React.FC = () => {
       isResizable: true,
       onRender: (item: IncompleteShift) => (
         <Text>
-          {item.auto_checkout_eligible ? 
-            <span style={{ color: '#10B981' }}>✓ Eligible</span> : 
+          {item.auto_checkout_eligible ?
+            <span style={{ color: '#10B981' }}>✓ Eligible</span> :
             <span style={{ color: '#EF4444' }}>✗ Not Eligible</span>
           }
         </Text>
@@ -630,149 +520,130 @@ const Approvals: React.FC = () => {
     {
       key: 'actions',
       name: 'Actions',
-      minWidth: 200,
-      maxWidth: 200,
+      minWidth: 300,
+      maxWidth: 350,
       isResizable: true,
       onRender: (item: IncompleteShift) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
+        <Stack horizontal tokens={{ childrenGap: 8 }} verticalAlign="center">
           {item.type === 'no_checkin' && (
-            <Link onClick={() => handleManualCheckin(item)}>
-              Manual Check-in
-            </Link>
+            <TooltipHost
+              content="Record a manual check-in time for this staff member. Use this when staff forgot to check in or had technical issues."
+              directionalHint={DirectionalHint.topCenter}
+            >
+              <PrimaryButton
+                text="Check In"
+                iconProps={{ iconName: 'BoxCheckmarkSolid' }}
+                onClick={() => handleManualCheckin(item)}
+                styles={{
+                  root: {
+                    backgroundColor: '#059669',
+                    borderColor: '#059669',
+                    borderRadius: '6px',
+                    height: '32px',
+                    padding: '0 12px'
+                  },
+                  rootHovered: {
+                    backgroundColor: '#047857',
+                    borderColor: '#047857'
+                  },
+                  rootPressed: {
+                    backgroundColor: '#065f46',
+                    borderColor: '#065f46'
+                  }
+                }}
+              />
+            </TooltipHost>
           )}
           {item.type === 'no_checkout' && (
-            <Link onClick={() => handleManualCheckout(item)}>
-              Manual Check-out
-            </Link>
+            <TooltipHost
+              content="Record a manual check-out time for this staff member. Use this when staff forgot to check out or had technical issues."
+              directionalHint={DirectionalHint.topCenter}
+            >
+              <PrimaryButton
+                text="Check Out"
+                iconProps={{ iconName: 'BoxCheckmarkSolid' }}
+                onClick={() => handleManualCheckout(item)}
+                styles={{
+                  root: {
+                    backgroundColor: '#0078d4',
+                    borderColor: '#0078d4',
+                    borderRadius: '6px',
+                    height: '32px',
+                    padding: '0 12px'
+                  },
+                  rootHovered: {
+                    backgroundColor: '#106ebe',
+                    borderColor: '#106ebe'
+                  },
+                  rootPressed: {
+                    backgroundColor: '#005a9e',
+                    borderColor: '#005a9e'
+                  }
+                }}
+              />
+            </TooltipHost>
           )}
-          <Link onClick={() => handleForceComplete(item)}>
-            Force Complete
-          </Link>
+          <TooltipHost
+            content="Administratively complete this shift. Use this when the shift cannot be resolved normally and needs to be marked complete for payroll."
+            directionalHint={DirectionalHint.topCenter}
+          >
+            <DefaultButton
+              text="Force Complete"
+              iconProps={{ iconName: 'CompletedSolid' }}
+              onClick={() => handleForceComplete(item)}
+              styles={{
+                root: {
+                  borderColor: '#dc2626',
+                  color: '#dc2626',
+                  borderRadius: '6px',
+                  height: '32px',
+                  padding: '0 12px'
+                },
+                rootHovered: {
+                  borderColor: '#b91c1c',
+                  color: '#b91c1c',
+                  backgroundColor: '#fef2f2'
+                },
+                rootPressed: {
+                  borderColor: '#991b1b',
+                  color: '#991b1b',
+                  backgroundColor: '#fee2e2'
+                }
+              }}
+            />
+          </TooltipHost>
+          {item.check_in_time && (
+            <TooltipHost
+              content="Adjust the recorded check-in or check-out times. Use this to correct time tracking errors."
+              directionalHint={DirectionalHint.topCenter}
+            >
+              <IconButton
+                iconProps={{ iconName: 'Clock' }}
+                title="Adjust Times"
+                onClick={() => handleAdjustTimes(item)}
+                styles={{
+                  root: {
+                    backgroundColor: '#eff6ff',
+                    borderRadius: '6px',
+                    height: '32px',
+                    width: '32px'
+                  },
+                  rootHovered: {
+                    backgroundColor: '#dbeafe'
+                  },
+                  icon: {
+                    color: '#0078d4',
+                    fontSize: 16
+                  }
+                }}
+              />
+            </TooltipHost>
+          )}
         </Stack>
       ),
     },
   ];
 
-  // Initialize selections
-  useEffect(() => {
-    const selectionInstance = new Selection({
-      onSelectionChanged: () => {
-        const selectedItems = selectionInstance.getSelection() as Shift[];
-        setSelectedShifts(selectedItems);
-      },
-    });
-    setSelection(selectionInstance);
-
-    const exchangeSelectionInstance = new Selection({
-      onSelectionChanged: () => {
-        const selectedItems = exchangeSelectionInstance.getSelection() as ShiftExchange[];
-        setSelectedExchanges(selectedItems);
-      },
-    });
-    setExchangeSelection(exchangeSelectionInstance);
-
-    const openRequestSelectionInstance = new Selection({
-      onSelectionChanged: () => {
-        const selectedItems = openRequestSelectionInstance.getSelection() as OpenShiftRequest[];
-        setSelectedOpenRequests(selectedItems);
-      },
-    });
-    setOpenRequestSelection(openRequestSelectionInstance);
-
-    const incompleteSelectionInstance = new Selection({
-      onSelectionChanged: () => {
-        const selectedItems = incompleteSelectionInstance.getSelection() as IncompleteShift[];
-        setSelectedIncompleteShifts(selectedItems);
-      },
-    });
-    setIncompleteSelection(incompleteSelectionInstance);
-  }, []);
-
-  // Load shifts from API - using useCallback to avoid dependency issues in useEffect
-  const loadShifts = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      // In a real application, this would use the actual API
-      // const response = await shiftService.getShiftsForApproval();
-      // setShifts(response);
-
-      // For demo purposes, we'll use mock data
-      const mockShifts: Shift[] = [
-        {
-          id: 1,
-          staff: { id: 1, firstName: 'John', lastName: 'Doe', email: 'john.doe@example.com' },
-          venue: { id: 1, name: 'Venue A' },
-          startTime: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-          endTime: new Date(Date.now() - 50400000).toISOString(), // 14 hours ago
-          duration: 10,
-          status: ShiftStatus.COMPLETED,
-          managerApproved: false,
-          firesExitChecksCompleted: true,
-          capacityChecksCompleted: true,
-          toiletChecksCompleted: true,
-          enforcementVisitsLogged: true
-        },
-        {
-          id: 2,
-          staff: { id: 2, firstName: 'Jane', lastName: 'Smith', email: 'jane.smith@example.com' },
-          venue: { id: 2, name: 'Venue B' },
-          startTime: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-          endTime: new Date(Date.now() - 136800000).toISOString(), // 38 hours ago
-          duration: 10,
-          status: ShiftStatus.COMPLETED,
-          managerApproved: false,
-          firesExitChecksCompleted: true,
-          capacityChecksCompleted: true,
-          toiletChecksCompleted: false,
-          enforcementVisitsLogged: false
-        },
-        {
-          id: 3,
-          staff: { id: 3, firstName: 'Mike', lastName: 'Johnson', email: 'mike.johnson@example.com' },
-          venue: { id: 3, name: 'Venue C' },
-          startTime: new Date(Date.now() - 259200000).toISOString(), // 3 days ago
-          endTime: new Date(Date.now() - 223200000).toISOString(), // 62 hours ago
-          duration: 10,
-          status: ShiftStatus.COMPLETED,
-          managerApproved: false,
-          firesExitChecksCompleted: true,
-          capacityChecksCompleted: true,
-          toiletChecksCompleted: true,
-          enforcementVisitsLogged: true
-        },
-        {
-          id: 4,
-          staff: { id: 4, firstName: 'Sarah', lastName: 'Williams', email: 'sarah.williams@example.com' },
-          venue: { id: 2, name: 'Venue B' },
-          startTime: new Date(Date.now() - 345600000).toISOString(), // 4 days ago
-          endTime: new Date(Date.now() - 309600000).toISOString(), // 3.5 days ago
-          duration: 10,
-          status: ShiftStatus.COMPLETED,
-          managerApproved: false,
-          firesExitChecksCompleted: false,
-          capacityChecksCompleted: true,
-          toiletChecksCompleted: true,
-          enforcementVisitsLogged: false
-        },
-      ];
-
-      // Extract unique venues for the filter dropdown
-      const venues = Array.from(new Set(mockShifts.map(shift => shift.venue.id))).map(venueId => {
-        const venue = mockShifts.find(shift => shift.venue.id === venueId)?.venue;
-        return { key: venueId.toString(), text: venue?.name || '' };
-      });
-
-      setVenueOptions([{ key: '', text: 'All Venues' }, ...venues]);
-      setShifts(mockShifts);
-      setFilteredShifts(mockShifts);
-    } catch (error) {
-      console.error('Failed to load shifts for approval:', error);
-      setError('Failed to load shifts for approval. Please try again later.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
 
   // Load exchanges and open requests
   const loadExchanges = useCallback(async () => {
@@ -815,14 +686,12 @@ const Approvals: React.FC = () => {
 
   // Load data based on active tab
   const loadData = useCallback(async () => {
-    if (activeTab === 'shift-approvals') {
-      await loadShifts();
-    } else if (activeTab === 'exchange-approvals') {
+    if (activeTab === 'exchange-approvals') {
       await loadExchanges();
     } else if (activeTab === 'incomplete-shifts') {
       await loadIncompleteShifts();
     }
-  }, [activeTab, loadShifts, loadExchanges, loadIncompleteShifts]);
+  }, [activeTab, loadExchanges, loadIncompleteShifts]);
 
   // Exchange handler functions
   const handleApproveExchange = useCallback(async (exchangeId: number) => {
@@ -880,8 +749,18 @@ const Approvals: React.FC = () => {
     setManualAction('checkout');
     setManualSignature('');
     setManualNotes('');
-    setManualHours('');
-    setManualCheckoutTime(new Date().toISOString());
+
+    const checkoutTime = new Date().toISOString();
+    setManualCheckoutTime(checkoutTime);
+
+    // Auto-calculate initial hours if check-in time exists
+    if (shift.check_in_time) {
+      const hours = calculateHoursWorked(shift.check_in_time, checkoutTime);
+      setManualHours(hours > 0 && hours <= 24 ? hours.toString() : '');
+    } else {
+      setManualHours('');
+    }
+
     setShowManualDialog(true);
   }, []);
 
@@ -896,6 +775,23 @@ const Approvals: React.FC = () => {
     setShowManualDialog(true);
   }, []);
 
+  const handleAdjustTimes = useCallback(async (incompleteShift: IncompleteShift) => {
+    try {
+      // Fetch the full shift details
+      const fullShift = await shiftService.getShiftById(incompleteShift.id);
+      setSelectedShiftForAdjustment(fullShift as Shift);
+      setShowAdjustTimeDialog(true);
+    } catch (error) {
+      console.error('Error fetching shift for adjustment:', error);
+      setError('Failed to load shift details. Please try again.');
+    }
+  }, []);
+
+  const handleAdjustmentSuccess = useCallback(() => {
+    // Reload incomplete shifts after successful adjustment
+    loadIncompleteShifts();
+  }, [loadIncompleteShifts]);
+
   const processManualAction = useCallback(async () => {
     if (!selectedShiftForManual || !manualSignature.trim()) {
       return;
@@ -903,22 +799,21 @@ const Approvals: React.FC = () => {
 
     setIsProcessingManual(true);
     try {
-      const baseUrl = 'http://localhost:8000/api/shifts';
       let endpoint = '';
-      const requestData: any = {
+      const requestData: Record<string, unknown> = {
         manager_signature: manualSignature,
         manager_notes: manualNotes,
       };
 
       switch (manualAction) {
         case 'checkin':
-          endpoint = `${baseUrl}/${selectedShiftForManual.id}/manual_checkin/`;
+          endpoint = `/api/v1/shifts/${selectedShiftForManual.id}/manual_checkin/`;
           if (manualCheckinTime) {
             requestData.checkin_time = manualCheckinTime;
           }
           break;
         case 'checkout':
-          endpoint = `${baseUrl}/${selectedShiftForManual.id}/manual_checkout/`;
+          endpoint = `/api/v1/shifts/${selectedShiftForManual.id}/manual_checkout/`;
           if (manualCheckoutTime) {
             requestData.checkout_time = manualCheckoutTime;
           }
@@ -927,30 +822,22 @@ const Approvals: React.FC = () => {
           }
           break;
         case 'force_complete':
-          endpoint = `${baseUrl}/${selectedShiftForManual.id}/force_complete/`;
+          endpoint = `/api/v1/shifts/${selectedShiftForManual.id}/force_complete/`;
           requestData.actual_hours = parseFloat(manualHours);
-          if (manualCheckinTime) {
-            requestData.checkin_time = manualCheckinTime;
-          }
-          if (manualCheckoutTime) {
-            requestData.checkout_time = manualCheckoutTime;
+          // Only send times if hours > 0 (not a no-show)
+          if (parseFloat(manualHours) > 0) {
+            if (manualCheckinTime) {
+              requestData.checkin_time = manualCheckinTime;
+            }
+            if (manualCheckoutTime) {
+              requestData.checkout_time = manualCheckoutTime;
+            }
           }
           break;
       }
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to process manual action');
-      }
+      // Use api instance which handles auth and base URL properly for both dev and production
+      await api.post(endpoint, requestData);
 
       // Success - reload data and close dialog
       await loadIncompleteShifts();
@@ -961,159 +848,15 @@ const Approvals: React.FC = () => {
       setManualHours('');
       setManualCheckinTime('');
       setManualCheckoutTime('');
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to process manual action:', error);
-      setError(`Failed to process manual action: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const axiosError = error as { response?: { data?: { detail?: string } }; message?: string };
+      const errorMessage = axiosError?.response?.data?.detail || axiosError?.message || 'Unknown error';
+      setError(`Failed to process manual action: ${errorMessage}`);
     } finally {
       setIsProcessingManual(false);
     }
   }, [selectedShiftForManual, manualSignature, manualNotes, manualHours, manualCheckinTime, manualCheckoutTime, manualAction, loadIncompleteShifts]);
-
-  // Handler functions
-  const handleViewShift = useCallback((shiftId: number) => {
-    navigate(`/approvals/${shiftId}`);
-  }, [navigate]);
-
-  const handleApproveShift = useCallback((shiftId: number) => {
-    navigate(`/approvals/${shiftId}`);
-  }, [navigate]);
-
-  const handleRejectShift = useCallback((shiftId: number) => {
-    // Find the shift and pre-select it
-    const shift = shifts.find(s => s.id === shiftId);
-    if (shift && selection) {
-      selection.setAllSelected(false);
-      selection.setKeySelected(shiftId.toString(), true, false);
-      setSelectedShifts([shift]);
-      setShowBulkRejectDialog(true);
-    }
-  }, [shifts, selection]);
-
-  const handleRefresh = useCallback(() => {
-    loadShifts();
-    return false; // Return false to prevent default behavior
-  }, [loadShifts]);
-
-  const handleBulkApprove = useCallback(() => {
-    if (selectedShifts.length === 0) return;
-    setShowBulkApproveDialog(true);
-  }, [selectedShifts]);
-
-  const handleBulkReject = useCallback(() => {
-    if (selectedShifts.length === 0) return;
-    setShowBulkRejectDialog(true);
-  }, [selectedShifts]);
-
-  const confirmBulkApprove = useCallback(async () => {
-    setIsApproving(true);
-    try {
-      // In a real application, this would call the API
-      // await Promise.all(selectedShifts.map(shift => shiftService.approveShift(shift.id)));
-
-      // For demo purposes, we'll just log and update the UI
-      console.log(`Approved ${selectedShifts.length} shifts`);
-
-      // Update local state
-      const updatedShifts = shifts.map(shift =>
-        selectedShifts.some(s => s.id === shift.id)
-          ? { ...shift, status: ShiftStatus.APPROVED, managerApproved: true }
-          : shift
-      );
-
-      setShifts(updatedShifts);
-      // Reset selection
-      if (selection) {
-        selection.setAllSelected(false);
-      }
-      setSelectedShifts([]);
-      setShowBulkApproveDialog(false);
-    } catch (error) {
-      console.error('Failed to approve shifts:', error);
-      setError('Failed to approve shifts. Please try again.');
-    } finally {
-      setIsApproving(false);
-    }
-  }, [selectedShifts, shifts, selection]);
-
-  const confirmBulkReject = useCallback(async () => {
-    setIsRejecting(true);
-    try {
-      // In a real application, this would call the API
-      // await Promise.all(selectedShifts.map(shift =>
-      //   shiftService.rejectShift(shift.id, rejectionReason)
-      // ));
-
-      // For demo purposes, we'll just log and update the UI
-      console.log(`Rejected ${selectedShifts.length} shifts with reason: ${rejectionReason}`);
-
-      // Update local state
-      const updatedShifts = shifts.map(shift =>
-        selectedShifts.some(s => s.id === shift.id)
-          ? { ...shift, status: ShiftStatus.REJECTED, managerApproved: false }
-          : shift
-      );
-
-      setShifts(updatedShifts);
-      // Reset selection
-      if (selection) {
-        selection.setAllSelected(false);
-      }
-      setSelectedShifts([]);
-      setRejectionReason('');
-      setShowBulkRejectDialog(false);
-    } catch (error) {
-      console.error('Failed to reject shifts:', error);
-      setError('Failed to reject shifts. Please try again.');
-    } finally {
-      setIsRejecting(false);
-    }
-  }, [selectedShifts, shifts, selection, rejectionReason]);
-
-  // Command bar items - enabled based on selection state
-  const commandBarItems: ICommandBarItemProps[] = [
-    {
-      key: 'approveSelected',
-      text: 'Approve Selected',
-      iconProps: { iconName: 'CheckMark' },
-      onClick: handleBulkApprove,
-      disabled: selectedShifts.length === 0,
-    },
-    {
-      key: 'rejectSelected',
-      text: 'Reject Selected',
-      iconProps: { iconName: 'Cancel' },
-      onClick: handleBulkReject,
-      disabled: selectedShifts.length === 0,
-    },
-    {
-      key: 'refresh',
-      text: 'Refresh',
-      iconProps: { iconName: 'Refresh' },
-      onClick: handleRefresh,
-    },
-  ];
-
-  // Apply filters when search text or venue filter changes
-  useEffect(() => {
-    let result = shifts;
-
-    // Apply search filter
-    if (searchText) {
-      const lowerCaseSearch = searchText.toLowerCase();
-      result = result.filter(shift =>
-        `${shift.staff.firstName} ${shift.staff.lastName}`.toLowerCase().includes(lowerCaseSearch) ||
-        shift.venue.name.toLowerCase().includes(lowerCaseSearch) ||
-        shift.id.toString().includes(lowerCaseSearch)
-      );
-    }
-
-    // Apply venue filter
-    if (venueFilter) {
-      result = result.filter(shift => shift.venue.id.toString() === venueFilter);
-    }
-
-    setFilteredShifts(result);
-  }, [searchText, venueFilter, shifts]);
 
   // Apply filters for incomplete shifts
   useEffect(() => {
@@ -1144,79 +887,9 @@ const Approvals: React.FC = () => {
         
         <Pivot
           selectedKey={activeTab}
-          onLinkClick={(item) => setActiveTab(item?.props.itemKey || 'shift-approvals')}
+          onLinkClick={(item) => setActiveTab(item?.props.itemKey || 'exchange-approvals')}
           headersOnly={false}
         >
-          <PivotItem headerText="Shift Approvals" itemKey="shift-approvals">
-            <Stack tokens={{ childrenGap: 20 }}>
-              <CommandBar items={commandBarItems} />
-
-              <Stack horizontal tokens={{ childrenGap: 10 }}>
-                <StackItem grow={3}>
-                  <SearchBox
-                    placeholder="Search by staff name or venue"
-                    onChange={(_, newValue) => setSearchText(newValue || '')}
-                    onClear={() => setSearchText('')}
-                    value={searchText}
-                  />
-                </StackItem>
-                <StackItem grow={1}>
-                  <Dropdown
-                    placeholder="Filter by venue"
-                    options={venueOptions}
-                    selectedKey={venueFilter}
-                    onChange={(_, option) => setVenueFilter(option?.key as string)}
-                  />
-                </StackItem>
-              </Stack>
-
-              {selectedShifts.length > 0 && (
-                <div className="bg-blue-50 p-2 rounded-md">
-                  <Text>{selectedShifts.length} shift{selectedShifts.length === 1 ? '' : 's'} selected</Text>
-                </div>
-              )}
-
-              {error && (
-                <MessageBar
-                  messageBarType={MessageBarType.error}
-                  isMultiline={false}
-                  dismissButtonAriaLabel="Close"
-                >
-                  {error}
-                </MessageBar>
-              )}
-
-              {isLoading ? (
-                <div className="flex justify-center py-12">
-                  <Spinner size={SpinnerSize.large} label="Loading shifts..." />
-                </div>
-              ) : filteredShifts.length === 0 ? (
-                <div className="bg-gray-50 rounded-lg p-8 text-center">
-                  <Text variant="large">No shifts pending approval</Text>
-                  <Text>All shifts have been processed or no shifts have been completed yet.</Text>
-                </div>
-              ) : selection ? (
-                <MarqueeSelection selection={selection}>
-                  <DetailsList
-                    items={filteredShifts}
-                    columns={columns}
-                    layoutMode={DetailsListLayoutMode.justified}
-                    selection={selection}
-                    selectionMode={SelectionMode.multiple}
-                    checkboxVisibility={CheckboxVisibility.always}
-                  />
-                </MarqueeSelection>
-              ) : (
-                <DetailsList
-                  items={filteredShifts}
-                  columns={columns}
-                  layoutMode={DetailsListLayoutMode.justified}
-                  selectionMode={SelectionMode.none}
-                />
-              )}
-            </Stack>
-          </PivotItem>
-
           <PivotItem headerText="Exchange Approvals" itemKey="exchange-approvals">
             <Stack tokens={{ childrenGap: 20 }}>
               <Text variant="large">Direct Exchange Requests</Text>
@@ -1315,6 +988,39 @@ const Approvals: React.FC = () => {
                     columns={incompleteColumns}
                     layoutMode={DetailsListLayoutMode.justified}
                     selectionMode={SelectionMode.none}
+                    onRenderRow={(props?: IDetailsRowProps) => {
+                      if (!props) return null;
+                      const item = props.item as IncompleteShift;
+                      const isCritical = item.priority === 'critical';
+                      const isHigh = item.priority === 'high';
+
+                      const rowStyles = {
+                        root: {
+                          backgroundColor: isCritical
+                            ? '#fef2f2'
+                            : isHigh
+                            ? '#fff7ed'
+                            : undefined,
+                          borderLeft: isCritical
+                            ? '4px solid #dc2626'
+                            : isHigh
+                            ? '4px solid #f59e0b'
+                            : undefined,
+                          transition: 'all 0.2s ease',
+                          selectors: {
+                            '&:hover': {
+                              backgroundColor: isCritical
+                                ? '#fee2e2'
+                                : isHigh
+                                ? '#ffedd5'
+                                : '#f9fafb'
+                            }
+                          }
+                        }
+                      };
+
+                      return <DetailsRow {...props} styles={rowStyles} />;
+                    }}
                   />
                 </div>
               )}
@@ -1323,163 +1029,270 @@ const Approvals: React.FC = () => {
         </Pivot>
       </Stack>
 
-      {/* Bulk Approve Dialog */}
-      <Dialog
-        hidden={!showBulkApproveDialog}
-        dialogContentProps={{
-          type: DialogType.normal,
-          title: 'Approve Shifts',
-          subText: `Are you sure you want to approve ${selectedShifts.length} shift${selectedShifts.length === 1 ? '' : 's'}?`
-        }}
-        onDismiss={() => setShowBulkApproveDialog(false)}
-      >
-        <DialogFooter>
-          <PrimaryButton
-            text="Approve"
-            onClick={confirmBulkApprove}
-            disabled={isApproving}
-          />
-          <DefaultButton
-            text="Cancel"
-            onClick={() => setShowBulkApproveDialog(false)}
-            disabled={isApproving}
-          />
-        </DialogFooter>
-      </Dialog>
-
-      {/* Bulk Reject Dialog */}
-      <Dialog
-        hidden={!showBulkRejectDialog}
-        dialogContentProps={{
-          type: DialogType.normal,
-          title: 'Reject Shifts',
-          subText: `Please provide a reason for rejecting ${selectedShifts.length} shift${selectedShifts.length === 1 ? '' : 's'}.`
-        }}
-        onDismiss={() => setShowBulkRejectDialog(false)}
-      >
-        <TextField
-          label="Reason for rejection"
-          multiline
-          rows={3}
-          value={rejectionReason}
-          onChange={(_, newValue) => setRejectionReason(newValue || '')}
-          required
-        />
-        <DialogFooter>
-          <PrimaryButton
-            text="Reject"
-            onClick={confirmBulkReject}
-            disabled={isRejecting || !rejectionReason.trim()}
-          />
-          <DefaultButton
-            text="Cancel"
-            onClick={() => setShowBulkRejectDialog(false)}
-            disabled={isRejecting}
-          />
-        </DialogFooter>
-      </Dialog>
-
       {/* Manual Action Dialog */}
       <Dialog
         hidden={!showManualDialog}
         dialogContentProps={{
-          type: DialogType.normal,
+          type: DialogType.largeHeader,
           title: `${
-            manualAction === 'checkin' ? 'Manual Check-in' : 
-            manualAction === 'checkout' ? 'Manual Check-out' : 
+            manualAction === 'checkin' ? 'Manual Check-in' :
+            manualAction === 'checkout' ? 'Manual Check-out' :
             'Force Complete Shift'
-          }`,
-          subText: selectedShiftForManual ? 
-            `Processing ${manualAction} for ${selectedShiftForManual.staff_details.first_name} ${selectedShiftForManual.staff_details.last_name} at ${selectedShiftForManual.venue_details.name}` : 
-            ''
+          }`
         }}
         onDismiss={() => setShowManualDialog(false)}
-        minWidth={500}
+        minWidth={560}
+        maxWidth={600}
       >
-        <Stack tokens={{ childrenGap: 10 }}>
-          <TextField
-            label="Manager Signature (required)"
-            value={manualSignature}
-            onChange={(_, newValue) => setManualSignature(newValue || '')}
-            placeholder="Enter your full name as digital signature"
-            required
-          />
-
-          <TextField
-            label="Manager Notes"
-            value={manualNotes}
-            onChange={(_, newValue) => setManualNotes(newValue || '')}
-            placeholder="Reason for manual intervention (e.g., Network issues, Staff emergency)"
-            multiline
-            rows={2}
-          />
-
-          {manualAction === 'checkin' && (
-            <TextField
-              label="Check-in Time"
-              type="datetime-local"
-              value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
-              onChange={(_, newValue) => setManualCheckinTime(newValue ? new Date(newValue).toISOString() : '')}
-            />
+        <Stack tokens={{ childrenGap: 16 }}>
+          {/* Context Card - Staff & Shift Info */}
+          {selectedShiftForManual && (
+            <div
+              style={{
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '12px 16px'
+              }}
+            >
+              <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 12 }}>
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: '50%',
+                    backgroundColor: '#e2e8f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 600,
+                    color: '#475569',
+                    fontSize: 16
+                  }}
+                >
+                  {selectedShiftForManual.staff_details.first_name[0]}
+                  {selectedShiftForManual.staff_details.last_name[0]}
+                </div>
+                <Stack tokens={{ childrenGap: 4 }}>
+                  <Text style={{ fontWeight: 600, fontSize: 15 }}>
+                    {selectedShiftForManual.staff_details.first_name} {selectedShiftForManual.staff_details.last_name}
+                  </Text>
+                  <Text style={{ color: '#64748b', fontSize: 13 }}>
+                    {selectedShiftForManual.venue_details.name}
+                  </Text>
+                  <Text style={{ color: '#94a3b8', fontSize: 12 }}>
+                    Scheduled: {new Date(selectedShiftForManual.start_time).toLocaleString()} - {new Date(selectedShiftForManual.end_time).toLocaleTimeString()}
+                  </Text>
+                </Stack>
+              </Stack>
+            </div>
           )}
 
-          {(manualAction === 'checkout' || manualAction === 'force_complete') && (
-            <>
-              <TextField
-                label="Actual Hours Worked"
-                type="number"
-                value={manualHours}
-                onChange={(_, newValue) => setManualHours(newValue || '')}
-                placeholder="8.5"
-                step="0.5"
-                min="0"
-                max="24"
-                required={manualAction === 'force_complete'}
-              />
-              
-              {manualAction === 'checkout' && (
-                <TextField
-                  label="Check-out Time"
-                  type="datetime-local"
-                  value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
-                  onChange={(_, newValue) => setManualCheckoutTime(newValue ? new Date(newValue).toISOString() : '')}
-                />
-              )}
-            </>
-          )}
-
+          {/* Force Complete Warning */}
           {manualAction === 'force_complete' && (
-            <>
+            <MessageBar
+              messageBarType={MessageBarType.warning}
+              styles={{
+                root: { borderRadius: '6px' }
+              }}
+            >
+              <Stack tokens={{ childrenGap: 4 }}>
+                <Text style={{ fontWeight: 600 }}>Administrative Action</Text>
+                <Text style={{ fontSize: 13 }}>
+                  This will mark the shift as complete and process it for payroll.
+                  This action cannot be easily undone without creating a manual adjustment.
+                </Text>
+              </Stack>
+            </MessageBar>
+          )}
+
+          {/* What This Will Do Section */}
+          <div
+            style={{
+              backgroundColor: manualAction === 'force_complete' ? '#fef3c7' : '#eff6ff',
+              border: `1px solid ${manualAction === 'force_complete' ? '#fcd34d' : '#bfdbfe'}`,
+              borderRadius: '8px',
+              padding: '12px 16px'
+            }}
+          >
+            <Stack tokens={{ childrenGap: 8 }}>
+              <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 6 }}>
+                <Icon
+                  iconName="Info"
+                  style={{
+                    color: manualAction === 'force_complete' ? '#d97706' : '#3b82f6',
+                    fontSize: 14
+                  }}
+                />
+                <Text style={{ fontWeight: 600, fontSize: 13 }}>What this will do:</Text>
+              </Stack>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: '#334155' }}>
+                {manualAction === 'checkin' && (
+                  <>
+                    <li>Record a manual check-in time for this staff member</li>
+                    <li>Update shift status to "In Progress"</li>
+                    <li>Your signature will be logged as the authorizing manager</li>
+                  </>
+                )}
+                {manualAction === 'checkout' && (
+                  <>
+                    <li>Record a manual check-out time based on hours worked</li>
+                    <li>Mark shift as "Completed" and ready for approval</li>
+                    <li>Calculate payment based on the hours specified</li>
+                    <li>Your signature will be logged as the authorizing manager</li>
+                  </>
+                )}
+                {manualAction === 'force_complete' && (
+                  <>
+                    <li>Set both check-in and check-out times administratively</li>
+                    <li>Mark shift as "Completed" immediately</li>
+                    <li>Process hours for payroll calculation</li>
+                    <li>Skip normal approval workflow</li>
+                    <li>Create an audit record of this administrative action</li>
+                  </>
+                )}
+              </ul>
+            </Stack>
+          </div>
+
+          {/* Form Fields */}
+          <Stack tokens={{ childrenGap: 12 }}>
+            <TextField
+              label="Manager Signature"
+              value={manualSignature}
+              onChange={(_, newValue) => setManualSignature(newValue || '')}
+              placeholder="Enter your full name as digital signature"
+              required
+              description="Your name will be recorded as authorization for this action"
+            />
+
+            <TextField
+              label="Reason for Manual Intervention"
+              value={manualNotes}
+              onChange={(_, newValue) => setManualNotes(newValue || '')}
+              placeholder="e.g., Network issues, Staff emergency, App malfunction"
+              multiline
+              rows={2}
+              description="Explain why this manual action is needed"
+            />
+
+            {manualAction === 'checkin' && (
               <TextField
                 label="Check-in Time"
                 type="datetime-local"
                 value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
                 onChange={(_, newValue) => setManualCheckinTime(newValue ? new Date(newValue).toISOString() : '')}
+                description="When did the staff member actually start work?"
               />
-              
-              <TextField
-                label="Check-out Time"
-                type="datetime-local"
-                value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
-                onChange={(_, newValue) => setManualCheckoutTime(newValue ? new Date(newValue).toISOString() : '')}
-              />
-            </>
-          )}
+            )}
+
+            {(manualAction === 'checkout' || manualAction === 'force_complete') && (
+              <>
+                <TextField
+                  label="Actual Hours Worked"
+                  type="number"
+                  value={manualHours}
+                  onChange={(_, newValue) => {
+                    setManualHours(newValue || '');
+
+                    // Auto-calculate checkout time if we have check-in time (checkout action only)
+                    if (manualAction === 'checkout') {
+                      const hours = parseFloat(newValue || '0');
+                      if (hours > 0 && hours <= 24 && selectedShiftForManual?.check_in_time) {
+                        const newCheckoutTime = calculateCheckoutTime(selectedShiftForManual.check_in_time, hours);
+                        setManualCheckoutTime(newCheckoutTime);
+                      }
+                    }
+                  }}
+                  placeholder="8.5"
+                  step="0.5"
+                  min="0"
+                  max="24"
+                  required={manualAction === 'force_complete'}
+                  description="Hours to be used for payroll calculation"
+                />
+
+                {manualAction === 'checkout' && (
+                  <TextField
+                    label="Check-out Time"
+                    type="datetime-local"
+                    value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
+                    onChange={(_, newValue) => {
+                      const newCheckoutTime = newValue ? new Date(newValue).toISOString() : '';
+                      setManualCheckoutTime(newCheckoutTime);
+
+                      // Auto-calculate hours if we have check-in time
+                      if (newCheckoutTime && selectedShiftForManual?.check_in_time) {
+                        const hours = calculateHoursWorked(selectedShiftForManual.check_in_time, newCheckoutTime);
+                        if (hours > 0 && hours <= 24) {
+                          setManualHours(hours.toString());
+                        }
+                      }
+                    }}
+                    description="When did the staff member finish work?"
+                  />
+                )}
+              </>
+            )}
+
+            {manualAction === 'force_complete' && manualHours === '0' && (
+              <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded border border-amber-200">
+                ⚠️ No-show: Check-in/check-out times will not be recorded for 0 hours worked.
+              </div>
+            )}
+
+            {manualAction === 'force_complete' && parseFloat(manualHours || '0') > 0 && (
+              <>
+                <TextField
+                  label="Check-in Time"
+                  type="datetime-local"
+                  value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
+                  onChange={(_, newValue) => setManualCheckinTime(newValue ? new Date(newValue).toISOString() : '')}
+                  description="Administrative start time for this shift"
+                />
+
+                <TextField
+                  label="Check-out Time"
+                  type="datetime-local"
+                  value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
+                  onChange={(_, newValue) => setManualCheckoutTime(newValue ? new Date(newValue).toISOString() : '')}
+                  description="Administrative end time for this shift"
+                />
+              </>
+            )}
+          </Stack>
         </Stack>
-        
+
         <DialogFooter>
           <PrimaryButton
             text={
-              manualAction === 'checkin' ? 'Check In' : 
-              manualAction === 'checkout' ? 'Check Out' : 
-              'Force Complete'
+              manualAction === 'checkin' ? 'Record Check-in' :
+              manualAction === 'checkout' ? 'Record Check-out' :
+              'Force Complete Shift'
             }
+            iconProps={{
+              iconName: manualAction === 'force_complete' ? 'Warning' : 'CheckMark'
+            }}
             onClick={processManualAction}
             disabled={
-              isProcessingManual || 
-              !manualSignature.trim() || 
+              isProcessingManual ||
+              !manualSignature.trim() ||
               (manualAction === 'force_complete' && !manualHours.trim())
             }
+            styles={manualAction === 'force_complete' ? {
+              root: {
+                backgroundColor: '#dc2626',
+                borderColor: '#dc2626'
+              },
+              rootHovered: {
+                backgroundColor: '#b91c1c',
+                borderColor: '#b91c1c'
+              },
+              rootPressed: {
+                backgroundColor: '#991b1b',
+                borderColor: '#991b1b'
+              }
+            } : undefined}
           />
           <DefaultButton
             text="Cancel"
@@ -1488,6 +1301,19 @@ const Approvals: React.FC = () => {
           />
         </DialogFooter>
       </Dialog>
+
+      {/* Time Adjustment Dialog */}
+      {selectedShiftForAdjustment && (
+        <AdjustTimeDialog
+          shift={selectedShiftForAdjustment}
+          isOpen={showAdjustTimeDialog}
+          onDismiss={() => {
+            setShowAdjustTimeDialog(false);
+            setSelectedShiftForAdjustment(null);
+          }}
+          onSuccess={handleAdjustmentSuccess}
+        />
+      )}
     </MainLayout>
   );
 };

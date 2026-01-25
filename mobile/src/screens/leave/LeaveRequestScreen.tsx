@@ -38,6 +38,22 @@ export const LeaveRequestScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const dispatch = useAppDispatch();
 
+  // Employment type check - only permanent employees should access this screen
+  const user = useAppSelector((state) => state.auth.user);
+  const employmentCategory = user?.staff_profile?.employment_type?.employment_category;
+  const isContractor = employmentCategory === 'contractor' || employmentCategory === 'temporary';
+
+  // Redirect contractors away from this screen
+  useEffect(() => {
+    if (isContractor) {
+      Alert.alert(
+        'Access Restricted',
+        'Leave requests are only available for permanent employees. As a contractor, please use the Availability feature to manage your schedule.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
+    }
+  }, [isContractor, navigation]);
+
   const balances = useAppSelector(selectLeaveBalances);
   const leaveTypes = useAppSelector(selectLeaveTypes);
   const loading = useAppSelector((state) => state.leave.requestsLoading);

@@ -4,7 +4,7 @@ from .utils.shift_validators import check_shift_overlap
 from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
-    Shift, FireExitCheck, CapacityCheck, ToiletCheck,
+    Shift, FireExitCheck, CapacityCheck, ToiletCheck, TimeAdjustment,
     ShiftExchange, OpenShiftRequest, Invoice, InvoiceItem, PayRate, DeputyConfig,
     DeputyEmployee, DeputyTimesheet, ShiftTemplate, SystemSettings,
     EmploymentType, RecruitmentApplication, EnforcementVisit,
@@ -15,7 +15,10 @@ from .models import (
     # Notification models
     SNSDeviceToken, NotificationPreferences,
     # Password reset models
-    PasswordResetToken
+    PasswordResetToken,
+    # Leave/Availability models
+    ContractorUnavailability, BankHoliday, StaffLeaveDailyRate,
+    EMPLOYMENT_CATEGORY_CHOICES
 )
 
 User = get_user_model() # Ensure User model is fetched
@@ -168,6 +171,7 @@ class UserSerializer(serializers.ModelSerializer):
 class StaffProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     employment_type_details = serializers.SerializerMethodField()
+    employment_type = serializers.SerializerMethodField()  # Full object for mobile compatibility
     emergency_contacts = EmergencyContactSerializer(many=True, read_only=True)
     bank_details = BankDetailsSerializer(required=False, allow_null=True)  # FIXED: Allow updates
     sia_licenses = SIALicenseSerializer(many=True, read_only=True)
@@ -207,15 +211,20 @@ class StaffProfileSerializer(serializers.ModelSerializer):
         return None
 
     def get_employment_type_details(self, obj):
-        """Return employment type details"""
+        """Return employment type details including employment_category for mobile navigation"""
         if obj.employment_type:
             return {
                 'id': obj.employment_type.id,
                 'name': obj.employment_type.name,
                 'description': obj.employment_type.description,
+                'employment_category': obj.employment_type.employment_category,
                 'is_active': obj.employment_type.is_active
             }
         return None
+
+    def get_employment_type(self, obj):
+        """Return employment type object for mobile compatibility (same as employment_type_details)"""
+        return self.get_employment_type_details(obj)
 
     def update(self, instance, validated_data):
         """Handle nested bank_details updates with atomic transaction"""
@@ -335,12 +344,24 @@ class FireExitCheckSerializer(serializers.ModelSerializer):
     isPassed = serializers.BooleanField(source='is_clear', read_only=True)
     exitName = serializers.CharField(source='exit_name', read_only=True)
     comments = serializers.CharField(source='notes', read_only=True)
-    
+    # Multi-staff shift: performed_by details
+    performed_by_details = serializers.SerializerMethodField()
+
     class Meta:
         model = FireExitCheck
         fields = '__all__'
-        read_only_fields = ('created_at',)
-    
+        read_only_fields = ('created_at', 'shift_group', 'performed_by')
+
+    def get_performed_by_details(self, obj):
+        """Return details of the staff member who performed this check"""
+        if obj.performed_by:
+            return {
+                'id': obj.performed_by.id,
+                'first_name': obj.performed_by.first_name,
+                'last_name': obj.performed_by.last_name,
+            }
+        return None
+
     def to_representation(self, instance):
         # Include both snake_case and camelCase for compatibility
         representation = super().to_representation(instance)
@@ -353,18 +374,30 @@ class CapacityCheckSerializer(serializers.ModelSerializer):
     # Add camelCase fields for frontend compatibility
     count = serializers.IntegerField(source='current_count', read_only=True)
     comments = serializers.CharField(source='notes', read_only=True)
-    
+    # Multi-staff shift: performed_by details
+    performed_by_details = serializers.SerializerMethodField()
+
     class Meta:
         model = CapacityCheck
         fields = '__all__'
-        read_only_fields = ('created_at',)
+        read_only_fields = ('created_at', 'shift_group', 'performed_by')
+
+    def get_performed_by_details(self, obj):
+        """Return details of the staff member who performed this check"""
+        if obj.performed_by:
+            return {
+                'id': obj.performed_by.id,
+                'first_name': obj.performed_by.first_name,
+                'last_name': obj.performed_by.last_name,
+            }
+        return None
 
     def validate_current_count(self, value):
         # Ensure count is not negative
         if value < 0:
             raise serializers.ValidationError("Capacity count cannot be negative")
         return value
-    
+
     def to_representation(self, instance):
         # Include both snake_case and camelCase for compatibility
         representation = super().to_representation(instance)
@@ -377,12 +410,24 @@ class ToiletCheckSerializer(serializers.ModelSerializer):
     condition_display = serializers.CharField(source='get_condition_display', read_only=True)
     location = serializers.CharField(source='location_name', read_only=True)
     comments = serializers.CharField(source='notes', read_only=True)
+    # Multi-staff shift: performed_by details
+    performed_by_details = serializers.SerializerMethodField()
 
     class Meta:
         model = ToiletCheck
         fields = '__all__'
-        read_only_fields = ('created_at',)
-    
+        read_only_fields = ('created_at', 'shift_group', 'performed_by')
+
+    def get_performed_by_details(self, obj):
+        """Return details of the staff member who performed this check"""
+        if obj.performed_by:
+            return {
+                'id': obj.performed_by.id,
+                'first_name': obj.performed_by.first_name,
+                'last_name': obj.performed_by.last_name,
+            }
+        return None
+
     def to_representation(self, instance):
         # Include both snake_case and camelCase for compatibility
         representation = super().to_representation(instance)
@@ -390,10 +435,126 @@ class ToiletCheckSerializer(serializers.ModelSerializer):
         representation['comments'] = instance.notes or ''
         return representation
 
+
+class TimeAdjustmentSerializer(serializers.ModelSerializer):
+    """Serializer for time adjustments made to shifts
+
+    Validates that adjustments are within reasonable bounds and calculates
+    the payment impact of the adjustment.
+    """
+    adjusted_by_details = UserSerializer(source='adjusted_by', read_only=True)
+    payment_impact = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TimeAdjustment
+        fields = '__all__'
+        read_only_fields = ('created_at', 'adjusted_by')
+
+    def validate(self, data):
+        """Validate time adjustment constraints"""
+        from datetime import timedelta
+        from decimal import Decimal
+
+        shift = data.get('shift')
+        adjusted_check_in = data.get('adjusted_check_in_time')
+        adjusted_check_out = data.get('adjusted_check_out_time')
+        adjusted_hours = data.get('adjusted_actual_hours')
+
+        # Validate check-in time adjustment
+        if adjusted_check_in:
+            # Cannot be more than 2 hours before scheduled start
+            max_early_checkin = shift.start_time - timedelta(hours=2)
+            if adjusted_check_in < max_early_checkin:
+                raise serializers.ValidationError({
+                    'adjusted_check_in_time': f"Adjusted check-in cannot be more than 2 hours before scheduled start time ({shift.start_time})"
+                })
+
+        # Validate check-out time adjustment
+        if adjusted_check_out:
+            # Cannot be more than 4 hours after scheduled end
+            max_late_checkout = shift.end_time + timedelta(hours=4)
+            if adjusted_check_out > max_late_checkout:
+                raise serializers.ValidationError({
+                    'adjusted_check_out_time': f"Adjusted check-out cannot be more than 4 hours after scheduled end time ({shift.end_time})"
+                })
+
+        # Check-out must be after check-in
+        if adjusted_check_in and adjusted_check_out:
+            if adjusted_check_out <= adjusted_check_in:
+                raise serializers.ValidationError({
+                    'adjusted_check_out_time': "Check-out time must be after check-in time"
+                })
+
+        # Adjusted hours cannot exceed 24
+        if adjusted_hours and adjusted_hours > 24:
+            raise serializers.ValidationError({
+                'adjusted_actual_hours': "Adjusted hours cannot exceed 24 hours"
+            })
+
+        # Validate adjusted hours match calculated hours from times
+        if adjusted_check_in and adjusted_check_out and adjusted_hours:
+            duration = adjusted_check_out - adjusted_check_in
+            calculated_hours = Decimal(str(duration.total_seconds() / 3600))
+            # Allow small rounding differences
+            if abs(calculated_hours - adjusted_hours) > Decimal('0.1'):
+                raise serializers.ValidationError({
+                    'adjusted_actual_hours': f"Adjusted hours ({adjusted_hours}) don't match calculated hours from times ({calculated_hours:.2f})"
+                })
+
+        # Require reason and signature
+        if not data.get('reason'):
+            raise serializers.ValidationError({
+                'reason': "Reason for adjustment is required"
+            })
+
+        if not data.get('manager_signature'):
+            raise serializers.ValidationError({
+                'manager_signature': "Manager signature is required"
+            })
+
+        return data
+
+    def create(self, validated_data):
+        """Create time adjustment and store original shift times"""
+        shift = validated_data['shift']
+
+        # Store original times from shift
+        validated_data['original_check_in_time'] = shift.check_in_time
+        validated_data['original_check_out_time'] = shift.check_out_time
+        validated_data['original_actual_hours'] = shift.actual_hours_worked
+
+        return super().create(validated_data)
+
+    def get_payment_impact(self, obj):
+        """Calculate the payment difference caused by this adjustment"""
+        from decimal import Decimal
+
+        shift = obj.shift
+
+        # Calculate original payment
+        original_hours = obj.original_actual_hours or Decimal('0.00')
+        original_payment = original_hours * Decimal(str(shift.get_effective_hourly_rate() or 0))
+
+        # Calculate adjusted payment
+        adjusted_hours = obj.adjusted_actual_hours or Decimal('0.00')
+        adjusted_payment = adjusted_hours * Decimal(str(shift.get_effective_hourly_rate() or 0))
+
+        payment_difference = adjusted_payment - original_payment
+
+        return {
+            'original_hours': float(original_hours),
+            'adjusted_hours': float(adjusted_hours),
+            'original_payment': float(original_payment),
+            'adjusted_payment': float(adjusted_payment),
+            'payment_difference': float(payment_difference),
+        }
+
+
 class ShiftSerializer(serializers.ModelSerializer):
     fire_exit_checks = FireExitCheckSerializer(many=True, read_only=True)
     capacity_checks = CapacityCheckSerializer(many=True, read_only=True)
     toilet_checks = ToiletCheckSerializer(many=True, read_only=True)
+    time_adjustments = TimeAdjustmentSerializer(many=True, read_only=True)
     venue_details = VenueSerializer(source='venue', read_only=True)
     staff_user_details = UserSerializer(source='staff_user', read_only=True)
     calculated_payment = serializers.ReadOnlyField()
@@ -582,9 +743,19 @@ class OpenShiftRequestSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('created_at', 'updated_at', 'claim_time')
 
+class BankHolidaySerializer(serializers.ModelSerializer):
+    """Serializer for BankHoliday model"""
+    class Meta:
+        model = BankHoliday
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at', 'company')
+
+
 class InvoiceItemSerializer(serializers.ModelSerializer):
     venue_details = VenueSerializer(source='venue', read_only=True)
     shift_details = ShiftSerializer(source='shift', read_only=True)
+    bank_holiday_details = BankHolidaySerializer(source='bank_holiday', read_only=True)
+    item_type_display = serializers.CharField(source='get_item_type_display', read_only=True)
 
     class Meta:
         model = InvoiceItem
@@ -594,12 +765,13 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
 class InvoiceSerializer(serializers.ModelSerializer):
     items = InvoiceItemSerializer(many=True, read_only=True)
     staff_user_details = UserSerializer(source='staff_user', read_only=True)
+    created_by_details = UserSerializer(source='created_by', read_only=True)
     payment_breakdown = serializers.ReadOnlyField()
 
     class Meta:
         model = Invoice
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at', 'payment_breakdown')
+        read_only_fields = ('created_at', 'updated_at', 'payment_breakdown', 'source', 'created_by')
 
     def validate(self, data):
         # Validate date range
@@ -2474,3 +2646,81 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
             })
 
         return data
+
+
+# =============================================================================
+# CONTRACTOR UNAVAILABILITY & LEAVE RATE SERIALIZERS
+# =============================================================================
+
+class ContractorUnavailabilitySerializer(serializers.ModelSerializer):
+    """Serializer for ContractorUnavailability model"""
+    staff_user_details = UserSerializer(source='staff_user', read_only=True)
+
+    class Meta:
+        model = ContractorUnavailability
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at', 'company')
+
+    def validate(self, data):
+        """Validate unavailability period"""
+        start_date = data.get('start_date', getattr(self.instance, 'start_date', None))
+        end_date = data.get('end_date', getattr(self.instance, 'end_date', None))
+
+        if end_date and start_date and end_date < start_date:
+            raise serializers.ValidationError({
+                'end_date': 'End date must be on or after start date'
+            })
+
+        return data
+
+
+class ContractorUnavailabilityCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating ContractorUnavailability - staff can create their own"""
+    class Meta:
+        model = ContractorUnavailability
+        fields = ['start_date', 'end_date', 'reason']
+
+    def validate(self, data):
+        """Validate unavailability period"""
+        if data['end_date'] < data['start_date']:
+            raise serializers.ValidationError({
+                'end_date': 'End date must be on or after start date'
+            })
+        return data
+
+
+class StaffLeaveDailyRateSerializer(serializers.ModelSerializer):
+    """Serializer for StaffLeaveDailyRate model"""
+    staff_user_details = UserSerializer(source='staff_user', read_only=True)
+    updated_by_details = UserSerializer(source='updated_by', read_only=True)
+
+    class Meta:
+        model = StaffLeaveDailyRate
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at', 'company', 'updated_by')
+
+    def validate_daily_rate(self, value):
+        """Validate daily rate is positive"""
+        if value <= 0:
+            raise serializers.ValidationError("Daily rate must be positive")
+        return value
+
+
+class StaffLeaveDailyRateUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for updating StaffLeaveDailyRate - admin only"""
+    class Meta:
+        model = StaffLeaveDailyRate
+        fields = ['daily_rate', 'effective_from']
+
+    def validate_daily_rate(self, value):
+        """Validate daily rate is positive"""
+        if value <= 0:
+            raise serializers.ValidationError("Daily rate must be positive")
+        return value
+
+
+class AvailabilityCheckSerializer(serializers.Serializer):
+    """Serializer for checking staff availability on specific dates"""
+    date = serializers.DateField()
+    is_available = serializers.BooleanField(read_only=True)
+    reason = serializers.CharField(read_only=True, allow_blank=True)

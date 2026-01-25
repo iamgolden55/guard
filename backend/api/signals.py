@@ -180,8 +180,54 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
         except Exception as e:
             logger.warning(f"Could not schedule reminder tasks: {e}")
 
+        # Multi-staff shift: Notify existing co-workers about new assignment
+        if instance.shift_group:
+            try:
+                _notify_coworkers_of_new_assignment(instance, current_staff)
+            except Exception as e:
+                logger.exception(f"Error notifying co-workers: {e}")
+
     except Exception as e:
         logger.exception(f"Error sending shift assignment notification: {e}")
+
+
+def _notify_coworkers_of_new_assignment(shift, new_staff):
+    """
+    Notify existing co-workers when a new staff member is assigned to a grouped shift.
+
+    Args:
+        shift: The Shift instance that was just assigned
+        new_staff: The User who was just assigned to the shift
+    """
+    # Find other shifts in the same group
+    coworker_shifts = Shift.objects.filter(
+        shift_group=shift.shift_group
+    ).exclude(id=shift.id).select_related('staff_user')
+
+    new_staff_name = new_staff.get_full_name() or new_staff.username
+    venue_name = shift.venue.name if shift.venue else 'Unknown Venue'
+    formatted_date = shift.start_time.strftime('%B %d, %Y')
+    formatted_time = shift.start_time.strftime('%I:%M %p')
+
+    for coworker_shift in coworker_shifts:
+        if coworker_shift.staff_user:
+            try:
+                push_notification_service.send_coworker_assignment_notification(
+                    user_id=coworker_shift.staff_user.id,
+                    shift_id=shift.id,
+                    coworker_name=new_staff_name,
+                    venue_name=venue_name,
+                    shift_date=formatted_date,
+                    shift_time=formatted_time
+                )
+                logger.info(
+                    f"Co-worker notification sent for shift {shift.id} "
+                    f"to user {coworker_shift.staff_user.id} about new co-worker {new_staff.id}"
+                )
+            except Exception as e:
+                logger.exception(
+                    f"Error sending co-worker notification to user {coworker_shift.staff_user.id}: {e}"
+                )
 
 
 # =============================================================================
@@ -399,3 +445,69 @@ def notify_shift_deletion(sender, instance, **kwargs):
 
     except Exception as e:
         logger.exception(f"Error sending shift deletion notification: {e}")
+
+
+# =============================================================================
+# Time Adjustment & Invoice Auto-Update
+# =============================================================================
+
+@receiver(post_save, sender='api.TimeAdjustment')
+def auto_update_invoice_on_time_adjustment(sender, instance, created, **kwargs):
+    """
+    When a TimeAdjustment is created, automatically update any existing invoice
+    that includes this shift
+
+    This ensures payment calculations stay accurate when managers correct shift times
+    due to technical issues (e.g., network problems preventing timely check-in).
+
+    Args:
+        sender: The TimeAdjustment model class
+        instance: The TimeAdjustment instance that was saved
+        created: True if this is a new record (not an update)
+        **kwargs: Additional signal arguments
+    """
+    from .models import InvoiceItem
+
+    # Only process new adjustments, not updates
+    if not created:
+        return
+
+    shift = instance.shift
+
+    # Find invoice item for this shift
+    try:
+        invoice_item = InvoiceItem.objects.select_related('invoice').get(shift=shift)
+        invoice = invoice_item.invoice
+
+        # Only update pending invoices (not paid/rejected)
+        if invoice.status != 'pending':
+            logger.warning(
+                f"Skipping invoice update for shift {shift.id} - "
+                f"invoice {invoice.id} status is {invoice.status}"
+            )
+            return
+
+        # Recalculate this specific invoice item
+        invoice_item.hours_worked = shift.get_effective_actual_hours()
+        invoice_item.amount = shift.calculate_payment()
+        invoice_item.save()
+
+        # Recalculate invoice totals
+        invoice.recalculate_from_shifts()
+
+        logger.info(
+            f"Auto-updated invoice {invoice.id} after time adjustment "
+            f"for shift {shift.id} by {instance.adjusted_by.username if instance.adjusted_by else 'Unknown'}"
+        )
+
+    except InvoiceItem.DoesNotExist:
+        # Shift not yet invoiced - no action needed
+        logger.debug(
+            f"Shift {shift.id} has time adjustment but no invoice exists yet - "
+            f"will be included when invoice is generated"
+        )
+    except Exception as e:
+        logger.error(
+            f"Error auto-updating invoice after time adjustment for shift {shift.id}: {str(e)}",
+            exc_info=True
+        )

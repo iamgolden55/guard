@@ -19,6 +19,7 @@ import type {
 } from '../../types/leave';
 import { LeaveRequestStatus } from '../../types/leave';
 import LeaveBalanceWidget from '../../components/leave/LeaveBalanceWidget';
+import { useStaffProfile } from '../../hooks/useStaffProfile';
 
 interface LeaveDashboardProps {
   refreshTrigger?: number;
@@ -35,6 +36,7 @@ interface DashboardStats {
 const LeaveDashboard: React.FC<LeaveDashboardProps> = ({ refreshTrigger = 0 }) => {
   const { authState, isUserRole } = useAuth();
   const navigate = useNavigate();
+  const { isContractor, isPermanentEmployee, isLoading: profileLoading, employmentCategory, employmentTypeName } = useStaffProfile();
   const [balanceData, setBalanceData] = useState<LeaveBalanceResponse | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -85,7 +87,8 @@ const LeaveDashboard: React.FC<LeaveDashboardProps> = ({ refreshTrigger = 0 }) =
     loadDashboardData();
   }, [refreshTrigger]);
 
-  if (isLoading) {
+  // Show loading while profile or dashboard data is loading
+  if (isLoading || profileLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Spinner size={SpinnerSize.large} label="Loading dashboard..." />
@@ -113,6 +116,211 @@ const LeaveDashboard: React.FC<LeaveDashboardProps> = ({ refreshTrigger = 0 }) =
     );
   }
 
+  // Show message if employment type is not configured
+  if (!employmentCategory) {
+    return (
+      <div className="max-w-2xl mx-auto mt-8">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          <div className="flex items-center gap-4 mb-6">
+            <div className="p-3 bg-amber-100 rounded-lg">
+              <Icon iconName="Warning" className="text-amber-600" style={{ fontSize: '24px' }} />
+            </div>
+            <div>
+              <Text variant="xLarge" className="font-bold text-gray-900 block">
+                Employment Type Not Set
+              </Text>
+              <Text variant="medium" className="text-gray-600 block mt-1">
+                Your employment type has not been configured
+              </Text>
+            </div>
+          </div>
+          <MessageBar messageBarType={MessageBarType.warning} isMultiline>
+            <strong>Action Required:</strong> Your employment type needs to be set up before you can access leave management features.
+            Please contact your administrator or HR to configure your profile.
+          </MessageBar>
+          <div className="mt-6">
+            <DefaultButton
+              text="Back to Dashboard"
+              iconProps={{ iconName: 'Home' }}
+              onClick={() => navigate('/dashboard')}
+              styles={{ root: { borderRadius: '8px' } }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show contractor-specific dashboard (for contractors and temporary workers)
+  if (isContractor) {
+    return (
+      <div className="max-w-7xl space-y-6">
+        {/* Header */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <Text variant="xxLarge" className="font-bold text-gray-900">
+                Availability Dashboard
+              </Text><br />
+              <Text variant="large" className="text-gray-600 mt-1">
+                Manage your availability for scheduling
+              </Text>
+            </div>
+            <PrimaryButton
+              text="Manage Availability"
+              iconProps={{ iconName: 'EventDeclined' }}
+              onClick={() => navigate('/leave/unavailability')}
+              styles={{
+                root: {
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  backgroundColor: '#8764b8',
+                  borderColor: '#8764b8'
+                },
+                rootHovered: {
+                  backgroundColor: '#7356a5',
+                  borderColor: '#7356a5'
+                }
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Contractor Info */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Icon iconName="Contact" className="text-purple-600" style={{ fontSize: '20px' }} />
+              </div>
+              <Text variant="large" className="font-semibold text-gray-900">
+                Your Employment Type
+              </Text>
+            </div>
+            <div className="bg-purple-50 rounded-lg p-4">
+              <Text variant="xLarge" className="font-bold text-purple-700 block">
+                {employmentTypeName || 'Contractor / Temporary'}
+              </Text>
+              <Text variant="medium" className="text-purple-600 mt-1">
+                As a contractor or temporary worker, you manage your availability instead of leave balances.
+              </Text>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Icon iconName="Info" className="text-blue-600" style={{ fontSize: '20px' }} />
+              </div>
+              <Text variant="large" className="font-semibold text-gray-900">
+                How It Works
+              </Text>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <Icon iconName="CheckMark" className="text-green-500 mt-1" style={{ fontSize: '16px' }} />
+                <Text variant="medium" className="text-gray-700">
+                  Mark dates when you're unavailable for shifts
+                </Text>
+              </div>
+              <div className="flex items-start gap-2">
+                <Icon iconName="CheckMark" className="text-green-500 mt-1" style={{ fontSize: '16px' }} />
+                <Text variant="medium" className="text-gray-700">
+                  Scheduling will avoid assigning you during those periods
+                </Text>
+              </div>
+              <div className="flex items-start gap-2">
+                <Icon iconName="CheckMark" className="text-green-500 mt-1" style={{ fontSize: '16px' }} />
+                <Text variant="medium" className="text-gray-700">
+                  No approval needed - purely informational
+                </Text>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Action */}
+        <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-2xl shadow-sm p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <Text variant="xLarge" className="font-bold text-white block">
+                Ready to update your availability?
+              </Text>
+              <Text variant="medium" className="text-purple-100 mt-1">
+                Let us know when you're not available so we can schedule around your commitments.
+              </Text>
+            </div>
+            <DefaultButton
+              text="Go to Availability"
+              iconProps={{ iconName: 'Calendar' }}
+              onClick={() => navigate('/leave/unavailability')}
+              styles={{
+                root: {
+                  borderRadius: '8px',
+                  backgroundColor: 'white',
+                  color: '#8764b8',
+                  border: 'none'
+                },
+                rootHovered: {
+                  backgroundColor: '#f3f4f6',
+                  color: '#7356a5'
+                }
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Manager/Admin Actions (contractors who are also managers) */}
+        {(isUserRole(UserRole.MANAGER) || isUserRole(UserRole.ADMIN)) && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <Text variant="large" className="font-semibold text-gray-900 mb-4 block">
+              Team Management
+            </Text>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <DefaultButton
+                text="Team Approvals"
+                iconProps={{ iconName: 'CalendarReply' }}
+                onClick={() => navigate('/leave/approvals')}
+                styles={{
+                  root: {
+                    width: '100%',
+                    justifyContent: 'flex-start',
+                    borderRadius: '8px'
+                  }
+                }}
+              />
+              <DefaultButton
+                text="Team Calendar"
+                iconProps={{ iconName: 'CalendarWorkWeek' }}
+                onClick={() => navigate('/leave/calendar')}
+                styles={{
+                  root: {
+                    width: '100%',
+                    justifyContent: 'flex-start',
+                    borderRadius: '8px'
+                  }
+                }}
+              />
+              <DefaultButton
+                text="Team Overview"
+                iconProps={{ iconName: 'People' }}
+                onClick={() => navigate('/leave/team-overview')}
+                styles={{
+                  root: {
+                    width: '100%',
+                    justifyContent: 'flex-start',
+                    borderRadius: '8px'
+                  }
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Permanent employee dashboard (existing code)
   return (
     <div className="max-w-7xl space-y-6">
       {/* Header */}

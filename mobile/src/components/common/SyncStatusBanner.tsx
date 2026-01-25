@@ -1,16 +1,45 @@
 /**
  * Sync Status Banner
- * Displays offline queue sync status and allows manual sync
+ * Displays offline queue sync status with Uber-style amber design
+ * Handles: offline mode, syncing, pending changes, failed syncs
  */
 
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import offlineExchangeService from '../../services/offlineExchangeService';
-import { colors, spacing } from '../../theme';
+import { spacing } from '../../theme';
+
+// Amber color palette for offline/sync states
+const amberColors = {
+  bg: '#FEF3C7',        // amber-100
+  bgDark: '#FDE68A',    // amber-200
+  border: '#FCD34D',    // amber-300
+  text: '#92400E',      // amber-800
+  textLight: '#B45309', // amber-700
+  accent: '#F59E0B',    // amber-500
+};
+
+// Info color palette for syncing states
+const infoColors = {
+  bg: '#DBEAFE',        // blue-100
+  border: '#93C5FD',    // blue-300
+  text: '#1E40AF',      // blue-800
+  accent: '#3B82F6',    // blue-500
+};
+
+// Error color palette for failed states
+const errorColors = {
+  bg: '#FEE2E2',        // red-100
+  border: '#FCA5A5',    // red-300
+  text: '#991B1B',      // red-800
+  accent: '#EF4444',    // red-500
+};
 
 export const SyncStatusBanner: React.FC = () => {
+  const insets = useSafeAreaInsets();
   const [isOnline, setIsOnline] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [failedCount, setFailedCount] = useState(0);
@@ -54,10 +83,11 @@ export const SyncStatusBanner: React.FC = () => {
   useEffect(() => {
     const shouldShow = !isOnline || pendingCount > 0 || failedCount > 0 || isSyncing;
 
-    Animated.timing(slideAnim, {
+    Animated.spring(slideAnim, {
       toValue: shouldShow ? 0 : -100,
-      duration: 300,
       useNativeDriver: true,
+      tension: 65,
+      friction: 11,
     }).start();
   }, [isOnline, pendingCount, failedCount, isSyncing]);
 
@@ -80,54 +110,54 @@ export const SyncStatusBanner: React.FC = () => {
     }
   };
 
-  // Determine banner color and message
-  const getBannerStyle = () => {
+  // Determine banner style based on state
+  const getBannerConfig = () => {
     if (!isOnline) {
       return {
-        backgroundColor: colors.warning + '20',
-        borderColor: colors.warning,
-        iconColor: colors.warning,
-        message: 'Offline - Changes will sync when online',
+        colors: amberColors,
+        message: "You're offline",
+        subtitle: 'Changes will sync when connected',
         icon: 'cloud-offline-outline' as const,
+        showSync: false,
       };
     }
 
     if (isSyncing) {
       return {
-        backgroundColor: colors.info + '20',
-        borderColor: colors.info,
-        iconColor: colors.info,
+        colors: infoColors,
         message: 'Syncing changes...',
+        subtitle: null,
         icon: 'sync-outline' as const,
+        showSync: false,
       };
     }
 
     if (failedCount > 0) {
       return {
-        backgroundColor: colors.error + '20',
-        borderColor: colors.error,
-        iconColor: colors.error,
-        message: `${failedCount} ${failedCount === 1 ? 'change' : 'changes'} failed to sync`,
+        colors: errorColors,
+        message: `${failedCount} ${failedCount === 1 ? 'change' : 'changes'} failed`,
+        subtitle: 'Tap to retry',
         icon: 'alert-circle-outline' as const,
+        showSync: true,
       };
     }
 
     if (pendingCount > 0) {
       return {
-        backgroundColor: colors.info + '20',
-        borderColor: colors.info,
-        iconColor: colors.info,
-        message: `${pendingCount} ${pendingCount === 1 ? 'change' : 'changes'} pending sync`,
+        colors: infoColors,
+        message: `${pendingCount} ${pendingCount === 1 ? 'change' : 'changes'} pending`,
+        subtitle: 'Will sync automatically',
         icon: 'cloud-upload-outline' as const,
+        showSync: true,
       };
     }
 
     return null;
   };
 
-  const bannerStyle = getBannerStyle();
+  const config = getBannerConfig();
 
-  if (!bannerStyle) {
+  if (!config) {
     return null;
   }
 
@@ -136,30 +166,46 @@ export const SyncStatusBanner: React.FC = () => {
       style={[
         styles.banner,
         {
-          backgroundColor: bannerStyle.backgroundColor,
-          borderBottomColor: bannerStyle.borderColor,
+          backgroundColor: config.colors.bg,
+          borderBottomColor: config.colors.border,
+          paddingTop: insets.top + 4,
           transform: [{ translateY: slideAnim }],
         },
       ]}
     >
       <View style={styles.content}>
-        <Ionicons name={bannerStyle.icon} size={20} color={bannerStyle.iconColor} />
-        <Text style={[styles.message, { color: bannerStyle.iconColor }]}>
-          {bannerStyle.message}
-        </Text>
+        {/* Icon container */}
+        <View style={[styles.iconContainer, { backgroundColor: config.colors.bgDark || config.colors.bg }]}>
+          <Ionicons name={config.icon} size={16} color={config.colors.text} />
+        </View>
 
-        {/* Sync button (only show when online and not syncing) */}
-        {isOnline && (pendingCount > 0 || failedCount > 0) && !isSyncing && (
-          <TouchableOpacity onPress={handleSync} style={styles.syncButton}>
-            <Ionicons name="sync" size={18} color={bannerStyle.iconColor} />
-            <Text style={[styles.syncText, { color: bannerStyle.iconColor }]}>Sync</Text>
+        {/* Text content */}
+        <View style={styles.textContainer}>
+          <Text style={[styles.message, { color: config.colors.text }]}>
+            {config.message}
+          </Text>
+          {config.subtitle && (
+            <Text style={[styles.subtitle, { color: config.colors.textLight || config.colors.text }]}>
+              {config.subtitle}
+            </Text>
+          )}
+        </View>
+
+        {/* Sync button */}
+        {config.showSync && isOnline && !isSyncing && (
+          <TouchableOpacity
+            onPress={handleSync}
+            style={[styles.syncButton, { backgroundColor: config.colors.accent }]}
+          >
+            <Ionicons name="sync" size={14} color="#FFFFFF" />
+            <Text style={styles.syncText}>Sync</Text>
           </TouchableOpacity>
         )}
 
-        {/* Syncing indicator */}
+        {/* Syncing spinner */}
         {isSyncing && (
           <View style={styles.syncingIndicator}>
-            <Ionicons name="sync" size={18} color={bannerStyle.iconColor} />
+            <Ionicons name="sync" size={18} color={config.colors.accent} />
           </View>
         )}
       </View>
@@ -170,7 +216,7 @@ export const SyncStatusBanner: React.FC = () => {
 const styles = StyleSheet.create({
   banner: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingBottom: spacing.sm,
     borderBottomWidth: 1,
     position: 'absolute',
     top: 0,
@@ -181,25 +227,39 @@ const styles = StyleSheet.create({
   content: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+  },
+  iconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  textContainer: {
+    flex: 1,
   },
   message: {
-    flex: 1,
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  subtitle: {
+    fontSize: 11,
+    fontWeight: '400',
+    marginTop: 1,
   },
   syncButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
   },
   syncText: {
     fontSize: 12,
     fontWeight: '600',
+    color: '#FFFFFF',
   },
   syncingIndicator: {
     padding: 4,

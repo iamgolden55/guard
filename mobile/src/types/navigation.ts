@@ -71,6 +71,7 @@ export type MainStackParamList = {
   LeaveRequest: undefined;
   LeaveHistory: undefined;
   LeaveRequestDetail: { requestId: number };
+  ContractorUnavailability: undefined;
   Earnings: undefined;
   InvoiceDetail: { invoiceId: number };
 };

@@ -31,6 +31,8 @@ class ShiftSerializer(serializers.ModelSerializer):
     pending_exchange = serializers.SerializerMethodField()
     pending_release = serializers.SerializerMethodField()
     approved_transfer = serializers.SerializerMethodField()
+    # Multi-staff shift: co-workers field
+    coworkers = serializers.SerializerMethodField()
 
     class Meta:
         model = Shift
@@ -45,7 +47,9 @@ class ShiftSerializer(serializers.ModelSerializer):
             'shift_group', 'hourly_rate', 'is_special_event', 'calculated_payment',
             'actual_hours_worked', 'manager_approved', 'created_at', 'updated_at',
             # Transfer status fields
-            'pending_exchange', 'pending_release', 'approved_transfer'
+            'pending_exchange', 'pending_release', 'approved_transfer',
+            # Multi-staff shift fields
+            'coworkers'
         ]
     
     def validate(self, data):
@@ -182,6 +186,44 @@ class ShiftSerializer(serializers.ModelSerializer):
                 result['target_user'] = None
             return result
         return None
+
+    def get_coworkers(self, obj):
+        """
+        Get co-workers for multi-staff shifts.
+
+        Returns a list of other staff members assigned to the same shift_group,
+        including their check-in/out status for real-time visibility.
+        """
+        if not obj.shift_group:
+            return []
+
+        # Query shifts with same shift_group, excluding current user's shift
+        # Note: Related name is 'profile' not 'staffprofile'
+        coworker_shifts = Shift.objects.filter(
+            shift_group=obj.shift_group
+        ).exclude(id=obj.id).select_related('staff_user', 'staff_user__profile')
+
+        coworkers = []
+        for shift in coworker_shifts:
+            if shift.staff_user:
+                # Get profile image URL if available
+                profile_photo = None
+                if hasattr(shift.staff_user, 'profile') and shift.staff_user.profile:
+                    # Field is profile_image_url (a URL string), not profile_photo
+                    profile_photo = shift.staff_user.profile.profile_image_url or None
+
+                coworkers.append({
+                    'id': shift.staff_user.id,
+                    'first_name': shift.staff_user.first_name,
+                    'last_name': shift.staff_user.last_name,
+                    'profile_photo': profile_photo,
+                    'shift_id': shift.id,
+                    'check_in_time': shift.check_in_time.isoformat() if shift.check_in_time else None,
+                    'check_out_time': shift.check_out_time.isoformat() if shift.check_out_time else None,
+                    'status': shift.status,
+                })
+
+        return coworkers
 
 
 class FrontendShiftSerializer(serializers.ModelSerializer):

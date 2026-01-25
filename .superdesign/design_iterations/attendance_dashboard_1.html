@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Attendance Dashboard - Security Staff</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+  <!-- Theme CSS -->
+  <link rel="stylesheet" href="attendance_theme_1.css">
+
+  <style>
+    /* ============================================
+       ANIMATIONS
+       ============================================ */
+
+    @keyframes fadeSlideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeSlideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes scaleIn {
+      from {
+        opacity: 0;
+        transform: scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes bounceIn {
+      0% {
+        opacity: 0;
+        transform: scale(0.8);
+      }
+      50% {
+        transform: scale(1.05);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes checkmarkDraw {
+      from {
+        stroke-dashoffset: 50;
+      }
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 0.6;
+        transform: scale(1);
+      }
+      50% {
+        opacity: 1;
+        transform: scale(1.02);
+      }
+    }
+
+    @keyframes modalIn {
+      from {
+        opacity: 0;
+        transform: scale(0.85) translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+      20%, 40%, 60%, 80% { transform: translateX(5px); }
+    }
+
+    /* Animation Classes */
+    .animate-header {
+      animation: fadeSlideDown 400ms ease-out forwards;
+    }
+
+    .animate-greeting {
+      animation: fadeSlideUp 300ms ease-out 150ms forwards;
+      opacity: 0;
+    }
+
+    .animate-card-1 {
+      animation: scaleIn 400ms ease-out 250ms forwards;
+      opacity: 0;
+    }
+
+    .animate-card-2 {
+      animation: scaleIn 400ms ease-out 350ms forwards;
+      opacity: 0;
+    }
+
+    .animate-stats-title {
+      animation: fadeSlideUp 300ms ease-out 400ms forwards;
+      opacity: 0;
+    }
+
+    .animate-stat-1 {
+      animation: fadeSlideUp 350ms ease-out 480ms forwards;
+      opacity: 0;
+    }
+
+    .animate-stat-2 {
+      animation: fadeSlideUp 350ms ease-out 560ms forwards;
+      opacity: 0;
+    }
+
+    .animate-stat-3 {
+      animation: fadeSlideUp 350ms ease-out 640ms forwards;
+      opacity: 0;
+    }
+
+    .animate-tab-bar {
+      animation: fadeSlideUp 300ms ease-out 500ms forwards;
+      opacity: 0;
+    }
+
+    .animate-modal {
+      animation: modalIn 400ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .animate-checkmark {
+      animation: bounceIn 500ms cubic-bezier(0.34, 1.56, 0.64, 1) 200ms forwards;
+      opacity: 0;
+    }
+
+    .animate-checkmark-draw {
+      stroke-dasharray: 50;
+      stroke-dashoffset: 50;
+      animation: checkmarkDraw 400ms ease-out 400ms forwards;
+    }
+
+    .animate-pulse {
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    /* ============================================
+       HEADER ILLUSTRATION
+       ============================================ */
+
+    .header-bg {
+      background: linear-gradient(135deg, #3F51B5 0%, #5C6BC0 50%, #7986CB 100%);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .header-bg::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 300px;
+      height: 300px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 50%;
+    }
+
+    .header-bg::after {
+      content: '';
+      position: absolute;
+      bottom: -30%;
+      left: -10%;
+      width: 200px;
+      height: 200px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 50%;
+    }
+
+    /* ============================================
+       CARD ILLUSTRATIONS
+       ============================================ */
+
+    .desk-illustration {
+      width: 64px;
+      height: 64px;
+      position: relative;
+    }
+
+    /* ============================================
+       BUTTON INTERACTIONS
+       ============================================ */
+
+    .btn-interactive {
+      transition: all 200ms ease;
+    }
+
+    .btn-interactive:hover:not(.btn-disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(63, 81, 181, 0.3);
+    }
+
+    .btn-interactive:active:not(.btn-disabled) {
+      transform: translateY(0) scale(0.98);
+    }
+
+    /* ============================================
+       CARD STATES
+       ============================================ */
+
+    .check-card {
+      transition: all 300ms ease;
+    }
+
+    .check-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(63, 81, 181, 0.15);
+    }
+
+    .check-card.completed {
+      background: #E8F5E9 !important;
+      border: 2px solid #4CAF50;
+    }
+
+    .check-card.disabled {
+      opacity: 0.6;
+      background: #F5F5F5 !important;
+    }
+
+    /* ============================================
+       CAMERA OVERLAY
+       ============================================ */
+
+    .camera-screen {
+      background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+    }
+
+    .viewfinder {
+      position: relative;
+      width: 260px;
+      height: 260px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 20px;
+    }
+
+    .corner {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      border-color: #5C6BC0;
+      border-style: solid;
+    }
+
+    .corner.tl { top: -2px; left: -2px; border-width: 4px 0 0 4px; border-radius: 12px 0 0 0; }
+    .corner.tr { top: -2px; right: -2px; border-width: 4px 4px 0 0; border-radius: 0 12px 0 0; }
+    .corner.bl { bottom: -2px; left: -2px; border-width: 0 0 4px 4px; border-radius: 0 0 0 12px; }
+    .corner.br { bottom: -2px; right: -2px; border-width: 0 4px 4px 0; border-radius: 0 0 12px 0; }
+
+    .scan-line {
+      position: absolute;
+      left: 10%;
+      right: 10%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #5C6BC0, transparent);
+      animation: scanMove 2s ease-in-out infinite;
+    }
+
+    @keyframes scanMove {
+      0%, 100% { top: 20%; opacity: 0.5; }
+      50% { top: 80%; opacity: 1; }
+    }
+
+    /* ============================================
+       TAB BAR
+       ============================================ */
+
+    .tab-item {
+      transition: all 200ms ease;
+    }
+
+    .tab-item:active {
+      transform: scale(0.9);
+    }
+
+    .tab-item.active .tab-icon {
+      color: #3F51B5;
+    }
+
+    .tab-item.active .tab-label {
+      color: #3F51B5;
+      font-weight: 600;
+    }
+
+    /* ============================================
+       MODAL OVERLAY
+       ============================================ */
+
+    .modal-backdrop {
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    /* ============================================
+       STATE CONTROL BUTTONS (Demo Only)
+       ============================================ */
+
+    .state-controls {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .state-btn {
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: #1a1a1a;
+      color: white;
+      transition: all 150ms ease;
+    }
+
+    .state-btn:hover {
+      background: #3F51B5;
+    }
+
+    .state-btn.active {
+      background: #3F51B5;
+    }
+  </style>
+</head>
+<body>
+  <!-- State Controls (Demo Only) -->
+  <div class="state-controls">
+    <button class="state-btn active" onclick="showState('initial')">Initial</button>
+    <button class="state-btn" onclick="showState('checkedIn')">Checked In</button>
+    <button class="state-btn" onclick="showState('completed')">Completed</button>
+    <button class="state-btn" onclick="showState('camera')">Camera</button>
+    <button class="state-btn" onclick="showModal()">Modal</button>
+  </div>
+
+  <!-- Mobile Container -->
+  <div class="mobile-container" id="mainScreen">
+
+    <!-- Header Illustration -->
+    <div class="header-bg animate-header" style="height: 200px; border-radius: 0 0 24px 24px;">
+      <div class="relative h-full flex items-end justify-center pb-4">
+        <!-- Security Illustration SVG -->
+        <svg width="320" height="140" viewBox="0 0 320 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Floor -->
+          <ellipse cx="160" cy="130" rx="140" ry="10" fill="rgba(255,255,255,0.1)"/>
+
+          <!-- Desk 1 -->
+          <rect x="40" y="85" width="70" height="40" rx="4" fill="rgba(255,255,255,0.2)"/>
+          <rect x="45" y="75" width="40" height="25" rx="2" fill="rgba(255,255,255,0.3)"/>
+          <rect x="50" y="80" width="30" height="15" rx="1" fill="#E8EAF6"/>
+
+          <!-- Person 1 (Security Guard) -->
+          <circle cx="75" cy="55" r="12" fill="#FFE0B2"/>
+          <rect x="63" y="67" width="24" height="30" rx="4" fill="#303F9F"/>
+          <rect x="70" y="70" width="10" height="3" rx="1" fill="#FFD54F"/>
+
+          <!-- Desk 2 -->
+          <rect x="130" y="80" width="60" height="45" rx="4" fill="rgba(255,255,255,0.2)"/>
+          <rect x="135" y="70" width="35" height="25" rx="2" fill="rgba(255,255,255,0.3)"/>
+          <rect x="140" y="75" width="25" height="15" rx="1" fill="#E8EAF6"/>
+
+          <!-- Person 2 -->
+          <circle cx="160" cy="50" r="10" fill="#FFCCBC"/>
+          <rect x="150" y="60" width="20" height="25" rx="3" fill="#3F51B5"/>
+
+          <!-- Desk 3 -->
+          <rect x="210" y="85" width="70" height="40" rx="4" fill="rgba(255,255,255,0.2)"/>
+          <rect x="215" y="75" width="40" height="25" rx="2" fill="rgba(255,255,255,0.3)"/>
+          <rect x="220" y="80" width="30" height="15" rx="1" fill="#E8EAF6"/>
+
+          <!-- Person 3 -->
+          <circle cx="245" cy="55" r="12" fill="#D7CCC8"/>
+          <rect x="233" y="67" width="24" height="30" rx="4" fill="#5C6BC0"/>
+
+          <!-- Security Badge Icon -->
+          <circle cx="280" cy="40" r="18" fill="rgba(255,255,255,0.15)"/>
+          <path d="M280 28 L290 34 L290 46 C290 52 280 58 280 58 C280 58 270 52 270 46 L270 34 Z" fill="#FFD54F" stroke="#FFC107" stroke-width="1"/>
+          <circle cx="280" cy="42" r="4" fill="#303F9F"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Content Area -->
+    <div class="px-4 pt-5">
+
+      <!-- Greeting Section -->
+      <div class="flex justify-between items-start mb-6 animate-greeting">
+        <div>
+          <h1 class="text-greeting">Good Morning, John!</h1>
+          <p class="text-date mt-1">Tuesday, 21 January 2026</p>
+        </div>
+        <img
+          src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face"
+          alt="Profile"
+          class="avatar"
+        />
+      </div>
+
+      <!-- Check In/Out Cards -->
+      <div class="flex gap-3 mb-6">
+
+        <!-- Check In Card -->
+        <div class="check-card card-checkin flex-1 animate-card-1" id="checkInCard">
+          <!-- Mini Illustration -->
+          <div class="desk-illustration mb-2">
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="8" y="35" width="48" height="24" rx="4" fill="#E8EAF6"/>
+              <rect x="12" y="28" width="28" height="18" rx="2" fill="#C5CAE9"/>
+              <rect x="15" y="31" width="22" height="12" rx="1" fill="#3F51B5"/>
+              <circle cx="44" cy="24" r="10" fill="#FFE0B2"/>
+              <rect x="36" y="34" width="16" height="16" rx="3" fill="#5C6BC0"/>
+              <rect x="41" y="37" width="6" height="2" rx="1" fill="#FFD54F"/>
+            </svg>
+          </div>
+
+          <p class="text-card-label">Check In</p>
+          <p class="text-time-placeholder" id="checkInTime">--:--</p>
+
+          <button class="btn btn-primary btn-full btn-interactive mt-3" id="checkInBtn" onclick="handleCheckIn()">
+            CHECK IN
+          </button>
+        </div>
+
+        <!-- Check Out Card -->
+        <div class="check-card card-checkout flex-1 disabled animate-card-2" id="checkOutCard">
+          <!-- Mini Illustration -->
+          <div class="desk-illustration mb-2">
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="8" y="35" width="48" height="24" rx="4" fill="#E8EAF6"/>
+              <rect x="24" y="28" width="28" height="18" rx="2" fill="#C5CAE9"/>
+              <rect x="27" y="31" width="22" height="12" rx="1" fill="#9E9E9E"/>
+              <circle cx="20" cy="24" r="10" fill="#FFE0B2"/>
+              <rect x="12" y="34" width="16" height="16" rx="3" fill="#BDBDBD"/>
+              <path d="M36 44 L42 38 M42 44 L36 38" stroke="#757575" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+
+          <p class="text-card-label" style="color: #9E9E9E;">Check Out</p>
+          <p class="text-time-placeholder" id="checkOutTime">--:--</p>
+
+          <button class="btn btn-disabled btn-full mt-3" id="checkOutBtn" disabled>
+            CHECK OUT
+          </button>
+        </div>
+      </div>
+
+      <!-- Today's Overview -->
+      <div class="mb-4 animate-stats-title">
+        <h2 class="text-section-title">Today's Overview</h2>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <!-- Hours Today -->
+        <div class="card-stat animate-stat-1">
+          <div class="icon-bg icon-bg-primary mb-2">
+            <i data-lucide="clock" style="width: 22px; height: 22px;"></i>
+          </div>
+          <p class="text-stat-number" id="hoursToday">0</p>
+          <p class="text-stat-label">Hours Today</p>
+        </div>
+
+        <!-- Checks Done -->
+        <div class="card-stat animate-stat-2">
+          <div class="icon-bg icon-bg-success mb-2">
+            <i data-lucide="check-circle" style="width: 22px; height: 22px;"></i>
+          </div>
+          <p class="text-stat-number" id="checksDone">0</p>
+          <p class="text-stat-label">Checks Done</p>
+        </div>
+
+        <!-- Shifts This Week -->
+        <div class="card-stat animate-stat-3">
+          <div class="icon-bg icon-bg-warning mb-2">
+            <i data-lucide="calendar" style="width: 22px; height: 22px;"></i>
+          </div>
+          <p class="text-stat-number">3</p>
+          <p class="text-stat-label">Shifts This Wk</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom Tab Bar -->
+    <div class="tab-bar animate-tab-bar">
+      <a href="#" class="tab-item active">
+        <i data-lucide="home" class="tab-icon" style="width: 24px; height: 24px;"></i>
+        <span class="tab-label tab-item-label">Home</span>
+      </a>
+      <a href="#" class="tab-item">
+        <i data-lucide="calendar-days" class="tab-icon" style="width: 24px; height: 24px;"></i>
+        <span class="tab-label tab-item-label">Shifts</span>
+      </a>
+      <a href="#" class="tab-item" onclick="showState('camera'); return false;">
+        <i data-lucide="camera" class="tab-icon" style="width: 24px; height: 24px;"></i>
+        <span class="tab-label tab-item-label">Snap</span>
+      </a>
+      <a href="#" class="tab-item">
+        <i data-lucide="user" class="tab-icon" style="width: 24px; height: 24px;"></i>
+        <span class="tab-label tab-item-label">Profile</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Camera Screen -->
+  <div class="mobile-container camera-screen hidden" id="cameraScreen" style="position: fixed; inset: 0; z-index: 100;">
+
+    <!-- Camera Header -->
+    <div class="flex justify-between items-center p-4" style="position: absolute; top: 0; left: 0; right: 0; z-index: 10;">
+      <button onclick="showState('initial')" class="p-2 rounded-full" style="background: rgba(255,255,255,0.2);">
+        <i data-lucide="x" style="width: 24px; height: 24px; color: white;"></i>
+      </button>
+      <button class="p-2 rounded-full" style="background: rgba(255,255,255,0.2);">
+        <i data-lucide="zap" style="width: 24px; height: 24px; color: white;"></i>
+      </button>
+    </div>
+
+    <!-- Viewfinder -->
+    <div class="flex flex-col items-center justify-center h-full">
+      <div class="viewfinder mb-8">
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+        <div class="scan-line"></div>
+
+        <!-- Camera Icon in center -->
+        <div class="absolute inset-0 flex items-center justify-center">
+          <div class="p-4 rounded-full" style="background: rgba(92, 107, 192, 0.3);">
+            <i data-lucide="camera" style="width: 48px; height: 48px; color: rgba(255,255,255,0.8);"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Instructions -->
+      <div class="text-center px-8">
+        <h2 style="color: white; font-size: 20px; font-weight: 600; margin-bottom: 8px;">
+          <i data-lucide="map-pin" style="width: 20px; height: 20px; display: inline; vertical-align: middle; margin-right: 6px;"></i>
+          Snap Venue
+        </h2>
+        <p style="color: rgba(255,255,255,0.7); font-size: 14px;">
+          Take a photo of the venue entrance to check in
+        </p>
+      </div>
+
+      <!-- Capture Button -->
+      <button
+        class="mt-10 btn-interactive"
+        style="width: 72px; height: 72px; border-radius: 50%; background: white; border: 4px solid #5C6BC0; display: flex; align-items: center; justify-content: center;"
+        onclick="handleCapture()"
+      >
+        <div style="width: 56px; height: 56px; border-radius: 50%; background: #3F51B5;"></div>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- Success Modal -->
+  <div class="modal-backdrop hidden" id="successModal" style="position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center;">
+    <div class="modal-content animate-modal">
+      <!-- Success Icon -->
+      <div class="success-circle animate-checkmark">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path
+            class="animate-checkmark-draw"
+            d="M10 20 L17 27 L30 13"
+            stroke="#4CAF50"
+            stroke-width="4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            fill="none"
+          />
+        </svg>
+      </div>
+
+      <h2 style="font-size: 24px; font-weight: 700; color: #1A1A1A; margin-bottom: 8px;">
+        You've checked in!
+      </h2>
+      <p style="font-size: 14px; color: #757575; margin-bottom: 4px;">
+        Time: <strong style="color: #1A1A1A;">08:45 AM</strong>
+      </p>
+      <p style="font-size: 14px; color: #757575; margin-bottom: 24px;">
+        Venue: <strong style="color: #1A1A1A;">Central Station</strong>
+      </p>
+
+      <button
+        class="btn btn-primary btn-full btn-interactive"
+        onclick="hideModal()"
+      >
+        CONTINUE
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // Initialize Lucide icons
+    lucide.createIcons();
+
+    // State management
+    let currentState = 'initial';
+
+    function showState(state) {
+      currentState = state;
+
+      // Update control buttons
+      document.querySelectorAll('.state-btn').forEach(btn => btn.classList.remove('active'));
+      event?.target?.classList?.add('active');
+
+      // Hide all screens
+      document.getElementById('mainScreen').classList.remove('hidden');
+      document.getElementById('cameraScreen').classList.add('hidden');
+      document.getElementById('successModal').style.display = 'none';
+
+      const checkInCard = document.getElementById('checkInCard');
+      const checkOutCard = document.getElementById('checkOutCard');
+      const checkInBtn = document.getElementById('checkInBtn');
+      const checkOutBtn = document.getElementById('checkOutBtn');
+      const checkInTime = document.getElementById('checkInTime');
+      const checkOutTime = document.getElementById('checkOutTime');
+      const hoursToday = document.getElementById('hoursToday');
+      const checksDone = document.getElementById('checksDone');
+
+      switch(state) {
+        case 'initial':
+          // Reset to initial state
+          checkInCard.classList.remove('completed');
+          checkOutCard.classList.add('disabled');
+          checkOutCard.classList.remove('completed');
+
+          checkInBtn.className = 'btn btn-primary btn-full btn-interactive mt-3';
+          checkInBtn.textContent = 'CHECK IN';
+          checkInBtn.disabled = false;
+
+          checkOutBtn.className = 'btn btn-disabled btn-full mt-3';
+          checkOutBtn.textContent = 'CHECK OUT';
+          checkOutBtn.disabled = true;
+
+          checkInTime.textContent = '--:--';
+          checkOutTime.textContent = '--:--';
+          hoursToday.textContent = '0';
+          checksDone.textContent = '0';
+          break;
+
+        case 'checkedIn':
+          // Checked in state
+          checkInCard.classList.add('completed');
+          checkOutCard.classList.remove('disabled');
+          checkOutCard.classList.remove('completed');
+
+          checkInBtn.className = 'btn btn-success btn-full mt-3';
+          checkInBtn.innerHTML = '<span style="display: flex; align-items: center; gap: 6px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> DONE</span>';
+          checkInBtn.disabled = true;
+
+          checkOutBtn.className = 'btn btn-primary btn-full btn-interactive mt-3';
+          checkOutBtn.textContent = 'CHECK OUT';
+          checkOutBtn.disabled = false;
+
+          checkInTime.textContent = '08:45 AM';
+          checkInTime.classList.remove('text-time-placeholder');
+          checkInTime.classList.add('text-time');
+          checkOutTime.textContent = '--:--';
+
+          hoursToday.textContent = '2.5';
+          checksDone.textContent = '1';
+          break;
+
+        case 'completed':
+          // Both completed
+          checkInCard.classList.add('completed');
+          checkOutCard.classList.remove('disabled');
+          checkOutCard.classList.add('completed');
+
+          checkInBtn.className = 'btn btn-success btn-full mt-3';
+          checkInBtn.innerHTML = '<span style="display: flex; align-items: center; gap: 6px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> DONE</span>';
+          checkInBtn.disabled = true;
+
+          checkOutBtn.className = 'btn btn-success btn-full mt-3';
+          checkOutBtn.innerHTML = '<span style="display: flex; align-items: center; gap: 6px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> DONE</span>';
+          checkOutBtn.disabled = true;
+
+          checkInTime.textContent = '08:45 AM';
+          checkInTime.classList.remove('text-time-placeholder');
+          checkInTime.classList.add('text-time');
+          checkOutTime.textContent = '05:30 PM';
+          checkOutTime.classList.remove('text-time-placeholder');
+          checkOutTime.classList.add('text-time');
+
+          hoursToday.textContent = '8.75';
+          checksDone.textContent = '2';
+          break;
+
+        case 'camera':
+          document.getElementById('mainScreen').classList.add('hidden');
+          document.getElementById('cameraScreen').classList.remove('hidden');
+          lucide.createIcons();
+          break;
+      }
+
+      lucide.createIcons();
+    }
+
+    function showModal() {
+      document.getElementById('successModal').style.display = 'flex';
+      document.querySelectorAll('.state-btn').forEach(btn => btn.classList.remove('active'));
+      event?.target?.classList?.add('active');
+    }
+
+    function hideModal() {
+      document.getElementById('successModal').style.display = 'none';
+      showState('checkedIn');
+    }
+
+    function handleCheckIn() {
+      showModal();
+    }
+
+    function handleCapture() {
+      // Flash effect
+      const flash = document.createElement('div');
+      flash.style.cssText = 'position: fixed; inset: 0; background: white; z-index: 1000; animation: flashAnim 200ms ease-out forwards;';
+      document.body.appendChild(flash);
+
+      const style = document.createElement('style');
+      style.textContent = '@keyframes flashAnim { from { opacity: 1; } to { opacity: 0; } }';
+      document.head.appendChild(style);
+
+      setTimeout(() => {
+        flash.remove();
+        style.remove();
+        showState('initial');
+        showModal();
+      }, 200);
+    }
+  </script>
+</body>
+</html>

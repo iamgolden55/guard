@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Attendance Dashboard - Security Staff v2</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+      background: #F0F4F8 !important;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ============================================
+       MOBILE CONTAINER
+       ============================================ */
+
+    .mobile-container {
+      max-width: 390px;
+      margin: 0 auto;
+      min-height: 100vh;
+      background: #F0F4F8;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* ============================================
+       HEADER ILLUSTRATION
+       ============================================ */
+
+    .header-illustration {
+      background: linear-gradient(135deg, #3949AB 0%, #5C6BC0 40%, #7986CB 100%);
+      height: 220px;
+      position: relative;
+      overflow: hidden;
+      border-radius: 0 0 32px 32px;
+    }
+
+    .header-illustration::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 100%;
+      height: 100%;
+      background:
+        linear-gradient(135deg, transparent 60%, rgba(255,255,255,0.05) 100%);
+    }
+
+    /* Geometric shapes in background */
+    .geo-shape {
+      position: absolute;
+      background: rgba(255,255,255,0.08);
+      border-radius: 4px;
+    }
+
+    /* ============================================
+       CHECK CARDS
+       ============================================ */
+
+    .check-card {
+      background: #FFFFFF;
+      border-radius: 16px;
+      padding: 16px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      transition: all 0.2s ease;
+      border: 2px solid transparent;
+    }
+
+    .check-card.active {
+      border-color: #3F51B5;
+    }
+
+    .check-card.completed {
+      background: #E8F5E9;
+      border-color: #4CAF50;
+    }
+
+    .check-card.disabled {
+      opacity: 0.9;
+    }
+
+    .card-illustration {
+      width: 100%;
+      height: 100px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ============================================
+       BUTTONS
+       ============================================ */
+
+    .btn-check {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 25px;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background: #3F51B5;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #303F9F;
+    }
+
+    .btn-success {
+      background: #4CAF50;
+      color: white;
+    }
+
+    .btn-outline {
+      background: #F5F5F5;
+      color: #9E9E9E;
+      border: 1px solid #E0E0E0;
+    }
+
+    .btn-outline-active {
+      background: #E8EAF6;
+      color: #3F51B5;
+      border: 1px solid #C5CAE9;
+    }
+
+    /* ============================================
+       STATS CARDS
+       ============================================ */
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: #FFFFFF;
+      border-radius: 16px;
+      padding: 16px 12px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 12px;
+    }
+
+    .stat-icon.blue {
+      background: #E8EAF6;
+      color: #3F51B5;
+    }
+
+    .stat-icon.green {
+      background: #E8F5E9;
+      color: #4CAF50;
+    }
+
+    .stat-icon.orange {
+      background: #FFF3E0;
+      color: #FF9800;
+    }
+
+    .stat-number {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1A1A1A;
+      line-height: 1.2;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #757575;
+      margin-top: 4px;
+    }
+
+    /* ============================================
+       FLOATING TAB BAR
+       ============================================ */
+
+    .tab-bar {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #FFFFFF;
+      border-radius: 20px;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+      z-index: 100;
+    }
+
+    .tab-item {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 14px;
+      border-radius: 14px;
+      color: #9E9E9E;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      gap: 6px;
+    }
+
+    .tab-item.active {
+      background: #3F51B5;
+      color: white;
+    }
+
+    .tab-item.active .tab-label {
+      display: inline;
+    }
+
+    .tab-label {
+      display: none;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    /* ============================================
+       MODAL
+       ============================================ */
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 200;
+      padding: 20px;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 28px;
+      width: 100%;
+      max-width: 360px;
+      padding: 24px;
+      text-align: center;
+      animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(50px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .modal-illustration {
+      width: 200px;
+      height: 160px;
+      margin: 0 auto 20px;
+    }
+
+    /* ============================================
+       STATE CONTROLS (Demo)
+       ============================================ */
+
+    .state-controls {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .state-btn {
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: #1a1a1a;
+      color: white;
+      transition: all 150ms ease;
+    }
+
+    .state-btn:hover {
+      background: #3F51B5;
+    }
+
+    .state-btn.active {
+      background: #3F51B5;
+    }
+
+    /* ============================================
+       CAMERA SCREEN
+       ============================================ */
+
+    .camera-screen {
+      background: #1a1a1a;
+      position: fixed;
+      inset: 0;
+      z-index: 150;
+    }
+
+    .camera-header {
+      display: flex;
+      align-items: center;
+      padding: 16px 20px;
+      padding-top: 50px;
+    }
+
+    .camera-title {
+      flex: 1;
+      text-align: center;
+      color: white;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .viewfinder-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .scan-label {
+      color: #9E9E9E;
+      font-size: 24px;
+      font-weight: 300;
+      letter-spacing: 8px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .scan-sublabel {
+      color: #5C6BC0;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+
+    .viewfinder-frame {
+      width: 260px;
+      height: 260px;
+      position: relative;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-radius: 24px;
+      overflow: hidden;
+    }
+
+    .corner-bracket {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      border-color: white;
+      border-style: solid;
+    }
+
+    .corner-bracket.tl {
+      top: -1px;
+      left: -1px;
+      border-width: 4px 0 0 4px;
+      border-radius: 16px 0 0 0;
+    }
+
+    .corner-bracket.tr {
+      top: -1px;
+      right: -1px;
+      border-width: 4px 4px 0 0;
+      border-radius: 0 16px 0 0;
+    }
+
+    .corner-bracket.bl {
+      bottom: -1px;
+      left: -1px;
+      border-width: 0 0 4px 4px;
+      border-radius: 0 0 0 16px;
+    }
+
+    .corner-bracket.br {
+      bottom: -1px;
+      right: -1px;
+      border-width: 0 4px 4px 0;
+      border-radius: 0 0 16px 0;
+    }
+
+    .scan-line {
+      position: absolute;
+      left: 10%;
+      right: 10%;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #5C6BC0, transparent);
+      animation: scanMove 2.5s ease-in-out infinite;
+      border-radius: 2px;
+    }
+
+    @keyframes scanMove {
+      0%, 100% { top: 15%; opacity: 0.4; }
+      50% { top: 85%; opacity: 1; }
+    }
+
+    .camera-hint {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.1);
+      padding: 12px 20px;
+      border-radius: 25px;
+      margin-top: 32px;
+      color: rgba(255,255,255,0.8);
+      font-size: 14px;
+    }
+
+    .flash-btn {
+      position: absolute;
+      bottom: 100px;
+      right: 30px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <!-- State Controls (Demo Only) -->
+  <div class="state-controls">
+    <button class="state-btn" onclick="showState('initial')">Initial</button>
+    <button class="state-btn active" onclick="showState('checkedIn')">Checked In</button>
+    <button class="state-btn" onclick="showState('completed')">Completed</button>
+    <button class="state-btn" onclick="showState('camera')">Camera</button>
+    <button class="state-btn" onclick="showModal()">Modal</button>
+  </div>
+
+  <!-- Mobile Container -->
+  <div class="mobile-container" id="mainScreen">
+
+    <!-- Header Illustration -->
+    <div class="header-illustration">
+      <!-- Geometric background shapes -->
+      <div class="geo-shape" style="width: 60px; height: 60px; top: 20px; right: 40px; transform: rotate(15deg);"></div>
+      <div class="geo-shape" style="width: 30px; height: 30px; top: 60px; right: 120px; transform: rotate(-10deg);"></div>
+      <div class="geo-shape" style="width: 40px; height: 40px; bottom: 80px; left: 30px; transform: rotate(25deg);"></div>
+
+      <!-- Main Illustration SVG -->
+      <svg width="100%" height="100%" viewBox="0 0 390 220" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMax meet">
+
+        <!-- Window Frame -->
+        <rect x="240" y="30" width="120" height="90" rx="8" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
+        <line x1="300" y1="30" x2="300" y2="120" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>
+        <line x1="240" y1="75" x2="360" y2="75" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>
+
+        <!-- Plant in window -->
+        <ellipse cx="270" cy="100" rx="15" ry="8" fill="#4CAF50" opacity="0.6"/>
+        <ellipse cx="265" cy="90" rx="8" ry="12" fill="#66BB6A" opacity="0.7"/>
+        <ellipse cx="275" cy="88" rx="6" ry="10" fill="#81C784" opacity="0.6"/>
+        <rect x="265" y="100" width="10" height="15" rx="2" fill="#8D6E63" opacity="0.6"/>
+
+        <!-- Desk 1 (Left) -->
+        <rect x="30" y="155" width="100" height="8" rx="2" fill="rgba(255,255,255,0.25)"/>
+        <rect x="40" y="163" width="8" height="35" rx="2" fill="rgba(255,255,255,0.2)"/>
+        <rect x="112" y="163" width="8" height="35" rx="2" fill="rgba(255,255,255,0.2)"/>
+
+        <!-- Monitor 1 -->
+        <rect x="50" y="115" width="60" height="40" rx="4" fill="#1A237E"/>
+        <rect x="54" y="119" width="52" height="32" rx="2" fill="#3F51B5"/>
+        <rect x="76" y="155" width="8" height="8" fill="rgba(255,255,255,0.2)"/>
+
+        <!-- Screen content (code lines) -->
+        <rect x="58" y="124" width="30" height="3" rx="1" fill="rgba(255,255,255,0.5)"/>
+        <rect x="58" y="130" width="44" height="3" rx="1" fill="rgba(255,255,255,0.3)"/>
+        <rect x="58" y="136" width="25" height="3" rx="1" fill="rgba(255,255,255,0.4)"/>
+        <rect x="58" y="142" width="38" height="3" rx="1" fill="rgba(255,255,255,0.3)"/>
+
+        <!-- Person 1 (Left - waving) -->
+        <circle cx="140" cy="110" r="18" fill="#FFCCBC"/>
+        <!-- Hair -->
+        <ellipse cx="140" cy="98" rx="16" ry="10" fill="#3E2723"/>
+        <!-- Body -->
+        <path d="M122 128 Q120 160 125 175 L155 175 Q160 160 158 128 Q150 122 140 122 Q130 122 122 128Z" fill="#3F51B5"/>
+        <!-- Arm waving -->
+        <path d="M158 130 Q175 115 180 95" stroke="#FFCCBC" stroke-width="8" stroke-linecap="round"/>
+        <!-- Hand -->
+        <circle cx="180" cy="92" r="8" fill="#FFCCBC"/>
+        <!-- Face details -->
+        <circle cx="134" cy="110" r="2" fill="#5D4037"/>
+        <circle cx="146" cy="110" r="2" fill="#5D4037"/>
+        <path d="M136 118 Q140 122 144 118" stroke="#5D4037" stroke-width="2" stroke-linecap="round" fill="none"/>
+
+        <!-- Desk 2 (Center) -->
+        <rect x="165" y="165" width="80" height="8" rx="2" fill="rgba(255,255,255,0.25)"/>
+        <rect x="175" y="173" width="6" height="30" rx="2" fill="rgba(255,255,255,0.2)"/>
+        <rect x="229" y="173" width="6" height="30" rx="2" fill="rgba(255,255,255,0.2)"/>
+
+        <!-- Monitor 2 -->
+        <rect x="180" y="125" width="50" height="35" rx="4" fill="#1A237E"/>
+        <rect x="184" y="129" width="42" height="27" rx="2" fill="#3F51B5"/>
+        <rect x="201" y="160" width="8" height="8" fill="rgba(255,255,255,0.2)"/>
+
+        <!-- Screen content -->
+        <rect x="188" y="134" width="25" height="3" rx="1" fill="rgba(255,255,255,0.5)"/>
+        <rect x="188" y="140" width="34" height="3" rx="1" fill="rgba(255,255,255,0.3)"/>
+        <rect x="188" y="146" width="20" height="3" rx="1" fill="rgba(255,255,255,0.4)"/>
+
+        <!-- Person 2 (Center - seated) -->
+        <circle cx="205" cy="95" r="16" fill="#FFE0B2"/>
+        <!-- Hair (female, long) -->
+        <path d="M189 90 Q185 75 195 70 Q205 65 215 70 Q225 75 221 90 Q220 100 218 108 L192 108 Q190 100 189 90Z" fill="#4E342E"/>
+        <!-- Body -->
+        <path d="M189 111 Q187 145 190 165 L220 165 Q223 145 221 111 Q213 105 205 105 Q197 105 189 111Z" fill="#5C6BC0"/>
+        <!-- Face details -->
+        <circle cx="200" cy="95" r="2" fill="#5D4037"/>
+        <circle cx="210" cy="95" r="2" fill="#5D4037"/>
+        <path d="M202 103 Q205 106 208 103" stroke="#5D4037" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+
+        <!-- Desk 3 (Right) -->
+        <rect x="265" y="155" width="100" height="8" rx="2" fill="rgba(255,255,255,0.25)"/>
+        <rect x="275" y="163" width="8" height="35" rx="2" fill="rgba(255,255,255,0.2)"/>
+        <rect x="347" y="163" width="8" height="35" rx="2" fill="rgba(255,255,255,0.2)"/>
+
+        <!-- Monitor 3 -->
+        <rect x="285" y="115" width="60" height="40" rx="4" fill="#1A237E"/>
+        <rect x="289" y="119" width="52" height="32" rx="2" fill="#3F51B5"/>
+        <rect x="311" y="155" width="8" height="8" fill="rgba(255,255,255,0.2)"/>
+
+        <!-- Screen content -->
+        <rect x="293" y="124" width="35" height="3" rx="1" fill="rgba(255,255,255,0.5)"/>
+        <rect x="293" y="130" width="44" height="3" rx="1" fill="rgba(255,255,255,0.3)"/>
+        <rect x="293" y="136" width="28" height="3" rx="1" fill="rgba(255,255,255,0.4)"/>
+
+        <!-- Person 3 (Right - working) -->
+        <circle cx="260" cy="115" r="15" fill="#D7CCC8"/>
+        <!-- Hair -->
+        <ellipse cx="260" cy="105" rx="13" ry="8" fill="#5D4037"/>
+        <!-- Body -->
+        <path d="M245 130 Q243 158 247 175 L273 175 Q277 158 275 130 Q268 125 260 125 Q252 125 245 130Z" fill="#7986CB"/>
+        <!-- Arms on desk -->
+        <ellipse cx="250" cy="155" rx="12" ry="6" fill="#D7CCC8"/>
+        <ellipse cx="270" cy="155" rx="12" ry="6" fill="#D7CCC8"/>
+        <!-- Face -->
+        <circle cx="255" cy="115" r="2" fill="#5D4037"/>
+        <circle cx="265" cy="115" r="2" fill="#5D4037"/>
+
+        <!-- Floor reflection -->
+        <ellipse cx="195" cy="200" rx="160" ry="15" fill="rgba(255,255,255,0.05)"/>
+
+      </svg>
+    </div>
+
+    <!-- Content Area -->
+    <div style="padding: 20px 16px; padding-bottom: 100px;">
+
+      <!-- Greeting Section -->
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+        <div>
+          <h1 style="font-size: 26px; font-weight: 700; color: #1A1A1A; margin-bottom: 4px;">Good Morning, John!</h1>
+          <p style="font-size: 14px; color: #757575;">Tuesday, 21 January 2026</p>
+        </div>
+        <img
+          src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face"
+          alt="Profile"
+          style="width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"
+        />
+      </div>
+
+      <!-- Check In/Out Cards -->
+      <div style="display: flex; gap: 12px; margin-bottom: 24px;">
+
+        <!-- Check In Card -->
+        <div class="check-card completed" id="checkInCard">
+          <div class="card-illustration">
+            <svg width="120" height="90" viewBox="0 0 120 90" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <!-- Desk -->
+              <rect x="10" y="65" width="100" height="6" rx="2" fill="#E8EAF6"/>
+              <rect x="20" y="71" width="6" height="18" rx="1" fill="#C5CAE9"/>
+              <rect x="94" y="71" width="6" height="18" rx="1" fill="#C5CAE9"/>
+
+              <!-- Monitor -->
+              <rect x="30" y="30" width="55" height="35" rx="3" fill="#1A237E"/>
+              <rect x="33" y="33" width="49" height="29" rx="2" fill="#3F51B5"/>
+              <rect x="54" y="65" width="7" height="6" fill="#C5CAE9"/>
+
+              <!-- Screen lines -->
+              <rect x="37" y="38" width="25" height="3" rx="1" fill="rgba(255,255,255,0.6)"/>
+              <rect x="37" y="44" width="40" height="3" rx="1" fill="rgba(255,255,255,0.4)"/>
+              <rect x="37" y="50" width="30" height="3" rx="1" fill="rgba(255,255,255,0.5)"/>
+
+              <!-- Person -->
+              <circle cx="95" cy="35" r="12" fill="#FFCCBC"/>
+              <ellipse cx="95" cy="27" rx="10" ry="6" fill="#5D4037"/>
+              <rect x="85" y="47" width="20" height="22" rx="4" fill="#3F51B5"/>
+
+              <!-- ID Badge -->
+              <rect x="91" y="52" width="8" height="10" rx="1" fill="#FFD54F"/>
+              <circle cx="95" cy="56" r="2" fill="#F57C00"/>
+            </svg>
+          </div>
+
+          <p style="font-size: 15px; font-weight: 600; color: #1A1A1A; text-align: center;">Check In</p>
+          <p id="checkInTime" style="font-size: 18px; font-weight: 700; color: #1A1A1A; text-align: center; margin: 4px 0 12px;">08:45 AM</p>
+
+          <button class="btn-check btn-success" id="checkInBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            DONE
+          </button>
+        </div>
+
+        <!-- Check Out Card -->
+        <div class="check-card" id="checkOutCard">
+          <div class="card-illustration">
+            <svg width="120" height="90" viewBox="0 0 120 90" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <!-- Desk -->
+              <rect x="10" y="65" width="100" height="6" rx="2" fill="#E8EAF6"/>
+              <rect x="20" y="71" width="6" height="18" rx="1" fill="#C5CAE9"/>
+              <rect x="94" y="71" width="6" height="18" rx="1" fill="#C5CAE9"/>
+
+              <!-- Monitor (dimmed) -->
+              <rect x="30" y="30" width="55" height="35" rx="3" fill="#78909C"/>
+              <rect x="33" y="33" width="49" height="29" rx="2" fill="#90A4AE"/>
+              <rect x="54" y="65" width="7" height="6" fill="#B0BEC5"/>
+
+              <!-- X on screen -->
+              <path d="M50 42 L65 57 M65 42 L50 57" stroke="#546E7A" stroke-width="3" stroke-linecap="round"/>
+
+              <!-- Person leaving -->
+              <circle cx="95" cy="35" r="12" fill="#FFCCBC"/>
+              <ellipse cx="95" cy="27" rx="10" ry="6" fill="#5D4037"/>
+              <rect x="85" y="47" width="20" height="22" rx="4" fill="#78909C"/>
+            </svg>
+          </div>
+
+          <p style="font-size: 15px; font-weight: 600; color: #1A1A1A; text-align: center;">Check Out</p>
+          <p id="checkOutTime" style="font-size: 18px; font-weight: 700; color: #9E9E9E; text-align: center; margin: 4px 0 12px;">--:--</p>
+
+          <button class="btn-check btn-primary" id="checkOutBtn" onclick="handleCheckOut()">
+            CHECK OUT
+          </button>
+        </div>
+      </div>
+
+      <!-- Today's Overview -->
+      <div style="margin-bottom: 16px;">
+        <h2 style="font-size: 18px; font-weight: 700; color: #1A1A1A;">Today's Overview</h2>
+      </div>
+
+      <div class="stats-grid">
+        <!-- Hours Today -->
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+          </div>
+          <p class="stat-number" id="hoursToday">2.5</p>
+          <p class="stat-label">Hours Today</p>
+        </div>
+
+        <!-- Checks Done -->
+        <div class="stat-card">
+          <div class="stat-icon green">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <path d="M22 4L12 14.01l-3-3"/>
+            </svg>
+          </div>
+          <p class="stat-number" id="checksDone">1</p>
+          <p class="stat-label">Checks Done</p>
+        </div>
+
+        <!-- Shifts This Week -->
+        <div class="stat-card">
+          <div class="stat-icon orange">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+          </div>
+          <p class="stat-number">3</p>
+          <p class="stat-label">Shifts This Wk</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Floating Tab Bar -->
+    <div class="tab-bar">
+      <a href="#" class="tab-item active">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+        </svg>
+        <span class="tab-label">Home</span>
+      </a>
+      <a href="#" class="tab-item">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <path d="M14 2v6h6"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+      </a>
+      <a href="#" class="tab-item">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10"/>
+          <line x1="12" y1="20" x2="12" y2="4"/>
+          <line x1="6" y1="20" x2="6" y2="14"/>
+        </svg>
+      </a>
+      <a href="#" class="tab-item">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+      </a>
+    </div>
+
+  </div>
+
+  <!-- Camera Screen -->
+  <div class="camera-screen hidden" id="cameraScreen">
+    <div class="camera-header">
+      <button onclick="showState('checkedIn')" style="width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.2); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+      <span class="camera-title">Scan QR code</span>
+      <div style="width: 40px;"></div>
+    </div>
+
+    <div class="viewfinder-area">
+      <p class="scan-label">SECURITY</p>
+      <p class="scan-sublabel">scan here</p>
+
+      <div class="viewfinder-frame">
+        <div class="corner-bracket tl"></div>
+        <div class="corner-bracket tr"></div>
+        <div class="corner-bracket bl"></div>
+        <div class="corner-bracket br"></div>
+        <div class="scan-line"></div>
+
+        <!-- QR placeholder -->
+        <div style="position: absolute; inset: 30px; background: rgba(255,255,255,0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+          <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1">
+            <rect x="3" y="3" width="7" height="7"/>
+            <rect x="14" y="3" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="camera-hint">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"/>
+          <rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/>
+          <rect x="14" y="14" width="7" height="7"/>
+        </svg>
+        Point camera at QR to Check In
+      </div>
+    </div>
+
+    <button class="flash-btn">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M7 2v11h3v9l7-12h-4l4-8z"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Success Modal -->
+  <div class="modal-backdrop hidden" id="successModal" style="display: none;">
+    <div class="modal-content">
+      <!-- Close button -->
+      <button onclick="hideModal()" style="position: absolute; top: 16px; right: 16px; background: none; border: none; cursor: pointer; padding: 8px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9E9E9E" stroke-width="2" stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+
+      <!-- Success checkmark -->
+      <div style="width: 64px; height: 64px; border-radius: 50%; background: #E8F5E9; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center;">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#4CAF50" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
+      </div>
+
+      <!-- Illustration -->
+      <div class="modal-illustration">
+        <svg width="200" height="140" viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Door frame -->
+          <rect x="100" y="20" width="80" height="110" rx="4" fill="#E8EAF6"/>
+          <rect x="105" y="25" width="70" height="100" rx="2" fill="#3F51B5"/>
+
+          <!-- Door window -->
+          <rect x="115" y="35" width="50" height="40" rx="2" fill="#7986CB"/>
+          <line x1="140" y1="35" x2="140" y2="75" stroke="#5C6BC0" stroke-width="2"/>
+          <line x1="115" y1="55" x2="165" y2="55" stroke="#5C6BC0" stroke-width="2"/>
+
+          <!-- Door handle -->
+          <circle cx="165" cy="85" r="5" fill="#FFD54F"/>
+
+          <!-- Arrow pointing out -->
+          <path d="M90 80 L70 80 L70 70 L50 85 L70 100 L70 90 L90 90 Z" fill="#4CAF50"/>
+
+          <!-- Person -->
+          <circle cx="45" cy="50" r="18" fill="#FFCCBC"/>
+          <ellipse cx="45" cy="38" rx="14" ry="8" fill="#5D4037"/>
+          <rect x="30" y="68" width="30" height="40" rx="6" fill="#3F51B5"/>
+
+          <!-- Phone in hand -->
+          <rect x="60" y="80" width="18" height="30" rx="3" fill="#1A237E"/>
+          <rect x="62" y="83" width="14" height="22" rx="2" fill="#3F51B5"/>
+
+          <!-- Hand -->
+          <ellipse cx="69" cy="95" rx="10" ry="8" fill="#FFCCBC"/>
+
+          <!-- Confetti -->
+          <circle cx="30" cy="30" r="3" fill="#4CAF50"/>
+          <circle cx="170" cy="25" r="4" fill="#FFD54F"/>
+          <rect x="25" y="45" width="6" height="6" rx="1" fill="#FF9800" transform="rotate(15 28 48)"/>
+          <rect x="160" y="50" width="5" height="5" rx="1" fill="#3F51B5" transform="rotate(-10 162 52)"/>
+          <circle cx="180" cy="70" r="3" fill="#4CAF50"/>
+          <circle cx="20" y="70" r="2" fill="#E91E63"/>
+        </svg>
+      </div>
+
+      <h2 style="font-size: 22px; font-weight: 700; color: #1A1A1A; margin-bottom: 8px;">Successfully Check Out!</h2>
+      <p style="font-size: 14px; color: #757575; margin-bottom: 24px; line-height: 1.5;">
+        You have successfully check out of your present! Good bye and have a good rest!
+      </p>
+
+      <button class="btn-check btn-primary" onclick="hideModal()" style="font-size: 15px; padding: 14px 24px;">
+        Back to home
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // State management
+    let currentState = 'checkedIn';
+
+    function showState(state) {
+      currentState = state;
+
+      // Update control buttons
+      document.querySelectorAll('.state-btn').forEach(btn => btn.classList.remove('active'));
+      if (event && event.target) event.target.classList.add('active');
+
+      // Hide screens
+      document.getElementById('mainScreen').style.display = 'block';
+      document.getElementById('cameraScreen').classList.add('hidden');
+      document.getElementById('successModal').style.display = 'none';
+
+      const checkInCard = document.getElementById('checkInCard');
+      const checkOutCard = document.getElementById('checkOutCard');
+      const checkInBtn = document.getElementById('checkInBtn');
+      const checkOutBtn = document.getElementById('checkOutBtn');
+      const checkInTime = document.getElementById('checkInTime');
+      const checkOutTime = document.getElementById('checkOutTime');
+      const hoursToday = document.getElementById('hoursToday');
+      const checksDone = document.getElementById('checksDone');
+
+      switch(state) {
+        case 'initial':
+          checkInCard.classList.remove('completed');
+          checkInCard.classList.add('active');
+          checkOutCard.classList.add('disabled');
+          checkOutCard.classList.remove('completed');
+
+          checkInBtn.className = 'btn-check btn-primary';
+          checkInBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M13.8 12H3"/></svg> Check In';
+
+          checkOutBtn.className = 'btn-check btn-outline';
+          checkOutBtn.textContent = 'Check Out';
+          checkOutBtn.disabled = true;
+
+          checkInTime.textContent = '--:-- AM';
+          checkInTime.style.color = '#9E9E9E';
+          checkOutTime.textContent = '--:--';
+          hoursToday.textContent = '0';
+          checksDone.textContent = '0';
+          break;
+
+        case 'checkedIn':
+          checkInCard.classList.add('completed');
+          checkInCard.classList.remove('active');
+          checkOutCard.classList.remove('disabled');
+          checkOutCard.classList.remove('completed');
+
+          checkInBtn.className = 'btn-check btn-success';
+          checkInBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> DONE';
+
+          checkOutBtn.className = 'btn-check btn-primary';
+          checkOutBtn.textContent = 'CHECK OUT';
+          checkOutBtn.disabled = false;
+
+          checkInTime.textContent = '08:45 AM';
+          checkInTime.style.color = '#1A1A1A';
+          checkOutTime.textContent = '--:--';
+          checkOutTime.style.color = '#9E9E9E';
+
+          hoursToday.textContent = '2.5';
+          checksDone.textContent = '1';
+          break;
+
+        case 'completed':
+          checkInCard.classList.add('completed');
+          checkInCard.classList.remove('active');
+          checkOutCard.classList.remove('disabled');
+          checkOutCard.classList.add('completed');
+
+          checkInBtn.className = 'btn-check btn-success';
+          checkInBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Done Check In';
+
+          checkOutBtn.className = 'btn-check btn-success';
+          checkOutBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Done Check Out';
+          checkOutBtn.disabled = true;
+
+          checkInTime.textContent = '10:05 AM';
+          checkInTime.style.color = '#1A1A1A';
+          checkOutTime.textContent = '05:05 PM';
+          checkOutTime.style.color = '#1A1A1A';
+
+          hoursToday.textContent = '7';
+          checksDone.textContent = '2';
+          break;
+
+        case 'camera':
+          document.getElementById('mainScreen').style.display = 'none';
+          document.getElementById('cameraScreen').classList.remove('hidden');
+          break;
+      }
+    }
+
+    function showModal() {
+      document.getElementById('successModal').style.display = 'flex';
+      document.querySelectorAll('.state-btn').forEach(btn => btn.classList.remove('active'));
+      if (event && event.target) event.target.classList.add('active');
+    }
+
+    function hideModal() {
+      document.getElementById('successModal').style.display = 'none';
+      showState('completed');
+    }
+
+    function handleCheckOut() {
+      showModal();
+    }
+
+    // Initialize
+    showState('checkedIn');
+  </script>
+</body>
+</html>

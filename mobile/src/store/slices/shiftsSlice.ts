@@ -3,6 +3,20 @@ import type { RootState } from '../index';
 import { shiftsService, PaginationParams } from '../../services/shiftsService';
 import { database } from '../../services/database';
 
+/**
+ * Co-worker interface for multi-staff shifts
+ */
+export interface Coworker {
+  id: number;
+  first_name: string;
+  last_name: string;
+  profile_photo?: string | null;
+  shift_id: number;
+  check_in_time?: string | null;
+  check_out_time?: string | null;
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'pending_approval' | 'approved';
+}
+
 export interface Shift {
   id: number;
   venue: {
@@ -44,6 +58,10 @@ export interface Shift {
   break_end_time?: string;
   notes?: string;
   sync_status: 'synced' | 'pending' | 'failed';
+
+  // Multi-staff shift fields
+  shift_group?: string | null;
+  coworkers?: Coworker[];
 
   // Transfer status fields
   pending_exchange?: {

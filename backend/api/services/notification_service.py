@@ -316,6 +316,43 @@ class PushNotificationService:
             channel_id='shift-reminders'
         )
 
+    def send_coworker_assignment_notification(
+        self,
+        user_id: int,
+        shift_id: int,
+        coworker_name: str,
+        venue_name: str,
+        shift_date: str,
+        shift_time: str
+    ) -> bool:
+        """
+        Send notification to staff member when a new co-worker is assigned to their grouped shift.
+
+        This notification informs existing staff in a multi-staff shift that a new
+        co-worker will be working with them.
+
+        Args:
+            user_id: Staff member to notify (existing assignee)
+            shift_id: The shift ID
+            coworker_name: Name of the newly assigned co-worker
+            venue_name: Venue of the shift
+            shift_date: Formatted date of the shift
+            shift_time: Formatted time of the shift
+        """
+        return self.send_notification(
+            user_id=user_id,
+            title="New Co-Worker Assigned",
+            body=f"{coworker_name} will be working with you at {venue_name} on {shift_date} at {shift_time}.",
+            data={
+                'type': 'coworker_assigned',
+                'notification_type': 'coworker_assigned',
+                'shiftId': shift_id,
+                'screen': 'ShiftDetails',
+            },
+            priority='default',
+            channel_id='shift-reminders'
+        )
+
     def _should_send_notification(self, user_id: int, notification_type: Optional[str] = None) -> bool:
         """
         Check if user preferences allow sending notification.

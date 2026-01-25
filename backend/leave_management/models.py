@@ -49,6 +49,7 @@ class LeaveType(TimestampedModel):
     )
     description = models.TextField(
         blank=True,
+        
         help_text="Detailed description of this leave type"
     )
     color_code = models.CharField(

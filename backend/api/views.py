@@ -16,6 +16,7 @@ from django_ratelimit.decorators import ratelimit
 from .compliance_performance_guide import CompliancePerformanceGuide
 # Create your views here.
 from rest_framework import viewsets, status, serializers, filters
+import django_filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import AuthenticationFailed, ValidationError
@@ -45,7 +46,9 @@ from .models import (
     # Notification models
     SNSDeviceToken, NotificationPreferences,
     # Password reset models
-    PasswordResetToken
+    PasswordResetToken,
+    # Leave/Availability models
+    ContractorUnavailability, BankHoliday, StaffLeaveDailyRate
 )
 from .serializers import (
     UserSerializer, StaffProfileSerializer, EmergencyContactSerializer,
@@ -65,7 +68,10 @@ from .serializers import (
     RegionalSetupSerializer, StaffConfigSerializer, IntegrationsSerializer,
     CompanyIntegrationSerializer, UserCompanyMembershipSerializer,
     # Notification serializers
-    SNSDeviceTokenSerializer, NotificationPreferencesSerializer
+    SNSDeviceTokenSerializer, NotificationPreferencesSerializer,
+    # Leave/Availability serializers
+    ContractorUnavailabilitySerializer, ContractorUnavailabilityCreateSerializer,
+    BankHolidaySerializer, StaffLeaveDailyRateSerializer, StaffLeaveDailyRateUpdateSerializer
 )
 
 User = get_user_model()
@@ -903,10 +909,13 @@ def payroll_generate(request):
                 continue
             
             # Generate new invoice for this staff member for the date range
+            # Mark as admin-generated since this is initiated from admin bulk payroll
             invoice = Invoice.generate_for_staff_period(
                 staff_user=staff_user,
                 start_date=start_date,
-                end_date=end_date
+                end_date=end_date,
+                source='admin',
+                created_by=request.user
             )
             
             if invoice:
@@ -1368,37 +1377,102 @@ class FireExitCheckViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = FireExitCheck.objects.all()
     serializer_class = FireExitCheckSerializer
-    
+
     def get_queryset(self):
-        queryset = super().get_queryset()
+        """
+        Filter checks by shift_id or shift_group.
+
+        For multi-staff shifts, using shift_group returns all checks from all
+        staff members in the group, enabling shared visibility of completed checks.
+        """
+        queryset = super().get_queryset().select_related('performed_by')
         shift_id = self.request.query_params.get('shift', None)
-        if shift_id:
-            queryset = queryset.filter(shift_id=shift_id)
-        return queryset
+        shift_group = self.request.query_params.get('shift_group', None)
+
+        if shift_group:
+            # Multi-staff: return all checks for the shift group
+            queryset = queryset.filter(shift_group=shift_group)
+        elif shift_id:
+            # Single staff or backward compatibility: filter by shift
+            # Check if this shift has a group, if so return all group checks
+            try:
+                shift = Shift.objects.get(id=shift_id)
+                if shift.shift_group:
+                    queryset = queryset.filter(shift_group=shift.shift_group)
+                else:
+                    queryset = queryset.filter(shift_id=shift_id)
+            except Shift.DoesNotExist:
+                queryset = queryset.filter(shift_id=shift_id)
+
+        return queryset.order_by('-timestamp')
+
 
 class CapacityCheckViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = CapacityCheck.objects.all()
     serializer_class = CapacityCheckSerializer
-    
+
     def get_queryset(self):
-        queryset = super().get_queryset()
+        """
+        Filter checks by shift_id or shift_group.
+
+        For multi-staff shifts, using shift_group returns all checks from all
+        staff members in the group, enabling shared visibility of completed checks.
+        """
+        queryset = super().get_queryset().select_related('performed_by')
         shift_id = self.request.query_params.get('shift', None)
-        if shift_id:
-            queryset = queryset.filter(shift_id=shift_id)
-        return queryset
+        shift_group = self.request.query_params.get('shift_group', None)
+
+        if shift_group:
+            # Multi-staff: return all checks for the shift group
+            queryset = queryset.filter(shift_group=shift_group)
+        elif shift_id:
+            # Single staff or backward compatibility: filter by shift
+            # Check if this shift has a group, if so return all group checks
+            try:
+                shift = Shift.objects.get(id=shift_id)
+                if shift.shift_group:
+                    queryset = queryset.filter(shift_group=shift.shift_group)
+                else:
+                    queryset = queryset.filter(shift_id=shift_id)
+            except Shift.DoesNotExist:
+                queryset = queryset.filter(shift_id=shift_id)
+
+        return queryset.order_by('-timestamp')
+
 
 class ToiletCheckViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = ToiletCheck.objects.all()
     serializer_class = ToiletCheckSerializer
-    
+
     def get_queryset(self):
-        queryset = super().get_queryset()
+        """
+        Filter checks by shift_id or shift_group.
+
+        For multi-staff shifts, using shift_group returns all checks from all
+        staff members in the group, enabling shared visibility of completed checks.
+        """
+        queryset = super().get_queryset().select_related('performed_by')
         shift_id = self.request.query_params.get('shift', None)
-        if shift_id:
-            queryset = queryset.filter(shift_id=shift_id)
-        return queryset
+        shift_group = self.request.query_params.get('shift_group', None)
+
+        if shift_group:
+            # Multi-staff: return all checks for the shift group
+            queryset = queryset.filter(shift_group=shift_group)
+        elif shift_id:
+            # Single staff or backward compatibility: filter by shift
+            # Check if this shift has a group, if so return all group checks
+            try:
+                shift = Shift.objects.get(id=shift_id)
+                if shift.shift_group:
+                    queryset = queryset.filter(shift_group=shift.shift_group)
+                else:
+                    queryset = queryset.filter(shift_id=shift_id)
+            except Shift.DoesNotExist:
+                queryset = queryset.filter(shift_id=shift_id)
+
+        return queryset.order_by('-timestamp')
 
 class ShiftExchangeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -1756,10 +1830,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         if user.role == 'staff':
-            # Staff can only see their own invoices
-            queryset = Invoice.objects.filter(staff_user=user)
+            # Staff can only see their own system-generated invoices
+            # Admin-generated invoices are excluded from staff view
+            queryset = Invoice.objects.filter(staff_user=user, source='system')
         elif user.role in ['manager', 'admin']:
-            # Managers and admins can see invoices for their company only
+            # Managers and admins can see all invoices for their company (including admin-generated)
             company = self.get_user_company(self.request)
             if not company:
                 # No company context, return empty queryset
@@ -1772,8 +1847,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
             queryset = Invoice.objects.filter(staff_user_id__in=company_staff_ids)
         else:
-            # Default to only user's own invoices
-            queryset = Invoice.objects.filter(staff_user=user)
+            # Default to only user's own system-generated invoices
+            queryset = Invoice.objects.filter(staff_user=user, source='system')
 
         # Filter by date range if provided
         start_date = self.request.query_params.get('start_date')
@@ -1793,7 +1868,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         
         # Base filtering (Role & Company) - logic duplicated from get_queryset to avoid Date filtering
         if user.role == 'staff':
-            base_queryset = Invoice.objects.filter(staff_user=user)
+            # Staff only see stats for system-generated invoices
+            base_queryset = Invoice.objects.filter(staff_user=user, source='system')
         elif user.role in ['manager', 'admin']:
             company = self.get_user_company(request)
             if not company:
@@ -1802,7 +1878,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 company_staff_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
                 base_queryset = Invoice.objects.filter(staff_user_id__in=company_staff_ids)
         else:
-            base_queryset = Invoice.objects.filter(staff_user=user)
+            # Default: only system-generated invoices
+            base_queryset = Invoice.objects.filter(staff_user=user, source='system')
         
         now = timezone.now()
         current_year = now.year
@@ -1895,9 +1972,15 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Generate the invoice
-            invoice = Invoice.generate_for_staff_period(staff_user, start_date, end_date)
-            
+            # Generate the invoice (admin-generated, so mark source as 'admin')
+            invoice = Invoice.generate_for_staff_period(
+                staff_user,
+                start_date,
+                end_date,
+                source='admin',
+                created_by=request.user
+            )
+
             # Serialize and return
             serializer = self.get_serializer(invoice)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -2008,14 +2091,21 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             if not staff_name:
                 staff_name = invoice.staff_user.username
             
+            # Get invoice items and calculate total leave days
+            invoice_items = invoice.items.all()
+            total_leave_days = invoice_items.filter(
+                item_type__in=['bank_holiday', 'annual_leave']
+            ).count()
+
             # Prepare context for template
             context = {
                 'invoice': invoice,
-                'invoice_items': invoice.items.all(),
+                'invoice_items': invoice_items,
                 'staff_name': staff_name,
                 'staff_profile': staff_profile,
+                'total_leave_days': total_leave_days if total_leave_days > 0 else None,
             }
-            
+
             # Render HTML template
             html_content = render_to_string('invoice_pdf.html', context)
             
@@ -2080,25 +2170,32 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                     if not staff_name:
                         staff_name = invoice.staff_user.username
                     
+                    # Get invoice items and calculate total leave days
+                    invoice_items = invoice.items.all()
+                    total_leave_days = invoice_items.filter(
+                        item_type__in=['bank_holiday', 'annual_leave']
+                    ).count()
+
                     # Prepare context for template
                     context = {
                         'invoice': invoice,
-                        'invoice_items': invoice.items.all(),
+                        'invoice_items': invoice_items,
                         'staff_name': staff_name,
                         'staff_profile': staff_profile,
+                        'total_leave_days': total_leave_days if total_leave_days > 0 else None,
                     }
-                    
+
                     # Render HTML template
                     html_content = render_to_string('invoice_pdf.html', context)
-                    
+
                     # Generate PDF from HTML
                     HTML(string=html_content).write_pdf(pdf_path)
-                    
+
                     # Update the invoice with the PDF URL
                     pdf_url = f"/api/v1/invoices/{invoice.id}/pdf/"
                     invoice.pdf_url = pdf_url
                     invoice.save()
-                    
+
                 except Exception as e:
                     logger.error(f"Error generating PDF on-demand for invoice {invoice.id}: {str(e)}")
                     raise Http404("Failed to generate PDF")
@@ -2770,6 +2867,120 @@ class FileUploadView(APIView):
             host = request.get_host()
             file_url = f"{scheme}://{host}{settings.MEDIA_URL}{encoded_path}"
         return Response({'url': file_url}, status=201)
+
+
+class ProfilePhotoUploadView(APIView):
+    """
+    Upload profile photo for the authenticated user's staff profile.
+    Accepts multipart form data with 'photo' field.
+    Returns the URL of the uploaded photo and updates the staff profile.
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    # Allowed image types
+    ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+    MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+    def sanitize_filename(self, filename):
+        """Sanitize filename for safe storage."""
+        name, ext = os.path.splitext(filename)
+        name = name.replace(' ', '_')
+        name = re.sub(r'[^\w\-.]', '_', name)
+        name = re.sub(r'_+', '_', name)
+        name = name.strip('_')
+        return f"{name}{ext}"
+
+    def post(self, request, format=None):
+        logger = logging.getLogger(__name__)
+        
+        # Get the photo file
+        photo = request.FILES.get('photo')
+        if not photo:
+            return Response(
+                {'error': 'No photo provided. Please upload an image file.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate file type
+        content_type = photo.content_type
+        if content_type not in self.ALLOWED_TYPES:
+            return Response(
+                {'error': f'Invalid file type: {content_type}. Allowed types: JPEG, PNG, GIF, WebP'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate file size
+        if photo.size > self.MAX_FILE_SIZE:
+            return Response(
+                {'error': f'File too large. Maximum size is {self.MAX_FILE_SIZE // (1024*1024)}MB'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Get or create staff profile for the user
+            profile, created = StaffProfile.objects.get_or_create(
+                user=request.user,
+                defaults={
+                    'phone_number': '',
+                    'date_of_birth': timezone.now().date(),
+                    'street': '',
+                    'city': '',
+                    'postal_code': '',
+                    'country': '',
+                }
+            )
+
+            # Generate unique filename to avoid conflicts
+            ext = os.path.splitext(photo.name)[1].lower()
+            unique_filename = f"user_{request.user.id}_{uuid.uuid4().hex[:8]}{ext}"
+            sanitized_filename = self.sanitize_filename(unique_filename)
+
+            # Save to profile_photos directory
+            upload_dir = 'profile_photos/'
+            file_path = os.path.join(upload_dir, sanitized_filename)
+            
+            # Save the file
+            path = default_storage.save(file_path, ContentFile(photo.read()))
+            
+            # Build the URL
+            encoded_path = quote(path, safe='/')
+            if settings.MEDIA_URL.startswith('http'):
+                file_url = settings.MEDIA_URL + encoded_path
+            else:
+                scheme = request.scheme
+                host = request.get_host()
+                file_url = f"{scheme}://{host}{settings.MEDIA_URL}{encoded_path}"
+
+            # Update the staff profile with the new photo URL
+            old_photo_url = profile.profile_image_url
+            profile.profile_image_url = file_url
+            profile.save(update_fields=['profile_image_url', 'updated_at'])
+
+            logger.info(f"Profile photo uploaded for user {request.user.id}: {file_url}")
+
+            # Optionally delete old photo file if it exists in our storage
+            if old_photo_url and 'profile_photos/' in old_photo_url:
+                try:
+                    old_path = old_photo_url.split('profile_photos/')[-1]
+                    old_file_path = f"profile_photos/{old_path}"
+                    if default_storage.exists(old_file_path):
+                        default_storage.delete(old_file_path)
+                        logger.info(f"Deleted old profile photo: {old_file_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete old profile photo: {e}")
+
+            return Response({
+                'url': file_url,
+                'message': 'Profile photo uploaded successfully'
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Failed to upload profile photo for user {request.user.id}: {e}")
+            return Response(
+                {'error': 'Failed to upload profile photo. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class EmploymentTypeViewSet(viewsets.ModelViewSet):
@@ -6578,3 +6789,373 @@ class PasswordResetConfirmView(APIView):
                 {'error': 'Invalid token'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+# =============================================================================
+# CONTRACTOR UNAVAILABILITY & LEAVE MANAGEMENT VIEWSETS
+# =============================================================================
+
+class ContractorUnavailabilityViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing contractor unavailability periods.
+
+    Staff can manage their own unavailability (no approval needed).
+    Admins can view all unavailability for their company.
+    """
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['staff_user', 'start_date', 'end_date']
+    ordering_fields = ['start_date', 'end_date', 'created_at']
+    ordering = ['-start_date']
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return ContractorUnavailabilityCreateSerializer
+        return ContractorUnavailabilitySerializer
+
+    def get_queryset(self):
+        user = self.request.user
+
+        # Get user's company
+        company = None
+        if hasattr(user, 'profile') and user.profile and user.profile.company:
+            company = user.profile.company
+
+        # Admins/managers can see all unavailability for their company
+        if user.is_superuser or (hasattr(user, 'profile') and user.profile.role in ['admin', 'manager']):
+            if company:
+                return ContractorUnavailability.objects.filter(company=company)
+            return ContractorUnavailability.objects.none()
+
+        # Regular staff can only see their own unavailability
+        return ContractorUnavailability.objects.filter(staff_user=user)
+
+    def perform_create(self, serializer):
+        """Create unavailability for the current user"""
+        user = self.request.user
+        company = None
+        if hasattr(user, 'profile') and user.profile and user.profile.company:
+            company = user.profile.company
+
+        serializer.save(staff_user=user, company=company)
+
+    def perform_update(self, serializer):
+        """Only allow users to update their own unavailability"""
+        if self.get_object().staff_user != self.request.user and not self.request.user.is_superuser:
+            raise ValidationError("You can only update your own unavailability")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        """Only allow users to delete their own unavailability"""
+        if instance.staff_user != self.request.user and not self.request.user.is_superuser:
+            raise ValidationError("You can only delete your own unavailability")
+        instance.delete()
+
+    @action(detail=False, methods=['get'])
+    def check(self, request):
+        """
+        Check if a user is available on a specific date.
+        Query params: date (YYYY-MM-DD), user_id (optional, admin only)
+        """
+        date_str = request.query_params.get('date')
+        if not date_str:
+            return Response(
+                {'error': 'date parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            check_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return Response(
+                {'error': 'Invalid date format. Use YYYY-MM-DD'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get user to check
+        user_id = request.query_params.get('user_id')
+        if user_id and (request.user.is_superuser or (hasattr(request.user, 'profile') and request.user.profile.role in ['admin', 'manager'])):
+            try:
+                check_user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                return Response(
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            check_user = request.user
+
+        is_available = ContractorUnavailability.is_user_available(check_user, check_date)
+
+        reason = ''
+        if not is_available:
+            unavailability = ContractorUnavailability.objects.filter(
+                staff_user=check_user,
+                start_date__lte=check_date,
+                end_date__gte=check_date
+            ).first()
+            if unavailability and unavailability.reason:
+                reason = unavailability.reason
+
+        return Response({
+            'date': date_str,
+            'user_id': check_user.id,
+            'is_available': is_available,
+            'reason': reason
+        })
+
+    @action(detail=False, methods=['get'])
+    def my_unavailability(self, request):
+        """Get the current user's upcoming unavailability periods"""
+        today = timezone.now().date()
+        queryset = ContractorUnavailability.objects.filter(
+            staff_user=request.user,
+            end_date__gte=today
+        ).order_by('start_date')
+
+        serializer = ContractorUnavailabilitySerializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+class BankHolidayFilter(django_filters.FilterSet):
+    """Custom filter for BankHoliday to handle year parameter."""
+    year = django_filters.NumberFilter(method='filter_year')
+
+    def filter_year(self, queryset, name, value):
+        return queryset.filter(date__year=value)
+
+    class Meta:
+        model = BankHoliday
+        fields = ['date', 'is_active', 'year']
+
+
+class BankHolidayViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing bank holidays.
+
+    Only admins can create/update/delete bank holidays.
+    All authenticated users can view bank holidays for their company.
+    """
+    serializer_class = BankHolidaySerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class = BankHolidayFilter  # Use custom filter instead of filterset_fields
+    ordering_fields = ['date', 'name']
+    ordering = ['date']
+
+    def get_queryset(self):
+        user = self.request.user
+
+        # Get user's company
+        company = None
+        if hasattr(user, 'profile') and user.profile and user.profile.company:
+            company = user.profile.company
+
+        if company:
+            return BankHoliday.objects.filter(company=company)
+        else:
+            return BankHoliday.objects.none()
+        # Note: year filtering is now handled by BankHolidayFilter
+
+    def check_admin_permission(self):
+        """Check if user has admin permissions"""
+        user = self.request.user
+        if not user.is_superuser and not (hasattr(user, 'profile') and user.profile.role == 'admin'):
+            raise ValidationError("Only admins can manage bank holidays")
+
+    def perform_create(self, serializer):
+        self.check_admin_permission()
+
+        user = self.request.user
+        company = None
+        if hasattr(user, 'profile') and user.profile and user.profile.company:
+            company = user.profile.company
+
+        if not company:
+            raise ValidationError("User is not associated with a company")
+
+        serializer.save(company=company)
+
+    def perform_update(self, serializer):
+        self.check_admin_permission()
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self.check_admin_permission()
+        instance.delete()
+
+    @action(detail=False, methods=['post'])
+    def populate_uk_defaults(self, request):
+        """
+        Populate UK bank holidays for a given year.
+        Query params: year (optional, defaults to current year)
+        """
+        self.check_admin_permission()
+
+        user = request.user
+        company = None
+        if hasattr(user, 'profile') and user.profile and user.profile.company:
+            company = user.profile.company
+
+        if not company:
+            return Response(
+                {'error': 'User is not associated with a company'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        year = request.data.get('year')
+        if year:
+            try:
+                year = int(year)
+            except ValueError:
+                return Response(
+                    {'error': 'Invalid year format'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        created_holidays = BankHoliday.populate_uk_defaults(company, year)
+
+        return Response({
+            'message': f'Created {len(created_holidays)} bank holidays',
+            'holidays': BankHolidaySerializer(created_holidays, many=True).data
+        })
+
+    @action(detail=False, methods=['get'])
+    def upcoming(self, request):
+        """Get upcoming bank holidays for the user's company"""
+        today = timezone.now().date()
+        queryset = self.get_queryset().filter(
+            date__gte=today,
+            is_active=True
+        ).order_by('date')[:10]
+
+        serializer = BankHolidaySerializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+class StaffLeaveDailyRateViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing staff leave daily rates.
+
+    Only admins can view and manage daily rates.
+    """
+    serializer_class = StaffLeaveDailyRateSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['staff_user']
+    ordering_fields = ['staff_user__username', 'daily_rate', 'effective_from']
+    ordering = ['staff_user__username']
+
+    def get_queryset(self):
+        user = self.request.user
+
+        # Only admins can view daily rates
+        if not user.is_superuser and not (hasattr(user, 'profile') and user.profile.role == 'admin'):
+            return StaffLeaveDailyRate.objects.none()
+
+        # Get user's company
+        company = None
+        if hasattr(user, 'profile') and user.profile and user.profile.company:
+            company = user.profile.company
+
+        if company:
+            return StaffLeaveDailyRate.objects.filter(company=company)
+        return StaffLeaveDailyRate.objects.none()
+
+    def get_serializer_class(self):
+        if self.action in ['update', 'partial_update']:
+            return StaffLeaveDailyRateUpdateSerializer
+        return StaffLeaveDailyRateSerializer
+
+    def check_admin_permission(self):
+        """Check if user has admin permissions"""
+        user = self.request.user
+        if not user.is_superuser and not (hasattr(user, 'profile') and user.profile.role == 'admin'):
+            raise ValidationError("Only admins can manage staff leave daily rates")
+
+    def perform_create(self, serializer):
+        self.check_admin_permission()
+
+        user = self.request.user
+        company = None
+        if hasattr(user, 'profile') and user.profile and user.profile.company:
+            company = user.profile.company
+
+        if not company:
+            raise ValidationError("User is not associated with a company")
+
+        serializer.save(company=company, updated_by=user)
+
+    def perform_update(self, serializer):
+        self.check_admin_permission()
+        serializer.save(updated_by=self.request.user)
+
+    def perform_destroy(self, instance):
+        self.check_admin_permission()
+        instance.delete()
+
+    @action(detail=False, methods=['get'], url_path='by-user/(?P<user_id>[^/.]+)')
+    def by_user(self, request, user_id=None):
+        """Get or create daily rate for a specific user"""
+        self.check_admin_permission()
+
+        try:
+            staff_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        try:
+            rate = StaffLeaveDailyRate.objects.get(staff_user=staff_user)
+            serializer = StaffLeaveDailyRateSerializer(rate)
+            return Response(serializer.data)
+        except StaffLeaveDailyRate.DoesNotExist:
+            return Response(
+                {'message': 'No daily rate set for this user'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['put'], url_path='set-rate/(?P<user_id>[^/.]+)')
+    def set_rate(self, request, user_id=None):
+        """Set or update daily rate for a specific user"""
+        self.check_admin_permission()
+
+        try:
+            staff_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        user = request.user
+        company = None
+        if hasattr(user, 'profile') and user.profile and user.profile.company:
+            company = user.profile.company
+
+        if not company:
+            return Response(
+                {'error': 'User is not associated with a company'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = StaffLeaveDailyRateUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        rate, created = StaffLeaveDailyRate.objects.update_or_create(
+            staff_user=staff_user,
+            defaults={
+                'company': company,
+                'daily_rate': serializer.validated_data['daily_rate'],
+                'effective_from': serializer.validated_data['effective_from'],
+                'updated_by': user
+            }
+        )
+
+        return Response({
+            'message': 'Daily rate created' if created else 'Daily rate updated',
+            'data': StaffLeaveDailyRateSerializer(rate).data
+        })

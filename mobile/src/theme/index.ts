@@ -7,6 +7,7 @@ export { colors } from './colors';
 export { fonts, textStyles } from './typography';
 export { spacing } from './spacing';
 export { layout } from './layout';
+export { uberColors, uberShadows, uberRadius, uberTypography } from './uberTheme';
 
 export type { Colors } from './colors';
 export type { TextStyles } from './typography';

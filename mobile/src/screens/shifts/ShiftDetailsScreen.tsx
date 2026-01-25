@@ -926,6 +926,70 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
           />
         )}
 
+        {/* Team Section - Multi-staff Shifts */}
+        {shift.coworkers && shift.coworkers.length > 0 && (
+          <>
+            <Text style={styles.sectionHeading}>Your Team</Text>
+            <View style={styles.teamContainer}>
+              {shift.coworkers.map((coworker) => {
+                // Determine co-worker status
+                let statusColor = colors.gray[400];
+                let statusText = 'Scheduled';
+                let statusIcon: keyof typeof Ionicons.glyphMap = 'time-outline';
+
+                if (coworker.check_out_time) {
+                  statusColor = colors.gray[600];
+                  statusText = 'Completed';
+                  statusIcon = 'checkmark-done-circle';
+                } else if (coworker.check_in_time) {
+                  statusColor = colors.success;
+                  statusText = 'Checked In';
+                  statusIcon = 'checkmark-circle';
+                }
+
+                return (
+                  <View key={coworker.id} style={styles.teamMemberCard}>
+                    {/* Avatar */}
+                    <View style={styles.teamMemberAvatar}>
+                      {coworker.profile_photo ? (
+                        <Image
+                          source={{ uri: coworker.profile_photo }}
+                          style={styles.teamMemberImage}
+                        />
+                      ) : (
+                        <View style={styles.teamMemberInitials}>
+                          <Text style={styles.teamMemberInitialsText}>
+                            {coworker.first_name?.charAt(0)}
+                            {coworker.last_name?.charAt(0)}
+                          </Text>
+                        </View>
+                      )}
+                      {/* Status indicator dot */}
+                      <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                    </View>
+
+                    {/* Name and Status */}
+                    <View style={styles.teamMemberInfo}>
+                      <Text style={styles.teamMemberName}>
+                        {coworker.first_name} {coworker.last_name}
+                      </Text>
+                      <View style={styles.teamMemberStatus}>
+                        <Ionicons name={statusIcon} size={14} color={statusColor} />
+                        <Text style={[styles.teamMemberStatusText, { color: statusColor }]}>
+                          {statusText}
+                          {coworker.check_in_time && !coworker.check_out_time && (
+                            <Text> · {new Date(coworker.check_in_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</Text>
+                          )}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        )}
+
         {/* Required Checks Section */}
         {(shift.venue.requires_fire_exit_check ||
         shift.venue.requires_capacity_check ||
@@ -1512,6 +1576,68 @@ const styles = StyleSheet.create({
   },
   dangerActionText: {
     color: colors.error,
+  },
+  // Team Section Styles
+  teamContainer: {
+    width: '100%',
+    gap: spacing.base,
+    marginBottom: spacing.xl,
+  },
+  teamMemberCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: spacing.base,
+    gap: spacing.base,
+  },
+  teamMemberAvatar: {
+    position: 'relative',
+  },
+  teamMemberImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  teamMemberInitials: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#E8F0FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  teamMemberInitialsText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  statusDot: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#F8F9FA',
+  },
+  teamMemberInfo: {
+    flex: 1,
+  },
+  teamMemberName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: 2,
+  },
+  teamMemberStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  teamMemberStatusText: {
+    fontSize: 14,
   },
   loadingContainer: {
     flex: 1,

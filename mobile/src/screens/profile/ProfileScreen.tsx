@@ -13,6 +13,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
 import { useAppSelector, useAppDispatch } from '../../hooks/useRedux';
 import { selectCurrentUser, fetchUserProfile } from '../../store/slices/authSlice';
+import { useFocusEffect } from '@react-navigation/native';
 import { resetOnboarding } from '../../store/slices/onboardingSlice';
 import { fetchShifts } from '../../store/slices/shiftsSlice';
 import { colors, spacing, layout } from '../../theme';
@@ -35,6 +36,14 @@ export const ProfileScreen = () => {
     logger.info('Profile screen viewed');
   }, []);
 
+  // Refresh profile data when screen comes into focus (e.g., returning from EditProfile)
+  useFocusEffect(
+    React.useCallback(() => {
+      logger.info('[Profile] Screen focused - refreshing profile data');
+      dispatch(fetchUserProfile());
+    }, [dispatch])
+  );
+
   // Format date
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
@@ -45,10 +54,18 @@ export const ProfileScreen = () => {
     });
   };
 
+  // Get staff profile for easier access
+  const staffProfile = user?.staff_profile;
+  const siaLicenses = staffProfile?.sia_licenses || [];
+
+  // Determine employment category for conditional navigation
+  const employmentCategory = staffProfile?.employment_type?.employment_category;
+  const isContractor = employmentCategory === 'contractor' || employmentCategory === 'temporary';
+
   // Check if SIA license is expiring soon (within 30 days)
   const isLicenseExpiringSoon = () => {
-    if (!user?.sia_licenses || user.sia_licenses.length === 0) return false;
-    const license = user.sia_licenses[0];
+    if (siaLicenses.length === 0) return false;
+    const license = siaLicenses[0];
     if (!license.expiry_date) return false;
 
     const expiryDate = new Date(license.expiry_date);
@@ -62,8 +79,8 @@ export const ProfileScreen = () => {
 
   // Check if license is expired
   const isLicenseExpired = () => {
-    if (!user?.sia_licenses || user.sia_licenses.length === 0) return false;
-    const license = user.sia_licenses[0];
+    if (siaLicenses.length === 0) return false;
+    const license = siaLicenses[0];
     if (!license.expiry_date) return false;
 
     return new Date(license.expiry_date) < new Date();
@@ -176,7 +193,7 @@ export const ProfileScreen = () => {
     );
   }
 
-  const siaLicense = user.sia_licenses?.[0];
+  const siaLicense = siaLicenses[0];
   const licenseExpired = isLicenseExpired();
   const licenseExpiringSoon = isLicenseExpiringSoon();
 
@@ -195,8 +212,8 @@ export const ProfileScreen = () => {
         {/* Hero Profile Photo */}
         <TouchableOpacity onPress={handleEditProfile} style={styles.photoWrapper}>
           <View style={styles.photoContainer}>
-            {user.profile_photo ? (
-              <Image source={{ uri: user.profile_photo }} style={styles.photo} />
+            {staffProfile?.profile_image_url ? (
+              <Image source={{ uri: staffProfile.profile_image_url }} style={styles.photo} />
             ) : (
               <LinearGradient
                 colors={['#667EEA', '#764BA2']}
@@ -276,53 +293,76 @@ export const ProfileScreen = () => {
             <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.actionItem}
-            onPress={() => navigation.navigate('LeaveBalance')}
-          >
-            <View style={styles.actionIconCircle}>
-              <Ionicons name="calendar" size={22} color="#0066FF" />
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Leave Balance</Text>
-              <Text style={styles.actionDescription}>
-                View your available leave days and balances
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
-          </TouchableOpacity>
+          {/* Conditional: Leave Management for permanent, Availability for contractors */}
+          {isContractor ? (
+            // Contractor/Temporary: Show Manage Availability
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={() => navigation.navigate('ContractorUnavailability')}
+            >
+              <View style={styles.actionIconCircle}>
+                <Ionicons name="calendar-outline" size={22} color="#0066FF" />
+              </View>
+              <View style={styles.actionContent}>
+                <Text style={styles.actionTitle}>Manage Availability</Text>
+                <Text style={styles.actionDescription}>
+                  Mark dates when you're unavailable for shifts
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+            </TouchableOpacity>
+          ) : (
+            // Permanent: Show Leave Management options
+            <>
+              <TouchableOpacity
+                style={styles.actionItem}
+                onPress={() => navigation.navigate('LeaveBalance')}
+              >
+                <View style={styles.actionIconCircle}>
+                  <Ionicons name="calendar" size={22} color="#0066FF" />
+                </View>
+                <View style={styles.actionContent}>
+                  <Text style={styles.actionTitle}>Leave Balance</Text>
+                  <Text style={styles.actionDescription}>
+                    View your available leave days and balances
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.actionItem}
-            onPress={() => navigation.navigate('LeaveRequest')}
-          >
-            <View style={styles.actionIconCircle}>
-              <Ionicons name="add-circle" size={22} color="#0066FF" />
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Request Leave</Text>
-              <Text style={styles.actionDescription}>
-                Submit a new leave request for approval
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionItem}
+                onPress={() => navigation.navigate('LeaveRequest')}
+              >
+                <View style={styles.actionIconCircle}>
+                  <Ionicons name="add-circle" size={22} color="#0066FF" />
+                </View>
+                <View style={styles.actionContent}>
+                  <Text style={styles.actionTitle}>Request Leave</Text>
+                  <Text style={styles.actionDescription}>
+                    Submit a new leave request for approval
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.actionItem}
-            onPress={() => navigation.navigate('LeaveHistory')}
-          >
-            <View style={styles.actionIconCircle}>
-              <Ionicons name="document-text" size={22} color="#0066FF" />
-            </View>
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Leave History</Text>
-              <Text style={styles.actionDescription}>
-                View and manage your leave requests
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionItem}
+                onPress={() => navigation.navigate('LeaveHistory')}
+              >
+                <View style={styles.actionIconCircle}>
+                  <Ionicons name="document-text" size={22} color="#0066FF" />
+                </View>
+                <View style={styles.actionContent}>
+                  <Text style={styles.actionTitle}>Leave History</Text>
+                  <Text style={styles.actionDescription}>
+                    View and manage your leave requests
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+              </TouchableOpacity>
+            </>
+          )}
 
           <TouchableOpacity style={styles.actionItem} onPress={handleEditProfile}>
             <View style={styles.actionIconCircle}>
@@ -337,14 +377,14 @@ export const ProfileScreen = () => {
             <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
           </TouchableOpacity>
 
-          {user.phone_number && (
+          {staffProfile?.phone_number && (
             <View style={styles.actionItem}>
               <View style={styles.actionIconCircle}>
                 <Ionicons name="call" size={22} color="#0066FF" />
               </View>
               <View style={styles.actionContent}>
                 <Text style={styles.actionTitle}>Phone Number</Text>
-                <Text style={styles.actionDescription}>{user.phone_number}</Text>
+                <Text style={styles.actionDescription}>{staffProfile.phone_number}</Text>
               </View>
             </View>
           )}

@@ -39226,3 +39226,993 @@ api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the
 Processed 0 auto-checkouts out of 0 eligible shifts
 2026-01-11 14:00:02 - Auto-checkout processing completed successfully
 2026-01-11 14:00:02 - Auto-checkout processing finished
+2026-01-19 22:45:00 - Starting auto-checkout processing
+2026-01-19 22:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-19 22:45:05 - Auto-checkout processing completed successfully
+2026-01-19 22:45:05 - Auto-checkout processing finished
+2026-01-19 23:00:00 - Starting auto-checkout processing
+2026-01-19 23:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-19 23:00:06 - Auto-checkout processing completed successfully
+2026-01-19 23:00:06 - Auto-checkout processing finished
+2026-01-19 23:15:00 - Starting auto-checkout processing
+2026-01-19 23:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-19 23:15:05 - Auto-checkout processing completed successfully
+2026-01-19 23:15:05 - Auto-checkout processing finished
+2026-01-19 23:30:01 - Starting auto-checkout processing
+2026-01-19 23:30:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-19 23:30:07 - Auto-checkout processing completed successfully
+2026-01-19 23:30:07 - Auto-checkout processing finished
+2026-01-19 23:45:00 - Starting auto-checkout processing
+2026-01-19 23:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-19 23:45:06 - Auto-checkout processing completed successfully
+2026-01-19 23:45:06 - Auto-checkout processing finished
+2026-01-20 00:00:00 - Starting auto-checkout processing
+2026-01-20 00:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 00:00:07 - Auto-checkout processing completed successfully
+2026-01-20 00:00:07 - Auto-checkout processing finished
+2026-01-20 00:49:00 - Starting auto-checkout processing
+2026-01-20 00:49:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 00:51:13 - Auto-checkout processing completed successfully
+2026-01-20 00:51:13 - Auto-checkout processing finished
+2026-01-20 01:00:12 - Starting auto-checkout processing
+2026-01-20 01:00:12 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 01:01:31 - Auto-checkout processing completed successfully
+2026-01-20 01:01:31 - Auto-checkout processing finished
+2026-01-20 01:15:39 - Starting auto-checkout processing
+2026-01-20 01:15:39 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 01:15:44 - Auto-checkout processing completed successfully
+2026-01-20 01:15:44 - Auto-checkout processing finished
+2026-01-20 01:30:00 - Starting auto-checkout processing
+2026-01-20 01:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 01:30:06 - Auto-checkout processing completed successfully
+2026-01-20 01:30:06 - Auto-checkout processing finished
+2026-01-20 15:15:00 - Starting auto-checkout processing
+2026-01-20 15:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 15:15:06 - Auto-checkout processing completed successfully
+2026-01-20 15:15:06 - Auto-checkout processing finished
+2026-01-20 15:30:00 - Starting auto-checkout processing
+2026-01-20 15:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 15:30:05 - Auto-checkout processing completed successfully
+2026-01-20 15:30:05 - Auto-checkout processing finished
+2026-01-20 15:45:00 - Starting auto-checkout processing
+2026-01-20 15:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 15:45:04 - Auto-checkout processing completed successfully
+2026-01-20 15:45:04 - Auto-checkout processing finished
+2026-01-20 16:00:01 - Starting auto-checkout processing
+2026-01-20 16:00:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 16:00:05 - Auto-checkout processing completed successfully
+2026-01-20 16:00:05 - Auto-checkout processing finished
+2026-01-20 16:15:00 - Starting auto-checkout processing
+2026-01-20 16:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 16:15:07 - Auto-checkout processing completed successfully
+2026-01-20 16:15:07 - Auto-checkout processing finished
+2026-01-20 16:30:00 - Starting auto-checkout processing
+2026-01-20 16:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 16:30:07 - Auto-checkout processing completed successfully
+2026-01-20 16:30:07 - Auto-checkout processing finished
+2026-01-20 16:45:01 - Starting auto-checkout processing
+2026-01-20 16:45:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 16:45:05 - Auto-checkout processing completed successfully
+2026-01-20 16:45:05 - Auto-checkout processing finished
+2026-01-20 17:00:00 - Starting auto-checkout processing
+2026-01-20 17:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 17:00:06 - Auto-checkout processing completed successfully
+2026-01-20 17:00:06 - Auto-checkout processing finished
+2026-01-20 17:15:00 - Starting auto-checkout processing
+2026-01-20 17:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 17:15:06 - Auto-checkout processing completed successfully
+2026-01-20 17:15:06 - Auto-checkout processing finished
+2026-01-20 17:30:00 - Starting auto-checkout processing
+2026-01-20 17:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 17:30:06 - Auto-checkout processing completed successfully
+2026-01-20 17:30:06 - Auto-checkout processing finished
+2026-01-20 17:45:00 - Starting auto-checkout processing
+2026-01-20 17:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 17:45:05 - Auto-checkout processing completed successfully
+2026-01-20 17:45:05 - Auto-checkout processing finished
+2026-01-20 18:00:00 - Starting auto-checkout processing
+2026-01-20 18:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 18:00:05 - Auto-checkout processing completed successfully
+2026-01-20 18:00:05 - Auto-checkout processing finished
+2026-01-20 18:15:00 - Starting auto-checkout processing
+2026-01-20 18:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 18:15:04 - Auto-checkout processing completed successfully
+2026-01-20 18:15:04 - Auto-checkout processing finished
+2026-01-20 21:45:01 - Starting auto-checkout processing
+2026-01-20 21:45:02 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 21:45:07 - Auto-checkout processing completed successfully
+2026-01-20 21:45:07 - Auto-checkout processing finished
+2026-01-20 22:00:00 - Starting auto-checkout processing
+2026-01-20 22:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 22:00:05 - Auto-checkout processing completed successfully
+2026-01-20 22:00:05 - Auto-checkout processing finished
+2026-01-20 22:15:12 - Starting auto-checkout processing
+2026-01-20 22:15:12 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 22:15:34 - Auto-checkout processing completed successfully
+2026-01-20 22:15:34 - Auto-checkout processing finished
+2026-01-20 22:46:37 - Starting auto-checkout processing
+2026-01-20 22:46:37 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-20 22:46:43 - Auto-checkout processing completed successfully
+2026-01-20 22:46:43 - Auto-checkout processing finished
+2026-01-21 00:45:00 - Starting auto-checkout processing
+2026-01-21 00:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 00:45:05 - Auto-checkout processing completed successfully
+2026-01-21 00:45:05 - Auto-checkout processing finished
+2026-01-21 01:00:00 - Starting auto-checkout processing
+2026-01-21 01:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 01:00:06 - Auto-checkout processing completed successfully
+2026-01-21 01:00:06 - Auto-checkout processing finished
+2026-01-21 01:15:00 - Starting auto-checkout processing
+2026-01-21 01:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 01:15:07 - Auto-checkout processing completed successfully
+2026-01-21 01:15:07 - Auto-checkout processing finished
+2026-01-21 01:30:00 - Starting auto-checkout processing
+2026-01-21 01:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 01:30:08 - Auto-checkout processing completed successfully
+2026-01-21 01:30:09 - Auto-checkout processing finished
+2026-01-21 01:45:01 - Starting auto-checkout processing
+2026-01-21 01:45:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 01:45:13 - Auto-checkout processing completed successfully
+2026-01-21 01:45:13 - Auto-checkout processing finished
+2026-01-21 02:00:00 - Starting auto-checkout processing
+2026-01-21 02:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+FORCE TIMEOUT auto-checkout performed for shift 462 - Staff: eruwagolden55, Venue: HOUSE 829 FILTON, Excessive overtime detected
+AUTO-CHECKOUT: Shift 462 - eruwagolden55 at HOUSE 829 FILTON
+Processed 1 auto-checkouts out of 1 eligible shifts
+2026-01-21 02:00:10 - Auto-checkout processing completed successfully
+2026-01-21 02:00:10 - Auto-checkout processing finished
+2026-01-21 02:15:00 - Starting auto-checkout processing
+2026-01-21 02:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+FORCE TIMEOUT auto-checkout performed for shift 461 - Staff: James44, Venue: 20 St Thomas Street, Excessive overtime detected
+AUTO-CHECKOUT: Shift 461 - James44 at 20 St Thomas Street
+Processed 1 auto-checkouts out of 1 eligible shifts
+2026-01-21 02:15:10 - Auto-checkout processing completed successfully
+2026-01-21 02:15:10 - Auto-checkout processing finished
+2026-01-21 02:30:00 - Starting auto-checkout processing
+2026-01-21 02:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 02:30:10 - Auto-checkout processing completed successfully
+2026-01-21 02:30:10 - Auto-checkout processing finished
+2026-01-21 02:45:00 - Starting auto-checkout processing
+2026-01-21 02:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 02:45:09 - Auto-checkout processing completed successfully
+2026-01-21 02:45:09 - Auto-checkout processing finished
+2026-01-21 03:00:01 - Starting auto-checkout processing
+2026-01-21 03:00:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 03:00:14 - Auto-checkout processing completed successfully
+2026-01-21 03:00:14 - Auto-checkout processing finished
+2026-01-21 03:15:00 - Starting auto-checkout processing
+2026-01-21 03:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 03:15:09 - Auto-checkout processing completed successfully
+2026-01-21 03:15:09 - Auto-checkout processing finished
+2026-01-21 03:30:00 - Starting auto-checkout processing
+2026-01-21 03:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 03:30:09 - Auto-checkout processing completed successfully
+2026-01-21 03:30:09 - Auto-checkout processing finished
+2026-01-21 03:45:00 - Starting auto-checkout processing
+2026-01-21 03:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 03:45:09 - Auto-checkout processing completed successfully
+2026-01-21 03:45:09 - Auto-checkout processing finished
+2026-01-21 04:00:00 - Starting auto-checkout processing
+2026-01-21 04:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 04:00:09 - Auto-checkout processing completed successfully
+2026-01-21 04:00:09 - Auto-checkout processing finished
+2026-01-21 04:15:00 - Starting auto-checkout processing
+2026-01-21 04:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 04:15:09 - Auto-checkout processing completed successfully
+2026-01-21 04:15:09 - Auto-checkout processing finished
+2026-01-21 04:30:00 - Starting auto-checkout processing
+2026-01-21 04:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 04:30:10 - Auto-checkout processing completed successfully
+2026-01-21 04:30:10 - Auto-checkout processing finished
+2026-01-21 04:45:00 - Starting auto-checkout processing
+2026-01-21 04:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 04:45:09 - Auto-checkout processing completed successfully
+2026-01-21 04:45:09 - Auto-checkout processing finished
+2026-01-21 05:20:40 - Starting auto-checkout processing
+2026-01-21 05:20:40 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 05:54:05 - Auto-checkout processing completed successfully
+2026-01-21 05:54:05 - Auto-checkout processing finished
+2026-01-21 17:15:00 - Starting auto-checkout processing
+2026-01-21 17:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+AUTO-CHECKOUT: Shift 467 - eruwagolden55 at HOUSE 829 FILTON
+Processed 1 auto-checkouts out of 1 eligible shifts
+2026-01-21 17:15:12 - Auto-checkout processing completed successfully
+2026-01-21 17:15:12 - Auto-checkout processing finished
+2026-01-21 17:30:00 - Starting auto-checkout processing
+2026-01-21 17:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 17:30:11 - Auto-checkout processing completed successfully
+2026-01-21 17:30:11 - Auto-checkout processing finished
+2026-01-21 17:45:00 - Starting auto-checkout processing
+2026-01-21 17:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 17:45:10 - Auto-checkout processing completed successfully
+2026-01-21 17:45:10 - Auto-checkout processing finished
+2026-01-21 18:00:00 - Starting auto-checkout processing
+2026-01-21 18:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 18:00:10 - Auto-checkout processing completed successfully
+2026-01-21 18:00:10 - Auto-checkout processing finished
+2026-01-21 18:15:00 - Starting auto-checkout processing
+2026-01-21 18:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 18:15:12 - Auto-checkout processing completed successfully
+2026-01-21 18:15:12 - Auto-checkout processing finished
+2026-01-21 18:30:01 - Starting auto-checkout processing
+2026-01-21 18:30:02 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 18:30:18 - Auto-checkout processing completed successfully
+2026-01-21 18:30:18 - Auto-checkout processing finished
+2026-01-21 18:45:00 - Starting auto-checkout processing
+2026-01-21 18:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 18:45:17 - Auto-checkout processing completed successfully
+2026-01-21 18:45:17 - Auto-checkout processing finished
+2026-01-21 19:00:00 - Starting auto-checkout processing
+2026-01-21 19:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 19:00:12 - Auto-checkout processing completed successfully
+2026-01-21 19:00:12 - Auto-checkout processing finished
+2026-01-21 19:15:00 - Starting auto-checkout processing
+2026-01-21 19:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 19:15:16 - Auto-checkout processing completed successfully
+2026-01-21 19:15:16 - Auto-checkout processing finished
+2026-01-21 19:30:00 - Starting auto-checkout processing
+2026-01-21 19:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 19:30:16 - Auto-checkout processing completed successfully
+2026-01-21 19:30:16 - Auto-checkout processing finished
+2026-01-21 19:45:00 - Starting auto-checkout processing
+2026-01-21 19:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 19:45:13 - Auto-checkout processing completed successfully
+2026-01-21 19:45:13 - Auto-checkout processing finished
+2026-01-21 20:00:00 - Starting auto-checkout processing
+2026-01-21 20:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 20:00:14 - Auto-checkout processing completed successfully
+2026-01-21 20:00:14 - Auto-checkout processing finished
+2026-01-21 20:15:00 - Starting auto-checkout processing
+2026-01-21 20:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 20:15:08 - Auto-checkout processing completed successfully
+2026-01-21 20:15:08 - Auto-checkout processing finished
+2026-01-21 20:30:00 - Starting auto-checkout processing
+2026-01-21 20:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 20:30:11 - Auto-checkout processing completed successfully
+2026-01-21 20:30:11 - Auto-checkout processing finished
+2026-01-21 23:45:00 - Starting auto-checkout processing
+2026-01-21 23:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-21 23:45:15 - Auto-checkout processing completed successfully
+2026-01-21 23:45:15 - Auto-checkout processing finished
+2026-01-22 00:00:00 - Starting auto-checkout processing
+2026-01-22 00:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 00:00:14 - Auto-checkout processing completed successfully
+2026-01-22 00:00:14 - Auto-checkout processing finished
+2026-01-22 00:15:01 - Starting auto-checkout processing
+2026-01-22 00:15:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 00:15:08 - Auto-checkout processing completed successfully
+2026-01-22 00:15:08 - Auto-checkout processing finished
+2026-01-22 02:34:19 - Starting auto-checkout processing
+2026-01-22 02:34:20 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 02:34:23 - Auto-checkout processing completed successfully
+2026-01-22 02:34:23 - Auto-checkout processing finished
+2026-01-22 03:15:00 - Starting auto-checkout processing
+2026-01-22 03:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 03:15:18 - Auto-checkout processing completed successfully
+2026-01-22 03:15:18 - Auto-checkout processing finished
+2026-01-22 03:30:00 - Starting auto-checkout processing
+2026-01-22 03:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 03:30:14 - Auto-checkout processing completed successfully
+2026-01-22 03:30:14 - Auto-checkout processing finished
+2026-01-22 03:45:01 - Starting auto-checkout processing
+2026-01-22 03:45:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 03:45:13 - Auto-checkout processing completed successfully
+2026-01-22 03:45:13 - Auto-checkout processing finished
+2026-01-22 04:00:00 - Starting auto-checkout processing
+2026-01-22 04:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 04:00:13 - Auto-checkout processing completed successfully
+2026-01-22 04:00:13 - Auto-checkout processing finished
+2026-01-22 04:15:00 - Starting auto-checkout processing
+2026-01-22 04:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 04:15:12 - Auto-checkout processing completed successfully
+2026-01-22 04:15:12 - Auto-checkout processing finished
+2026-01-22 04:30:00 - Starting auto-checkout processing
+2026-01-22 04:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 04:30:07 - Auto-checkout processing completed successfully
+2026-01-22 04:30:07 - Auto-checkout processing finished
+2026-01-22 04:45:00 - Starting auto-checkout processing
+2026-01-22 04:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 04:45:13 - Auto-checkout processing completed successfully
+2026-01-22 04:45:13 - Auto-checkout processing finished
+2026-01-22 09:00:00 - Starting auto-checkout processing
+2026-01-22 09:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 09:00:05 - Auto-checkout processing completed successfully
+2026-01-22 09:00:05 - Auto-checkout processing finished
+2026-01-22 11:45:15 - Starting auto-checkout processing
+2026-01-22 11:45:15 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 11:45:19 - Auto-checkout processing completed successfully
+2026-01-22 11:45:19 - Auto-checkout processing finished
+2026-01-22 12:00:00 - Starting auto-checkout processing
+2026-01-22 12:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 12:00:16 - Auto-checkout processing completed successfully
+2026-01-22 12:00:16 - Auto-checkout processing finished
+2026-01-22 12:15:00 - Starting auto-checkout processing
+2026-01-22 12:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 12:15:13 - Auto-checkout processing completed successfully
+2026-01-22 12:15:13 - Auto-checkout processing finished
+2026-01-22 12:30:00 - Starting auto-checkout processing
+2026-01-22 12:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 12:30:20 - Auto-checkout processing completed successfully
+2026-01-22 12:30:20 - Auto-checkout processing finished
+2026-01-22 12:45:01 - Starting auto-checkout processing
+2026-01-22 12:45:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 12:45:16 - Auto-checkout processing completed successfully
+2026-01-22 12:45:16 - Auto-checkout processing finished
+2026-01-22 13:00:01 - Starting auto-checkout processing
+2026-01-22 13:00:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 13:00:17 - Auto-checkout processing completed successfully
+2026-01-22 13:00:17 - Auto-checkout processing finished
+2026-01-22 13:15:00 - Starting auto-checkout processing
+2026-01-22 13:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 13:15:16 - Auto-checkout processing completed successfully
+2026-01-22 13:15:16 - Auto-checkout processing finished
+2026-01-22 13:30:00 - Starting auto-checkout processing
+2026-01-22 13:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 13:30:07 - Auto-checkout processing completed successfully
+2026-01-22 13:30:07 - Auto-checkout processing finished
+2026-01-22 13:45:01 - Starting auto-checkout processing
+2026-01-22 13:45:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 13:45:11 - Auto-checkout processing completed successfully
+2026-01-22 13:45:11 - Auto-checkout processing finished
+2026-01-22 14:00:00 - Starting auto-checkout processing
+2026-01-22 14:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 14:00:16 - Auto-checkout processing completed successfully
+2026-01-22 14:00:16 - Auto-checkout processing finished
+2026-01-22 14:15:00 - Starting auto-checkout processing
+2026-01-22 14:15:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 14:15:15 - Auto-checkout processing completed successfully
+2026-01-22 14:15:15 - Auto-checkout processing finished
+2026-01-22 14:30:00 - Starting auto-checkout processing
+2026-01-22 14:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 14:30:17 - Auto-checkout processing completed successfully
+2026-01-22 14:30:17 - Auto-checkout processing finished
+2026-01-22 15:45:00 - Starting auto-checkout processing
+2026-01-22 15:45:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 15:45:15 - Auto-checkout processing completed successfully
+2026-01-22 15:45:15 - Auto-checkout processing finished
+2026-01-22 16:00:00 - Starting auto-checkout processing
+2026-01-22 16:00:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 16:00:14 - Auto-checkout processing completed successfully
+2026-01-22 16:00:14 - Auto-checkout processing finished
+2026-01-22 16:15:01 - Starting auto-checkout processing
+2026-01-22 16:15:01 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 16:15:04 - Auto-checkout processing completed successfully
+2026-01-22 16:15:04 - Auto-checkout processing finished
+2026-01-22 16:30:00 - Starting auto-checkout processing
+2026-01-22 16:30:00 - Activated virtual environment from parent directory
+System check identified some issues:
+
+WARNINGS:
+api.InvoiceItem.shift: (fields.W342) Setting unique=True on a ForeignKey has the same effect as using a OneToOneField.
+	HINT: ForeignKey(unique=True) is usually better served by a OneToOneField.
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 16:30:05 - Auto-checkout processing completed successfully
+2026-01-22 16:30:05 - Auto-checkout processing finished
+2026-01-22 16:45:01 - Starting auto-checkout processing
+2026-01-22 16:45:01 - Activated virtual environment from parent directory
+Traceback (most recent call last):
+  File "/Users/new/Projects/mead-security/remix2/backend/manage.py", line 22, in <module>
+    main()
+    ~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/backend/manage.py", line 18, in main
+    execute_from_command_line(sys.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+    ~~~~~~~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/core/management/__init__.py", line 416, in execute
+    django.setup()
+    ~~~~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/__init__.py", line 24, in setup
+    apps.populate(settings.INSTALLED_APPS)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/apps/registry.py", line 116, in populate
+    app_config.import_models()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/new/Projects/mead-security/remix2/venv/lib/python3.13/site-packages/django/apps/config.py", line 269, in import_models
+    self.models_module = import_module(models_module_name)
+                         ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 3035, in <module>
+    class InvoiceItem(models.Model):
+    ...<135 lines>...
+            super().save(*args, **kwargs)
+  File "/Users/new/Projects/mead-security/remix2/backend/api/models.py", line 3066, in InvoiceItem
+    BankHoliday,
+    ^^^^^^^^^^^
+NameError: name 'BankHoliday' is not defined
+2026-01-22 16:45:22 - ERROR: Auto-checkout processing failed
+2026-01-22 16:45:22 - Auto-checkout processing finished
+2026-01-22 17:00:00 - Starting auto-checkout processing
+2026-01-22 17:00:00 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 17:00:10 - Auto-checkout processing completed successfully
+2026-01-22 17:00:10 - Auto-checkout processing finished
+2026-01-22 17:30:02 - Starting auto-checkout processing
+2026-01-22 17:30:03 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 17:30:48 - Auto-checkout processing completed successfully
+2026-01-22 17:30:48 - Auto-checkout processing finished
+2026-01-22 18:37:34 - Starting auto-checkout processing
+2026-01-22 18:37:34 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 18:37:49 - Auto-checkout processing completed successfully
+2026-01-22 18:37:49 - Auto-checkout processing finished
+2026-01-22 18:46:04 - Starting auto-checkout processing
+2026-01-22 18:46:05 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 18:46:28 - Auto-checkout processing completed successfully
+2026-01-22 18:46:28 - Auto-checkout processing finished
+2026-01-22 19:00:00 - Starting auto-checkout processing
+2026-01-22 19:00:00 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 19:00:35 - Auto-checkout processing completed successfully
+2026-01-22 19:00:35 - Auto-checkout processing finished
+2026-01-22 19:15:00 - Starting auto-checkout processing
+2026-01-22 19:15:00 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 19:15:20 - Auto-checkout processing completed successfully
+2026-01-22 19:15:20 - Auto-checkout processing finished
+2026-01-22 19:30:01 - Starting auto-checkout processing
+2026-01-22 19:30:01 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 19:30:21 - Auto-checkout processing completed successfully
+2026-01-22 19:30:21 - Auto-checkout processing finished
+2026-01-22 19:45:00 - Starting auto-checkout processing
+2026-01-22 19:45:01 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 19:45:19 - Auto-checkout processing completed successfully
+2026-01-22 19:45:19 - Auto-checkout processing finished
+2026-01-22 21:15:00 - Starting auto-checkout processing
+2026-01-22 21:15:00 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 21:15:23 - Auto-checkout processing completed successfully
+2026-01-22 21:15:23 - Auto-checkout processing finished
+2026-01-22 21:30:00 - Starting auto-checkout processing
+2026-01-22 21:30:00 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 21:30:18 - Auto-checkout processing completed successfully
+2026-01-22 21:30:18 - Auto-checkout processing finished
+2026-01-22 21:45:01 - Starting auto-checkout processing
+2026-01-22 21:45:01 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 21:45:19 - Auto-checkout processing completed successfully
+2026-01-22 21:45:19 - Auto-checkout processing finished
+2026-01-22 22:00:01 - Starting auto-checkout processing
+2026-01-22 22:00:01 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 22:00:29 - Auto-checkout processing completed successfully
+2026-01-22 22:00:29 - Auto-checkout processing finished
+2026-01-22 22:15:03 - Starting auto-checkout processing
+2026-01-22 22:15:03 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 22:15:29 - Auto-checkout processing completed successfully
+2026-01-22 22:15:29 - Auto-checkout processing finished
+2026-01-22 22:30:01 - Starting auto-checkout processing
+2026-01-22 22:30:01 - Activated virtual environment from parent directory
+Processed 0 auto-checkouts out of 0 eligible shifts
+2026-01-22 22:30:26 - Auto-checkout processing completed successfully
+2026-01-22 22:30:26 - Auto-checkout processing finished
+2026-01-22 22:45:00 - Starting auto-checkout processing
+2026-01-22 22:45:00 - Activated virtual environment from parent directory

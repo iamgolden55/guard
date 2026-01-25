@@ -5,6 +5,16 @@
 
 import { apiService } from './api';
 
+/**
+ * Details of the staff member who performed a check
+ * Used for attribution in multi-staff shifts
+ */
+export interface PerformedByDetails {
+  id: number;
+  first_name: string;
+  last_name: string;
+}
+
 // Check Types
 export interface BaseCheck {
   id: number;
@@ -16,6 +26,10 @@ export interface BaseCheck {
     longitude: number;
   };
   notes?: string;
+  // Multi-staff shift support
+  shift_group?: string | null;
+  performed_by?: number | null;
+  performed_by_details?: PerformedByDetails | null;
 }
 
 export interface FireExitCheck extends BaseCheck {

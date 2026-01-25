@@ -10,112 +10,12 @@
 }
 
 /* Report Dashboard Responsive Styles */
-.report-dashboard {
-  padding: 20px;
-}
+/* Removed report-dashboard and reports-table styles */
 
-@media (max-width: 768px) {
-  .report-dashboard {
-    padding: 12px;
-  }
-
-  /* Stack header elements on mobile */
-  .report-header {
-    flex-direction: column !important;
-    gap: 16px !important;
-    align-items: stretch !important;
-  }
-
-  /* Statistics cards - single column on mobile */
-  .stats-grid {
-    grid-template-columns: 1fr !important;
-    gap: 12px !important;
-  }
-
-  /* Filters - stack vertically on mobile */
-  .filters-container {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 12px !important;
-  }
-
-  .filters-container > * {
-    width: 100% !important;
-    min-width: unset !important;
-  }
-
-  /* Table - horizontal scroll on mobile */
-  .reports-table-container {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .reports-table {
-    min-width: 800px;
-  }
-
-  /* Action buttons - smaller on mobile */
-  .action-buttons {
-    flex-direction: column !important;
-    width: 100% !important;
-  }
-
-  .action-buttons button {
-    width: 100% !important;
-    justify-content: center;
-  }
-}
-
-@media (max-width: 480px) {
-  .report-dashboard {
-    padding: 8px;
-  }
-
-  /* Even more compact on small phones */
-  .card-content {
-    padding: 12px !important;
-  }
-
-  /* Hide less important columns on very small screens */
-  .reports-table .hide-on-small {
-    display: none !important;
-  }
-
-  /* Compact progress tracking */
-  .progress-tracker {
-    padding: 8px !important;
-  }
-
-  .progress-details {
-    grid-template-columns: 1fr !important;
-  }
-}
+/* Removed mobile reports-table and report-dashboard specifics */
 
 /* Export Format Selector Responsive */
-.export-format-selector {
-  padding: 16px;
-}
-
-@media (max-width: 768px) {
-  .export-format-selector {
-    padding: 12px;
-  }
-
-  .format-options-grid {
-    grid-template-columns: 1fr !important;
-    gap: 12px !important;
-  }
-
-  .format-option-card {
-    min-width: unset !important;
-  }
-
-  /* Stack format options vertically */
-  .format-options {
-    grid-template-columns: 1fr !important;
-    gap: 12px !important;
-  }
-}
+/* Removed export-format-selector styles */
 
 /* Progress Tracker Responsive */
 @media (max-width: 768px) {
@@ -184,35 +84,7 @@
 }
 
 /* Report Form Responsive */
-@media (max-width: 768px) {
-  .report-form-grid {
-    grid-template-columns: 1fr !important;
-    gap: 16px !important;
-  }
-
-  .form-section {
-    padding: 12px !important;
-  }
-
-  .form-actions {
-    flex-direction: column-reverse !important;
-    gap: 12px !important;
-  }
-
-  .form-actions button {
-    width: 100% !important;
-  }
-
-  /* Date picker adjustments */
-  .date-range-picker {
-    flex-direction: column !important;
-    gap: 12px !important;
-  }
-
-  .date-input {
-    width: 100% !important;
-  }
-}
+/* Removed report-form-grid styles */
 
 /* Card Hover Effects - Disable on Touch Devices */
 @media (hover: none) and (pointer: coarse) {
