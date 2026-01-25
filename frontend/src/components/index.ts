@@ -14,6 +14,7 @@ import ActiveShiftWidget from './ActiveShiftWidget';
 import ShiftCard from './ShiftCard';
 import AccountMappingInterface from './AccountMappingInterface';
 import EmploymentTypesManagement from './EmploymentTypesManagement';
+import MetricCard from './MetricCard';
 
 export {
   Card,
@@ -31,5 +32,6 @@ export {
   ActiveShiftWidget,
   ShiftCard,
   AccountMappingInterface,
-  EmploymentTypesManagement
+  EmploymentTypesManagement,
+  MetricCard
 };

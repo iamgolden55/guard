@@ -20,7 +20,7 @@ import api from '../../services/api';
 import type { DeputyStatus, User, Shift, Invoice } from '../../types';
 import useIsMobile from '../../hooks/useIsMobile';
 
-const AdminDashboard: React.FC = () => {
+const AnalyticsDashboard: React.FC = () => {
   const { authState } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -40,7 +40,7 @@ const AdminDashboard: React.FC = () => {
   // CRITICAL: Verify user is actually admin before rendering
   useEffect(() => {
     if (!authState.user || !authState.currentMembership) {
-      console.warn('AdminDashboard: User or membership not loaded');
+      console.warn('AnalyticsDashboard: User or membership not loaded');
       return;
     }
 
@@ -48,11 +48,7 @@ const AdminDashboard: React.FC = () => {
     const isAdmin = membershipRole === 'admin' || membershipRole === 'owner';
 
     if (!isAdmin) {
-      console.error('Non-admin user accessed admin dashboard!', {
-        userRole: authState.user.role,
-        membershipRole: membershipRole,
-        isOwner: authState.currentMembership.isOwner
-      });
+      console.error('Non-admin user accessed admin dashboard!');
       navigate('/dashboard', { replace: true });
     }
   }, [authState.user, authState.currentMembership, navigate]);
@@ -105,29 +101,20 @@ const AdminDashboard: React.FC = () => {
         const activeShifts = shiftsData.filter((shift: Shift) =>
           (shift.status as string) === 'active' || (shift.status as string) === 'in_progress'
         ).length;
-        if (shiftsResult.status === 'rejected') {
-          console.error("Failed to load shifts:", shiftsResult.reason);
-        }
 
         let pendingApprovals = 0;
         if (pendingApprovalsResult.status === 'fulfilled') {
           const approvals = pendingApprovalsResult.value;
           pendingApprovals = (approvals.exchange_requests?.length || 0) + (approvals.shift_claims?.length || 0);
-        } else {
-          console.error("Failed to load pending approvals:", pendingApprovalsResult.reason);
         }
 
         const invoicesData = invoicesResult.status === 'fulfilled' && Array.isArray(invoicesResult.value) ? invoicesResult.value : [];
         const pendingInvoices = invoicesData.filter((invoice: Invoice) => invoice.status === 'pending').length;
-        if (invoicesResult.status === 'rejected') {
-          console.error("Failed to load invoices:", invoicesResult.reason);
-        }
 
         let deputyStatusData: DeputyStatus | null = null;
         if (deputyStatusDataResult.status === 'fulfilled') {
           deputyStatusData = deputyStatusDataResult.value;
         } else {
-          console.error('Failed to load Deputy status:', deputyStatusDataResult.reason);
           deputyStatusData = {
             isConnected: false,
             lastSyncDate: null,
@@ -141,26 +128,18 @@ const AdminDashboard: React.FC = () => {
         let totalStaff = 0;
         if (usersResult.status === 'fulfilled') {
           totalStaff = Array.isArray(usersResult.value?.data) ? usersResult.value.data.length : 0;
-        } else {
-          console.error('Failed to load user data:', usersResult.reason);
         }
 
         let venueCount = 0;
         if (venuesResult.status === 'fulfilled') {
           if (Array.isArray(venuesResult.value)) {
             venueCount = venuesResult.value.length;
-          } else {
-            console.warn('Unexpected response structure for venues:', venuesResult.value);
           }
-        } else {
-          console.error('Failed to load venue data:', venuesResult.reason);
         }
 
         let employmentTypesData: any[] = [];
         if (employmentTypesResult.status === 'fulfilled') {
           employmentTypesData = Array.isArray(employmentTypesResult.value) ? employmentTypesResult.value : [];
-        } else {
-          console.error('Failed to load employment types:', employmentTypesResult.reason);
         }
         setEmploymentTypes(employmentTypesData);
         setShowEmploymentTypePrompt(employmentTypesData.length === 0);
@@ -168,8 +147,6 @@ const AdminDashboard: React.FC = () => {
         let onTimePercentage = 0;
         if (attendanceResult.status === 'fulfilled') {
           onTimePercentage = attendanceResult.value?.summary?.onTimePercentage || 0;
-        } else {
-          console.error('Failed to load attendance data:', attendanceResult.reason);
         }
 
         setStats({
@@ -347,7 +324,7 @@ const AdminDashboard: React.FC = () => {
                     <Card>
                       {isLoading ? (
                         <div className="flex justify-center py-8">
-                          <div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                         </div>
                       ) : (
                         <div className="space-y-3">
@@ -434,7 +411,7 @@ const AdminDashboard: React.FC = () => {
                   <Card className="max-w-lg">
                     {isLoading ? (
                       <div className="flex justify-center py-8">
-                        <div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -505,4 +482,4 @@ const AdminDashboard: React.FC = () => {
   );
 };
 
-export default AdminDashboard;
+export default AnalyticsDashboard;

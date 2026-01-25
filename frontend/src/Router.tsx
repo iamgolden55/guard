@@ -29,6 +29,7 @@ const RecruitmentApplication = lazy(() => import('./pages/public/RecruitmentAppl
 const EmploymentTypesManagement = lazy(() => import('./pages/admin/EmploymentTypesManagement'));
 // Reports feature removed
 const Attendance = lazy(() => import('./pages/admin/Attendance'));
+const AnalyticsDashboard = lazy(() => import('./pages/admin/AnalyticsDashboard'));
 const BankHolidayManagement = lazy(() => import('./pages/admin/BankHolidayManagement'));
 const ComplianceSettings = lazy(() => import('./components/compliance/ComplianceSettings'));
 
@@ -223,6 +224,14 @@ const Router: React.FC = () => {
         />
 
         <Route path="/admin/settings" element={<Settings />} />
+        <Route
+          path="/admin/analytics"
+          element={
+            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading analytics dashboard...</span></div>}>
+              <AnalyticsDashboard />
+            </Suspense>
+          }
+        />
       </Route>
 
       {/* 404 Not Found */}
