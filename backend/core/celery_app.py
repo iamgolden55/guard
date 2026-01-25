@@ -76,17 +76,20 @@ app.conf.update(
             'schedule': 6.0 * 60 * 60,  # Run every 6 hours
             'options': {'queue': 'cleanup'}
         },
-        # Shift notification tasks - run every minute
-        'check-shift-reminders': {
-            'task': 'api.tasks.check_shift_reminders',
-            'schedule': 60.0,  # Every minute
-            'options': {'queue': 'notifications'}
-        },
-        'check-missed-checkins': {
-            'task': 'api.tasks.check_missed_checkins',
-            'schedule': 60.0,  # Every minute
-            'options': {'queue': 'notifications'}
-        },
+        # NOTE: Periodic shift notification tasks disabled to prevent duplicates.
+        # Primary scheduled tasks (schedule_shift_reminders) handle all reminders.
+        # These backup tasks were causing duplicate notifications with -1 minute offset.
+        # See: thoughts/shared/research/2025-01-25-duplicate-shift-notifications.md
+        # 'check-shift-reminders': {
+        #     'task': 'api.tasks.check_shift_reminders',
+        #     'schedule': 60.0,  # Every minute
+        #     'options': {'queue': 'notifications'}
+        # },
+        # 'check-missed-checkins': {
+        #     'task': 'api.tasks.check_missed_checkins',
+        #     'schedule': 60.0,  # Every minute
+        #     'options': {'queue': 'notifications'}
+        # },
     },
 )
 
