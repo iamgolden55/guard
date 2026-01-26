@@ -435,7 +435,7 @@ const InvoiceGeneration: React.FC = () => {
     {
       key: 'actions',
       name: 'Actions',
-      minWidth: 200,
+      minWidth: 280,
       isResizable: true,
       onRender: (item: Invoice) => (
         <Stack horizontal tokens={{ childrenGap: 8 }}>
