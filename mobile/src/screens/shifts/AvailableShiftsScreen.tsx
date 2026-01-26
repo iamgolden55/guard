@@ -17,14 +17,18 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
-import { Container, Button } from '@components/ui';
-import { colors, spacing } from '../../theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button } from '@components/ui';
+import { colors, spacing, getColors } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import exchangeService, { OpenShiftRequest } from '../../services/exchangeService';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
 export const AvailableShiftsScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
   const [availableShifts, setAvailableShifts] = useState<OpenShiftRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -102,9 +106,9 @@ export const AvailableShiftsScreen: React.FC = () => {
   // Render empty state
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
-      <MaterialCommunityIcons name="calendar-blank-outline" size={64} color={colors.text.secondary} />
-      <Text style={styles.emptyTitle}>No Available Shifts</Text>
-      <Text style={styles.emptyText}>
+      <MaterialCommunityIcons name="calendar-blank-outline" size={64} color={themeColors.text.secondary} />
+      <Text style={[styles.emptyTitle, { color: themeColors.text.primary }]}>No Available Shifts</Text>
+      <Text style={[styles.emptyText, { color: themeColors.text.secondary }]}>
         There are no shifts available to claim at the moment. Check back later!
       </Text>
       <Button
@@ -112,7 +116,7 @@ export const AvailableShiftsScreen: React.FC = () => {
         variant="secondary"
         onPress={() => fetchAvailableShifts()}
         style={styles.refreshButton}
-        icon={<Ionicons name="refresh" size={18} color={colors.primary} />}
+        icon={<Ionicons name="refresh" size={18} color={themeColors.primary} />}
       />
     </View>
   );
@@ -124,23 +128,23 @@ export const AvailableShiftsScreen: React.FC = () => {
     const isClaiming = claimingShiftId === shift.id;
 
     return (
-      <View key={shift.id} style={styles.shiftCard}>
+      <View key={shift.id} style={[styles.shiftCard, { backgroundColor: themeColors.background.secondary, borderColor: themeColors.border.light }]}>
         {/* Shift Header */}
         <View style={styles.shiftHeader}>
           <View style={styles.venueInfo}>
-            <Ionicons name="location" size={20} color={colors.primary} />
-            <Text style={styles.venueName}>{shift.original_shift_details.venue.name}</Text>
+            <Ionicons name="location" size={20} color={themeColors.primary} />
+            <Text style={[styles.venueName, { color: themeColors.text.primary }]}>{shift.original_shift_details.venue.name}</Text>
           </View>
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusText}>OPEN</Text>
+          <View style={[styles.statusBadge, { backgroundColor: themeColors.success + '20' }]}>
+            <Text style={[styles.statusText, { color: themeColors.success }]}>OPEN</Text>
           </View>
         </View>
 
         {/* Shift Details */}
         <View style={styles.shiftDetails}>
           <View style={styles.detailRow}>
-            <Ionicons name="calendar-outline" size={16} color={colors.text.secondary} />
-            <Text style={styles.detailText}>
+            <Ionicons name="calendar-outline" size={16} color={themeColors.text.secondary} />
+            <Text style={[styles.detailText, { color: themeColors.text.secondary }]}>
               {startTime.toLocaleDateString('en-US', {
                 weekday: 'long',
                 month: 'short',
@@ -150,8 +154,8 @@ export const AvailableShiftsScreen: React.FC = () => {
           </View>
 
           <View style={styles.detailRow}>
-            <Ionicons name="time-outline" size={16} color={colors.text.secondary} />
-            <Text style={styles.detailText}>
+            <Ionicons name="time-outline" size={16} color={themeColors.text.secondary} />
+            <Text style={[styles.detailText, { color: themeColors.text.secondary }]}>
               {startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               {' - '}
               {endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -160,24 +164,24 @@ export const AvailableShiftsScreen: React.FC = () => {
 
           {shift.original_shift_details.required_security_role && (
             <View style={styles.detailRow}>
-              <MaterialCommunityIcons name="shield-account" size={16} color={colors.text.secondary} />
-              <Text style={styles.detailText}>{shift.original_shift_details.required_security_role}</Text>
+              <MaterialCommunityIcons name="shield-account" size={16} color={themeColors.text.secondary} />
+              <Text style={[styles.detailText, { color: themeColors.text.secondary }]}>{shift.original_shift_details.required_security_role}</Text>
             </View>
           )}
         </View>
 
         {/* Release Info */}
-        <View style={styles.releaseInfo}>
-          <Text style={styles.releaseLabel}>Released by:</Text>
-          <Text style={styles.releasedBy}>
+        <View style={[styles.releaseInfo, { borderTopColor: themeColors.border.light }]}>
+          <Text style={[styles.releaseLabel, { color: themeColors.text.secondary }]}>Released by:</Text>
+          <Text style={[styles.releasedBy, { color: themeColors.text.primary }]}>
             {shift.requesting_user_details.first_name} {shift.requesting_user_details.last_name}
           </Text>
         </View>
 
         {shift.request_reason && (
-          <View style={styles.reasonBox}>
-            <Text style={styles.reasonLabel}>Reason:</Text>
-            <Text style={styles.reasonText}>{shift.request_reason}</Text>
+          <View style={[styles.reasonBox, { backgroundColor: themeColors.background.tertiary }]}>
+            <Text style={[styles.reasonLabel, { color: themeColors.text.secondary }]}>Reason:</Text>
+            <Text style={[styles.reasonText, { color: themeColors.text.primary }]}>{shift.request_reason}</Text>
           </View>
         )}
 
@@ -190,7 +194,7 @@ export const AvailableShiftsScreen: React.FC = () => {
           disabled={isClaiming}
           icon={
             isClaiming ? undefined : (
-              <MaterialCommunityIcons name="hand-back-right-outline" size={20} color={colors.white} />
+              <MaterialCommunityIcons name="hand-back-right-outline" size={20} color={themeColors.white} />
             )
           }
         />
@@ -199,24 +203,24 @@ export const AvailableShiftsScreen: React.FC = () => {
   };
 
   return (
-    <Container style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background.primary }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: themeColors.background.secondary, borderBottomColor: themeColors.border.light }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+          <Ionicons name="arrow-back" size={24} color={themeColors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Available Shifts</Text>
+        <Text style={[styles.headerTitle, { color: themeColors.text.primary }]}>Available Shifts</Text>
         <View style={styles.headerRight}>
           <TouchableOpacity onPress={() => fetchAvailableShifts()} style={styles.refreshIconButton}>
-            <Ionicons name="refresh" size={22} color={colors.text.primary} />
+            <Ionicons name="refresh" size={22} color={themeColors.text.primary} />
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Info Banner */}
-      <View style={styles.infoBanner}>
-        <Ionicons name="information-circle-outline" size={20} color={colors.info} />
-        <Text style={styles.infoBannerText}>
+      <View style={[styles.infoBanner, { backgroundColor: themeColors.info + '15' }]}>
+        <Ionicons name="information-circle-outline" size={20} color={themeColors.info} />
+        <Text style={[styles.infoBannerText, { color: themeColors.text.secondary }]}>
           These shifts have been released by other staff members. Claims require manager approval.
         </Text>
       </View>
@@ -224,8 +228,8 @@ export const AvailableShiftsScreen: React.FC = () => {
       {/* Content */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading available shifts...</Text>
+          <ActivityIndicator size="large" color={themeColors.primary} />
+          <Text style={[styles.loadingText, { color: themeColors.text.secondary }]}>Loading available shifts...</Text>
         </View>
       ) : availableShifts.length === 0 ? (
         renderEmptyState()
@@ -234,10 +238,10 @@ export const AvailableShiftsScreen: React.FC = () => {
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeColors.text.secondary} />}
         >
           {/* Shift Count */}
-          <Text style={styles.shiftCount}>
+          <Text style={[styles.shiftCount, { color: themeColors.text.secondary }]}>
             {availableShifts.length} {availableShifts.length === 1 ? 'shift' : 'shifts'} available
           </Text>
 
@@ -248,14 +252,13 @@ export const AvailableShiftsScreen: React.FC = () => {
           <View style={{ height: spacing.xl }} />
         </ScrollView>
       )}
-    </Container>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 0,
-    backgroundColor: colors.background,
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
