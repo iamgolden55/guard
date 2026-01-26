@@ -7,9 +7,10 @@ interface ActivityHeatMapProps {
   isLoading?: boolean;
 }
 
-// Get intensity level (0-4) based on completion rate
+// Get intensity level (0-4) based on completion rate, 5 = future with scheduled
 const getIntensityLevel = (day: HeatMapDayData): number => {
-  if (day.isFuture || day.scheduled === 0) return 0;
+  if (day.scheduled === 0) return 0;
+  if (day.isFuture) return 5; // Future with scheduled shifts
   const rate = day.completed / day.scheduled;
   if (rate === 0) return 0;
   if (rate <= 0.25) return 1;
@@ -25,6 +26,7 @@ const intensityColors: Record<number, string> = {
   2: 'bg-emerald-300',
   3: 'bg-emerald-500',
   4: 'bg-emerald-700',
+  5: 'bg-blue-300', // Future scheduled shifts
 };
 
 // Day labels for the left side
@@ -271,10 +273,12 @@ const ActivityHeatMap: React.FC<ActivityHeatMapProps> = ({
           <div className="font-medium mb-1">
             {formatTooltipDate(tooltip.day.date)}
           </div>
-          {tooltip.day.isFuture ? (
-            <div className="text-gray-300">No data yet</div>
-          ) : tooltip.day.scheduled === 0 ? (
+          {tooltip.day.scheduled === 0 ? (
             <div className="text-gray-300">No shifts scheduled</div>
+          ) : tooltip.day.isFuture ? (
+            <div className="text-blue-300">
+              {tooltip.day.scheduled} shift{tooltip.day.scheduled !== 1 ? 's' : ''} scheduled
+            </div>
           ) : (
             <>
               <div>Scheduled: {tooltip.day.scheduled} shift{tooltip.day.scheduled !== 1 ? 's' : ''}</div>
