@@ -180,7 +180,6 @@ class EmailNotificationService:
             'end_time': end_time,
             'formatted_date': formatted_date,
             'hourly_rate': hourly_rate,
-            'shift_url': f"{self.frontend_url}/shifts/{shift_id}",
         }
 
         return self.send_email(
@@ -220,7 +219,6 @@ class EmailNotificationService:
             'shift_date': shift_date,
             'shift_time': shift_time,
             'reason': reason,
-            'shifts_url': f"{self.frontend_url}/shifts",
         }
 
         return self.send_email(
@@ -260,7 +258,6 @@ class EmailNotificationService:
             'shift_venue': shift_venue,
             'shift_date': shift_date,
             'shift_time': shift_time,
-            'exchange_url': f"{self.frontend_url}/shifts/exchanges/{exchange_id}",
         }
 
         return self.send_email(
@@ -297,7 +294,6 @@ class EmailNotificationService:
             'target_name': target_name,
             'shift_venue': shift_venue,
             'shift_date': shift_date,
-            'exchange_url': f"{self.frontend_url}/shifts/exchanges/{exchange_id}",
         }
 
         return self.send_email(
@@ -339,7 +335,6 @@ class EmailNotificationService:
             'shift_date': shift_date,
             'shift_time': shift_time,
             'is_receiving': is_receiving,
-            'shift_url': f"{self.frontend_url}/shifts/{shift_id}",
         }
 
         return self.send_email(
@@ -378,15 +373,11 @@ class EmailNotificationService:
             shift_count = len(shifts)
             # Prepare shifts for template (limit to 5 for display)
             display_shifts = shifts[:5]
-            for shift in display_shifts:
-                if 'url' not in shift:
-                    shift['url'] = f"{self.frontend_url}/shifts/{shift.get('shift_id', '')}"
 
             context = {
                 'shifts': display_shifts,
                 'shift_count': shift_count,
                 'remaining_count': shift_count - len(display_shifts),
-                'all_shifts_url': f"{self.frontend_url}/shifts/available",
             }
 
             return self.send_email(
@@ -404,7 +395,6 @@ class EmailNotificationService:
                 'shift_date': shift.get('date', ''),
                 'shift_time': shift.get('time', ''),
                 'required_role': shift.get('required_role'),
-                'claim_url': f"{self.frontend_url}/shifts/{shift.get('shift_id', '')}",
             }
 
             return self.send_email(
@@ -444,7 +434,6 @@ class EmailNotificationService:
             'shift_date': shift_date,
             'shift_time': shift_time,
             'hours_worked': hours_worked,
-            'shift_url': f"{self.frontend_url}/shifts/{shift_id}",
         }
 
         return self.send_email(
@@ -484,7 +473,6 @@ class EmailNotificationService:
             'venue_address': venue_address,
             'shift_date': shift_date,
             'shift_time': shift_time,
-            'shift_url': f"{self.frontend_url}/shifts/{shift_id}",
         }
 
         return self.send_email(
