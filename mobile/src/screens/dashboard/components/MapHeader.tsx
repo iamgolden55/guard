@@ -2,6 +2,7 @@
  * MapHeader
  * Uber-style header with illustration background and greeting card overlay
  * Features: Illustration background, gradient overlay, floating greeting card, offline indicator
+ * Supports dark mode
  */
 
 import React from 'react';
@@ -14,7 +15,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { uberColors, uberShadows, uberRadius, uberTypography, spacing } from '../../../theme';
+import { useTheme } from '../../../hooks/useTheme';
+import { getUberColors, getUberShadows, uberRadius, fontFamilies, spacing } from '../../../theme';
 
 interface MapHeaderProps {
   userName: string;
@@ -49,16 +51,29 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
   isOffline = false,
 }) => {
   const insets = useSafeAreaInsets();
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
+  const uberShadows = getUberShadows(isDark);
+
+  // Gradient colors based on theme
+  const gradientColors = isDark
+    ? isOffline
+      ? ['rgba(251, 191, 36, 0.1)', 'rgba(9, 9, 11, 0.3)', 'rgba(9, 9, 11, 0.98)'] as const
+      : ['transparent', 'rgba(9, 9, 11, 0.2)', 'rgba(9, 9, 11, 0.98)'] as const
+    : isOffline
+      ? ['rgba(251, 191, 36, 0.1)', 'rgba(248, 248, 248, 0.3)', 'rgba(248, 248, 248, 0.98)'] as const
+      : ['transparent', 'rgba(248, 248, 248, 0.2)', 'rgba(248, 248, 248, 0.98)'] as const;
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: uberColors.background.light }]}>
       {/* Illustration Background */}
-      <View style={styles.illustrationBackground}>
+      <View style={[styles.illustrationBackground, { backgroundColor: uberColors.background.light }]}>
         <Image
           source={require('../../../../assets/images/dashboard-illustration.png')}
           style={[
             styles.illustrationImage,
             isOffline && styles.illustrationImageOffline,
+            isDark && styles.illustrationImageDark,
           ]}
           resizeMode="contain"
         />
@@ -68,13 +83,14 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
           <View style={styles.offlineOverlay} />
         )}
 
+        {/* Dark mode overlay */}
+        {isDark && !isOffline && (
+          <View style={styles.darkOverlay} />
+        )}
+
         {/* Gradient overlay for smooth transition to content */}
         <LinearGradient
-          colors={
-            isOffline
-              ? ['rgba(251, 191, 36, 0.1)', 'rgba(248, 248, 248, 0.3)', 'rgba(248, 248, 248, 0.98)']
-              : ['transparent', 'rgba(248, 248, 248, 0.2)', 'rgba(248, 248, 248, 0.98)']
-          }
+          colors={gradientColors}
           locations={[0, 0.6, 1]}
           style={styles.gradient}
         />
@@ -83,13 +99,15 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
       {/* Floating Greeting Card */}
       <View style={[
         styles.greetingCard,
+        { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light },
+        uberShadows.float,
         isOffline && styles.greetingCardOffline,
       ]}>
         <View style={styles.greetingContent}>
-          <Text style={styles.greetingText}>
+          <Text style={[styles.greetingText, { color: uberColors.text.primary }]}>
             {getGreeting()}, {userName}
           </Text>
-          <Text style={styles.dateText}>{formatDate(date)}</Text>
+          <Text style={[styles.dateText, { color: uberColors.text.secondary }]}>{formatDate(date)}</Text>
         </View>
 
         {/* Avatar */}
@@ -99,12 +117,14 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
               source={{ uri: avatarUrl }}
               style={[
                 styles.avatar,
+                { borderColor: uberColors.border.light },
                 isOffline && styles.avatarOffline,
               ]}
             />
           ) : (
             <View style={[
               styles.avatarPlaceholder,
+              { backgroundColor: uberColors.border.light },
               isOffline && styles.avatarPlaceholderOffline,
             ]}>
               <Ionicons name="person" size={24} color={isOffline ? '#92400E' : uberColors.text.muted} />
@@ -119,12 +139,10 @@ export const MapHeader: React.FC<MapHeaderProps> = ({
 const styles = StyleSheet.create({
   container: {
     height: 340,
-    backgroundColor: uberColors.background.light,
     position: 'relative',
   },
   illustrationBackground: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: uberColors.background.light,
     overflow: 'hidden',
   },
   illustrationImage: {
@@ -137,9 +155,16 @@ const styles = StyleSheet.create({
   illustrationImageOffline: {
     opacity: 0.6,
   },
+  illustrationImageDark: {
+    opacity: 0.7,
+  },
   offlineOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(120, 120, 120, 0.15)',
+  },
+  darkOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   gradient: {
     ...StyleSheet.absoluteFillObject,
@@ -151,13 +176,12 @@ const styles = StyleSheet.create({
     bottom: 24,
     left: 16,
     right: 16,
-    backgroundColor: uberColors.background.surface,
     borderRadius: uberRadius['2xl'],
     padding: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    ...uberShadows.float,
+    borderWidth: 1,
   },
   greetingCardOffline: {
     borderWidth: 1,
@@ -167,11 +191,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   greetingText: {
-    ...uberTypography.greeting,
+    fontSize: 24,
+    fontFamily: fontFamilies.plusJakarta.bold,
+    fontWeight: '700',
+    letterSpacing: -0.5,
     marginBottom: 4,
   },
   dateText: {
-    ...uberTypography.date,
+    fontSize: 14,
+    fontFamily: fontFamilies.inter.medium,
+    fontWeight: '500',
   },
   avatarContainer: {
     marginLeft: spacing.md,
@@ -181,7 +210,6 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 26,
     borderWidth: 2,
-    borderColor: uberColors.border.light,
   },
   avatarOffline: {
     borderColor: '#FCD34D', // amber-300
@@ -191,7 +219,6 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: uberColors.border.light,
     alignItems: 'center',
     justifyContent: 'center',
   },

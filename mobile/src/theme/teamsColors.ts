@@ -1,9 +1,11 @@
 /**
  * Microsoft Teams Color Palette
  * Professional enterprise colors inspired by Microsoft Teams
+ * Supports light and dark mode
  */
 
-export const teamsColors = {
+// Light mode Teams colors
+export const teamsColorsLight = {
   // Primary Teams Purple
   primary: '#6264A7',
   primaryDark: '#464775',
@@ -73,6 +75,84 @@ export const teamsColors = {
     500: '#605E5C',
   },
 };
+
+// Dark mode Teams colors
+export const teamsColorsDark = {
+  // Primary Teams Purple (slightly brighter for dark mode)
+  primary: '#7B7FC7',
+  primaryDark: '#6264A7',
+  primaryLight: '#9B9DD7',
+  primaryBg: '#1F1F1F',
+
+  // Presence Colors (same, high contrast)
+  presence: {
+    available: '#92C353',
+    away: '#FFAA44',
+    busy: '#C4314B',
+    inCall: '#00BCF2',
+    offline: '#6B6A68',
+    presenting: '#9B4BD2',
+  },
+
+  // Background Colors (dark)
+  background: {
+    primary: '#1F1F1F',
+    secondary: '#141414',
+    tertiary: '#292929',
+    hover: '#2A2A2A',
+    selected: '#333333',
+  },
+
+  // Text Colors (inverted)
+  text: {
+    primary: '#FFFFFF',
+    secondary: '#B3B0AD',
+    tertiary: '#8A8886',
+    disabled: '#605E5C',
+    white: '#FFFFFF',
+  },
+
+  // Border Colors (dark)
+  border: {
+    light: '#333333',
+    medium: '#444444',
+    dark: '#555555',
+  },
+
+  // Action Colors (same, high contrast)
+  actions: {
+    call: '#00BCF2',
+    video: '#7B7FC7',
+    chat: '#00BCF2',
+    email: '#0078D4',
+  },
+
+  // Status Colors (same, high contrast)
+  status: {
+    success: '#92C353',
+    warning: '#FFAA44',
+    error: '#C4314B',
+    info: '#00BCF2',
+  },
+
+  // Semantic Colors
+  white: '#FFFFFF',
+  black: '#000000',
+  gray: {
+    50: '#292929',
+    100: '#333333',
+    200: '#444444',
+    300: '#555555',
+    400: '#8A8886',
+    500: '#B3B0AD',
+  },
+};
+
+// Legacy export for backwards compatibility
+export const teamsColors = teamsColorsLight;
+
+// Helper function to get theme-aware colors
+export const getTeamsColors = (isDark: boolean) => isDark ? teamsColorsDark : teamsColorsLight;
 
 // Export for easy migration from existing colors
 export const migrateToTeamsColors = {

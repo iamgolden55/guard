@@ -34,17 +34,23 @@ class ShiftViewSet(viewsets.ModelViewSet):
         """Filter shifts to only show the current user's shifts unless they're a manager/admin
 
         SECURITY: Admin/manager users see all shifts from their company ONLY, not the entire database.
+        Uses middleware-provided company context (respects X-Company-ID header) for multi-tenant isolation.
         """
         user_role = getattr(self.request.user, 'role', 'staff')
 
         if user_role in ['manager', 'admin']:
-            # SECURITY FIX: Admin/manager users should only see shifts from their own company
-            # Get the user's company membership
+            # SECURITY FIX: Use middleware-provided company context (respects X-Company-ID header)
+            company = getattr(self.request, 'current_company', None)
+            if company:
+                return Shift.objects.filter(venue__company=company).order_by('-start_time')
+
+            # Fallback: Get user's primary company membership (most recently joined with manager+ role)
             from api.models import UserCompanyMembership
             membership = UserCompanyMembership.objects.filter(
                 user=self.request.user,
-                is_active=True
-            ).select_related('company').first()
+                is_active=True,
+                company__is_active=True
+            ).select_related('company').order_by('-joined_at').first()
 
             if membership and membership.company:
                 # Return all shifts for venues in the user's company
@@ -75,7 +81,8 @@ class ShiftViewSet(viewsets.ModelViewSet):
         """Get upcoming shifts in the next 7 days"""
         now = datetime.now()
         end_date = now + timedelta(days=7)
-        shifts = self.queryset.filter(
+        # SECURITY FIX: Use get_queryset() for company-scoped filtering
+        shifts = self.get_queryset().filter(
             start_time__gte=now,
             start_time__lte=end_date,
             status='scheduled'
@@ -135,8 +142,8 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Get all shifts with related data
-        shifts = self.queryset.select_related('venue', 'staff_user').prefetch_related(
+        # SECURITY FIX: Use get_queryset() for company-scoped filtering
+        shifts = self.get_queryset().select_related('venue', 'staff_user').prefetch_related(
             'fireexitcheck_set', 'capacitycheck_set', 'toiletcheck_set'
         )
         
@@ -221,17 +228,25 @@ class ShiftViewSet(viewsets.ModelViewSet):
         start_date = request.query_params.get('startDate')
         end_date = request.query_params.get('endDate')
         venue_id = request.query_params.get('venueId')
-        
-        # Get all venues or filter by venue_id
-        venues_queryset = Venue.objects.all()
+
+        # SECURITY FIX: Scope venues to user's current company
+        company = getattr(request, 'current_company', None)
+        if company:
+            venues_queryset = Venue.objects.filter(company=company)
+        else:
+            # Fallback: no company context - return empty result
+            return Response([])
+
         if venue_id:
             venues_queryset = venues_queryset.filter(id=venue_id)
-        
+
+        # SECURITY FIX: Use get_queryset() for company-scoped shift filtering
+        base_shifts = self.get_queryset()
         compliance_data = []
-        
+
         for venue in venues_queryset:
             # Get shifts for this venue within date range
-            shifts_queryset = self.queryset.filter(venue=venue)
+            shifts_queryset = base_shifts.filter(venue=venue)
             
             if start_date:
                 shifts_queryset = shifts_queryset.filter(start_time__date__gte=start_date)
@@ -287,35 +302,43 @@ class ShiftViewSet(viewsets.ModelViewSet):
         """Get venue safety reports for admin view"""
         from django.db.models import Count, Q
         from api.models import Venue
-        
+
         if not request.user.is_authenticated:
             return Response(
-                {"detail": "Authentication required"}, 
+                {"detail": "Authentication required"},
                 status=status.HTTP_401_UNAUTHORIZED
             )
-            
+
         # Check if user has admin permissions
         if not (request.user.role == 'admin' or request.user.is_staff):
             return Response(
-                {"detail": "Admin permissions required"}, 
+                {"detail": "Admin permissions required"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         # Get date filters
         start_date = request.query_params.get('startDate')
         end_date = request.query_params.get('endDate')
         venue_id = request.query_params.get('venueId')
-        
-        # Get all venues or filter by venue_id
-        venues_queryset = Venue.objects.all()
+
+        # SECURITY FIX: Scope venues to user's current company
+        company = getattr(request, 'current_company', None)
+        if company:
+            venues_queryset = Venue.objects.filter(company=company)
+        else:
+            # Fallback: no company context - return empty result
+            return Response([])
+
         if venue_id:
             venues_queryset = venues_queryset.filter(id=venue_id)
-        
+
+        # SECURITY FIX: Use get_queryset() for company-scoped shift filtering
+        base_shifts = self.get_queryset()
         safety_data = []
-        
+
         for venue in venues_queryset:
             # Get shifts for this venue within date range
-            shifts_queryset = self.queryset.filter(venue=venue)
+            shifts_queryset = base_shifts.filter(venue=venue)
             
             if start_date:
                 shifts_queryset = shifts_queryset.filter(start_time__date__gte=start_date)
@@ -398,14 +421,30 @@ class ShiftViewSet(viewsets.ModelViewSet):
         end_date = request.query_params.get('endDate')
         venue_id = request.query_params.get('venueId')
 
-        # Get all staff users who have worked shifts
-        staff_users = User.objects.filter(shift__isnull=False).distinct()
-        
+        # SECURITY FIX: Scope staff users to the user's current company
+        company = getattr(request, 'current_company', None)
+        if not company:
+            return Response([])
+
+        # Get staff users who are members of this company and have worked shifts
+        from api.models import UserCompanyMembership
+        company_user_ids = UserCompanyMembership.objects.filter(
+            company=company,
+            is_active=True
+        ).values_list('user_id', flat=True)
+
+        staff_users = User.objects.filter(
+            id__in=company_user_ids,
+            shift__isnull=False
+        ).distinct()
+
+        # SECURITY FIX: Use get_queryset() for company-scoped shift filtering
+        base_shifts = self.get_queryset()
         performance_data = []
-        
+
         for staff_user in staff_users:
             # Get shifts for this staff member within date range
-            shifts_queryset = self.queryset.filter(staff_user=staff_user)
+            shifts_queryset = base_shifts.filter(staff_user=staff_user)
             
             if start_date:
                 shifts_queryset = shifts_queryset.filter(start_time__date__gte=start_date)
@@ -496,19 +535,22 @@ class ShiftViewSet(viewsets.ModelViewSet):
             )
         
         now = timezone.now()
-        
+
         # Find shifts that need attention
         incomplete_shifts = []
-        
+
+        # SECURITY FIX: Use get_queryset() for company-scoped filtering
+        base_queryset = self.get_queryset()
+
         # 1. Shifts that should have started but no check-in
-        no_checkin_shifts = self.queryset.filter(
+        no_checkin_shifts = base_queryset.filter(
             start_time__lte=now,
             check_in_time__isnull=True,
             status='scheduled'
         ).select_related('venue', 'staff_user')
-        
-        # 2. Shifts that should have ended but no check-out  
-        no_checkout_shifts = self.queryset.filter(
+
+        # 2. Shifts that should have ended but no check-out
+        no_checkout_shifts = base_queryset.filter(
             end_time__lte=now,
             check_in_time__isnull=False,
             check_out_time__isnull=True,
@@ -1362,15 +1404,20 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get the user's company membership to scope shifts correctly
+        # SECURITY FIX: Use middleware-provided company context (respects X-Company-ID header)
         from api.models import UserCompanyMembership
 
-        membership = UserCompanyMembership.objects.filter(
-            user=request.user,
-            is_active=True
-        ).select_related('company').first()
+        company = getattr(request, 'current_company', None)
+        if not company:
+            # Fallback: Get user's primary company
+            membership = UserCompanyMembership.objects.filter(
+                user=request.user,
+                is_active=True,
+                company__is_active=True
+            ).select_related('company').order_by('-joined_at').first()
+            company = membership.company if membership else None
 
-        if not membership or not membership.company:
+        if not company:
             return Response({
                 'summary': {
                     'totalCheckIns': 0,
@@ -1392,7 +1439,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
 
         # Base queryset for current period - filter by company, not by staff_user
         shifts_queryset = Shift.objects.filter(
-            venue__company=membership.company,
+            venue__company=company,
             start_time__date__gte=start_date,
             start_time__date__lte=end_date
         )
@@ -1432,7 +1479,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
         prev_end = start_datetime - timedelta(days=1)
 
         prev_shifts = Shift.objects.filter(
-            venue__company=membership.company,
+            venue__company=company,
             start_time__date__gte=prev_start,
             start_time__date__lte=prev_end
         )
@@ -1474,7 +1521,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
 
         # Get staff metrics with pagination
         staff_users = User.objects.filter(
-            shifts__venue__company=membership.company,
+            shifts__venue__company=company,
             shifts__start_time__date__gte=start_date,
             shifts__start_time__date__lte=end_date
         )

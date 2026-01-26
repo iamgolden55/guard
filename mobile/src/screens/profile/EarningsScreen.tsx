@@ -19,8 +19,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Container } from '@components/ui';
-import { colors, spacing } from '../../theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { colors, spacing, getColors } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
@@ -38,6 +39,8 @@ type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 export const EarningsScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const token = useAppSelector(selectAccessToken);
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year' | 'custom'>('month');
   
   // Pagination State
@@ -205,8 +208,8 @@ export const EarningsScreen: React.FC = () => {
   const renderHeader = () => (
     <>
         {/* Header */}
-        <Text style={styles.mainHeading}>EARNINGS</Text>
-        <Text style={styles.subtitle}>Track your income and invoices</Text>
+        <Text style={[styles.mainHeading, { color: themeColors.text.primary }]}>EARNINGS</Text>
+        <Text style={[styles.subtitle, { color: themeColors.text.secondary }]}>Track your income and invoices</Text>
 
         {/* Total Earnings Card */}
         <View style={styles.summaryCard}>
@@ -266,15 +269,15 @@ export const EarningsScreen: React.FC = () => {
 
         {/* Actions */}
         <View style={styles.actionsContainer}>
-            <TouchableOpacity style={styles.actionButton} onPress={openCustomReportModal}>
-                <View style={styles.actionIcon}>
+            <TouchableOpacity style={[styles.actionButton, { backgroundColor: isDark ? themeColors.background.secondary : '#F8F9FA', borderColor: themeColors.border.light }]} onPress={openCustomReportModal}>
+                <View style={[styles.actionIcon, { backgroundColor: isDark ? 'rgba(0,102,255,0.15)' : '#F0F4FF' }]}>
                     <Ionicons name="calendar-outline" size={24} color="#0066FF" />
                 </View>
                 <View style={styles.actionTextContainer}>
-                    <Text style={styles.actionTitle}>Custom Report</Text>
-                    <Text style={styles.actionSubtitle}>Generate for specific dates</Text>
+                    <Text style={[styles.actionTitle, { color: themeColors.text.primary }]}>Custom Report</Text>
+                    <Text style={[styles.actionSubtitle, { color: themeColors.text.secondary }]}>Generate for specific dates</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+                <Ionicons name="chevron-forward" size={20} color={themeColors.text.tertiary} />
             </TouchableOpacity>
 
             {selectedPeriod === 'custom' && (
@@ -295,7 +298,7 @@ export const EarningsScreen: React.FC = () => {
 
         {/* Recent Statements (Invoices) */}
         <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
+            <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>
                 {selectedPeriod === 'custom' ? 'Filtered Invoices' : 'Invoices & Statements'}
             </Text>
         </View>
@@ -303,19 +306,19 @@ export const EarningsScreen: React.FC = () => {
   );
 
   const renderInvoiceItem: ListRenderItem<Invoice> = ({ item }) => (
-    <TouchableOpacity 
-        style={styles.statementItem}
+    <TouchableOpacity
+        style={[styles.statementItem, { backgroundColor: isDark ? themeColors.background.secondary : 'white', borderColor: themeColors.border.light }]}
         onPress={() => navigation.navigate('InvoiceDetail', { invoiceId: item.id })}
     >
-        <View style={styles.statementIcon}>
-            <Ionicons name="document-text-outline" size={24} color="#666" />
+        <View style={[styles.statementIcon, { backgroundColor: isDark ? themeColors.background.tertiary : '#F3F4F6' }]}>
+            <Ionicons name="document-text-outline" size={24} color={themeColors.text.secondary} />
         </View>
         <View style={styles.statementInfo}>
-            <Text style={styles.statementPeriod}>{formatPeriod(item.start_date, item.end_date)}</Text>
-            <Text style={styles.statementDate}>Issued {new Date(item.created_at).toLocaleDateString()}</Text>
+            <Text style={[styles.statementPeriod, { color: themeColors.text.primary }]}>{formatPeriod(item.start_date, item.end_date)}</Text>
+            <Text style={[styles.statementDate, { color: themeColors.text.tertiary }]}>Issued {new Date(item.created_at).toLocaleDateString()}</Text>
             <View style={{ flexDirection: 'row', marginTop: 2 }}>
-                <Text style={[ 
-                    styles.statusPill, 
+                <Text style={[
+                    styles.statusPill,
                     { color: item.status === 'paid' ? '#00B67A' : (item.status === 'overdue' ? 'red' : '#F59E0B') }
                 ]}>
                     {item.status.toUpperCase()}
@@ -323,7 +326,7 @@ export const EarningsScreen: React.FC = () => {
             </View>
         </View>
         <View style={styles.statementRight}>
-            <Text style={styles.statementAmount}>
+            <Text style={[styles.statementAmount, { color: themeColors.text.primary }]}>
                 {formatCurrency(typeof item.total_amount === 'string' ? parseFloat(item.total_amount) : item.total_amount)}
             </Text>
             {item.pdf_url ? (
@@ -331,7 +334,7 @@ export const EarningsScreen: React.FC = () => {
                     <Ionicons name="download-outline" size={20} color="#0066FF" />
                 </TouchableOpacity>
             ) : (
-                <Ionicons name="chevron-forward" size={20} color={colors.text.tertiary} />
+                <Ionicons name="chevron-forward" size={20} color={themeColors.text.tertiary} />
             )}
         </View>
     </TouchableOpacity>
@@ -349,15 +352,15 @@ export const EarningsScreen: React.FC = () => {
   const renderEmpty = () => {
       if (loading) return null; // Wait for loading indicator in main view or rely on header
       return (
-        <Text style={{ textAlign: 'center', color: '#666', marginTop: 20 }}>No invoices found for this period.</Text>
+        <Text style={{ textAlign: 'center', color: themeColors.text.secondary, marginTop: 20 }}>No invoices found for this period.</Text>
       );
   }
 
   return (
-    <Container style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background.primary }]}>
       {/* Close Button */}
-      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeButton}>
-        <Ionicons name="close" size={28} color={colors.text.primary} />
+      <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.closeButton, { backgroundColor: isDark ? themeColors.background.tertiary : '#dededeff' }]}>
+        <Ionicons name="close" size={28} color={themeColors.text.primary} />
       </TouchableOpacity>
 
       {loading && page === 1 ? (
@@ -375,7 +378,7 @@ export const EarningsScreen: React.FC = () => {
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
             refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeColors.text.secondary} />
             }
             onEndReached={loadMore}
             onEndReachedThreshold={0.5}
@@ -444,14 +447,13 @@ export const EarningsScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
-    </Container>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 0,
-    backgroundColor: colors.white,
+    flex: 1,
   },
   closeButton: {
     position: 'absolute',

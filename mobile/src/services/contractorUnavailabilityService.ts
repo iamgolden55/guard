@@ -35,8 +35,16 @@ class ContractorUnavailabilityService {
    * Get all unavailability periods for the current user
    */
   async getMyUnavailability(): Promise<ContractorUnavailability[]> {
-    const response = await apiService.get<ContractorUnavailability[]>(`${this.baseUrl}/`);
-    return response;
+    const response = await apiService.get<ContractorUnavailability[] | { results: ContractorUnavailability[] }>(`${this.baseUrl}/`);
+    // Handle both paginated and non-paginated responses
+    if (Array.isArray(response)) {
+      return response;
+    }
+    // DRF pagination returns { count, next, previous, results }
+    if (response && 'results' in response) {
+      return response.results;
+    }
+    return [];
   }
 
   /**

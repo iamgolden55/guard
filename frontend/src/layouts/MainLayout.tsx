@@ -12,7 +12,36 @@ import {
   type ICommandBarItemProps,
   useTheme
 } from '@fluentui/react';
+import {
+  Grid24Filled,
+  CalendarLtr24Regular,
+  ArrowSwap24Regular,
+  Receipt24Regular,
+  PeopleTeam24Regular,
+  Person24Regular
+} from '@fluentui/react-icons';
 import { useAuth } from '../contexts/AuthContext';
+import { NavIcon } from '../components/navigation/NavIcon';
+
+// Icon mapping for navigation items (separate from INavLink to avoid Fluent UI font icons)
+const NAV_ICON_MAP: Record<string, string> = {
+  '/': 'Tiles',
+  '/shifts': 'Calendar',
+  '/shifts/exchange': 'SwitcherStartEnd',
+  '/invoices': 'PaymentCard',
+  '/leave': 'Calendar',
+  '/staff-shifts': 'PeopleAlert',
+  '/approvals': 'ToDoLogoOutline',
+  '/compliance': 'ComplianceAudit',
+  '/admin/staff': 'People',
+  '/admin/scheduling': 'ScheduleEventAction',
+  '/admin/venues': 'MapPin',
+  '/admin/recruitment': 'AddFriend',
+  '/admin/invoices': 'Money',
+  '/admin/bank-holidays': 'EventDateMissed12',
+  '/admin/deputy': 'Plug',
+  '/admin/settings': 'Settings',
+};
 
 
 interface MainLayoutProps {
@@ -85,12 +114,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   // Define navigation items based on role
   const getNavItems = (): INavLinkGroup[] => {
     // Common links for all users
+    // NOTE: icon property removed to prevent Fluent UI from rendering broken font icons
+    // Icons are rendered via NAV_ICON_MAP and onRenderLink using SVG components
     const commonLinks: INavLink[] = [
       {
         name: 'Dashboard',
         url: '/',
         key: '/',
-        icon: 'Tiles',
         isExpanded: location.pathname === '/'
       }
     ];
@@ -101,28 +131,24 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         name: 'My Shifts',
         url: '/shifts',
         key: '/shifts',
-        icon: 'Calendar',
         isExpanded: location.pathname.startsWith('/shifts')
       },
       {
         name: 'Shift Exchange',
         url: '/shifts/exchange',
         key: '/shifts/exchange',
-        icon: 'SwitcherStartEnd',
         isExpanded: location.pathname.startsWith('/shifts/exchange')
       },
       {
         name: 'My Invoices',
         url: '/invoices',
         key: '/invoices',
-        icon: 'PaymentCard',
         isExpanded: location.pathname.startsWith('/invoices')
       },
       {
         name: 'Leave Management',
         url: '/leave',
         key: '/leave',
-        icon: 'Calendar',
         isExpanded: location.pathname.startsWith('/leave')
       }
     ];
@@ -133,21 +159,18 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         name: 'Staff Shifts',
         url: '/staff-shifts',
         key: '/staff-shifts',
-        icon: 'PeopleAlert',
         isExpanded: location.pathname.startsWith('/staff-shifts')
       },
       {
         name: 'Approvals',
         url: '/approvals',
         key: '/approvals',
-        icon: 'ToDoLogoOutline',
         isExpanded: location.pathname.startsWith('/approvals')
       },
       {
         name: 'Compliance',
         url: '/compliance',
         key: '/compliance',
-        icon: 'ComplianceAudit',
         isExpanded: location.pathname.startsWith('/compliance')
       }
     ];
@@ -158,57 +181,48 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         name: 'Staff Management',
         url: '/admin/staff',
         key: '/admin/staff',
-        icon: 'People',
         isExpanded: location.pathname.startsWith('/admin/staff')
       },
       {
         name: 'Shift Scheduling',
         url: '/admin/scheduling',
         key: '/admin/scheduling',
-        icon: 'ScheduleEventAction',
         isExpanded: location.pathname.startsWith('/admin/scheduling')
       },
       {
         name: 'Venues',
         url: '/admin/venues',
         key: '/admin/venues',
-        icon: 'MapPin',
         isExpanded: location.pathname.startsWith('/admin/venues')
       },
       {
         name: 'Recruitment',
         url: '/admin/recruitment',
         key: '/admin/recruitment',
-        icon: 'AddFriend',
         isExpanded: location.pathname.startsWith('/admin/recruitment')
       },
-      
       {
         name: 'Invoices',
         url: '/admin/invoices',
         key: '/admin/invoices',
-        icon: 'Money',
         isExpanded: location.pathname.startsWith('/admin/invoices')
       },
       {
         name: 'Bank Holidays',
         url: '/admin/bank-holidays',
         key: '/admin/bank-holidays',
-        icon: 'EventDateMissed12',
         isExpanded: location.pathname.startsWith('/admin/bank-holidays')
       },
       {
         name: 'Deputy Integration',
         url: '/admin/deputy',
         key: '/admin/deputy',
-        icon: 'Plug',
         isExpanded: location.pathname.startsWith('/admin/deputy')
       },
       {
         name: 'Settings',
         url: '/admin/settings',
         key: '/admin/settings',
-        icon: 'Settings',
         isExpanded: location.pathname.startsWith('/admin/settings')
       }
     ];
@@ -329,11 +343,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
           <Link
             to="/"
+            className="portal-title"
             style={{
               color: theme.palette.white,
               fontSize: '20px',
-              fontWeight: 'bold',
-              textDecoration: 'none'
+              fontWeight: 700,
+              textDecoration: 'none',
+              letterSpacing: '-0.02em'
             }}
           >
             Security Staff Portal
@@ -382,6 +398,17 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           <Nav
             groups={getNavItems()}
             selectedKey={getSelectedKey()}
+            onRenderLink={(link) => {
+              if (!link) return null;
+              const isSelected = link.key === getSelectedKey();
+              const iconName = link.key ? NAV_ICON_MAP[link.key] : undefined;
+              return (
+                <span style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                  {iconName && <NavIcon iconName={iconName} isSelected={isSelected} />}
+                  <span>{link.name}</span>
+                </span>
+              );
+            }}
             styles={{
               root: {
                 width: '100%',
@@ -441,12 +468,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           }
         }}
       >
-        <Link to="/" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
-          <i className="ms-Icon ms-Icon--ViewDashboard" />
+        <Link to="/" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <Grid24Filled className="w-5 h-5" style={{ color: '#d13438' }} />
           <div style={{ fontSize: 12 }}>Home</div>
         </Link>
-        <Link to="/shifts" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
-          <i className="ms-Icon ms-Icon--Calendar" />
+        <Link to="/shifts" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <CalendarLtr24Regular className="w-5 h-5" style={{ color: '#c239b3' }} />
           <div style={{ fontSize: 12 }}>Shifts</div>
         </Link>
         {(() => {
@@ -456,23 +483,23 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           const effectiveRole = membershipRole === 'owner' ? 'admin' : membershipRole;
 
           return (effectiveRole === 'manager' || effectiveRole === 'admin') ? (
-            <Link to="/leave/team-overview" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
-              <i className="ms-Icon ms-Icon--PeopleAlert" />
+            <Link to="/leave/team-overview" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <PeopleTeam24Regular className="w-5 h-5" style={{ color: '#498205' }} />
               <div style={{ fontSize: 12 }}>Team</div>
             </Link>
           ) : (
-            <Link to="/shifts/exchange" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
-              <i className="ms-Icon ms-Icon--SwitcherStartEnd" />
+            <Link to="/shifts/exchange" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <ArrowSwap24Regular className="w-5 h-5" style={{ color: '#ca5010' }} />
               <div style={{ fontSize: 12 }}>Exchange</div>
             </Link>
           );
         })()}
-        <Link to="/invoices" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
-          <i className="ms-Icon ms-Icon--PaymentCard" />
+        <Link to="/invoices" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <Receipt24Regular className="w-5 h-5" style={{ color: '#018574' }} />
           <div style={{ fontSize: 12 }}>Invoices</div>
         </Link>
-        <Link to="/profile" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary }}>
-          <i className="ms-Icon ms-Icon--Contact" />
+        <Link to="/profile" style={{ padding: 12, textAlign: 'center', textDecoration: 'none', color: theme.palette.neutralPrimary, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <Person24Regular className="w-5 h-5" style={{ color: '#605e5c' }} />
           <div style={{ fontSize: 12 }}>Profile</div>
         </Link>
       </Stack>

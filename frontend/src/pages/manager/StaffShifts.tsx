@@ -28,6 +28,7 @@ import {
   Label
 } from '@fluentui/react';
 import { useNavigate } from 'react-router-dom';
+import { ChevronUp24Regular, ChevronDown24Regular, ChevronLeft24Regular, ChevronRight24Regular } from '@fluentui/react-icons';
 import { MainLayout } from '../../layouts';
 import { ShiftStatus } from '../../types';
 import { shiftService } from '../../services';
@@ -147,19 +148,18 @@ const StaffShifts: React.FC = () => {
       isResizable: false,
       onRender: (item: Shift) => (
         <DefaultButton
-          iconProps={{ 
-            iconName: expandedShifts.has(item.id) ? 'ChevronUp' : 'ChevronDown' 
-          }}
           onClick={() => toggleShiftExpansion(item.id)}
           styles={{
-            root: { 
-              minWidth: 'auto', 
+            root: {
+              minWidth: 'auto',
               padding: '4px',
               backgroundColor: 'transparent',
               border: 'none'
             }
           }}
-        />
+        >
+          {expandedShifts.has(item.id) ? <ChevronUp24Regular /> : <ChevronDown24Regular />}
+        </DefaultButton>
       ),
     },
     {
@@ -517,17 +517,18 @@ const StaffShifts: React.FC = () => {
     return (
       <div className="flex items-center justify-center space-x-2 mt-8">
         <DefaultButton
-          text="Previous"
-          iconProps={{ iconName: 'ChevronLeft' }}
           disabled={currentPage === 1}
           onClick={() => onPageChange(currentPage - 1)}
-          styles={{ 
-            root: { 
+          styles={{
+            root: {
               borderRadius: '8px',
               border: '2px solid #e5e7eb'
             }
           }}
-        />
+        >
+          <ChevronLeft24Regular style={{ marginRight: 4 }} />
+          Previous
+        </DefaultButton>
         
         <div className="flex space-x-1">
           {showPages.map((page, index) => (
@@ -550,17 +551,18 @@ const StaffShifts: React.FC = () => {
         </div>
         
         <DefaultButton
-          text="Next"
-          iconProps={{ iconName: 'ChevronRight' }}
           disabled={currentPage === totalPages}
           onClick={() => onPageChange(currentPage + 1)}
-          styles={{ 
-            root: { 
+          styles={{
+            root: {
               borderRadius: '8px',
               border: '2px solid #e5e7eb'
             }
           }}
-        />
+        >
+          Next
+          <ChevronRight24Regular style={{ marginLeft: 4 }} />
+        </DefaultButton>
       </div>
     );
   };
@@ -764,19 +766,18 @@ const StaffShifts: React.FC = () => {
                     }}>
                       <div style={{ width: '30px' }}>
                         <DefaultButton
-                          iconProps={{ 
-                            iconName: expandedShifts.has(shift.id) ? 'ChevronUp' : 'ChevronDown' 
-                          }}
                           onClick={() => toggleShiftExpansion(shift.id)}
                           styles={{
-                            root: { 
-                              minWidth: 'auto', 
+                            root: {
+                              minWidth: 'auto',
                               padding: '4px',
                               backgroundColor: 'transparent',
                               border: 'none'
                             }
                           }}
-                        />
+                        >
+                          {expandedShifts.has(shift.id) ? <ChevronUp24Regular /> : <ChevronDown24Regular />}
+                        </DefaultButton>
                       </div>
                       <div style={{ width: '50px', marginRight: '12px' }}>{shift.id}</div>
                       <div style={{ width: '150px', marginRight: '12px' }}>
@@ -859,20 +860,19 @@ const StaffShifts: React.FC = () => {
                         <StatusPill status={shift.status} />
                       </Stack>
                       <DefaultButton
-                        iconProps={{ 
-                          iconName: expandedShifts.has(shift.id) ? 'ChevronUp' : 'ChevronDown' 
-                        }}
                         onClick={() => toggleShiftExpansion(shift.id)}
                         styles={{
-                          root: { 
-                            minWidth: 'auto', 
+                          root: {
+                            minWidth: 'auto',
                             padding: '8px',
                             backgroundColor: 'transparent',
                             border: '1px solid #dee2e6',
                             borderRadius: '4px'
                           }
                         }}
-                      />
+                      >
+                        {expandedShifts.has(shift.id) ? <ChevronUp24Regular /> : <ChevronDown24Regular />}
+                      </DefaultButton>
                     </Stack>
 
                     {/* Staff and Venue Info */}

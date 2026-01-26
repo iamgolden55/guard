@@ -116,6 +116,22 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
             )
         except Exception as e:
             logger.exception(f"Error sending shift removal notification: {e}")
+
+        # Queue email notification for shift removal
+        try:
+            from .tasks import send_shift_removal_email_task
+            send_shift_removal_email_task.delay(
+                user_id=previous_staff.id,
+                shift_id=instance.id,
+                venue_name=venue_name,
+                shift_date=formatted_date,
+                shift_time=formatted_time,
+                reason=None
+            )
+            logger.info(f"Queued shift removal email for shift {instance.id}")
+        except Exception as e:
+            logger.warning(f"Could not queue shift removal email: {e}")
+
         return  # No further processing needed
 
     # Case 2: Staff reassigned to different user
@@ -138,6 +154,22 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
             )
         except Exception as e:
             logger.exception(f"Error sending shift reassignment notification: {e}")
+
+        # Queue email notification for old staff being replaced
+        try:
+            from .tasks import send_shift_removal_email_task
+            send_shift_removal_email_task.delay(
+                user_id=previous_staff.id,
+                shift_id=instance.id,
+                venue_name=venue_name,
+                shift_date=formatted_date,
+                shift_time=formatted_time,
+                reason=f"Shift has been reassigned to {new_staff_name}"
+            )
+            logger.info(f"Queued shift reassignment removal email for shift {instance.id}")
+        except Exception as e:
+            logger.warning(f"Could not queue shift reassignment email: {e}")
+
         # Continue to send assignment notification to new staff
 
     # Case 3: New assignment (new shift with staff, or staff added/changed)
@@ -179,6 +211,25 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
             logger.info(f"Scheduled reminder tasks for shift {instance.id}")
         except Exception as e:
             logger.warning(f"Could not schedule reminder tasks: {e}")
+
+        # Queue email notification task
+        try:
+            from .tasks import send_shift_assignment_email_task
+            venue_address = instance.venue.address if instance.venue else None
+            end_time = instance.end_time.strftime('%I:%M %p') if instance.end_time else None
+            send_shift_assignment_email_task.delay(
+                user_id=current_staff.id,
+                shift_id=instance.id,
+                venue_name=venue_name,
+                venue_address=venue_address,
+                start_time=formatted_time,
+                end_time=end_time,
+                formatted_date=formatted_date,
+                hourly_rate=None  # Could be enhanced to pass pay rate if available
+            )
+            logger.info(f"Queued shift assignment email for shift {instance.id}")
+        except Exception as e:
+            logger.warning(f"Could not queue shift assignment email: {e}")
 
         # Multi-staff shift: Notify existing co-workers about new assignment
         if instance.shift_group:
@@ -387,7 +438,7 @@ def notify_exchange_status_change(sender, instance, created, **kwargs):
                 notification_event = 'cancelled'
 
         if notification_event:
-            # Queue async task for notification
+            # Queue async task for push notification
             send_exchange_status_notification.delay(
                 exchange_id=instance.id,
                 event_type=notification_event
@@ -396,6 +447,21 @@ def notify_exchange_status_change(sender, instance, created, **kwargs):
                 f"Queued exchange notification for exchange {instance.id}: "
                 f"event={notification_event}"
             )
+
+            # Queue email notification task (only for key events)
+            if notification_event in ['created', 'accepted', 'approved']:
+                try:
+                    from .tasks import send_exchange_email_task
+                    send_exchange_email_task.delay(
+                        exchange_id=instance.id,
+                        event_type=notification_event
+                    )
+                    logger.info(
+                        f"Queued exchange email for exchange {instance.id}: "
+                        f"event={notification_event}"
+                    )
+                except Exception as email_error:
+                    logger.warning(f"Could not queue exchange email: {email_error}")
 
     except Exception as e:
         logger.exception(f"Error queuing exchange status notification: {e}")
@@ -442,6 +508,21 @@ def notify_shift_deletion(sender, instance, **kwargs):
             f"Shift deletion notification sent for shift {instance.id} "
             f"to user {instance.staff_user.id}"
         )
+
+        # Queue email notification for shift deletion
+        try:
+            from .tasks import send_shift_removal_email_task
+            send_shift_removal_email_task.delay(
+                user_id=instance.staff_user.id,
+                shift_id=instance.id,
+                venue_name=venue_name,
+                shift_date=formatted_date,
+                shift_time=formatted_time,
+                reason="Shift has been cancelled"
+            )
+            logger.info(f"Queued shift deletion email for shift {instance.id}")
+        except Exception as e:
+            logger.warning(f"Could not queue shift deletion email: {e}")
 
     except Exception as e:
         logger.exception(f"Error sending shift deletion notification: {e}")
@@ -511,3 +592,121 @@ def auto_update_invoice_on_time_adjustment(sender, instance, created, **kwargs):
             f"Error auto-updating invoice after time adjustment for shift {shift.id}: {str(e)}",
             exc_info=True
         )
+
+
+# =============================================================================
+# Shift Approval Email Notifications
+# =============================================================================
+
+@receiver(post_save, sender=Shift)
+def notify_shift_approval(sender, instance, created, **kwargs):
+    """
+    Send email notification when a shift is approved.
+
+    Triggers when:
+    - Shift status changes to 'approved' from any other status
+    """
+    if created:
+        return  # Don't trigger on creation
+
+    previous_status = getattr(instance, '_previous_status', None)
+    current_status = instance.status
+
+    # Only trigger when status changes to 'approved'
+    if current_status != 'approved' or previous_status == 'approved':
+        return
+
+    if not instance.staff_user:
+        return
+
+    try:
+        from .tasks import send_approval_email_task
+
+        # Format shift details
+        start_time = instance.start_time
+        formatted_date = start_time.strftime('%B %d, %Y')
+        formatted_time = start_time.strftime('%I:%M %p')
+        venue_name = instance.venue.name if instance.venue else 'Unknown Venue'
+
+        # Calculate hours worked if available
+        hours_worked = None
+        if instance.actual_hours_worked:
+            hours = float(instance.actual_hours_worked)
+            hours_worked = f"{hours:.1f} hours"
+
+        send_approval_email_task.delay(
+            user_id=instance.staff_user.id,
+            shift_id=instance.id,
+            approval_type='shift_approved',
+            venue_name=venue_name,
+            shift_date=formatted_date,
+            shift_time=formatted_time,
+            hours_worked=hours_worked
+        )
+        logger.info(f"Queued shift approval email for shift {instance.id}")
+
+    except Exception as e:
+        logger.warning(f"Could not queue shift approval email: {e}")
+
+
+@receiver(pre_save, sender=OpenShiftRequest)
+def track_open_shift_request_status(sender, instance, **kwargs):
+    """
+    Track when an OpenShiftRequest status is changing.
+    Store the previous status to detect claim approvals in post_save.
+    """
+    if instance.pk:
+        try:
+            old_request = OpenShiftRequest.objects.get(pk=instance.pk)
+            instance._previous_status = old_request.status
+        except OpenShiftRequest.DoesNotExist:
+            instance._previous_status = None
+    else:
+        instance._previous_status = None
+
+
+@receiver(post_save, sender=OpenShiftRequest)
+def notify_claim_approved(sender, instance, created, **kwargs):
+    """
+    Send email notification when an open shift claim is approved.
+
+    Triggers when:
+    - OpenShiftRequest status changes to 'approved'
+    - And there is a claimed_by user
+    """
+    if created:
+        return
+
+    previous_status = getattr(instance, '_previous_status', None)
+    current_status = instance.status
+
+    # Only trigger when status changes to 'approved'
+    if current_status != 'approved' or previous_status == 'approved':
+        return
+
+    if not instance.claimed_by:
+        return
+
+    try:
+        from .tasks import send_approval_email_task
+
+        shift = instance.original_shift
+        start_time = shift.start_time
+        formatted_date = start_time.strftime('%B %d, %Y')
+        formatted_time = shift.start_time.strftime('%I:%M %p')
+        venue_name = shift.venue.name if shift.venue else 'Unknown Venue'
+        venue_address = shift.venue.address if shift.venue else None
+
+        send_approval_email_task.delay(
+            user_id=instance.claimed_by.id,
+            shift_id=shift.id,
+            approval_type='claim_approved',
+            venue_name=venue_name,
+            shift_date=formatted_date,
+            shift_time=formatted_time,
+            venue_address=venue_address
+        )
+        logger.info(f"Queued claim approval email for OpenShiftRequest {instance.id}")
+
+    except Exception as e:
+        logger.warning(f"Could not queue claim approval email: {e}")

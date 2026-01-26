@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Solid background - no transparency -->
+  <rect width="1024" height="1024" fill="#1e293b"/>
+  <!-- Rounded corners simulation for iOS -->
+  <rect width="1024" height="1024" rx="180" fill="#1e293b"/>
+  <!-- Shield shape -->
+  <path d="M512 100 L880 220 L880 500 C880 720 720 880 512 960 C304 880 144 720 144 500 L144 220 Z" fill="#334155"/>
+  <!-- Inner shield gradient effect -->
+  <path d="M512 140 L840 248 L840 490 C840 690 695 838 512 912 C329 838 184 690 184 490 L184 248 Z" fill="#1e293b"/>
+  <!-- Abstract M letterform -->
+  <path d="M280 740 L280 380 L400 380 L512 580 L624 380 L744 380 L744 740 L640 740 L640 520 L540 740 L484 740 L384 520 L384 740 Z" fill="#ffffff"/>
+  <!-- Accent line at top -->
+  <path d="M512 180 L800 276 L800 310 L512 224 L224 310 L224 276 Z" fill="#64748b"/>
+</svg>

@@ -1,16 +1,54 @@
 /**
  * Global Typography System
- * Platform-specific fonts with consistent sizing
+ * Custom fonts with Plus Jakarta Sans for headings and Inter for body
  */
 
 import { Platform, TextStyle } from 'react-native';
 
-export const fonts = {
-  // Font Families
-  family: {
+// Font family definitions
+export const fontFamilies = {
+  // Inter - Body/UI text
+  inter: {
+    regular: 'Inter-Regular',
+    medium: 'Inter-Medium',
+    semiBold: 'Inter-SemiBold',
+    bold: 'Inter-Bold',
+  },
+  // Plus Jakarta Sans - Headings/Display
+  plusJakarta: {
+    regular: 'PlusJakartaSans-Regular',
+    medium: 'PlusJakartaSans-Medium',
+    semiBold: 'PlusJakartaSans-SemiBold',
+    bold: 'PlusJakartaSans-Bold',
+  },
+  // System fonts (fallback)
+  system: {
     ios: 'System',
     android: 'Roboto',
     default: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  // Monospace
+  mono: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+} as const;
+
+export const fonts = {
+  // Font Families (using custom fonts)
+  family: {
+    // Body text - Inter
+    body: fontFamilies.inter.regular,
+    bodyMedium: fontFamilies.inter.medium,
+    bodySemiBold: fontFamilies.inter.semiBold,
+    bodyBold: fontFamilies.inter.bold,
+    // Headings - Plus Jakarta Sans
+    heading: fontFamilies.plusJakarta.regular,
+    headingMedium: fontFamilies.plusJakarta.medium,
+    headingSemiBold: fontFamilies.plusJakarta.semiBold,
+    headingBold: fontFamilies.plusJakarta.bold,
+    // Fallback
+    ios: fontFamilies.system.ios,
+    android: fontFamilies.system.android,
+    default: fontFamilies.system.default,
+    mono: fontFamilies.mono,
   },
 
   // Font Weights
@@ -51,99 +89,107 @@ export const fonts = {
   },
 } as const;
 
-// Pre-defined text styles
+// Pre-defined text styles using custom fonts
 export const textStyles = {
-  // Headings
+  // Headings - Plus Jakarta Sans
   h1: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.plusJakarta.bold,
     fontSize: fonts.size['3xl'],
     fontWeight: fonts.weight.bold,
     lineHeight: fonts.size['3xl'] * fonts.lineHeight.tight,
     letterSpacing: fonts.letterSpacing.tighter,
   },
   h2: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.plusJakarta.bold,
     fontSize: fonts.size['2xl'],
     fontWeight: fonts.weight.bold,
     lineHeight: fonts.size['2xl'] * fonts.lineHeight.tight,
     letterSpacing: fonts.letterSpacing.tight,
   },
   h3: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.plusJakarta.semiBold,
     fontSize: fonts.size.xl,
     fontWeight: fonts.weight.semibold,
     lineHeight: fonts.size.xl * fonts.lineHeight.normal,
   },
   h4: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.plusJakarta.semiBold,
     fontSize: fonts.size.lg,
     fontWeight: fonts.weight.semibold,
     lineHeight: fonts.size.lg * fonts.lineHeight.normal,
   },
 
-  // Body Text
+  // Body Text - Inter
   body: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.inter.regular,
     fontSize: fonts.size.base,
     fontWeight: fonts.weight.regular,
     lineHeight: fonts.size.base * fonts.lineHeight.normal,
   },
   bodyLarge: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.inter.regular,
     fontSize: fonts.size.lg,
     fontWeight: fonts.weight.regular,
     lineHeight: fonts.size.lg * fonts.lineHeight.normal,
   },
   bodySmall: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.inter.regular,
     fontSize: fonts.size.sm,
     fontWeight: fonts.weight.regular,
     lineHeight: fonts.size.sm * fonts.lineHeight.normal,
   },
+  bodyMedium: {
+    fontFamily: fontFamilies.inter.medium,
+    fontSize: fonts.size.base,
+    fontWeight: fonts.weight.medium,
+    lineHeight: fonts.size.base * fonts.lineHeight.normal,
+  },
 
-  // Labels
+  // Labels - Inter
   label: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.inter.semiBold,
     fontSize: fonts.size.base,
     fontWeight: fonts.weight.semibold,
     lineHeight: fonts.size.base * fonts.lineHeight.normal,
   },
   labelSmall: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.inter.medium,
     fontSize: fonts.size.sm,
     fontWeight: fonts.weight.medium,
     lineHeight: fonts.size.sm * fonts.lineHeight.normal,
   },
 
-  // Button Text
+  // Button Text - Inter
   button: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.inter.semiBold,
     fontSize: fonts.size.lg,
     fontWeight: fonts.weight.semibold,
     lineHeight: fonts.size.lg * fonts.lineHeight.tight,
   },
   buttonSmall: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.inter.semiBold,
     fontSize: fonts.size.base,
     fontWeight: fonts.weight.semibold,
     lineHeight: fonts.size.base * fonts.lineHeight.tight,
   },
 
-  // Input Text
+  // Input Text - Inter
   input: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.inter.regular,
     fontSize: fonts.size.base,
     fontWeight: fonts.weight.regular,
     lineHeight: fonts.size.base * fonts.lineHeight.normal,
   },
 
-  // Caption/Helper Text
+  // Caption/Helper Text - Inter
   caption: {
-    fontFamily: fonts.family.default,
+    fontFamily: fontFamilies.inter.regular,
     fontSize: fonts.size.xs,
     fontWeight: fonts.weight.regular,
     lineHeight: fonts.size.xs * fonts.lineHeight.normal,
   },
 } as const;
 
+export type Fonts = typeof fonts;
 export type TextStyles = typeof textStyles;
+export type FontFamilies = typeof fontFamilies;

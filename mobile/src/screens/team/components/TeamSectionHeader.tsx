@@ -7,7 +7,7 @@ import React from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BodySmall } from '@components/ui';
-import { teamsColors } from '../../../theme/teamsColors';
+import { getTeamsColors } from '../../../theme/teamsColors';
 import { spacing } from '../../../theme';
 
 export interface TeamSectionHeaderProps {
@@ -17,6 +17,7 @@ export interface TeamSectionHeaderProps {
   collapsible?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  isDark?: boolean;
 }
 
 export const TeamSectionHeader: React.FC<TeamSectionHeaderProps> = ({
@@ -26,7 +27,9 @@ export const TeamSectionHeader: React.FC<TeamSectionHeaderProps> = ({
   collapsible = false,
   collapsed = false,
   onToggleCollapse,
+  isDark = false,
 }) => {
+  const teamsColors = getTeamsColors(isDark);
   const handlePress = () => {
     if (collapsible && onToggleCollapse) {
       onToggleCollapse();
@@ -35,7 +38,7 @@ export const TeamSectionHeader: React.FC<TeamSectionHeaderProps> = ({
 
   return (
     <TouchableOpacity
-      style={styles.container}
+      style={[styles.container, { backgroundColor: teamsColors.background.secondary, borderBottomColor: teamsColors.border.light }]}
       onPress={handlePress}
       disabled={!collapsible}
       activeOpacity={collapsible ? 0.6 : 1}
@@ -53,18 +56,16 @@ export const TeamSectionHeader: React.FC<TeamSectionHeaderProps> = ({
 
         {/* Section Title */}
         <BodySmall
-          style={styles.title}
-          color={teamsColors.text.secondary}
+          style={[styles.title, { color: teamsColors.text.secondary }]}
         >
           {title.toUpperCase()}
         </BodySmall>
 
         {/* Member Count Badge */}
         {count !== undefined && (
-          <View style={styles.countBadge}>
+          <View style={[styles.countBadge, { backgroundColor: teamsColors.background.tertiary }]}>
             <BodySmall
-              style={styles.countText}
-              color={teamsColors.text.tertiary}
+              style={[styles.countText, { color: teamsColors.text.tertiary }]}
             >
               {count}
             </BodySmall>
@@ -87,11 +88,9 @@ export const TeamSectionHeader: React.FC<TeamSectionHeaderProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: teamsColors.background.secondary,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: teamsColors.border.light,
   },
   content: {
     flexDirection: 'row',
@@ -107,7 +106,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   countBadge: {
-    backgroundColor: teamsColors.background.tertiary,
     borderRadius: 10,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,

@@ -1,0 +1,97 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Transfer Request Accepted - {{ company_name }}{% endblock %}
+
+{% block headline %}Your Transfer Request Has Been Accepted{% endblock %}
+
+{% block content %}
+<!-- Body Text -->
+<tr>
+    <td align="left" class="mobile-padding" style="padding: 0 10px 20px 10px;">
+        <p style="margin: 0 0 15px 0; font-size: 16px; line-height: 1.6; color: #555555;">
+            Hello {{ user.first_name|default:user.username }},
+        </p>
+        <p style="margin: 0; font-size: 16px; line-height: 1.6; color: #555555;">
+            Great news! <strong>{{ target_name }}</strong> has accepted your shift transfer request. The transfer is now pending manager approval.
+        </p>
+    </td>
+</tr>
+
+<!-- Status Badge -->
+<tr>
+    <td align="center" class="mobile-padding" style="padding: 0 10px 20px 10px;">
+        <table border="0" cellpadding="0" cellspacing="0">
+            <tr>
+                <td style="background-color: #e8f5e9; padding: 8px 20px; border-radius: 20px;">
+                    <span style="font-size: 13px; font-weight: 600; color: #2e7d32; text-transform: uppercase; letter-spacing: 0.5px;">Accepted - Pending Approval</span>
+                </td>
+            </tr>
+        </table>
+    </td>
+</tr>
+
+<!-- Shift Details Box -->
+<tr>
+    <td align="left" class="mobile-padding" style="padding: 0 10px 25px 10px;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" class="shift-box" style="background-color: #f0f7ff; border-radius: 8px; border-left: 4px solid #4caf50;">
+            <tr>
+                <td style="padding: 20px;">
+                    <p style="margin: 0 0 15px 0; font-size: 14px; font-weight: 600; color: #111111; text-transform: uppercase; letter-spacing: 0.5px;">
+                        Shift Details
+                    </p>
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                            <td style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
+                                <span style="font-size: 14px; color: #666666;">Venue</span>
+                            </td>
+                            <td align="right" style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
+                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ shift_venue }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
+                                <span style="font-size: 14px; color: #666666;">Date</span>
+                            </td>
+                            <td align="right" style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
+                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ shift_date }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0;">
+                                <span style="font-size: 14px; color: #666666;">Transferring To</span>
+                            </td>
+                            <td align="right" style="padding: 8px 0;">
+                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ target_name }}</span>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </td>
+</tr>
+
+<!-- CTA Button -->
+<tr>
+    <td align="center" class="mobile-padding" style="padding: 0 10px 25px 10px;">
+        <table border="0" cellpadding="0" cellspacing="0">
+            <tr>
+                <td align="center">
+                    <a href="{{ exchange_url }}" target="_blank" style="display: inline-block; background-color: #1a1a2e; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none; padding: 14px 30px; border-radius: 50px; text-align: center;">
+                        View Transfer Status
+                    </a>
+                </td>
+            </tr>
+        </table>
+    </td>
+</tr>
+
+<!-- Note -->
+<tr>
+    <td align="left" class="mobile-padding" style="padding: 0 10px 20px 10px;">
+        <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #888888;">
+            You'll receive another notification once a manager has approved or rejected this transfer.
+        </p>
+    </td>
+</tr>
+{% endblock %}

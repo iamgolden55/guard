@@ -7,7 +7,8 @@ import React, { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, Heading3, Body, BodySmall, Button } from '@components/ui';
-import { colors, spacing, textStyles } from '../../../theme';
+import { colors, spacing, textStyles, getColors } from '../../../theme';
+import { useTheme } from '../../../hooks/useTheme';
 
 interface Shift {
   id: number;
@@ -34,6 +35,8 @@ export const ActiveShiftCard: React.FC<ActiveShiftCardProps> = ({
   onCheckOut,
   onTakeBreak,
 }) => {
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
   const [elapsedTime, setElapsedTime] = useState('');
   const [breakElapsedTime, setBreakElapsedTime] = useState('');
 
@@ -95,26 +98,26 @@ export const ActiveShiftCard: React.FC<ActiveShiftCardProps> = ({
   return (
     <Card variant="elevated" padding="lg" style={styles.card}>
       {/* Active badge */}
-      <View style={styles.badge}>
-        <View style={styles.badgeDot} />
-        <BodySmall style={styles.badgeText}>ACTIVE SHIFT</BodySmall>
+      <View style={[styles.badge, { backgroundColor: themeColors.success }]}>
+        <View style={[styles.badgeDot, { backgroundColor: themeColors.white }]} />
+        <BodySmall style={[styles.badgeText, { color: themeColors.white }]}>ACTIVE SHIFT</BodySmall>
       </View>
 
       {/* Venue info */}
-      <Heading3 style={styles.venueName}>{shift.venue.name}</Heading3>
+      <Heading3 style={[styles.venueName, { color: themeColors.text.primary }]}>{shift.venue.name}</Heading3>
 
       {/* Time info */}
       <View style={styles.timeRow}>
-        <Ionicons name="time-outline" size={16} color={colors.text.secondary} />
-        <BodySmall color={colors.text.secondary} style={styles.timeText}>
+        <Ionicons name="time-outline" size={16} color={themeColors.text.secondary} />
+        <BodySmall color={themeColors.text.secondary} style={styles.timeText}>
           Started at {checkInTime}
         </BodySmall>
       </View>
 
       {elapsedTime && (
         <View style={styles.timeRow}>
-          <Ionicons name="hourglass-outline" size={16} color={colors.text.secondary} />
-          <BodySmall color={colors.text.secondary} style={styles.timeText}>
+          <Ionicons name="hourglass-outline" size={16} color={themeColors.text.secondary} />
+          <BodySmall color={themeColors.text.secondary} style={styles.timeText}>
             Elapsed: {elapsedTime}
           </BodySmall>
         </View>
@@ -122,13 +125,13 @@ export const ActiveShiftCard: React.FC<ActiveShiftCardProps> = ({
 
       {/* Break Status */}
       {isOnBreak && (
-        <View style={styles.breakStatus}>
-          <View style={styles.breakBadge}>
-            <Ionicons name="cafe-outline" size={14} color={colors.white} />
-            <BodySmall style={styles.breakBadgeText}>ON BREAK</BodySmall>
+        <View style={[styles.breakStatus, { borderTopColor: themeColors.border.light }]}>
+          <View style={[styles.breakBadge, { backgroundColor: themeColors.warning }]}>
+            <Ionicons name="cafe-outline" size={14} color={themeColors.white} />
+            <BodySmall style={[styles.breakBadgeText, { color: themeColors.white }]}>ON BREAK</BodySmall>
           </View>
           {breakElapsedTime && (
-            <BodySmall color={colors.warning} style={styles.breakElapsedText}>
+            <BodySmall color={themeColors.warning} style={styles.breakElapsedText}>
               Break duration: {breakElapsedTime}
             </BodySmall>
           )}
@@ -144,7 +147,7 @@ export const ActiveShiftCard: React.FC<ActiveShiftCardProps> = ({
           onPress={onTakeBreak}
           icon={
             isOnBreak ? (
-              <Ionicons name="checkmark-circle-outline" size={20} color={colors.white} style={styles.buttonIcon} />
+              <Ionicons name="checkmark-circle-outline" size={20} color={themeColors.white} style={styles.buttonIcon} />
             ) : undefined
           }
           style={styles.breakButton}
@@ -154,7 +157,7 @@ export const ActiveShiftCard: React.FC<ActiveShiftCardProps> = ({
           variant="primary"
           size="medium"
           onPress={onCheckOut}
-          icon={<Ionicons name="exit-outline" size={20} color={colors.white} style={styles.buttonIcon} />}
+          icon={<Ionicons name="exit-outline" size={20} color={themeColors.white} style={styles.buttonIcon} />}
           style={styles.checkOutButton}
         />
       </View>
@@ -170,7 +173,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: colors.success,
+    // backgroundColor applied inline with themeColors
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: spacing.base,
@@ -180,11 +183,11 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.white,
+    // backgroundColor applied inline with themeColors
     marginRight: spacing.xs,
   },
   badgeText: {
-    color: colors.white,
+    // color applied inline with themeColors
     fontWeight: '700',
     fontSize: 11,
     letterSpacing: 0.5,
@@ -204,20 +207,20 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    // borderTopColor applied inline with themeColors
   },
   breakBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: colors.warning,
+    // backgroundColor applied inline with themeColors
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: spacing.base,
     marginBottom: spacing.xs,
   },
   breakBadgeText: {
-    color: colors.white,
+    // color applied inline with themeColors
     fontWeight: '700',
     fontSize: 11,
     letterSpacing: 0.5,

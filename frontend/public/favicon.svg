@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#334155"/>
+      <stop offset="100%" style="stop-color:#1e293b"/>
+    </linearGradient>
+  </defs>
+  <!-- Shield background -->
+  <path d="M256 16 L480 80 L480 240 C480 360 380 460 256 496 C132 460 32 360 32 240 L32 80 Z" fill="url(#shieldGrad)"/>
+  <!-- Abstract M letterform -->
+  <path d="M128 360 L128 180 L200 180 L256 280 L312 180 L384 180 L384 360 L328 360 L328 260 L280 360 L232 360 L184 260 L184 360 Z" fill="#ffffff"/>
+  <!-- Accent line at top -->
+  <path d="M256 48 L440 104 L440 120 L256 72 L72 120 L72 104 Z" fill="#64748b" opacity="0.6"/>
+</svg>

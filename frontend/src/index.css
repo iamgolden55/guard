@@ -4,9 +4,143 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   Typography System - Uber-inspired with Inter + Plus Jakarta Sans
+   ==========================================================================
+   Font Usage:
+   - Plus Jakarta Sans: Headings, display text, buttons (weight 500-800)
+   - Inter: Body text, paragraphs, UI elements (weight 400-700)
+   ========================================================================== */
+
+@layer base {
+  html {
+    font-size: 16px; /* Base unit for rem calculations */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply font-body text-base text-foreground bg-background;
+    font-feature-settings: 'kern' 1, 'liga' 1;
+  }
+
+  /* Headings - Plus Jakarta Sans */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading font-semibold tracking-tight text-foreground;
+  }
+
+  h1 {
+    @apply text-4xl md:text-5xl font-bold;
+    letter-spacing: -0.02em;
+  }
+
+  h2 {
+    @apply text-3xl md:text-4xl font-bold;
+    letter-spacing: -0.02em;
+  }
+
+  h3 {
+    @apply text-2xl md:text-3xl font-semibold;
+    letter-spacing: -0.01em;
+  }
+
+  h4 {
+    @apply text-xl md:text-2xl font-semibold;
+    letter-spacing: -0.01em;
+  }
+
+  h5 {
+    @apply text-lg md:text-xl font-medium;
+  }
+
+  h6 {
+    @apply text-base md:text-lg font-medium;
+  }
+
+  /* Body text - Inter */
+  p {
+    @apply text-base leading-relaxed;
+  }
+
+  /* Small text */
+  small {
+    @apply text-sm;
+  }
+
+  /* Links */
+  a {
+    @apply text-primary hover:underline transition-colors;
+  }
+
+  /* Strong/Bold */
+  strong, b {
+    @apply font-semibold;
+  }
+
+  /* Code/Monospace */
+  code, pre, kbd {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    @apply text-sm;
+  }
+}
+
+/* Utility classes for typography */
+@layer components {
+  /* Display text - large marketing/hero text */
+  .text-display {
+    @apply font-display text-5xl md:text-6xl font-bold tracking-tight;
+    letter-spacing: -0.03em;
+  }
+
+  /* Page titles */
+  .text-page-title {
+    @apply font-heading text-3xl md:text-4xl font-bold tracking-tight;
+  }
+
+  /* Section titles */
+  .text-section-title {
+    @apply font-heading text-2xl font-semibold tracking-tight;
+  }
+
+  /* Card titles */
+  .text-card-title {
+    @apply font-heading text-lg font-semibold;
+  }
+
+  /* Body large */
+  .text-body-lg {
+    @apply font-body text-lg leading-relaxed;
+  }
+
+  /* Body default */
+  .text-body {
+    @apply font-body text-base leading-relaxed;
+  }
+
+  /* Body small */
+  .text-body-sm {
+    @apply font-body text-sm leading-normal;
+  }
+
+  /* Caption/Label text */
+  .text-caption {
+    @apply font-body text-xs text-muted-foreground uppercase tracking-wide font-medium;
+  }
+
+  /* Button text */
+  .text-button {
+    @apply font-heading text-sm font-semibold tracking-wide;
+  }
+
+  /* Label text */
+  .text-label {
+    @apply font-body text-sm font-medium;
+  }
+}
+
 html, body {
   height: 100%;
-  font-family: Arial, Helvetica, sans-serif;
   margin: 0;
   padding: 0;
 }
@@ -82,13 +216,93 @@ html, body {
   --chart-5: 340 75% 55%;
 }
 
-/* Professional Sidebar Navigation - Outlook-inspired */
+/* ==========================================================================
+   SVG Navigation Icons - @fluentui/react-icons
+   ========================================================================== */
+
+/* HIDE default Fluent UI Nav font-based icons - we use SVG icons instead
+   The Nav component renders font icons that show as empty boxes when the font fails to load.
+   We hide ALL i tags and icon elements within Nav, then show only our SVG .nav-icon elements */
+.ms-Nav i,
+.ms-Nav .ms-Icon,
+.ms-Nav [data-icon-name],
+.ms-Nav-link > i,
+.ms-Nav-link > .ms-Icon,
+.ms-Nav-compositeLink i,
+.ms-Nav-compositeLink .ms-Icon,
+.ms-Button-icon {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  visibility: hidden !important;
+}
+
+/* Base SVG nav icon styling */
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+/* Hover state for nav icons */
+.ms-Nav-link:hover .nav-icon {
+  opacity: 0.8;
+}
+
+/* Selected state for nav icons - handled via isSelected prop in component */
+.ms-Nav-compositeLink.is-selected .nav-icon {
+  color: #cb2431 !important;
+}
+
+/* Mobile bottom nav SVG icons */
+.mobile-nav-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Professional Sidebar Navigation - Uber-inspired Typography */
 .ms-Nav-link {
-  font-size: 14px;
-  font-weight: 400;
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
   line-height: 20px;
   padding: 8px 12px;
+  letter-spacing: -0.01em;
   transition: background-color 0.15s ease;
+}
+
+/* Sidebar heading/title */
+.ms-Persona-primaryText {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 15px !important;
+  letter-spacing: -0.01em;
+}
+
+.ms-Persona-secondaryText {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 12px !important;
+  text-transform: capitalize;
+}
+
+/* Header/Portal title */
+.portal-title {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+}
+
+/* Command bar / top nav */
+.ms-CommandBar {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+.ms-CommandBarItem-link {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 500 !important;
 }
 
 /* Default icon styling - neutral dark gray */
@@ -119,7 +333,8 @@ html, body {
 
 /* Selected state - brand red accent */
 .ms-Nav-compositeLink.is-selected .ms-Nav-link {
-  font-weight: 600;
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
 }
 
 .ms-Nav-compositeLink.is-selected i[data-icon-name],
@@ -155,4 +370,521 @@ html, body {
 /* Active state for leave sidebar icons */
 .leave-nav-active .ms-Icon {
   color: #cb2431 !important; /* Brand red when active */
+}
+
+/* ==========================================================================
+   Fluent UI Typography Overrides - Uber-inspired
+   ========================================================================== */
+
+/* Buttons */
+.ms-Button {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em;
+}
+
+.ms-Button-label {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+}
+
+/* Text fields and inputs */
+.ms-TextField-field,
+.ms-TextField input,
+.ms-Dropdown-title,
+.ms-SearchBox-field {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+}
+
+.ms-Label {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+}
+
+/* Dropdown items */
+.ms-Dropdown-item {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+}
+
+/* Dialog/Modal */
+.ms-Dialog-title {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+}
+
+.ms-Dialog-subText {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+}
+
+/* Message bar */
+.ms-MessageBar-text {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+}
+
+/* DetailsList / Tables */
+.ms-DetailsHeader-cellTitle {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.ms-DetailsRow-cell {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+}
+
+/* Pivot/Tabs */
+.ms-Pivot-text {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 500 !important;
+}
+
+.ms-Pivot-link.is-selected .ms-Pivot-text {
+  font-weight: 600 !important;
+}
+
+/* Callout/Tooltip */
+.ms-Callout-main {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* Panel */
+.ms-Panel-headerText {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+}
+
+/* Mobile bottom nav labels */
+.mobile-nav-label {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 11px !important;
+}
+
+/* ==========================================================================
+   Global Typography - Ensure all page content uses new fonts
+   ========================================================================== */
+
+/* Global text reset - Inter for all body text */
+/* IMPORTANT: Exclude icon elements (i, .ms-Icon, svg, [class*="Icon"]) */
+body,
+main,
+div:not(.ms-Icon):not([class*="Icon"]),
+span:not(.ms-Icon):not([class*="Icon"]),
+p,
+td,
+th,
+li,
+label:not(.ms-Icon),
+input,
+textarea,
+select,
+button:not(.ms-Icon) {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+/* Preserve icon fonts - DO NOT override
+   CRITICAL: i tag should NEVER have text fonts - it's used for icons */
+i,
+i[class],
+i[data-icon-name],
+.ms-Icon,
+[class*="ms-Icon"],
+[class*="ms-Icon--"],
+[data-icon-name],
+svg {
+  font-family: 'FabricMDL2Icons', 'Segoe MDL2 Assets', 'Segoe UI Symbol' !important;
+  font-style: normal !important;
+}
+
+/* Page titles and headings - Plus Jakarta Sans */
+h1, h2, h3, h4, h5, h6,
+.page-title,
+.section-title,
+.card-title,
+[class*="Title"],
+[class*="title"],
+[class*="Heading"],
+[class*="heading"] {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  letter-spacing: -0.02em;
+}
+
+/* Specific page title styles */
+main h1,
+main h2 {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+}
+
+main h3,
+main h4 {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em;
+}
+
+/* Cards and widget titles */
+.card h1, .card h2, .card h3, .card h4,
+[class*="Card"] h1, [class*="Card"] h2, [class*="Card"] h3, [class*="Card"] h4,
+[class*="Widget"] h1, [class*="Widget"] h2, [class*="Widget"] h3, [class*="Widget"] h4 {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+}
+
+/* Table headers */
+table th,
+thead th,
+.table-header,
+[class*="Header"] span,
+[class*="header"] span {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+}
+
+/* Table body */
+table td,
+tbody td,
+.table-cell {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+}
+
+/* Buttons - all types */
+button,
+[role="button"],
+.btn,
+[class*="Button"],
+[class*="button"],
+a.btn {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em;
+}
+
+/* Tabs and navigation items */
+[role="tab"],
+[class*="Tab"],
+[class*="tab"],
+[class*="Pivot"],
+.nav-link {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 500 !important;
+}
+
+[role="tab"][aria-selected="true"],
+[class*="Tab"].active,
+[class*="tab"].active,
+.nav-link.active {
+  font-weight: 600 !important;
+}
+
+/* Status badges and pills */
+[class*="Badge"],
+[class*="badge"],
+[class*="Status"],
+[class*="status"],
+[class*="Pill"],
+[class*="pill"],
+[class*="Tag"],
+[class*="tag"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Form labels */
+label,
+.label,
+[class*="Label"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 500 !important;
+}
+
+/* Form inputs */
+input,
+textarea,
+select,
+[class*="Input"],
+[class*="input"],
+[class*="Field"],
+[class*="field"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+}
+
+/* Links in content */
+main a,
+.content a {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* Small/caption text */
+small,
+.caption,
+.text-sm,
+.text-xs,
+[class*="Caption"],
+[class*="caption"],
+[class*="Secondary"],
+[class*="secondary"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+}
+
+/* Alert and message text */
+[class*="Alert"],
+[class*="alert"],
+[class*="Message"],
+[class*="message"],
+[class*="Notice"],
+[class*="notice"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* Tooltip and popover */
+[class*="Tooltip"],
+[class*="tooltip"],
+[class*="Popover"],
+[class*="popover"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+}
+
+/* Ensure Tailwind text utilities use correct fonts */
+.font-sans {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+.font-heading {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+}
+
+.font-bold, .font-semibold {
+  font-family: inherit !important;
+}
+
+/* Note: Removed overly aggressive [style*="font-family"] selector that broke icons */
+
+/* ==========================================================================
+   Fluent UI DetailsList (Tables) - Complete Override
+   ========================================================================== */
+
+/* DetailsList container */
+.ms-DetailsList,
+.ms-DetailsList-contentWrapper {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* Header row */
+.ms-DetailsHeader,
+.ms-DetailsHeader-cell,
+.ms-DetailsHeader-cellTitle,
+.ms-DetailsHeader-cellName {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #605e5c;
+}
+
+/* Data rows */
+.ms-DetailsRow,
+.ms-DetailsRow-cell,
+.ms-DetailsRow-fields {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+}
+
+/* Group headers */
+.ms-GroupHeader,
+.ms-GroupHeader-title {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+}
+
+/* Selection checkbox area */
+.ms-DetailsRow-check,
+.ms-Check {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* ==========================================================================
+   Fluent UI CommandBar - Complete Override
+   ========================================================================== */
+
+.ms-CommandBar,
+.ms-CommandBar-primaryCommand,
+.ms-CommandBar-secondaryCommand {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+.ms-CommandBarItem,
+.ms-CommandBarItem-link,
+.ms-CommandBarItem-commandText {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+}
+
+/* ==========================================================================
+   Fluent UI SearchBox - Complete Override
+   ========================================================================== */
+
+.ms-SearchBox,
+.ms-SearchBox-field,
+.ms-SearchBox input {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+}
+
+/* ==========================================================================
+   Fluent UI Pivot/Tabs - Complete Override
+   ========================================================================== */
+
+.ms-Pivot,
+.ms-Pivot-link,
+.ms-Pivot-text,
+.ms-Pivot-linkContent {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+}
+
+.ms-Pivot-link.is-selected,
+.ms-Pivot-link.is-selected .ms-Pivot-text {
+  font-weight: 600 !important;
+}
+
+/* ==========================================================================
+   Card Components - Ensure correct fonts
+   ========================================================================== */
+
+/* Generic card styles */
+.card,
+.Card,
+[class*="card"],
+[class*="Card"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* Card titles */
+.card-title,
+.Card-title,
+[class*="card"] h1, [class*="card"] h2, [class*="card"] h3, [class*="card"] h4,
+[class*="Card"] h1, [class*="Card"] h2, [class*="Card"] h3, [class*="Card"] h4 {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 600 !important;
+}
+
+/* Card body text */
+.card-body,
+.card-text,
+[class*="card"] p,
+[class*="Card"] p {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 400 !important;
+}
+
+/* ==========================================================================
+   Widget Specific Styles
+   ========================================================================== */
+
+/* Incomplete Shifts Widget */
+[class*="IncompleteShift"],
+[class*="incompleteShift"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* Quick Actions */
+[class*="QuickAction"],
+[class*="quickAction"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* Metric cards */
+[class*="Metric"],
+[class*="metric"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+[class*="Metric"] h1, [class*="Metric"] h2, [class*="Metric"] h3,
+[class*="metric"] h1, [class*="metric"] h2, [class*="metric"] h3 {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+  font-weight: 700 !important;
+}
+
+/* ==========================================================================
+   Override Inline Styles - Targeted approach (avoid wildcards)
+   ========================================================================== */
+
+/* Force heading font on heading elements regardless of inline styles */
+h1[style], h2[style], h3[style], h4[style], h5[style], h6[style] {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+}
+
+/* Force button font regardless of inline styles */
+button[style]:not(.ms-Icon), [role="button"][style]:not(.ms-Icon) {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif !important;
+}
+
+/* ==========================================================================
+   Icon Font Preservation - Ensure icons render correctly
+   ========================================================================== */
+
+/* Fluent UI Icons */
+i.ms-Icon,
+i[class*="ms-Icon"],
+i[data-icon-name],
+span.ms-Icon,
+span[class*="ms-Icon"] {
+  font-family: 'FabricMDL2Icons', 'Segoe MDL2 Assets', 'Segoe UI Symbol' !important;
+  font-style: normal !important;
+  font-weight: normal !important;
+  speak: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Lucide and other SVG icons - don't apply text fonts */
+svg,
+svg * {
+  font-family: inherit;
+}
+
+/* ==========================================================================
+   CRITICAL: Icon Font Protection - MUST BE LAST
+   This rule has high specificity and must override all other font rules
+   ========================================================================== */
+i.ms-Icon,
+i[class*="ms-Icon--"],
+.ms-Icon[class],
+[class*="ms-Icon--"],
+i[data-icon-name] {
+  font-family: 'FabricMDL2Icons', 'Segoe MDL2 Assets', 'Segoe UI Symbol' !important;
+  font-style: normal !important;
+  font-weight: normal !important;
+}
+
+/* Ensure all i tags use icon font (i tags are conventionally for icons, not italic text) */
+i {
+  font-family: 'FabricMDL2Icons', 'Segoe MDL2 Assets', 'Segoe UI Symbol' !important;
+  font-style: normal !important;
 }

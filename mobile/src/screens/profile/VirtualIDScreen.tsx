@@ -16,8 +16,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Container, Body, Caption, Button } from '@components/ui';
-import { colors, spacing } from '../../theme';
+import { Body, Caption, Button } from '@components/ui';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { colors, spacing, getColors } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useNavigation } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store';
@@ -32,6 +34,8 @@ export const VirtualIDScreen: React.FC = () => {
   const navigation = useNavigation();
   const user = useSelector((state: RootState) => state.auth.user);
   const profile = user?.staff_profile;
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
 
   const [isFlipped, setIsFlipped] = useState(false);
   const [brightness, setBrightness] = useState<number>(1);
@@ -71,12 +75,12 @@ export const VirtualIDScreen: React.FC = () => {
 
   if (!user) {
     return (
-      <Container style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background.primary }]}>
         <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={64} color={colors.error} />
-          <Body style={styles.errorText}>Unable to load ID information</Body>
+          <Ionicons name="alert-circle" size={64} color={themeColors.error} />
+          <Body style={[styles.errorText, { color: themeColors.text.primary }]}>Unable to load ID information</Body>
         </View>
-      </Container>
+      </SafeAreaView>
     );
   }
 
@@ -117,10 +121,10 @@ export const VirtualIDScreen: React.FC = () => {
   });
 
   return (
-    <Container style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background.primary }]}>
       {/* Close Button */}
-      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeButton}>
-        <Ionicons name="close" size={28} color={colors.text.primary} />
+      <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.closeButton, { backgroundColor: isDark ? themeColors.background.tertiary : '#F5F5F5' }]}>
+        <Ionicons name="close" size={28} color={themeColors.text.primary} />
       </TouchableOpacity>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
@@ -203,48 +207,48 @@ export const VirtualIDScreen: React.FC = () => {
         </View>
 
         {/* Heading */}
-        <Text style={styles.mainHeading}>
+        <Text style={[styles.mainHeading, { color: themeColors.text.primary }]}>
           YOUR DIGITAL{'\n'}ID CARD
         </Text>
 
         {/* Subtitle */}
-        <Text style={styles.subtitle}>
+        <Text style={[styles.subtitle, { color: themeColors.text.secondary }]}>
           Tap the card above to reveal your QR code for instant verification at any venue.
         </Text>
 
         {/* Features */}
         <View style={styles.featuresContainer}>
           <View style={styles.featureItem}>
-            <View style={styles.featureIconCircle}>
+            <View style={[styles.featureIconCircle, { backgroundColor: isDark ? 'rgba(0,102,255,0.15)' : '#F0F4FF' }]}>
               <Ionicons name="flash" size={22} color="#0066FF" />
             </View>
             <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Instant Verification</Text>
-              <Text style={styles.featureDescription}>
+              <Text style={[styles.featureTitle, { color: themeColors.text.primary }]}>Instant Verification</Text>
+              <Text style={[styles.featureDescription, { color: themeColors.text.secondary }]}>
                 Use at any venue for quick and secure check-in
               </Text>
             </View>
           </View>
 
           <View style={styles.featureItem}>
-            <View style={styles.featureIconCircle}>
+            <View style={[styles.featureIconCircle, { backgroundColor: isDark ? 'rgba(0,102,255,0.15)' : '#F0F4FF' }]}>
               <Ionicons name="qr-code" size={22} color="#0066FF" />
             </View>
             <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Tap to reveal QR code</Text>
-              <Text style={styles.featureDescription}>
+              <Text style={[styles.featureTitle, { color: themeColors.text.primary }]}>Tap to reveal QR code</Text>
+              <Text style={[styles.featureDescription, { color: themeColors.text.secondary }]}>
                 Quick scanning for security checkpoints
               </Text>
             </View>
           </View>
 
           <View style={styles.featureItem}>
-            <View style={styles.featureIconCircle}>
+            <View style={[styles.featureIconCircle, { backgroundColor: isDark ? 'rgba(0,102,255,0.15)' : '#F0F4FF' }]}>
               <Ionicons name="shield-checkmark" size={22} color="#0066FF" />
             </View>
             <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Works offline</Text>
-              <Text style={styles.featureDescription}>
+              <Text style={[styles.featureTitle, { color: themeColors.text.primary }]}>Works offline</Text>
+              <Text style={[styles.featureDescription, { color: themeColors.text.secondary }]}>
                 No internet connection required to display your ID
               </Text>
             </View>
@@ -253,9 +257,9 @@ export const VirtualIDScreen: React.FC = () => {
 
         {/* License Status Card */}
         {profile?.sia_license_number && (
-          <View style={styles.statusCard}>
+          <View style={[styles.statusCard, { backgroundColor: isDark ? themeColors.background.secondary : '#FAFAFA' }]}>
             <View style={styles.statusRow}>
-              <Text style={styles.statusLabel}>SIA License</Text>
+              <Text style={[styles.statusLabel, { color: themeColors.text.primary }]}>SIA License</Text>
               <View style={[styles.statusBadge, isLicenseValid ? styles.statusActive : styles.statusInactive]}>
                 <Ionicons
                   name={isLicenseValid ? 'checkmark-circle' : 'alert-circle'}
@@ -268,7 +272,7 @@ export const VirtualIDScreen: React.FC = () => {
               </View>
             </View>
             {profile.sia_license_expiry && (
-              <Text style={styles.statusExpiry}>
+              <Text style={[styles.statusExpiry, { color: themeColors.text.secondary }]}>
                 Expires: {new Date(profile.sia_license_expiry).toLocaleDateString('en-GB', {
                   day: 'numeric',
                   month: 'short',
@@ -279,14 +283,13 @@ export const VirtualIDScreen: React.FC = () => {
           </View>
         )}
       </ScrollView>
-    </Container>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 0,
-    backgroundColor: colors.white,
+    flex: 1,
   },
   closeButton: {
     position: 'absolute',

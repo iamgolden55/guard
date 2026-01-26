@@ -7,7 +7,7 @@ import React from 'react';
 import { View, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Body, BodySmall, Caption } from '@components/ui';
-import { teamsColors } from '../../../theme/teamsColors';
+import { getTeamsColors } from '../../../theme/teamsColors';
 import { spacing } from '../../../theme';
 import { PresenceBadge, PresenceStatus } from './PresenceBadge';
 
@@ -31,6 +31,7 @@ interface TeamMemberListCardProps {
   onChatPress?: () => void;
   onVideoPress?: () => void;
   onMorePress?: () => void;
+  isDark?: boolean;
 }
 
 export const TeamMemberListCard: React.FC<TeamMemberListCardProps> = ({
@@ -40,7 +41,9 @@ export const TeamMemberListCard: React.FC<TeamMemberListCardProps> = ({
   onChatPress,
   onVideoPress,
   onMorePress,
+  isDark = false,
 }) => {
+  const teamsColors = getTeamsColors(isDark);
   // Presence text mapping
   const presenceText = {
     available: 'Available',
@@ -53,7 +56,7 @@ export const TeamMemberListCard: React.FC<TeamMemberListCardProps> = ({
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, { backgroundColor: teamsColors.background.primary, borderBottomColor: teamsColors.border.light }]}
       onPress={onPress}
       activeOpacity={0.6}
       android_ripple={{ color: teamsColors.background.hover }}
@@ -64,7 +67,7 @@ export const TeamMemberListCard: React.FC<TeamMemberListCardProps> = ({
           {member.photo ? (
             <Image source={{ uri: member.photo }} style={styles.avatar} />
           ) : (
-            <View style={styles.avatarPlaceholder}>
+            <View style={[styles.avatarPlaceholder, { backgroundColor: teamsColors.background.tertiary }]}>
               <Ionicons name="person" size={24} color={teamsColors.text.secondary} />
             </View>
           )}
@@ -81,13 +84,13 @@ export const TeamMemberListCard: React.FC<TeamMemberListCardProps> = ({
 
         {/* Member Info */}
         <View style={styles.info}>
-          <Body style={styles.name} numberOfLines={1}>
+          <Body style={[styles.name, { color: teamsColors.text.primary }]} numberOfLines={1}>
             {member.name}
           </Body>
 
           {/* Role and Venue */}
           <View style={styles.detailsRow}>
-            <BodySmall color={teamsColors.text.secondary} numberOfLines={1}>
+            <BodySmall style={{ color: teamsColors.text.secondary }} numberOfLines={1}>
               {member.role}
               {member.currentVenue && ` • ${member.currentVenue}`}
             </BodySmall>
@@ -95,7 +98,7 @@ export const TeamMemberListCard: React.FC<TeamMemberListCardProps> = ({
 
           {/* Status Message or Activity */}
           {(member.statusMessage || member.activity) && (
-            <Caption color={teamsColors.text.tertiary} numberOfLines={1} style={styles.statusMessage}>
+            <Caption style={[styles.statusMessage, { color: teamsColors.text.tertiary }]} numberOfLines={1}>
               {member.activity ? (
                 <>
                   {member.activity === 'In a call' && '📞 '}
@@ -114,7 +117,7 @@ export const TeamMemberListCard: React.FC<TeamMemberListCardProps> = ({
         <View style={styles.actions}>
           {member.phone && onCallPress && (
             <TouchableOpacity
-              style={styles.actionButton}
+              style={[styles.actionButton, { backgroundColor: teamsColors.background.hover }]}
               onPress={(e) => {
                 e.stopPropagation();
                 onCallPress();
@@ -127,7 +130,7 @@ export const TeamMemberListCard: React.FC<TeamMemberListCardProps> = ({
 
           {onChatPress && (
             <TouchableOpacity
-              style={styles.actionButton}
+              style={[styles.actionButton, { backgroundColor: teamsColors.background.hover }]}
               onPress={(e) => {
                 e.stopPropagation();
                 onChatPress();
@@ -140,7 +143,7 @@ export const TeamMemberListCard: React.FC<TeamMemberListCardProps> = ({
 
           {onVideoPress && (
             <TouchableOpacity
-              style={styles.actionButton}
+              style={[styles.actionButton, { backgroundColor: teamsColors.background.hover }]}
               onPress={(e) => {
                 e.stopPropagation();
                 onVideoPress();
@@ -170,11 +173,9 @@ export const TeamMemberListCard: React.FC<TeamMemberListCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: teamsColors.background.primary,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: teamsColors.border.light,
   },
   content: {
     flexDirection: 'row',
@@ -193,7 +194,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: teamsColors.background.tertiary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -209,7 +209,6 @@ const styles = StyleSheet.create({
   name: {
     fontWeight: '600',
     fontSize: 15,
-    color: teamsColors.text.primary,
     marginBottom: spacing.xs / 2,
   },
   detailsRow: {
@@ -232,7 +231,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: teamsColors.background.hover,
   },
   moreButton: {
     width: 32,

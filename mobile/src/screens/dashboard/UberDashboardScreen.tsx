@@ -2,13 +2,15 @@
  * UberDashboardScreen
  * Uber-inspired minimalist dashboard with map header, check-in/out cards, and stats
  * Clean black/white design with subtle shadows and modern typography
+ * Supports dark mode
  */
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Alert, StatusBar } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import NetInfo from '@react-native-community/netinfo';
 import { useAppSelector, useAppDispatch } from '../../hooks/useRedux';
+import { useTheme } from '../../hooks/useTheme';
 import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   selectActiveShift,
@@ -17,7 +19,7 @@ import {
   type Shift,
 } from '../../store/slices/shiftsSlice';
 import { MapHeader, CheckActionCard, OverviewStats, UberQuickActions, UberUpcomingShifts, LiveShiftTimer } from './components';
-import { uberColors, spacing } from '../../theme';
+import { getUberColors, spacing } from '../../theme';
 import { logger } from '../../utils/logger';
 import { ApiTimeoutError, NetworkError, ApiError } from '../../services/api';
 import { shiftChecksService } from '../../services/shiftChecksService';
@@ -39,6 +41,9 @@ const formatTime = (dateString: string | null | undefined): string | null => {
 export const UberDashboardScreen = () => {
   const dispatch = useAppDispatch();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
+
   const user = useAppSelector(selectCurrentUser);
   const activeShift = useAppSelector(selectActiveShift);
   const upcomingShifts = useAppSelector(selectUpcomingShifts);
@@ -224,9 +229,7 @@ export const UberDashboardScreen = () => {
   const currentVenueName = activeShift?.venue?.name || nextUpcomingShift?.venue?.name;
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-
+    <View style={[styles.container, { backgroundColor: uberColors.background.light }]}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -308,7 +311,6 @@ export const UberDashboardScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: uberColors.background.light,
   },
   scrollView: {
     flex: 1,

@@ -1,9 +1,10 @@
 /**
  * Glassmorphism Color Palette
  * Modern translucent colors for liquid glass UI
+ * Supports both light and dark modes
  */
 
-// Glass background colors (translucent)
+// Glass background colors (translucent) - Light Mode
 export const glassColors = {
   light: 'rgba(255, 255, 255, 0.15)',
   medium: 'rgba(255, 255, 255, 0.25)',
@@ -11,6 +12,20 @@ export const glassColors = {
   dark: 'rgba(0, 0, 0, 0.2)',
   darkStrong: 'rgba(0, 0, 0, 0.4)',
 } as const;
+
+// Glass background colors - Dark Mode
+export const glassColorsDark = {
+  light: 'rgba(255, 255, 255, 0.05)',
+  medium: 'rgba(255, 255, 255, 0.10)',
+  strong: 'rgba(255, 255, 255, 0.15)',
+  dark: 'rgba(0, 0, 0, 0.4)',
+  darkStrong: 'rgba(0, 0, 0, 0.6)',
+} as const;
+
+// Helper to get glass colors based on theme
+export function getGlassColors(isDark: boolean) {
+  return isDark ? glassColorsDark : glassColors;
+}
 
 // Accent colors with transparency
 export const accentColors = {
@@ -28,7 +43,27 @@ export const accentColors = {
   infoLight: 'rgba(59, 130, 246, 0.6)',
 } as const;
 
-// Solid colors for text and borders
+// Accent colors - Dark Mode (slightly adjusted opacity)
+export const accentColorsDark = {
+  primary: 'rgba(96, 165, 250, 0.9)',      // Lighter Blue
+  primaryLight: 'rgba(96, 165, 250, 0.6)',
+  success: 'rgba(34, 197, 94, 0.9)',      // Green (same)
+  successLight: 'rgba(34, 197, 94, 0.5)',
+  warning: 'rgba(251, 146, 60, 0.9)',     // Orange (same)
+  warningLight: 'rgba(251, 146, 60, 0.5)',
+  danger: 'rgba(239, 68, 68, 0.9)',       // Red (same)
+  dangerLight: 'rgba(239, 68, 68, 0.5)',
+  secondary: 'rgba(161, 161, 170, 0.9)',  // Lighter Gray
+  secondaryLight: 'rgba(161, 161, 170, 0.5)',
+  info: 'rgba(96, 165, 250, 0.9)',        // Lighter Blue
+  infoLight: 'rgba(96, 165, 250, 0.5)',
+} as const;
+
+export function getAccentColors(isDark: boolean) {
+  return isDark ? accentColorsDark : accentColors;
+}
+
+// Solid colors for text and borders - Light Mode
 export const solidColors = {
   primary: '#1E3A8A',
   success: '#22C55E',
@@ -51,6 +86,33 @@ export const solidColors = {
   },
 } as const;
 
+// Solid colors - Dark Mode
+export const solidColorsDark = {
+  primary: '#60A5FA',
+  success: '#22C55E',
+  warning: '#FB923C',
+  danger: '#EF4444',
+  secondary: '#A1A1AA',
+  white: '#FFFFFF',
+  black: '#000000',
+  gray: {
+    50: '#18181B',
+    100: '#27272A',
+    200: '#3F3F46',
+    300: '#52525B',
+    400: '#71717A',
+    500: '#A1A1AA',
+    600: '#D4D4D8',
+    700: '#E4E4E7',
+    800: '#F4F4F5',
+    900: '#FAFAFA',
+  },
+} as const;
+
+export function getSolidColors(isDark: boolean) {
+  return isDark ? solidColorsDark : solidColors;
+}
+
 // Gradient colors for backgrounds
 export const gradients = {
   primary: ['#1E3A8A', '#3B82F6'],
@@ -62,7 +124,22 @@ export const gradients = {
   sunset: ['#F59E0B', '#EF4444'],
 } as const;
 
-// Border colors with transparency
+// Gradient colors - Dark Mode (adjusted for dark backgrounds)
+export const gradientsDark = {
+  primary: ['#1E40AF', '#60A5FA'],
+  success: ['#166534', '#4ADE80'],
+  warning: ['#B45309', '#FBBF24'],
+  danger: ['#991B1B', '#F87171'],
+  purple: ['#5B21B6', '#A78BFA'],
+  ocean: ['#0369A1', '#22D3EE'],
+  sunset: ['#B45309', '#F87171'],
+} as const;
+
+export function getGradients(isDark: boolean) {
+  return isDark ? gradientsDark : gradients;
+}
+
+// Border colors with transparency - Light Mode
 export const borderColors = {
   light: 'rgba(255, 255, 255, 0.2)',
   medium: 'rgba(255, 255, 255, 0.3)',
@@ -70,7 +147,19 @@ export const borderColors = {
   primary: 'rgba(30, 58, 138, 0.3)',
 } as const;
 
-// Text colors
+// Border colors - Dark Mode
+export const borderColorsDark = {
+  light: 'rgba(255, 255, 255, 0.1)',
+  medium: 'rgba(255, 255, 255, 0.15)',
+  dark: 'rgba(255, 255, 255, 0.05)',
+  primary: 'rgba(96, 165, 250, 0.3)',
+} as const;
+
+export function getBorderColors(isDark: boolean) {
+  return isDark ? borderColorsDark : borderColors;
+}
+
+// Text colors - Light Mode
 export const textColors = {
   primary: '#1E293B',
   secondary: '#64748B',
@@ -80,10 +169,36 @@ export const textColors = {
   dark: 'rgba(0, 0, 0, 0.9)',
 } as const;
 
-// Status indicator colors
+// Text colors - Dark Mode
+export const textColorsDark = {
+  primary: '#FAFAFA',
+  secondary: '#A1A1AA',
+  tertiary: '#71717A',
+  inverse: '#09090B',
+  light: 'rgba(255, 255, 255, 0.9)',
+  dark: 'rgba(0, 0, 0, 0.9)',
+} as const;
+
+export function getTextColors(isDark: boolean) {
+  return isDark ? textColorsDark : textColors;
+}
+
+// Status indicator colors (same for both modes for visibility)
 export const statusColors = {
   online: '#22C55E',
   offline: '#94A3B8',
   busy: '#EF4444',
   away: '#FB923C',
 } as const;
+
+// Status colors - Dark Mode (slightly adjusted offline)
+export const statusColorsDark = {
+  online: '#22C55E',
+  offline: '#52525B',
+  busy: '#EF4444',
+  away: '#FB923C',
+} as const;
+
+export function getStatusColors(isDark: boolean) {
+  return isDark ? statusColorsDark : statusColors;
+}

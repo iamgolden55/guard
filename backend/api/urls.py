@@ -33,6 +33,8 @@ from .views import (
     PasswordResetRequestView, PasswordResetValidateView, PasswordResetConfirmView,
     # Leave management / contractor availability views
     ContractorUnavailabilityViewSet, BankHolidayViewSet, StaffLeaveDailyRateViewSet,
+    # Email unsubscribe view
+    EmailUnsubscribeView,
 )
 from .social_auth import apple_auth, google_auth
 
@@ -115,6 +117,8 @@ urlpatterns = [
     path('password-reset/request/', PasswordResetRequestView.as_view(), name='password-reset-request'),
     path('password-reset/validate/<uuid:token>/', PasswordResetValidateView.as_view(), name='password-reset-validate'),
     path('password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
+    # Email unsubscribe endpoint (no auth required)
+    path('email/unsubscribe/<uuid:token>/', EmailUnsubscribeView.as_view(), name='email-unsubscribe'),
     # Social authentication endpoints
     path('auth/apple/', apple_auth, name='apple-auth'),
     path('auth/google/', google_auth, name='google-auth'),

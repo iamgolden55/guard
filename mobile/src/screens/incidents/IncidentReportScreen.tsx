@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Container, Body, Caption } from '@components/ui';
-import { colors, spacing, layout } from '../../theme';
+import { colors, spacing, layout, getColors } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
@@ -70,6 +71,8 @@ export const IncidentReportScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute();
   const { shiftId } = (route.params as { shiftId?: number }) || {};
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
 
   const handleQuickReport = (incidentType: IncidentTypeOption) => {
     logger.info('[IncidentReport] Quick report selected', { type: incidentType.type });
@@ -92,11 +95,11 @@ export const IncidentReportScreen: React.FC = () => {
 
   return (
     <Container safeArea={false} style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <ScrollView style={[styles.scrollView, { backgroundColor: themeColors.background.secondary }]} contentContainerStyle={styles.content}>
         {/* Emergency Banner - Compact */}
         <View style={styles.emergencyBanner}>
-          <Ionicons name="alert-circle" size={16} color={colors.error} />
-          <Body style={styles.emergencyText}>
+          <Ionicons name="alert-circle" size={16} color={themeColors.error} />
+          <Body style={[styles.emergencyText, { color: themeColors.error }]}>
             Emergency? Call 999 first, then report here
           </Body>
         </View>
@@ -106,7 +109,7 @@ export const IncidentReportScreen: React.FC = () => {
           {INCIDENT_TYPES.map((incident) => (
             <TouchableOpacity
               key={incident.type}
-              style={styles.quickButton}
+              style={[styles.quickButton, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light }]}
               onPress={() => handleQuickReport(incident)}
               activeOpacity={0.7}
             >
@@ -118,46 +121,46 @@ export const IncidentReportScreen: React.FC = () => {
               >
                 <Ionicons name={incident.icon as any} size={20} color={incident.color} />
               </View>
-              <Body style={styles.quickLabel}>{incident.label}</Body>
+              <Body style={[styles.quickLabel, { color: themeColors.text.primary }]}>{incident.label}</Body>
             </TouchableOpacity>
           ))}
         </View>
 
         {/* Alternative Options */}
         <View style={styles.section}>
-          <Body weight="semibold" style={styles.sectionTitle}>
+          <Body weight="semibold" style={[styles.sectionTitle, { color: themeColors.text.secondary }]}>
             Other Options
           </Body>
 
-          <TouchableOpacity style={styles.optionCard} onPress={handleVoiceReport} activeOpacity={0.7}>
-            <View style={styles.optionIcon}>
-              <Ionicons name="mic" size={24} color={colors.primary} />
+          <TouchableOpacity style={[styles.optionCard, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light }]} onPress={handleVoiceReport} activeOpacity={0.7}>
+            <View style={[styles.optionIcon, { backgroundColor: `${themeColors.primary}15` }]}>
+              <Ionicons name="mic" size={24} color={themeColors.primary} />
             </View>
             <View style={styles.optionContent}>
-              <Body weight="semibold">Voice Report</Body>
-              <Caption color={colors.text.secondary}>
+              <Body weight="semibold" style={{ color: themeColors.text.primary }}>Voice Report</Body>
+              <Caption color={themeColors.text.secondary}>
                 Record a voice message for hands-free reporting
               </Caption>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.text.secondary} />
+            <Ionicons name="chevron-forward" size={20} color={themeColors.text.secondary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.optionCard} onPress={handleDetailedReport} activeOpacity={0.7}>
-            <View style={styles.optionIcon}>
-              <Ionicons name="document-text" size={24} color={colors.primary} />
+          <TouchableOpacity style={[styles.optionCard, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light }]} onPress={handleDetailedReport} activeOpacity={0.7}>
+            <View style={[styles.optionIcon, { backgroundColor: `${themeColors.primary}15` }]}>
+              <Ionicons name="document-text" size={24} color={themeColors.primary} />
             </View>
             <View style={styles.optionContent}>
-              <Body weight="semibold">Detailed Form</Body>
-              <Caption color={colors.text.secondary}>
+              <Body weight="semibold" style={{ color: themeColors.text.primary }}>Detailed Form</Body>
+              <Caption color={themeColors.text.secondary}>
                 Fill out a comprehensive incident report
               </Caption>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.text.secondary} />
+            <Ionicons name="chevron-forward" size={20} color={themeColors.text.secondary} />
           </TouchableOpacity>
         </View>
 
         {/* Footer Info Text */}
-        <Caption color={colors.text.tertiary} style={styles.footerText}>
+        <Caption color={themeColors.text.tertiary} style={styles.footerText}>
           All incidents include automatic timestamps and location
         </Caption>
       </ScrollView>
@@ -171,7 +174,7 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-    backgroundColor: colors.background.secondary,
+    // backgroundColor applied inline with themeColors
   },
   content: {
     paddingTop: spacing.base,
@@ -191,7 +194,7 @@ const styles = StyleSheet.create({
   },
   emergencyText: {
     fontSize: 13,
-    color: colors.error,
+    // color applied inline with themeColors
     fontWeight: '500',
   },
   // Quick Report Grid - 2 Column Layout
@@ -204,14 +207,13 @@ const styles = StyleSheet.create({
   },
   quickButton: {
     width: '48.5%',
-    backgroundColor: colors.white,
+    // backgroundColor and borderColor applied inline with themeColors
     borderRadius: layout.borderRadius.lg,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.border.light,
     ...layout.shadow.sm,
   },
   quickIconContainer: {
@@ -226,7 +228,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 11,
     fontWeight: '600',
-    color: colors.text.primary,
+    // color applied inline with themeColors
     lineHeight: 14,
   },
   // Other Options Section
@@ -237,16 +239,15 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 15,
     marginBottom: spacing.sm,
-    color: colors.text.secondary,
+    // color applied inline with themeColors
   },
   optionCard: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: spacing.lg,
-    backgroundColor: colors.white,
+    // backgroundColor and borderColor applied inline with themeColors
     borderRadius: layout.borderRadius.lg,
     borderWidth: 1,
-    borderColor: colors.border.light,
     marginBottom: spacing.md,
     ...layout.shadow.sm,
   },
@@ -254,7 +255,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: `${colors.primary}15`,
+    // backgroundColor applied inline with themeColors
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,

@@ -4,6 +4,27 @@ module.exports = {
   content: ["./index.html", "./src/**/*.{ts,tsx,js,jsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        // Primary fonts - Uber-inspired typography
+        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        heading: ['Plus Jakarta Sans', 'Inter', 'system-ui', 'sans-serif'],
+        // Semantic aliases
+        body: ['Inter', 'system-ui', 'sans-serif'],
+        display: ['Plus Jakarta Sans', 'Inter', 'system-ui', 'sans-serif'],
+      },
+      fontSize: {
+        // Typography scale (base 16px)
+        'xs': ['0.75rem', { lineHeight: '1rem', letterSpacing: '0.01em' }],        // 12px
+        'sm': ['0.875rem', { lineHeight: '1.25rem', letterSpacing: '0.01em' }],    // 14px
+        'base': ['1rem', { lineHeight: '1.5rem', letterSpacing: '0' }],            // 16px
+        'lg': ['1.125rem', { lineHeight: '1.75rem', letterSpacing: '-0.01em' }],   // 18px
+        'xl': ['1.25rem', { lineHeight: '1.75rem', letterSpacing: '-0.01em' }],    // 20px
+        '2xl': ['1.5rem', { lineHeight: '2rem', letterSpacing: '-0.02em' }],       // 24px
+        '3xl': ['1.875rem', { lineHeight: '2.25rem', letterSpacing: '-0.02em' }],  // 30px
+        '4xl': ['2.25rem', { lineHeight: '2.5rem', letterSpacing: '-0.02em' }],    // 36px
+        '5xl': ['3rem', { lineHeight: '1', letterSpacing: '-0.02em' }],            // 48px
+        '6xl': ['3.75rem', { lineHeight: '1', letterSpacing: '-0.03em' }],         // 60px
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",

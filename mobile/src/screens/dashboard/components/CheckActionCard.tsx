@@ -2,6 +2,7 @@
  * CheckActionCard
  * Uber-style card for check-in/check-out actions
  * Reusable component with multiple states: active, disabled, completed
+ * Supports dark mode
  */
 
 import React from 'react';
@@ -13,7 +14,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { uberColors, uberShadows, uberRadius, uberTypography, spacing } from '../../../theme';
+import { useTheme } from '../../../hooks/useTheme';
+import { getUberColors, getUberShadows, uberRadius, fontFamilies, spacing } from '../../../theme';
 
 type CardStatus = 'active' | 'disabled' | 'completed' | 'too_far';
 type CardType = 'check-in' | 'check-out';
@@ -122,6 +124,10 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
   distanceToVenue,
   isLocationLoading = false,
 }) => {
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
+  const uberShadows = getUberShadows(isDark);
+
   const isActive = status === 'active';
   const isCompleted = status === 'completed';
   const isDisabled = status === 'disabled';
@@ -132,40 +138,37 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
     ? calculateLateness(scheduledStartTime, actualCheckInTime)
     : { isLate: false, minutes: 0 };
 
-  // Get dynamic styles based on status
-  const cardStyle = [
-    styles.card,
-    isCompleted && !lateness.isLate && styles.cardCompleted,
-    isCompleted && lateness.isLate && styles.cardLate,
-    isTooFar && styles.cardTooFar,
-    isDisabled && styles.cardDisabled,
-  ];
+  // Dynamic colors based on theme and status
+  const cardBackgroundColor = isCompleted && !lateness.isLate
+    ? uberColors.successLight
+    : (isCompleted && lateness.isLate) || isTooFar
+      ? isDark ? '#78350F' : '#FEF3C7'  // amber colors
+      : uberColors.background.surface;
 
-  const buttonStyle = [
-    styles.button,
-    isActive && styles.buttonActive,
-    isCompleted && styles.buttonCompleted,
-    isTooFar && styles.buttonTooFar,
-    isDisabled && styles.buttonDisabled,
-  ];
+  const cardBorderColor = isCompleted && !lateness.isLate
+    ? uberColors.success
+    : (isCompleted && lateness.isLate) || isTooFar
+      ? uberColors.warning
+      : uberColors.border.light;
 
-  const buttonTextStyle = [
-    styles.buttonText,
-    isActive && styles.buttonTextActive,
-    isCompleted && styles.buttonTextCompleted,
-    isTooFar && styles.buttonTextTooFar,
-    isDisabled && styles.buttonTextDisabled,
-  ];
+  const iconContainerBg = isCompleted && !lateness.isLate
+    ? uberColors.successLight
+    : (isCompleted && lateness.isLate) || isTooFar
+      ? isDark ? '#78350F' : '#FEF3C7'
+      : uberColors.border.light;
 
   return (
-    <View style={cardStyle}>
+    <View style={[
+      styles.card,
+      {
+        backgroundColor: cardBackgroundColor,
+        borderColor: cardBorderColor,
+      },
+      uberShadows.soft,
+      isDisabled && styles.cardDisabled,
+    ]}>
       {/* Left: Icon in circle */}
-      <View style={[
-        styles.iconContainer,
-        isCompleted && !lateness.isLate && styles.iconContainerCompleted,
-        isCompleted && lateness.isLate && styles.iconContainerLate,
-        isTooFar && styles.iconContainerTooFar,
-      ]}>
+      <View style={[styles.iconContainer, { backgroundColor: iconContainerBg }]}>
         {isCompleted ? (
           lateness.isLate ? (
             <Ionicons name="alert" size={24} color={uberColors.warning} />
@@ -186,17 +189,29 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
       {/* Middle: Title and subtitle */}
       <View style={styles.content}>
         <View style={styles.titleRow}>
-          <Text style={[styles.title, isDisabled && styles.titleDisabled]}>
+          <Text style={[
+            styles.title,
+            { color: isDisabled ? uberColors.disabledText : uberColors.text.primary }
+          ]}>
             {getTitle(type)}
           </Text>
           {/* Lateness badge */}
           {isCompleted && lateness.isLate && (
-            <View style={styles.latenessBadge}>
+            <View style={[styles.latenessBadge, { backgroundColor: uberColors.warning }]}>
               <Text style={styles.latenessText}>{formatLateness(lateness.minutes)}</Text>
             </View>
           )}
         </View>
-        <Text style={[styles.subtitle, isDisabled && styles.subtitleDisabled, isTooFar && styles.subtitleTooFar]}>
+        <Text style={[
+          styles.subtitle,
+          {
+            color: isDisabled
+              ? uberColors.disabledText
+              : isTooFar
+                ? isDark ? '#FCD34D' : '#92400E'
+                : uberColors.text.secondary
+          }
+        ]}>
           {getSubtitle(type, status, venueName, distanceToVenue)}
         </Text>
       </View>
@@ -204,13 +219,26 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
       {/* Right: Time and button */}
       <View style={styles.rightSection}>
         {/* Time display */}
-        <Text style={[styles.time, !time && styles.timeEmpty]}>
+        <Text style={[
+          styles.time,
+          { color: time ? uberColors.text.primary : uberColors.text.muted }
+        ]}>
           {time || '--:--'}
         </Text>
 
         {/* Action button */}
         <TouchableOpacity
-          style={buttonStyle}
+          style={[
+            styles.button,
+            isActive && { backgroundColor: uberColors.primary },
+            isCompleted && {
+              backgroundColor: uberColors.successLight,
+              borderWidth: 1,
+              borderColor: uberColors.success,
+            },
+            isDisabled && { backgroundColor: uberColors.disabled },
+            isTooFar && { backgroundColor: uberColors.warning },
+          ]}
           onPress={onPress}
           disabled={isDisabled || isTooFar || isLoading}
           activeOpacity={0.8}
@@ -223,10 +251,25 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
           ) : isCompleted ? (
             <>
               <Ionicons name="checkmark" size={14} color={uberColors.success} />
-              <Text style={buttonTextStyle}>{getButtonText(type, status)}</Text>
+              <Text style={[styles.buttonText, { color: uberColors.success }]}>
+                {getButtonText(type, status)}
+              </Text>
             </>
           ) : (
-            <Text style={buttonTextStyle}>{getButtonText(type, status)}</Text>
+            <Text style={[
+              styles.buttonText,
+              {
+                color: isActive
+                  ? uberColors.text.inverse
+                  : isDisabled
+                    ? uberColors.disabledText
+                    : isTooFar
+                      ? uberColors.white
+                      : uberColors.text.secondary
+              }
+            ]}>
+              {getButtonText(type, status)}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
@@ -238,24 +281,9 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: uberColors.background.surface,
     borderRadius: uberRadius.xl,
     padding: spacing.base,
     borderWidth: 1,
-    borderColor: uberColors.border.light,
-    ...uberShadows.soft,
-  },
-  cardCompleted: {
-    borderColor: uberColors.success,
-    backgroundColor: uberColors.successLight,
-  },
-  cardLate: {
-    borderColor: uberColors.warning,
-    backgroundColor: '#FEF3C7',  // amber-100
-  },
-  cardTooFar: {
-    borderColor: uberColors.warning,
-    backgroundColor: '#FEF3C7',  // amber-100
   },
   cardDisabled: {
     opacity: 0.6,
@@ -266,19 +294,9 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: uberColors.border.light,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,
-  },
-  iconContainerCompleted: {
-    backgroundColor: uberColors.successLight,
-  },
-  iconContainerLate: {
-    backgroundColor: '#FEF3C7',  // amber-100
-  },
-  iconContainerTooFar: {
-    backgroundColor: '#FEF3C7',  // amber-100
   },
 
   // Content area
@@ -293,33 +311,26 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: {
-    ...uberTypography.cardTitle,
     fontSize: 16,
-  },
-  titleDisabled: {
-    color: uberColors.disabledText,
+    fontFamily: fontFamilies.plusJakarta.bold,
+    fontWeight: '700',
   },
   latenessBadge: {
-    backgroundColor: uberColors.warning,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
   },
   latenessText: {
     fontSize: 10,
+    fontFamily: fontFamilies.inter.bold,
     fontWeight: '700',
     color: '#FFFFFF',
     textTransform: 'uppercase',
   },
   subtitle: {
-    ...uberTypography.cardSubtitle,
     fontSize: 13,
-  },
-  subtitleDisabled: {
-    color: uberColors.disabledText,
-  },
-  subtitleTooFar: {
-    color: '#92400E',  // amber-800 for better contrast on amber background
+    fontFamily: fontFamilies.inter.regular,
+    fontWeight: '400',
   },
 
   // Right section
@@ -327,14 +338,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   time: {
-    ...uberTypography.time,
-    marginBottom: 8,
-    color: uberColors.text.primary,
-    fontWeight: '600',
     fontSize: 13,
-  },
-  timeEmpty: {
-    color: uberColors.text.muted,
+    fontFamily: fontFamilies.mono,
+    fontWeight: '600',
+    marginBottom: 8,
   },
 
   // Button styles
@@ -348,37 +355,12 @@ const styles = StyleSheet.create({
     minWidth: 90,
     gap: 4,
   },
-  buttonActive: {
-    backgroundColor: uberColors.primary,
-  },
-  buttonCompleted: {
-    backgroundColor: uberColors.successLight,
-    borderWidth: 1,
-    borderColor: uberColors.success,
-  },
-  buttonDisabled: {
-    backgroundColor: uberColors.disabled,
-  },
-  buttonTooFar: {
-    backgroundColor: '#F59E0B',  // amber-500
-  },
 
   // Button text
   buttonText: {
-    ...uberTypography.button,
     fontSize: 13,
-  },
-  buttonTextActive: {
-    color: uberColors.text.inverse,
-  },
-  buttonTextCompleted: {
-    color: uberColors.success,
-  },
-  buttonTextDisabled: {
-    color: uberColors.disabledText,
-  },
-  buttonTextTooFar: {
-    color: '#FFFFFF',
+    fontFamily: fontFamilies.inter.semiBold,
+    fontWeight: '600',
   },
 });
 

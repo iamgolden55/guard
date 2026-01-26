@@ -20,7 +20,8 @@ import {
   fetchShifts
 } from '../../store/slices/shiftsSlice';
 import { ShiftCard, ShiftFilterTabs, ShiftFilter } from './components';
-import { colors, spacing } from '../../theme';
+import { colors, spacing, getColors } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -34,6 +35,8 @@ export const ShiftsScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const dispatch = useAppDispatch();
   const { user } = useAuth();
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
   const [activeFilter, setActiveFilter] = useState<ShiftFilter>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [pendingExchangeCount, setPendingExchangeCount] = useState(0);
@@ -225,11 +228,11 @@ export const ShiftsScreen = () => {
   };
 
   return (
-    <Container scrollable={false} safeArea={false} style={{ padding: 0, backgroundColor: colors.background.secondary }}>
+    <Container scrollable={false} safeArea={false} style={{ padding: 0, backgroundColor: themeColors.background.secondary }}>
       <View style={styles.container}>
         {/* Header with Filters */}
-        <View style={styles.header}>
-          <Heading2 style={styles.title}>My Shifts</Heading2>
+        <View style={[styles.header, { backgroundColor: themeColors.background.primary, borderBottomColor: themeColors.border.light }]}>
+          <Heading2 style={[styles.title, { color: themeColors.text.primary }]}>My Shifts</Heading2>
           <ShiftFilterTabs
             activeFilter={activeFilter}
             onFilterChange={handleFilterChange}
@@ -238,17 +241,17 @@ export const ShiftsScreen = () => {
         </View>
 
         {/* Quick Actions */}
-        <View style={styles.quickActions}>
+        <View style={[styles.quickActions, { backgroundColor: themeColors.background.primary, borderBottomColor: themeColors.border.light }]}>
           <TouchableOpacity
-            style={styles.actionButton}
+            style={[styles.actionButton, { backgroundColor: themeColors.background.secondary }]}
             onPress={() => navigation.navigate('AvailableShifts')}
           >
-            <View style={styles.actionIconContainer}>
-              <MaterialCommunityIcons name="calendar-search" size={22} color={colors.primary} />
+            <View style={[styles.actionIconContainer, { backgroundColor: `${themeColors.primary}15` }]}>
+              <MaterialCommunityIcons name="calendar-search" size={22} color={themeColors.primary} />
             </View>
             <View style={styles.actionTextContainer}>
-              <Text style={styles.actionTitle}>Available Shifts</Text>
-              <Text style={styles.actionSubtitle}>Browse open shifts to claim</Text>
+              <Text style={[styles.actionTitle, { color: themeColors.text.primary }]}>Available Shifts</Text>
+              <Text style={[styles.actionSubtitle, { color: themeColors.text.secondary }]}>Browse open shifts to claim</Text>
             </View>
             {/* Available shifts count badge */}
             {availableShiftsCount > 0 && (
@@ -258,19 +261,19 @@ export const ShiftsScreen = () => {
                 </Text>
               </View>
             )}
-            <Ionicons name="chevron-forward" size={20} color={colors.text.secondary} />
+            <Ionicons name="chevron-forward" size={20} color={themeColors.text.secondary} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.actionButton}
+            style={[styles.actionButton, { backgroundColor: themeColors.background.secondary }]}
             onPress={() => navigation.navigate('ShiftExchanges')}
           >
-            <View style={styles.actionIconContainer}>
-              <MaterialCommunityIcons name="swap-horizontal" size={22} color={colors.primary} />
+            <View style={[styles.actionIconContainer, { backgroundColor: `${themeColors.primary}15` }]}>
+              <MaterialCommunityIcons name="swap-horizontal" size={22} color={themeColors.primary} />
             </View>
             <View style={styles.actionTextContainer}>
-              <Text style={styles.actionTitle}>My Exchanges</Text>
-              <Text style={styles.actionSubtitle}>View transfer history</Text>
+              <Text style={[styles.actionTitle, { color: themeColors.text.primary }]}>My Exchanges</Text>
+              <Text style={[styles.actionSubtitle, { color: themeColors.text.secondary }]}>View transfer history</Text>
             </View>
             {/* Pending exchange count badge */}
             {pendingExchangeCount > 0 && (
@@ -280,7 +283,7 @@ export const ShiftsScreen = () => {
                 </Text>
               </View>
             )}
-            <Ionicons name="chevron-forward" size={20} color={colors.text.secondary} />
+            <Ionicons name="chevron-forward" size={20} color={themeColors.text.secondary} />
           </TouchableOpacity>
         </View>
 
@@ -317,25 +320,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
-    backgroundColor: colors.white,
+    // backgroundColor and borderBottomColor applied inline with themeColors
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   title: {
     marginBottom: spacing.md,
+    // color applied inline with themeColors
   },
   quickActions: {
-    backgroundColor: colors.white,
+    // backgroundColor and borderBottomColor applied inline with themeColors
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
     gap: spacing.xs,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background.secondary,
+    // backgroundColor applied inline with themeColors
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
     borderRadius: 12,
@@ -345,7 +347,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.primary + '15',
+    // backgroundColor applied inline with themeColors
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -355,12 +357,12 @@ const styles = StyleSheet.create({
   actionTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.text.primary,
+    // color applied inline with themeColors
     marginBottom: 2,
   },
   actionSubtitle: {
     fontSize: 12,
-    color: colors.text.secondary,
+    // color applied inline with themeColors
   },
   listContent: {
     padding: spacing.xl,

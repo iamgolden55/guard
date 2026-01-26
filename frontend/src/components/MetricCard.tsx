@@ -65,6 +65,7 @@ export interface MetricCardProps {
   isLoading?: boolean;
   subtitle?: string;
   iconColor?: string;
+  variant?: 'default' | 'warning' | 'critical';
 }
 
 const MetricCard: React.FC<MetricCardProps> = ({
@@ -77,6 +78,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
   isLoading = false,
   subtitle,
   iconColor = '#6B7280',
+  variant = 'default',
 }) => {
   const IconComponent = IconComponents[icon] || IconComponents.Activity;
 
@@ -87,12 +89,19 @@ const MetricCard: React.FC<MetricCardProps> = ({
     neutral: 'text-gray-600 bg-gray-100',
   };
 
+  // Variant-based styling
+  const variantStyles = {
+    default: 'bg-[#F9F9F9] border-[#F0F0F0]',
+    warning: 'bg-amber-50 border-amber-200 border-l-4 border-l-amber-400',
+    critical: 'bg-red-50 border-red-200 border-l-4 border-l-red-500',
+  };
+
   return (
     <div
       onClick={onClick}
       className={`
         relative overflow-hidden
-        bg-[#F9F9F9] border border-[#F0F0F0] rounded-lg p-4
+        ${variantStyles[variant]} border rounded-lg p-4
         transition-all duration-200
         ${onClick ? 'cursor-pointer hover:shadow-md hover:border-gray-300 hover:-translate-y-0.5' : ''}
       `}

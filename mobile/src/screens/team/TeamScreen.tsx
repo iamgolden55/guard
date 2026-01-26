@@ -18,8 +18,9 @@ import {
   TeamMemberListCard,
   TeamSectionHeader,
 } from './components';
-import { teamsColors } from '../../theme/teamsColors';
+import { getTeamsColors } from '../../theme/teamsColors';
 import { spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 import { useSubscription } from '../../contexts/SubscriptionContext';
 
@@ -29,6 +30,8 @@ export const TeamScreen = () => {
   const [selectedFilter, setSelectedFilter] = useState<FilterOption>('all');
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const { subscription } = useSubscription();
+  const { isDark } = useTheme();
+  const teamsColors = getTeamsColors(isDark);
 
   // Mock team members with Teams-style data
   const [teamMembers] = useState<TeamMemberListData[]>([
@@ -281,9 +284,9 @@ export const TeamScreen = () => {
 
   // Render empty state
   const renderEmptyState = () => (
-    <Card variant="flat" padding="xl" style={styles.emptyState}>
+    <Card variant="flat" padding="xl" style={[styles.emptyState, { backgroundColor: teamsColors.background.primary }]}>
       <Ionicons name="people-outline" size={64} color={teamsColors.text.tertiary} style={styles.emptyIcon} />
-      <Body style={styles.emptyText}>
+      <Body style={[styles.emptyText, { color: teamsColors.text.secondary }]}>
         {searchQuery ? 'No team members found' : 'No team members available'}
       </Body>
     </Card>
@@ -309,6 +312,7 @@ export const TeamScreen = () => {
           collapsible={true}
           collapsed={isCollapsed}
           onToggleCollapse={() => handleToggleSection(sectionKey)}
+          isDark={isDark}
         />
         {!isCollapsed &&
           members.map((member) => (
@@ -320,6 +324,7 @@ export const TeamScreen = () => {
               onChatPress={() => handleChatPress(member)}
               onVideoPress={() => handleVideoPress(member)}
               onMorePress={() => handleMorePress(member)}
+              isDark={isDark}
             />
           ))}
       </View>
@@ -332,7 +337,7 @@ export const TeamScreen = () => {
       safeArea={false}
       style={{ padding: 0, backgroundColor: teamsColors.background.secondary }}
     >
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: teamsColors.background.secondary }]}>
         {/* Header with Search and Filters */}
         <TeamHeader
           title="Team"
@@ -340,6 +345,7 @@ export const TeamScreen = () => {
           onSearchChange={setSearchQuery}
           selectedFilter={selectedFilter}
           onFilterChange={setSelectedFilter}
+          isDark={isDark}
         />
 
         {/* Scrollable Content */}
@@ -362,6 +368,7 @@ export const TeamScreen = () => {
             totalCount={stats.totalCount}
             venuesCount={stats.venuesCount}
             onStatPress={handleStatPress}
+            isDark={isDark}
           />
 
           {/* Quick Actions */}
@@ -370,6 +377,7 @@ export const TeamScreen = () => {
             onBroadcastPress={handleBroadcastPress}
             onEmergencyPress={handleEmergencyPress}
             onSharePress={handleSharePress}
+            isDark={isDark}
           />
 
           {/* Team Members List (Grouped) */}
@@ -408,14 +416,14 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     paddingVertical: spacing['3xl'],
-    backgroundColor: teamsColors.background.primary,
+    // backgroundColor applied inline with teamsColors
   },
   emptyIcon: {
     marginBottom: spacing.lg,
   },
   emptyText: {
     textAlign: 'center',
-    color: teamsColors.text.secondary,
+    // color applied inline with teamsColors
   },
   bottomSpacer: {
     height: spacing['3xl'],

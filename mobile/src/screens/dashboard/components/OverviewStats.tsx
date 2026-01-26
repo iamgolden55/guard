@@ -2,6 +2,7 @@
  * OverviewStats
  * Uber-style stats display with 3-column grid and vertical dividers
  * Shows hours, checks, and shifts in a clean minimal design
+ * Supports dark mode
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -11,7 +12,8 @@ import {
   StyleSheet,
   Animated,
 } from 'react-native';
-import { uberColors, uberShadows, uberRadius, uberTypography, spacing } from '../../../theme';
+import { useTheme } from '../../../hooks/useTheme';
+import { getUberColors, getUberShadows, uberRadius, fontFamilies, spacing } from '../../../theme';
 
 interface OverviewStatsProps {
   hours: number;
@@ -21,9 +23,10 @@ interface OverviewStatsProps {
 }
 
 // Animated number component with count-up effect
-const AnimatedNumber: React.FC<{ value: number; suffix?: string }> = ({
+const AnimatedNumber: React.FC<{ value: number; suffix?: string; color: string }> = ({
   value,
   suffix = '',
+  color,
 }) => {
   const animValue = useRef(new Animated.Value(0)).current;
 
@@ -37,7 +40,7 @@ const AnimatedNumber: React.FC<{ value: number; suffix?: string }> = ({
 
   // For simple display without animation complexity
   return (
-    <Text style={styles.statNumber}>
+    <Text style={[styles.statNumber, { color }]}>
       {value.toString().padStart(2, '0')}{suffix}
     </Text>
   );
@@ -48,17 +51,16 @@ interface StatItemProps {
   value: number;
   label: string;
   suffix?: string;
+  textColor: string;
+  labelColor: string;
 }
 
-const StatItem: React.FC<StatItemProps> = ({ value, label, suffix }) => (
+const StatItem: React.FC<StatItemProps> = ({ value, label, suffix, textColor, labelColor }) => (
   <View style={styles.statItem}>
-    <AnimatedNumber value={value} suffix={suffix} />
-    <Text style={styles.statLabel}>{label}</Text>
+    <AnimatedNumber value={value} suffix={suffix} color={textColor} />
+    <Text style={[styles.statLabel, { color: labelColor }]}>{label}</Text>
   </View>
 );
-
-// Vertical divider
-const Divider = () => <View style={styles.divider} />;
 
 export const OverviewStats: React.FC<OverviewStatsProps> = ({
   hours,
@@ -66,21 +68,52 @@ export const OverviewStats: React.FC<OverviewStatsProps> = ({
   shifts,
   animateOnMount = true,
 }) => {
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
+  const uberShadows = getUberShadows(isDark);
+
+  // Vertical divider
+  const Divider = () => (
+    <View style={[styles.divider, { backgroundColor: uberColors.border.light }]} />
+  );
+
   return (
     <View style={styles.container}>
-      <View style={styles.card}>
+      <View style={[
+        styles.card,
+        {
+          backgroundColor: uberColors.background.surface,
+          borderColor: uberColors.border.light,
+        },
+        uberShadows.soft,
+      ]}>
         {/* Hours Today */}
-        <StatItem value={hours} label="HOURS" />
+        <StatItem
+          value={hours}
+          label="HOURS"
+          textColor={uberColors.text.primary}
+          labelColor={uberColors.text.secondary}
+        />
 
         <Divider />
 
         {/* Checks Completed */}
-        <StatItem value={checks} label="CHECKS" />
+        <StatItem
+          value={checks}
+          label="CHECKS"
+          textColor={uberColors.text.primary}
+          labelColor={uberColors.text.secondary}
+        />
 
         <Divider />
 
         {/* Shifts This Week */}
-        <StatItem value={shifts} label="SHIFTS" />
+        <StatItem
+          value={shifts}
+          label="SHIFTS"
+          textColor={uberColors.text.primary}
+          labelColor={uberColors.text.secondary}
+        />
       </View>
     </View>
   );
@@ -94,13 +127,10 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: uberColors.background.surface,
     borderRadius: uberRadius.xl,
     paddingVertical: spacing.lg,
     paddingHorizontal: spacing.base,
     borderWidth: 1,
-    borderColor: uberColors.border.light,
-    ...uberShadows.soft,
   },
   statItem: {
     flex: 1,
@@ -108,16 +138,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   statNumber: {
-    ...uberTypography.statNumber,
+    fontSize: 30,
+    fontFamily: fontFamilies.plusJakarta.bold,
+    fontWeight: '700',
     marginBottom: 4,
   },
   statLabel: {
-    ...uberTypography.statLabel,
+    fontSize: 12,
+    fontFamily: fontFamilies.inter.medium,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   divider: {
     width: 1,
     height: 40,
-    backgroundColor: uberColors.border.light,
   },
 });
 

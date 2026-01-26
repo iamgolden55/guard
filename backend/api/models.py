@@ -2766,7 +2766,9 @@ class Invoice(models.Model):
         company = None
 
         if hasattr(staff_user, 'profile') and staff_user.profile:
-            company = staff_user.profile.company
+            # Get company through UserCompanyMembership, not profile
+            membership = staff_user.company_memberships.filter(is_active=True).first()
+            company = membership.company if membership else None
             employment_type = staff_user.profile.employment_type
             if employment_type and getattr(employment_type, 'employment_category', None) == 'permanent':
                 is_permanent = True
@@ -2993,35 +2995,36 @@ class Invoice(models.Model):
             total_amount=models.Sum('amount')
         )['total_amount'] or Decimal('0.00')
 
+        # Convert Decimals to float for JSON serialization
         return {
             'regular_shifts': {
                 'count': regular_shifts.count(),
-                'hours': regular_hours,
-                'amount': regular_amount,
-                'average_rate': regular_amount / regular_hours if regular_hours > 0 else Decimal('0.00')
+                'hours': float(regular_hours),
+                'amount': float(regular_amount),
+                'average_rate': float(regular_amount / regular_hours) if regular_hours > 0 else 0.0
             },
             'special_event_shifts': {
                 'count': special_event_shifts.count(),
-                'hours': special_hours,
-                'amount': special_amount,
-                'average_rate': special_amount / special_hours if special_hours > 0 else Decimal('0.00')
+                'hours': float(special_hours),
+                'amount': float(special_amount),
+                'average_rate': float(special_amount / special_hours) if special_hours > 0 else 0.0
             },
             'bank_holidays': {
                 'count': bank_holiday_items.count(),
-                'days': bank_holiday_days,
-                'amount': bank_holiday_amount,
-                'daily_rate': bank_holiday_amount / bank_holiday_days if bank_holiday_days > 0 else Decimal('0.00')
+                'days': float(bank_holiday_days),
+                'amount': float(bank_holiday_amount),
+                'daily_rate': float(bank_holiday_amount / bank_holiday_days) if bank_holiday_days > 0 else 0.0
             },
             'annual_leave': {
                 'count': annual_leave_items.count(),
-                'days': annual_leave_days,
-                'amount': annual_leave_amount,
-                'daily_rate': annual_leave_amount / annual_leave_days if annual_leave_days > 0 else Decimal('0.00')
+                'days': float(annual_leave_days),
+                'amount': float(annual_leave_amount),
+                'daily_rate': float(annual_leave_amount / annual_leave_days) if annual_leave_days > 0 else 0.0
             },
             'total': {
                 'count': self.items.count(),
-                'hours': self.total_hours,
-                'amount': self.total_amount
+                'hours': float(self.total_hours) if self.total_hours else 0.0,
+                'amount': float(self.total_amount) if self.total_amount else 0.0
             }
         }
 
@@ -5921,7 +5924,39 @@ class NotificationPreferences(models.Model):
         default=True,
         help_text="Only notify on sync errors, not successful syncs"
     )
-    
+
+    # Email notification settings
+    email_notifications_enabled = models.BooleanField(
+        default=True,
+        help_text="Master toggle for all email notifications"
+    )
+    email_shift_assignments = models.BooleanField(
+        default=True,
+        help_text="Receive email when assigned to a shift"
+    )
+    email_shift_reminders = models.BooleanField(
+        default=False,
+        help_text="Receive email reminders before shifts (default off to reduce email volume)"
+    )
+    email_exchange_notifications = models.BooleanField(
+        default=True,
+        help_text="Receive email for shift exchange requests and status updates"
+    )
+    email_open_shift_notifications = models.BooleanField(
+        default=True,
+        help_text="Receive email when open shifts are available to claim"
+    )
+    email_approval_notifications = models.BooleanField(
+        default=True,
+        help_text="Receive email when shifts or claims are approved"
+    )
+    email_unsubscribe_token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        help_text="Token for one-click email unsubscribe links"
+    )
+
     # Quiet hours
     quiet_hours_enabled = models.BooleanField(
         default=False,
@@ -5963,6 +5998,13 @@ class NotificationPreferences(models.Model):
                 'available_shifts_notifications_enabled': True,
                 'incident_alerts_enabled': True,
                 'sync_notifications_enabled': False,
+                # Email notification defaults
+                'email_notifications_enabled': True,
+                'email_shift_assignments': True,
+                'email_shift_reminders': False,  # Default off to reduce email volume
+                'email_exchange_notifications': True,
+                'email_open_shift_notifications': True,
+                'email_approval_notifications': True,
             }
         )
         return preferences
@@ -6008,6 +6050,42 @@ class NotificationPreferences(models.Model):
         elif notification_type == 'sync_status':
             return self.sync_notifications_enabled
         
+        # Default to True for unknown notification types
+        return True
+
+    def should_send_email_notification(self, notification_type: str) -> bool:
+        """
+        Check if an email notification of the given type should be sent based on user preferences.
+
+        Args:
+            notification_type: Type of notification (e.g., 'shift_assignment', 'exchange_request',
+                             'available_shift', 'shift_approved', 'claim_approved')
+
+        Returns:
+            bool: True if email notification should be sent, False otherwise
+        """
+        # Check master email toggle first
+        if not self.email_notifications_enabled:
+            return False
+
+        # Check quiet hours (same logic as push notifications)
+        if self.is_in_quiet_hours():
+            # Only send critical incident alerts during quiet hours
+            if notification_type != 'incident_alert':
+                return False
+
+        # Check specific email notification type preferences
+        if notification_type in ['shift_assignment', 'shift_assigned']:
+            return self.email_shift_assignments
+        elif notification_type in ['shift_reminder', 'advance_reminder', 'soon_reminder', 'imminent_reminder']:
+            return self.email_shift_reminders
+        elif notification_type in ['exchange_request', 'exchange_accepted', 'exchange_approved', 'exchange_rejected', 'exchange_cancelled']:
+            return self.email_exchange_notifications
+        elif notification_type in ['available_shift', 'open_shift', 'available_shifts_batch']:
+            return self.email_open_shift_notifications
+        elif notification_type in ['shift_approved', 'claim_approved', 'approval']:
+            return self.email_approval_notifications
+
         # Default to True for unknown notification types
         return True
 

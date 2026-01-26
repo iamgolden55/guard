@@ -19,7 +19,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { Container, Heading2, Heading3, Body, Caption, Button } from '@components/ui';
 import { CameraModal } from '../../components/camera/CameraModal';
 import { VideoPlayerModal } from '../../components/video';
-import { colors, spacing, layout } from '../../theme';
+import { colors, spacing, layout, getColors } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { IncidentType, IncidentSeverity, Incident } from '../../types/incident';
 import { incidentService } from '../../services/incidentService';
@@ -37,6 +38,8 @@ export const IncidentFormScreen: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { shiftId, prefilledType, prefilledSeverity } = (route.params as RouteParams) || {};
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
 
   // Form state
   const [incidentType, setIncidentType] = useState<IncidentType>(prefilledType || 'other');
@@ -292,34 +295,36 @@ export const IncidentFormScreen: React.FC = () => {
   };
 
   return (
-    <Container style={styles.container}>
+    <Container style={[styles.container, { backgroundColor: themeColors.background.primary }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: themeColors.border.light }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+          <Ionicons name="arrow-back" size={24} color={themeColors.text.primary} />
         </TouchableOpacity>
-        <Heading2>Report Incident</Heading2>
+        <Heading2 style={{ color: themeColors.text.primary }}>Report Incident</Heading2>
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <ScrollView style={[styles.scrollView, { backgroundColor: themeColors.background.primary }]} contentContainerStyle={styles.content}>
         {/* Incident Type Selection */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Incident Type *</Heading3>
+          <Heading3 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Incident Type *</Heading3>
           <View style={styles.typeGrid}>
             {incidentTypes.map((type) => (
               <TouchableOpacity
                 key={type.value}
                 style={[
                   styles.typeButton,
-                  incidentType === type.value && styles.typeButtonSelected,
+                  { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light },
+                  incidentType === type.value && [styles.typeButtonSelected, { backgroundColor: `${themeColors.primary}20`, borderColor: themeColors.primary }],
                 ]}
                 onPress={() => setIncidentType(type.value)}
               >
                 <Body
                   style={[
                     styles.typeButtonText,
-                    incidentType === type.value && styles.typeButtonTextSelected,
+                    { color: themeColors.text.primary },
+                    incidentType === type.value && { color: themeColors.primary },
                   ]}
                 >
                   {type.label}
@@ -331,14 +336,14 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Severity Selection */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Severity *</Heading3>
+          <Heading3 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Severity *</Heading3>
           <View style={styles.severityRow}>
             {severityLevels.map((sev) => (
               <TouchableOpacity
                 key={sev.value}
                 style={[
                   styles.severityButton,
-                  { borderColor: sev.color },
+                  { borderColor: sev.color, backgroundColor: themeColors.background.primary },
                   severity === sev.value && {
                     backgroundColor: `${sev.color}20`,
                     borderWidth: 2,
@@ -351,13 +356,14 @@ export const IncidentFormScreen: React.FC = () => {
                     styles.severityIndicator,
                     {
                       backgroundColor:
-                        severity === sev.value ? sev.color : colors.border.light,
+                        severity === sev.value ? sev.color : themeColors.border.light,
                     },
                   ]}
                 />
                 <Body
                   style={[
                     styles.severityText,
+                    { color: themeColors.text.primary },
                     severity === sev.value && { color: sev.color, fontWeight: '600' },
                   ]}
                 >
@@ -370,30 +376,30 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Title */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Title *</Heading3>
+          <Heading3 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Title *</Heading3>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light, color: themeColors.text.primary }]}
             placeholder="Brief summary of incident"
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={themeColors.text.tertiary}
             value={title}
             onChangeText={setTitle}
             maxLength={100}
           />
-          <Caption color={colors.text.tertiary} style={styles.charCount}>
+          <Caption color={themeColors.text.tertiary} style={styles.charCount}>
             {title.length}/100
           </Caption>
         </View>
 
         {/* Description */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Description *</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Heading3 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Description *</Heading3>
+          <Caption color={themeColors.text.secondary} style={styles.fieldHint}>
             Describe what happened in detail
           </Caption>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            style={[styles.input, styles.textArea, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light, color: themeColors.text.primary }]}
             placeholder="Provide detailed description of the incident..."
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={themeColors.text.tertiary}
             value={description}
             onChangeText={setDescription}
             multiline
@@ -404,19 +410,19 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Location Description */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Location *</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Heading3 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Location *</Heading3>
+          <Caption color={themeColors.text.secondary} style={styles.fieldHint}>
             Where did this incident occur?
           </Caption>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light, color: themeColors.text.primary }]}
             placeholder="e.g., Main entrance, Floor 2 restroom"
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={themeColors.text.tertiary}
             value={locationDescription}
             onChangeText={setLocationDescription}
           />
           {currentLocation && (
-            <Caption color={colors.success} style={styles.locationNote}>
+            <Caption color={themeColors.success} style={styles.locationNote}>
               ✓ GPS coordinates captured ({currentLocation.latitude.toFixed(4)},{' '}
               {currentLocation.longitude.toFixed(4)})
             </Caption>
@@ -425,14 +431,14 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Witnesses */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Witnesses</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Heading3 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Witnesses</Heading3>
+          <Caption color={themeColors.text.secondary} style={styles.fieldHint}>
             Names of witnesses (comma-separated)
           </Caption>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light, color: themeColors.text.primary }]}
             placeholder="e.g., John Smith, Jane Doe"
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={themeColors.text.tertiary}
             value={witnesses}
             onChangeText={setWitnesses}
           />
@@ -440,14 +446,14 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Persons Involved */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Persons Involved</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Heading3 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Persons Involved</Heading3>
+          <Caption color={themeColors.text.secondary} style={styles.fieldHint}>
             Names of people involved (comma-separated)
           </Caption>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light, color: themeColors.text.primary }]}
             placeholder="e.g., Suspect name, Victim name"
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={themeColors.text.tertiary}
             value={personsInvolved}
             onChangeText={setPersonsInvolved}
           />
@@ -455,14 +461,14 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Actions Taken */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Actions Taken</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Heading3 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Actions Taken</Heading3>
+          <Caption color={themeColors.text.secondary} style={styles.fieldHint}>
             What actions did you take?
           </Caption>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            style={[styles.input, styles.textArea, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light, color: themeColors.text.primary }]}
             placeholder="Describe actions taken to resolve or manage the situation..."
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={themeColors.text.tertiary}
             value={actionsTaken}
             onChangeText={setActionsTaken}
             multiline
@@ -473,56 +479,56 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Evidence (Photos & Videos) */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Evidence</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Heading3 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Evidence</Heading3>
+          <Caption color={themeColors.text.secondary} style={styles.fieldHint}>
             Add photos or videos to support your report
           </Caption>
 
           {/* Photo Controls */}
           <View style={styles.evidenceButtons}>
             <TouchableOpacity
-              style={styles.evidenceButton}
+              style={[styles.evidenceButton, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light }]}
               onPress={handleCameraPhoto}
               activeOpacity={0.7}
             >
-              <Ionicons name="camera" size={24} color={colors.primary} />
-              <Body style={styles.evidenceButtonText}>Take Photo</Body>
+              <Ionicons name="camera" size={24} color={themeColors.primary} />
+              <Body style={[styles.evidenceButtonText, { color: themeColors.text.secondary }]}>Take Photo</Body>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.evidenceButton}
+              style={[styles.evidenceButton, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light }]}
               onPress={handleGalleryPhoto}
               activeOpacity={0.7}
             >
-              <Ionicons name="images" size={24} color={colors.primary} />
-              <Body style={styles.evidenceButtonText}>From Gallery</Body>
+              <Ionicons name="images" size={24} color={themeColors.primary} />
+              <Body style={[styles.evidenceButtonText, { color: themeColors.text.secondary }]}>From Gallery</Body>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.evidenceButton}
+              style={[styles.evidenceButton, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light }]}
               onPress={handleCameraVideo}
               activeOpacity={0.7}
             >
-              <Ionicons name="videocam" size={24} color={colors.primary} />
-              <Body style={styles.evidenceButtonText}>Record Video</Body>
+              <Ionicons name="videocam" size={24} color={themeColors.primary} />
+              <Body style={[styles.evidenceButtonText, { color: themeColors.text.secondary }]}>Record Video</Body>
             </TouchableOpacity>
           </View>
 
           {/* Photo Thumbnails */}
           {photos.length > 0 && (
             <View style={styles.thumbnailContainer}>
-              <Caption color={colors.text.secondary} style={styles.thumbnailLabel}>
+              <Caption color={themeColors.text.secondary} style={styles.thumbnailLabel}>
                 Photos ({photos.length})
               </Caption>
               <View style={styles.thumbnailGrid}>
                 {photos.map((photoUri, index) => (
                   <View key={photoUri} style={styles.thumbnailWrapper}>
-                    <Image source={{ uri: photoUri }} style={styles.thumbnail} />
+                    <Image source={{ uri: photoUri }} style={[styles.thumbnail, { backgroundColor: themeColors.gray[200] }]} />
                     <TouchableOpacity
-                      style={styles.removeButton}
+                      style={[styles.removeButton, { backgroundColor: themeColors.background.primary }]}
                       onPress={() => handleRemovePhoto(photoUri)}
                     >
-                      <Ionicons name="close-circle" size={24} color={colors.error} />
+                      <Ionicons name="close-circle" size={24} color={themeColors.error} />
                     </TouchableOpacity>
                     <Caption style={styles.thumbnailNumber}>{index + 1}</Caption>
                   </View>
@@ -534,24 +540,24 @@ export const IncidentFormScreen: React.FC = () => {
           {/* Video Thumbnails */}
           {videos.length > 0 && (
             <View style={styles.thumbnailContainer}>
-              <Caption color={colors.text.secondary} style={styles.thumbnailLabel}>
+              <Caption color={themeColors.text.secondary} style={styles.thumbnailLabel}>
                 Videos ({videos.length})
               </Caption>
               <View style={styles.thumbnailGrid}>
                 {videos.map((videoUri, index) => (
                   <View key={videoUri} style={styles.thumbnailWrapper}>
                     <TouchableOpacity
-                      style={styles.videoThumbnail}
+                      style={[styles.videoThumbnail, { backgroundColor: themeColors.gray[700] }]}
                       onPress={() => handlePlayVideo(videoUri)}
                       activeOpacity={0.7}
                     >
-                      <Ionicons name="play-circle" size={48} color={colors.white} />
+                      <Ionicons name="play-circle" size={48} color={themeColors.white} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.removeButton}
+                      style={[styles.removeButton, { backgroundColor: themeColors.background.primary }]}
                       onPress={() => handleRemoveVideo(videoUri)}
                     >
-                      <Ionicons name="close-circle" size={24} color={colors.error} />
+                      <Ionicons name="close-circle" size={24} color={themeColors.error} />
                     </TouchableOpacity>
                     <Caption style={styles.thumbnailNumber}>{index + 1}</Caption>
                   </View>
@@ -563,31 +569,31 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Emergency Services */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Emergency Services</Heading3>
+          <Heading3 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Emergency Services</Heading3>
 
-          <View style={styles.switchRow}>
+          <View style={[styles.switchRow, { backgroundColor: themeColors.background.secondary }]}>
             <View style={styles.switchLabel}>
-              <Ionicons name="call" size={20} color={colors.error} />
-              <Body style={styles.switchText}>Police Notified</Body>
+              <Ionicons name="call" size={20} color={themeColors.error} />
+              <Body style={[styles.switchText, { color: themeColors.text.primary }]}>Police Notified</Body>
             </View>
             <Switch
               value={policeNotified}
               onValueChange={setPoliceNotified}
-              trackColor={{ false: colors.gray[300], true: colors.primary }}
-              thumbColor={policeNotified ? colors.white : colors.gray[100]}
+              trackColor={{ false: themeColors.gray[300], true: themeColors.primary }}
+              thumbColor={policeNotified ? themeColors.white : themeColors.gray[100]}
             />
           </View>
 
-          <View style={styles.switchRow}>
+          <View style={[styles.switchRow, { backgroundColor: themeColors.background.secondary }]}>
             <View style={styles.switchLabel}>
-              <Ionicons name="medical" size={20} color={colors.error} />
-              <Body style={styles.switchText}>Ambulance Called</Body>
+              <Ionicons name="medical" size={20} color={themeColors.error} />
+              <Body style={[styles.switchText, { color: themeColors.text.primary }]}>Ambulance Called</Body>
             </View>
             <Switch
               value={ambulanceCalled}
               onValueChange={setAmbulanceCalled}
-              trackColor={{ false: colors.gray[300], true: colors.primary }}
-              thumbColor={ambulanceCalled ? colors.white : colors.gray[100]}
+              trackColor={{ false: themeColors.gray[300], true: themeColors.primary }}
+              thumbColor={ambulanceCalled ? themeColors.white : themeColors.gray[100]}
             />
           </View>
         </View>
@@ -603,7 +609,7 @@ export const IncidentFormScreen: React.FC = () => {
             style={styles.submitButton}
           />
 
-          <Caption color={colors.text.secondary} style={styles.submitNote}>
+          <Caption color={themeColors.text.secondary} style={styles.submitNote}>
             * Required fields
           </Caption>
         </View>
@@ -635,6 +641,7 @@ export const IncidentFormScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     padding: 0,
+    // backgroundColor applied inline with themeColors
   },
   header: {
     flexDirection: 'row',
@@ -643,7 +650,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
+    // borderBottomColor applied inline with themeColors
   },
   backButton: {
     padding: spacing.xs,
@@ -682,14 +689,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: layout.borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.border.light,
-    backgroundColor: colors.white,
+    // borderColor and backgroundColor applied inline with themeColors
     alignItems: 'center',
   },
   typeButtonSelected: {
-    borderColor: colors.primary,
+    // borderColor and backgroundColor applied inline with themeColors
     borderWidth: 2,
-    backgroundColor: `${colors.primary}20`,
   },
   typeButtonText: {
     fontSize: 14,
@@ -710,7 +715,7 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     borderRadius: layout.borderRadius.md,
     borderWidth: 1,
-    backgroundColor: colors.white,
+    // backgroundColor applied inline with themeColors
   },
   severityIndicator: {
     width: 12,
@@ -723,12 +728,10 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.border.light,
+    // borderColor, color and backgroundColor applied inline with themeColors
     borderRadius: layout.borderRadius.md,
     padding: spacing.base,
     fontSize: 15,
-    color: colors.text.primary,
-    backgroundColor: colors.white,
   },
   textArea: {
     minHeight: 120,
@@ -749,7 +752,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.base,
-    backgroundColor: colors.background.secondary,
+    // backgroundColor applied inline with themeColors
     borderRadius: layout.borderRadius.md,
     marginBottom: spacing.sm,
   },
@@ -785,14 +788,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
     borderRadius: layout.borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.border.light,
-    backgroundColor: colors.white,
+    // borderColor and backgroundColor applied inline with themeColors
     gap: spacing.xs,
   },
   evidenceButtonText: {
     fontSize: 12,
     textAlign: 'center',
-    color: colors.text.secondary,
+    // color applied inline with themeColors
   },
   thumbnailContainer: {
     marginTop: spacing.md,
@@ -816,13 +818,13 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: layout.borderRadius.md,
-    backgroundColor: colors.gray[200],
+    // backgroundColor applied inline with themeColors
   },
   videoThumbnail: {
     width: '100%',
     height: '100%',
     borderRadius: layout.borderRadius.md,
-    backgroundColor: colors.gray[700],
+    // backgroundColor applied inline with themeColors
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -830,7 +832,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -8,
     right: -8,
-    backgroundColor: colors.white,
+    // backgroundColor applied inline with themeColors
     borderRadius: 12,
     shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },

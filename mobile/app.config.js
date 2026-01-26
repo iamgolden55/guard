@@ -75,7 +75,8 @@ module.exports = {
       "expo-location",
       "expo-notifications",
       "expo-local-authentication",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-font"
     ],
     install: {
       exclude: [
