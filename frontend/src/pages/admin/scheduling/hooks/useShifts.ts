@@ -91,15 +91,27 @@ export function useShifts() {
           errorMessage = responseData;
         } else if (responseData.detail) {
           errorMessage = responseData.detail;
+        // Handle staff unavailability error (snake_case from backend)
+        } else if (responseData.staff_unavailable) {
+          errorMessage = responseData.staff_unavailable;
+        // Handle staff unavailability error (camelCase from frontend serializer)
+        } else if (responseData.staffUnavailable) {
+          errorMessage = responseData.staffUnavailable;
         } else if (responseData.non_field_errors) {
           errorMessage = Array.isArray(responseData.non_field_errors)
             ? responseData.non_field_errors.join(', ')
             : responseData.non_field_errors;
         } else {
+          // Handle nested field errors from DRF validation
           const fieldErrors = Object.entries(responseData)
+            .filter(([field]) => field !== 'details') // Skip the details object
             .map(([field, errors]: [string, any]) => {
+              // Handle both string and array error formats
+              if (typeof errors === 'string') {
+                return errors;
+              }
               const errorList = Array.isArray(errors) ? errors : [errors];
-              return `${field}: ${errorList.join(', ')}`;
+              return errorList.join(', ');
             })
             .join('; ');
           if (fieldErrors) errorMessage = fieldErrors;
@@ -143,8 +155,28 @@ export function useShifts() {
       console.error('Error creating multi-staff shifts:', err);
       if (err.response?.status === 400) {
         const errorData = err.response.data;
-        const errorMessage = errorData.detail || Object.values(errorData).join(', ');
-        setError(errorMessage);
+        // Handle staff unavailability error specifically
+        if (errorData.staff_unavailable) {
+          setError(errorData.staff_unavailable);
+        } else if (errorData.detail) {
+          setError(errorData.detail);
+        } else if (errorData.non_field_errors) {
+          const errors = Array.isArray(errorData.non_field_errors)
+            ? errorData.non_field_errors.join(', ')
+            : errorData.non_field_errors;
+          setError(errors);
+        } else {
+          // Extract meaningful error messages, skipping metadata fields
+          const errorMessages = Object.entries(errorData)
+            .filter(([key]) => !['details', 'unavailable_count'].includes(key))
+            .map(([, value]) => {
+              if (typeof value === 'string') return value;
+              if (Array.isArray(value)) return value.join(', ');
+              return String(value);
+            })
+            .join('; ');
+          setError(errorMessages || 'An error occurred while creating the shifts');
+        }
       } else {
         setError(err instanceof Error ? err.message : 'An error occurred while creating the shifts');
       }

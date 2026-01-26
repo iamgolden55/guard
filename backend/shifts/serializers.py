@@ -1,8 +1,72 @@
 from rest_framework import serializers
 from django.utils import timezone
-from api.models import Shift, Venue, User, ShiftExchange, OpenShiftRequest  # Import from api.models
+from api.models import Shift, Venue, User, ShiftExchange, OpenShiftRequest, ContractorUnavailability  # Import from api.models
 from django.contrib.auth import get_user_model
 from api.utils.shift_validators import check_shift_overlap, check_exact_duplicate
+
+
+def check_staff_availability(staff_user, shift_date):
+    """
+    Check if staff member is available on a given date.
+    Returns (is_available, error_details) tuple.
+
+    error_details contains:
+    - staff_name: Full name of the staff member
+    - date: The date being checked
+    - unavailability_start: Start of unavailability period
+    - unavailability_end: End of unavailability period
+    - reason: Reason for unavailability (if provided)
+    - employment_type: 'contractor' or 'permanent'
+    """
+    # Get staff's employment category
+    employment_category = None
+    if hasattr(staff_user, 'profile') and staff_user.profile:
+        employment_type = staff_user.profile.employment_type
+        if employment_type:
+            employment_category = getattr(employment_type, 'employment_category', None)
+
+    staff_name = staff_user.get_full_name() or staff_user.username
+
+    # Check contractor unavailability
+    if employment_category in ('contractor', 'temporary', None):
+        unavailability = ContractorUnavailability.objects.filter(
+            staff_user=staff_user,
+            start_date__lte=shift_date,
+            end_date__gte=shift_date
+        ).first()
+
+        if unavailability:
+            return False, {
+                'staff_name': staff_name,
+                'date': shift_date,
+                'unavailability_start': unavailability.start_date,
+                'unavailability_end': unavailability.end_date,
+                'reason': unavailability.reason or None,
+                'employment_type': 'contractor'
+            }
+
+    # Check permanent employee leave
+    if employment_category == 'permanent':
+        from leave_management.models import LeaveRequest as LeaveManagementRequest
+
+        approved_leave = LeaveManagementRequest.objects.filter(
+            staff_user=staff_user,
+            status='approved',
+            start_date__lte=shift_date,
+            end_date__gte=shift_date
+        ).first()
+
+        if approved_leave:
+            return False, {
+                'staff_name': staff_name,
+                'date': shift_date,
+                'unavailability_start': approved_leave.start_date,
+                'unavailability_end': approved_leave.end_date,
+                'reason': f"Approved leave: {approved_leave.leave_type}" if hasattr(approved_leave, 'leave_type') else "Approved leave",
+                'employment_type': 'permanent'
+            }
+
+    return True, None
 
 # Simple serializer classes to avoid circular imports
 class SimpleVenueSerializer(serializers.ModelSerializer):
@@ -51,7 +115,7 @@ class ShiftSerializer(serializers.ModelSerializer):
             # Multi-staff shift fields
             'coworkers'
         ]
-    
+
     def validate(self, data):
         # Ensure start time is before end time
         if 'start_time' in data and 'end_time' in data:
@@ -71,6 +135,46 @@ class ShiftSerializer(serializers.ModelSerializer):
         # Get time values - either from data or from existing instance (for updates)
         start_time = data.get('start_time') or (self.instance.start_time if self.instance else None)
         end_time = data.get('end_time') or (self.instance.end_time if self.instance else None)
+
+        # Check staff availability (unavailability periods / approved leave)
+        if staff_user and start_time:
+            shift_date = start_time.date() if hasattr(start_time, 'date') else start_time
+            is_available, unavailability_details = check_staff_availability(staff_user, shift_date)
+
+            if not is_available:
+                details = unavailability_details
+                staff_name = details['staff_name']
+                start_str = details['unavailability_start'].strftime('%d %b %Y')
+                end_str = details['unavailability_end'].strftime('%d %b %Y')
+
+                # Build user-friendly error message
+                if details['unavailability_start'] == details['unavailability_end']:
+                    period_str = f"on {start_str}"
+                else:
+                    period_str = f"from {start_str} to {end_str}"
+
+                if details['employment_type'] == 'contractor':
+                    base_msg = f"{staff_name} has marked themselves as unavailable {period_str}."
+                else:
+                    base_msg = f"{staff_name} has approved leave {period_str}."
+
+                if details.get('reason'):
+                    base_msg += f" Reason: {details['reason']}"
+
+                # Add helpful suggestion
+                suggestion = " Please select a different date or contact the staff member to update their availability."
+
+                raise serializers.ValidationError({
+                    'staff_unavailable': base_msg + suggestion,
+                    'details': {
+                        'staff_name': staff_name,
+                        'shift_date': str(shift_date),
+                        'unavailability_start': str(details['unavailability_start']),
+                        'unavailability_end': str(details['unavailability_end']),
+                        'reason': details.get('reason'),
+                        'type': details['employment_type']
+                    }
+                })
 
         # Check for overlapping shifts (regardless of shift_group)
         if staff_user and start_time and end_time:
@@ -240,15 +344,15 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
     isSpecialEvent = serializers.BooleanField(source='is_special_event', default=False)
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
-    
+
     class Meta:
         model = Shift
         fields = [
-            'id', 'venue', 'venueDetails', 'staffUser', 'staffDetails', 
-            'startTime', 'endTime', 'status', 'required_security_role', 'checkInTime', 
+            'id', 'venue', 'venueDetails', 'staffUser', 'staffDetails',
+            'startTime', 'endTime', 'status', 'required_security_role', 'checkInTime',
             'checkOutTime', 'shift_group', 'hourlyRate', 'isSpecialEvent', 'createdAt', 'updatedAt'
         ]
-    
+
     def validate(self, data):
         # Ensure start time is before end time
         if 'start_time' in data and 'end_time' in data:
@@ -268,6 +372,46 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
         # Get time values - either from data or from existing instance (for updates)
         start_time = data.get('start_time') or (self.instance.start_time if self.instance else None)
         end_time = data.get('end_time') or (self.instance.end_time if self.instance else None)
+
+        # Check staff availability (unavailability periods / approved leave)
+        if staff_user and start_time:
+            shift_date = start_time.date() if hasattr(start_time, 'date') else start_time
+            is_available, unavailability_details = check_staff_availability(staff_user, shift_date)
+
+            if not is_available:
+                details = unavailability_details
+                staff_name = details['staff_name']
+                start_str = details['unavailability_start'].strftime('%d %b %Y')
+                end_str = details['unavailability_end'].strftime('%d %b %Y')
+
+                # Build user-friendly error message
+                if details['unavailability_start'] == details['unavailability_end']:
+                    period_str = f"on {start_str}"
+                else:
+                    period_str = f"from {start_str} to {end_str}"
+
+                if details['employment_type'] == 'contractor':
+                    base_msg = f"{staff_name} has marked themselves as unavailable {period_str}."
+                else:
+                    base_msg = f"{staff_name} has approved leave {period_str}."
+
+                if details.get('reason'):
+                    base_msg += f" Reason: {details['reason']}"
+
+                # Add helpful suggestion
+                suggestion = " Please select a different date or contact the staff member to update their availability."
+
+                raise serializers.ValidationError({
+                    'staffUnavailable': base_msg + suggestion,
+                    'details': {
+                        'staffName': staff_name,
+                        'shiftDate': str(shift_date),
+                        'unavailabilityStart': str(details['unavailability_start']),
+                        'unavailabilityEnd': str(details['unavailability_end']),
+                        'reason': details.get('reason'),
+                        'type': details['employment_type']
+                    }
+                })
 
         # Check for overlapping shifts (regardless of shift_group)
         if staff_user and start_time and end_time:
@@ -389,9 +533,28 @@ class MultiStaffShiftSerializer(serializers.Serializer):
         # Check for overlapping shifts for each staff member
         start_time = data['start_time']
         end_time = data['end_time']
+        shift_date = start_time.date() if hasattr(start_time, 'date') else start_time
         conflicts = []
+        unavailable_staff = []
 
         for user in staff_users:
+            # Check staff availability (unavailability periods / approved leave)
+            is_available, unavailability_details = check_staff_availability(user, shift_date)
+            if not is_available:
+                details = unavailability_details
+                staff_name = details['staff_name']
+                start_str = details['unavailability_start'].strftime('%d %b')
+                end_str = details['unavailability_end'].strftime('%d %b')
+
+                if details['unavailability_start'] == details['unavailability_end']:
+                    period_str = f"on {start_str}"
+                else:
+                    period_str = f"{start_str} - {end_str}"
+
+                reason_str = f" ({details['reason']})" if details.get('reason') else ""
+                unavailable_staff.append(f"{staff_name}: unavailable {period_str}{reason_str}")
+
+            # Check for overlapping shifts
             has_overlap, overlapping_shifts = check_shift_overlap(
                 user, start_time, end_time
             )
@@ -403,6 +566,13 @@ class MultiStaffShiftSerializer(serializers.Serializer):
                     f"already has shift at {venue_name} "
                     f"({first_conflict.start_time.strftime('%H:%M')} - {first_conflict.end_time.strftime('%H:%M')})"
                 )
+
+        # Report unavailable staff first (more important)
+        if unavailable_staff:
+            raise serializers.ValidationError({
+                'staff_unavailable': "The following staff members are unavailable: " + "; ".join(unavailable_staff),
+                'unavailable_count': len(unavailable_staff)
+            })
 
         if conflicts:
             raise serializers.ValidationError(
