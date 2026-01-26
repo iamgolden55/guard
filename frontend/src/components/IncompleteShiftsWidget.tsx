@@ -42,6 +42,7 @@ interface IncompleteShiftsWidgetProps {
   showQuickActions?: boolean;
   onActionComplete?: () => void;
   onCountChange?: (count: number) => void;
+  useTableView?: boolean; // Force table view regardless of count
 }
 
 // Icons
@@ -77,7 +78,8 @@ export const IncompleteShiftsWidget: React.FC<IncompleteShiftsWidgetProps> = ({
   maxItems = 6,
   showQuickActions = true,
   onActionComplete,
-  onCountChange
+  onCountChange,
+  useTableView
 }) => {
   const navigate = useNavigate();
   const [incompleteShifts, setIncompleteShifts] = useState<IncompleteShift[]>([]);
@@ -179,13 +181,42 @@ export const IncompleteShiftsWidget: React.FC<IncompleteShiftsWidgetProps> = ({
     );
   };
 
-  // Don't render if no incomplete shifts and not loading
-  if (!isLoading && incompleteShifts.length === 0) {
-    return null;
-  }
-
   const hasCritical = priorityCounts.critical > 0;
   const displayedShifts = incompleteShifts.slice(0, maxItems);
+
+  // Show empty state when no incomplete shifts
+  if (!isLoading && incompleteShifts.length === 0) {
+    return (
+      <div className="bg-[#F9F9F9] border border-[#F0F0F0] rounded-lg overflow-hidden">
+        {/* Header */}
+        <div className="px-4 py-3 border-b border-emerald-200 bg-emerald-50">
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 rounded-lg bg-emerald-100">
+              <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">Shift Status</h3>
+              <p className="text-sm text-gray-500">All shifts are up to date</p>
+            </div>
+          </div>
+        </div>
+        {/* Empty state content */}
+        <div className="p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-100 flex items-center justify-center">
+            <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h4 className="text-lg font-medium text-gray-900 mb-1">All caught up!</h4>
+          <p className="text-sm text-gray-500 max-w-xs mx-auto">
+            No shifts require attention. All check-ins and check-outs are complete.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-[#F9F9F9] border border-[#F0F0F0] rounded-lg overflow-hidden">
@@ -243,97 +274,171 @@ export const IncompleteShiftsWidget: React.FC<IncompleteShiftsWidgetProps> = ({
           </MessageBar>
         ) : (
           <>
-            {/* Shift Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {displayedShifts.map((shift) => (
-                <div
-                  key={shift.id}
-                  className="bg-white border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-sm transition-all"
-                >
-                  {/* Header: Staff name + Priority */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                        <span className="text-sm font-medium text-gray-600">
-                          {shift.staff_details.first_name[0]}{shift.staff_details.last_name[0]}
-                        </span>
+            {/* Conditional: Table view for many items OR card view for few */}
+            {(useTableView || incompleteShifts.length > 3) ? (
+              /* Table View */
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Staff</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600 hidden sm:table-cell">Venue</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600">Issue</th>
+                      <th className="text-left py-2 px-3 font-medium text-gray-600 hidden md:table-cell">Overdue</th>
+                      {showQuickActions && (
+                        <th className="text-right py-2 px-3 font-medium text-gray-600">Action</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedShifts.map((shift) => (
+                      <tr key={shift.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-2">
+                            <PriorityDot priority={shift.priority} />
+                            <span className="font-medium text-gray-900">
+                              {shift.staff_details.first_name} {shift.staff_details.last_name.charAt(0)}.
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-gray-600 hidden sm:table-cell">
+                          {shift.venue_details.name}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            shift.type === 'no_checkin'
+                              ? 'bg-red-50 text-red-700'
+                              : 'bg-amber-50 text-amber-700'
+                          }`}>
+                            {shift.type === 'no_checkin' ? 'No Check-in' : 'No Check-out'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-gray-500 hidden md:table-cell">
+                          {shift.hours_overdue >= 24 ? '24+' : shift.hours_overdue.toFixed(1)}h
+                        </td>
+                        {showQuickActions && (
+                          <td className="py-3 px-3 text-right">
+                            <button
+                              disabled={processingShiftId === shift.id}
+                              onClick={() => shift.type === 'no_checkin'
+                                ? handleQuickCheckin(shift)
+                                : handleQuickCheckout(shift)
+                              }
+                              className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded transition-colors disabled:opacity-50 ${
+                                shift.type === 'no_checkin'
+                                  ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                              }`}
+                            >
+                              {processingShiftId === shift.id ? (
+                                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <>
+                                  <Icons.Check className="w-3 h-3" />
+                                  {shift.type === 'no_checkin' ? 'Check In' : 'Check Out'}
+                                </>
+                              )}
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              /* Card View for 1-3 items */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {displayedShifts.map((shift) => (
+                  <div
+                    key={shift.id}
+                    className="bg-white border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-sm transition-all"
+                  >
+                    {/* Header: Staff name + Priority */}
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
+                          <span className="text-sm font-medium text-gray-600">
+                            {shift.staff_details.first_name[0]}{shift.staff_details.last_name[0]}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {shift.staff_details.first_name} {shift.staff_details.last_name}
+                          </p>
+                          <p className="text-xs text-gray-500">{shift.venue_details.name}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {shift.staff_details.first_name} {shift.staff_details.last_name}
-                        </p>
-                        <p className="text-xs text-gray-500">{shift.venue_details.name}</p>
-                      </div>
+                      <PriorityDot priority={shift.priority} />
                     </div>
-                    <PriorityDot priority={shift.priority} />
-                  </div>
 
-                  {/* Issue type */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${
-                      shift.type === 'no_checkin'
-                        ? 'bg-red-50 text-red-700'
-                        : 'bg-amber-50 text-amber-700'
-                    }`}>
-                      {shift.type === 'no_checkin' ? 'No Check-in' : 'No Check-out'}
-                    </span>
-                    {shift.hours_overdue > 0 && (
-                      <span className="inline-flex items-center gap-1 text-xs text-gray-500">
-                        <Icons.Clock className="w-3.5 h-3.5" />
-                        {shift.hours_overdue >= 24 ? '24+' : shift.hours_overdue.toFixed(1)}h overdue
+                    {/* Issue type */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${
+                        shift.type === 'no_checkin'
+                          ? 'bg-red-50 text-red-700'
+                          : 'bg-amber-50 text-amber-700'
+                      }`}>
+                        {shift.type === 'no_checkin' ? 'No Check-in' : 'No Check-out'}
                       </span>
+                      {shift.hours_overdue > 0 && (
+                        <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+                          <Icons.Clock className="w-3.5 h-3.5" />
+                          {shift.hours_overdue >= 24 ? '24+' : shift.hours_overdue.toFixed(1)}h overdue
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    {showQuickActions && (
+                      <div className="flex items-center gap-2">
+                        <TooltipHost
+                          content={shift.type === 'no_checkin'
+                            ? "Record a manual check-in using the scheduled start time"
+                            : "Record a manual check-out using current time"
+                          }
+                          directionalHint={DirectionalHint.topCenter}
+                        >
+                          <button
+                            disabled={processingShiftId === shift.id}
+                            onClick={() => shift.type === 'no_checkin'
+                              ? handleQuickCheckin(shift)
+                              : handleQuickCheckout(shift)
+                            }
+                            className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ${
+                              shift.type === 'no_checkin'
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                          >
+                            {processingShiftId === shift.id ? (
+                              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <>
+                                <Icons.Check className="w-4 h-4" />
+                                {shift.type === 'no_checkin' ? 'Check In' : 'Check Out'}
+                              </>
+                            )}
+                          </button>
+                        </TooltipHost>
+
+                        <TooltipHost
+                          content="View full details and more options"
+                          directionalHint={DirectionalHint.topCenter}
+                        >
+                          <button
+                            onClick={() => navigate('/approvals', { state: { activeTab: 'incomplete-shifts' } })}
+                            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                          >
+                            <Icons.MoreHorizontal className="w-5 h-5" />
+                          </button>
+                        </TooltipHost>
+                      </div>
                     )}
                   </div>
-
-                  {/* Actions */}
-                  {showQuickActions && (
-                    <div className="flex items-center gap-2">
-                      <TooltipHost
-                        content={shift.type === 'no_checkin'
-                          ? "Record a manual check-in using the scheduled start time"
-                          : "Record a manual check-out using current time"
-                        }
-                        directionalHint={DirectionalHint.topCenter}
-                      >
-                        <button
-                          disabled={processingShiftId === shift.id}
-                          onClick={() => shift.type === 'no_checkin'
-                            ? handleQuickCheckin(shift)
-                            : handleQuickCheckout(shift)
-                          }
-                          className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ${
-                            shift.type === 'no_checkin'
-                              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                              : 'bg-blue-600 text-white hover:bg-blue-700'
-                          }`}
-                        >
-                          {processingShiftId === shift.id ? (
-                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          ) : (
-                            <>
-                              <Icons.Check className="w-4 h-4" />
-                              {shift.type === 'no_checkin' ? 'Check In' : 'Check Out'}
-                            </>
-                          )}
-                        </button>
-                      </TooltipHost>
-
-                      <TooltipHost
-                        content="View full details and more options"
-                        directionalHint={DirectionalHint.topCenter}
-                      >
-                        <button
-                          onClick={() => navigate('/approvals', { state: { activeTab: 'incomplete-shifts' } })}
-                          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                          <Icons.MoreHorizontal className="w-5 h-5" />
-                        </button>
-                      </TooltipHost>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
 
             {/* Show more indicator */}
             {incompleteShifts.length > maxItems && (
