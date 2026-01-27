@@ -4,6 +4,8 @@ import SignatureCanvas from './SignatureCanvas';
 import MapComponent from './MapComponent';
 import VenueLocationPicker from './VenueLocationPicker';
 import VenueLocationDisplay from './VenueLocationDisplay';
+import LeafletMapDisplay from './LeafletMapDisplay';
+import LeafletVenuesMap from './LeafletVenuesMap';
 import IntelligentAddressPicker from './IntelligentAddressPicker';
 import WeeklyEarnings from './WeeklyEarnings';
 import BulkPayrollGeneration from './BulkPayrollGeneration';
@@ -23,6 +25,8 @@ export {
   MapComponent,
   VenueLocationPicker,
   VenueLocationDisplay,
+  LeafletMapDisplay,
+  LeafletVenuesMap,
   IntelligentAddressPicker,
   WeeklyEarnings,
   BulkPayrollGeneration,

@@ -1,9 +1,9 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Stack, Text, Link } from '@fluentui/react';
-import MapComponent, { MapLocation } from './MapComponent';
+import LeafletMapDisplay from './LeafletMapDisplay';
 
 export interface VenueLocationDisplayProps {
-  apiKey: string;
+  apiKey?: string; // Kept for backward compatibility but no longer required
   venue: {
     id: number;
     name: string;
@@ -21,103 +21,47 @@ export interface VenueLocationDisplayProps {
 }
 
 const VenueLocationDisplay: React.FC<VenueLocationDisplayProps> = ({
-  apiKey,
   venue,
   height = '300px',
-  width = '100%',
   showAddress = true,
   showDirections = true,
   showCheckInRadius = false,
   checkInRadiusMeters = 100,
   className = ''
 }) => {
-  // Create map markers
-  const markers = useMemo((): MapLocation[] => {
-    if (!venue.latitude || !venue.longitude) {
-      return [];
-    }
-
-    return [{
-      lat: venue.latitude,
-      lng: venue.longitude,
-      address: venue.address
-    }];
-  }, [venue.latitude, venue.longitude, venue.address]);
-
-  // Map center
-  const center = useMemo((): MapLocation => {
-    if (venue.latitude && venue.longitude) {
-      return {
-        lat: venue.latitude,
-        lng: venue.longitude
-      };
-    }
-    
-    // Default to Bristol, UK if no coordinates
-    return { lat: 51.4545, lng: -2.5879 };
-  }, [venue.latitude, venue.longitude]);
-
-  // Handle map load to add check-in radius circle
-  const handleMapLoad = (map: google.maps.Map) => {
-    if (showCheckInRadius && venue.latitude && venue.longitude) {
-      // Add circle to show check-in radius
-      const circle = new google.maps.Circle({
-        strokeColor: '#4285F4',
-        strokeOpacity: 0.8,
-        strokeWeight: 2,
-        fillColor: '#4285F4',
-        fillOpacity: 0.15,
-        map,
-        center: { lat: venue.latitude, lng: venue.longitude },
-        radius: checkInRadiusMeters
-      });
-
-      // Add info window for radius
-      const infoWindow = new google.maps.InfoWindow({
-        content: `<div style="padding: 8px;">
-                    <strong>Check-in Area</strong><br/>
-                    Staff must be within ${checkInRadiusMeters}m to check in
-                  </div>`,
-        position: { lat: venue.latitude, lng: venue.longitude }
-      });
-
-      // Show info window when circle is clicked
-      circle.addListener('click', () => {
-        infoWindow.open(map);
-      });
-    }
-  };
-
   // Generate directions URL
   const getDirectionsUrl = () => {
     if (!venue.latitude || !venue.longitude) {
       return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venue.address)}`;
     }
-    
+
     return `https://www.google.com/maps/dir/?api=1&destination=${venue.latitude},${venue.longitude}`;
   };
 
   // Check if venue has coordinates
   const hasCoordinates = venue.latitude && venue.longitude;
 
+  // Compact mode: when both showAddress and showDirections are false, render just the map
+  const isCompactMode = !showAddress && !showDirections && !showCheckInRadius;
+
   if (!hasCoordinates) {
     return (
-      <div className={`border rounded-lg p-4 ${className}`} style={{ height, width }}>
+      <div className={`border rounded-lg p-4 ${className}`} style={{ height, width: '100%' }}>
         <Stack tokens={{ childrenGap: 12 }} className="h-full justify-center">
           <Text variant="mediumPlus" className="text-center">📍 {venue.name}</Text>
-          
+
           {showAddress && (
             <Text className="text-center text-gray-600">{venue.address}</Text>
           )}
-          
+
           <Text variant="small" className="text-center text-gray-500">
             Coordinates not available for map display
           </Text>
-          
+
           {showDirections && (
             <div className="text-center">
-              <Link 
-                href={getDirectionsUrl()} 
+              <Link
+                href={getDirectionsUrl()}
                 target="_blank"
                 className="text-blue-600 hover:underline"
               >
@@ -130,58 +74,74 @@ const VenueLocationDisplay: React.FC<VenueLocationDisplayProps> = ({
     );
   }
 
+  // Compact mode: render just the map without header/footer
+  if (isCompactMode) {
+    return (
+      <LeafletMapDisplay
+        latitude={venue.latitude!}
+        longitude={venue.longitude!}
+        height={height}
+        showRadius={showCheckInRadius}
+        radiusMeters={checkInRadiusMeters}
+        allowInteraction={false}
+        zoom={16}
+        className={className}
+      />
+    );
+  }
+
+  // Full mode: render with header and additional info using flexbox
   return (
-    <Stack tokens={{ childrenGap: 12 }} className={className}>
+    <div className={`flex flex-col ${className}`} style={{ height, width: '100%' }}>
       {/* Venue Info Header */}
-      <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-        <Stack tokens={{ childrenGap: 4 }}>
-          <Text variant="mediumPlus">📍 {venue.name}</Text>
+      <div className="flex justify-between items-center px-3 py-2 bg-white/90 shrink-0">
+        <div className="flex flex-col gap-1">
+          <span className="font-medium text-gray-900">📍 {venue.name}</span>
           {showAddress && (
-            <Text variant="small" className="text-gray-600">{venue.address}</Text>
+            <span className="text-sm text-gray-600">{venue.address}</span>
           )}
-        </Stack>
-        
+        </div>
+
         {showDirections && (
-          <Link 
-            href={getDirectionsUrl()} 
+          <a
+            href={getDirectionsUrl()}
             target="_blank"
-            className="text-blue-600 hover:underline text-sm"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline text-sm whitespace-nowrap"
           >
             🗺️ Directions
-          </Link>
+          </a>
         )}
-      </Stack>
+      </div>
 
-      {/* Map */}
-      <MapComponent
-        apiKey={apiKey}
-        center={center}
-        zoom={16}
-        height={height}
-        width={width}
-        markers={markers}
-        interactive={false}
-        onMapLoad={handleMapLoad}
-        className="border-0"
-      />
+      {/* Coordinates & Check-in radius info */}
+      <div className="px-3 py-1 bg-white/90 text-sm shrink-0">
+        {venue.latitude && venue.longitude && (
+          <div className="text-gray-500">
+            📍 {Number(venue.latitude).toFixed(6)}, {Number(venue.longitude).toFixed(6)}
+          </div>
+        )}
+        {showCheckInRadius && (
+          <div className="text-blue-600">
+            ⚪ Check-in area: {checkInRadiusMeters}m radius
+          </div>
+        )}
+      </div>
 
-      {/* Additional Info */}
-      {(showCheckInRadius || venue.latitude) && (
-        <Stack tokens={{ childrenGap: 4 }}>
-          {venue.latitude && venue.longitude && (
-            <Text variant="small" className="text-gray-500">
-              📍 {Number(venue.latitude).toFixed(6)}, {Number(venue.longitude).toFixed(6)}
-            </Text>
-          )}
-          
-          {showCheckInRadius && (
-            <Text variant="small" className="text-blue-600">
-              ⚪ Check-in area: {checkInRadiusMeters}m radius
-            </Text>
-          )}
-        </Stack>
-      )}
-    </Stack>
+      {/* Map - Takes remaining space */}
+      <div className="flex-1 min-h-0">
+        <LeafletMapDisplay
+          latitude={venue.latitude!}
+          longitude={venue.longitude!}
+          height="100%"
+          showRadius={showCheckInRadius}
+          radiusMeters={checkInRadiusMeters}
+          allowInteraction={false}
+          zoom={16}
+          className="rounded-b-lg"
+        />
+      </div>
+    </div>
   );
 };
 
