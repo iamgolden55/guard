@@ -1169,6 +1169,8 @@ const VenueManagement: React.FC = () => {
   const [searchText, setSearchText] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [statsFilter, setStatsFilter] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 9;
 
   // Modal/Panel states
   const [showAddPanel, setShowAddPanel] = useState(false);
@@ -1246,7 +1248,25 @@ const VenueManagement: React.FC = () => {
     }
 
     setFilteredVenues(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
   }, [searchText, statsFilter, venues]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredVenues.length / ITEMS_PER_PAGE);
+  const paginatedVenues = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredVenues.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredVenues, currentPage, ITEMS_PER_PAGE]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
+    setCurrentPage(1); // Reset to first page when changing view
+  };
 
   // Load venues on mount
   useEffect(() => {
@@ -1407,7 +1427,7 @@ const VenueManagement: React.FC = () => {
 
         {/* View Toggle & Refresh */}
         <div className="flex items-center justify-between">
-          <ViewToggle activeView={viewMode} onViewChange={setViewMode} />
+          <ViewToggle activeView={viewMode} onViewChange={handleViewModeChange} />
           <button
             onClick={loadVenues}
             className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
@@ -1468,49 +1488,129 @@ const VenueManagement: React.FC = () => {
           <>
             {/* Grid View */}
             {viewMode === 'grid' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredVenues.map(venue => (
-                  <VenueCard
-                    key={venue.id}
-                    venue={venue}
-                    googleMapsApiKey={googleMapsApiKey}
-                    onEdit={handleEditVenue}
-                    onView={handleViewVenue}
-                    onToggleStatus={handleToggleStatus}
-                    onDelete={handleDeleteVenue}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {paginatedVenues.map(venue => (
+                    <VenueCard
+                      key={venue.id}
+                      venue={venue}
+                      googleMapsApiKey={googleMapsApiKey}
+                      onEdit={handleEditVenue}
+                      onView={handleViewVenue}
+                      onToggleStatus={handleToggleStatus}
+                      onDelete={handleDeleteVenue}
+                    />
+                  ))}
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-6 bg-white rounded-xl border border-gray-200 px-4 py-3">
+                    <div className="text-sm text-gray-600">
+                      Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, filteredVenues.length)} of {filteredVenues.length} venues
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Previous
+                      </button>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                        <button
+                          key={page}
+                          onClick={() => handlePageChange(page)}
+                          className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                            page === currentPage
+                              ? 'bg-red-600 text-white'
+                              : 'border border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
             {/* List View */}
             {viewMode === 'list' && (
-              <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">Venue</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">Capacity</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">Requirements</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">GPS</th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wide">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {filteredVenues.map(venue => (
-                      <VenueListRow
-                        key={venue.id}
-                        venue={venue}
-                        onEdit={handleEditVenue}
-                        onView={handleViewVenue}
-                        onToggleStatus={handleToggleStatus}
-                        onDelete={handleDeleteVenue}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">Venue</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">Capacity</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">Requirements</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">GPS</th>
+                        <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wide">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {paginatedVenues.map(venue => (
+                        <VenueListRow
+                          key={venue.id}
+                          venue={venue}
+                          onEdit={handleEditVenue}
+                          onView={handleViewVenue}
+                          onToggleStatus={handleToggleStatus}
+                          onDelete={handleDeleteVenue}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-6 bg-white rounded-xl border border-gray-200 px-4 py-3">
+                    <div className="text-sm text-gray-600">
+                      Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, filteredVenues.length)} of {filteredVenues.length} venues
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Previous
+                      </button>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                        <button
+                          key={page}
+                          onClick={() => handlePageChange(page)}
+                          className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                            page === currentPage
+                              ? 'bg-red-600 text-white'
+                              : 'border border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
             {/* Map View */}
