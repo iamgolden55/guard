@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -113,6 +113,15 @@ export const LeafletVenuesMap: React.FC<LeafletVenuesMapProps> = ({
           margin: 0;
           min-width: 200px;
         }
+        .venue-tooltip {
+          padding: 8px 12px;
+          border-radius: 8px;
+          font-size: 13px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .venue-tooltip .leaflet-tooltip-content {
+          margin: 0;
+        }
       `}</style>
 
       <MapContainer
@@ -134,10 +143,25 @@ export const LeafletVenuesMap: React.FC<LeafletVenuesMapProps> = ({
             key={venue.id}
             position={[venue.latitude!, venue.longitude!]}
             icon={createCustomIcon(venue.isActive)}
-            eventHandlers={{
-              click: () => onVenueClick?.(venue),
-            }}
           >
+            {/* Tooltip shows on hover */}
+            <Tooltip
+              direction="top"
+              offset={[0, -20]}
+              opacity={1}
+              className="venue-tooltip"
+            >
+              <div>
+                <div className="font-semibold text-gray-900">{venue.name}</div>
+                <div className="text-gray-600 text-xs mt-0.5">{venue.address}</div>
+                {venue.capacity && (
+                  <div className="text-gray-500 text-xs mt-0.5">Capacity: {venue.capacity}</div>
+                )}
+                <div className="text-blue-600 text-xs mt-1 font-medium">Click for details</div>
+              </div>
+            </Tooltip>
+
+            {/* Popup shows on click */}
             <Popup className="venue-popup">
               <div className="p-3">
                 <h3 className="font-bold text-gray-900 text-base">{venue.name}</h3>
