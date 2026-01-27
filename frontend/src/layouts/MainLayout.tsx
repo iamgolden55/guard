@@ -324,10 +324,10 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         }}
       >
         <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-          {/* Mobile menu button */}
+          {/* Mobile menu button - visible on mobile, hidden on desktop */}
           <button
+            className="block md:hidden"
             style={{
-              display: 'none',
               color: theme.palette.white,
               padding: '8px',
               background: 'transparent',
@@ -335,8 +335,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
               cursor: 'pointer',
               fontSize: '20px'
             }}
-            className="md:block"
             onClick={toggleMobileNav}
+            aria-label="Toggle navigation menu"
           >
             ☰
           </button>
@@ -372,7 +372,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       <Stack horizontal styles={{ root: { flex: 1, minHeight: 0 } }}>
         {/* Sidebar - hidden on mobile unless toggled */}
         <aside
-          className={`md:block ${isMobileNavOpen ? 'block absolute z-10 h-full' : 'hidden'}`}
+          className={`md:block ${isMobileNavOpen ? 'block absolute z-[1000] h-full' : 'hidden'}`}
           style={{
             width: 250,
             minWidth: 250,
