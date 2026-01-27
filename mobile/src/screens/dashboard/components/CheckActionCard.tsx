@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../hooks/useTheme';
 import { getUberColors, getUberShadows, uberRadius, fontFamilies, spacing } from '../../../theme';
 
-type CardStatus = 'active' | 'disabled' | 'completed' | 'too_far';
+type CardStatus = 'active' | 'disabled' | 'completed' | 'too_far' | 'overdue';
 type CardType = 'check-in' | 'check-out';
 
 interface CheckActionCardProps {
@@ -55,6 +55,9 @@ const getSubtitle = (
   }
   if (status === 'disabled') {
     return type === 'check-in' ? 'No upcoming shift' : 'Check in first';
+  }
+  if (status === 'overdue') {
+    return venueName ? `You're late! Check in at ${venueName}` : 'You\'re late! Check in now';
   }
   if (status === 'too_far' && distanceToVenue !== null && distanceToVenue !== undefined) {
     return `You're ${formatDistance(distanceToVenue)}`;
@@ -132,6 +135,7 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
   const isCompleted = status === 'completed';
   const isDisabled = status === 'disabled';
   const isTooFar = status === 'too_far';
+  const isOverdue = status === 'overdue';
 
   // Calculate lateness for check-in card
   const lateness = type === 'check-in'
@@ -143,19 +147,25 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
     ? uberColors.successLight
     : (isCompleted && lateness.isLate) || isTooFar
       ? isDark ? '#78350F' : '#FEF3C7'  // amber colors
-      : uberColors.background.surface;
+      : isOverdue
+        ? isDark ? '#7F1D1D' : '#FEF2F2'  // red colors for overdue
+        : uberColors.background.surface;
 
   const cardBorderColor = isCompleted && !lateness.isLate
     ? uberColors.success
     : (isCompleted && lateness.isLate) || isTooFar
       ? uberColors.warning
-      : uberColors.border.light;
+      : isOverdue
+        ? uberColors.error || '#EF4444'
+        : uberColors.border.light;
 
   const iconContainerBg = isCompleted && !lateness.isLate
     ? uberColors.successLight
     : (isCompleted && lateness.isLate) || isTooFar
       ? isDark ? '#78350F' : '#FEF3C7'
-      : uberColors.border.light;
+      : isOverdue
+        ? isDark ? '#7F1D1D' : '#FEE2E2'
+        : uberColors.border.light;
 
   return (
     <View style={[
@@ -177,6 +187,8 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
           )
         ) : isTooFar ? (
           <Ionicons name="location-outline" size={24} color={uberColors.warning} />
+        ) : isOverdue ? (
+          <Ionicons name="alert-circle" size={24} color={uberColors.error || '#EF4444'} />
         ) : (
           <Ionicons
             name={getIcon(type)}
@@ -195,6 +207,12 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
           ]}>
             {getTitle(type)}
           </Text>
+          {/* Overdue badge */}
+          {isOverdue && (
+            <View style={[styles.latenessBadge, { backgroundColor: uberColors.error || '#EF4444' }]}>
+              <Text style={styles.latenessText}>LATE</Text>
+            </View>
+          )}
           {/* Lateness badge */}
           {isCompleted && lateness.isLate && (
             <View style={[styles.latenessBadge, { backgroundColor: uberColors.warning }]}>
@@ -207,9 +225,11 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
           {
             color: isDisabled
               ? uberColors.disabledText
-              : isTooFar
-                ? isDark ? '#FCD34D' : '#92400E'
-                : uberColors.text.secondary
+              : isOverdue
+                ? uberColors.error || '#EF4444'
+                : isTooFar
+                  ? isDark ? '#FCD34D' : '#92400E'
+                  : uberColors.text.secondary
           }
         ]}>
           {getSubtitle(type, status, venueName, distanceToVenue)}
@@ -231,6 +251,7 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
           style={[
             styles.button,
             isActive && { backgroundColor: uberColors.primary },
+            isOverdue && { backgroundColor: uberColors.error || '#EF4444' },
             isCompleted && {
               backgroundColor: uberColors.successLight,
               borderWidth: 1,
@@ -259,7 +280,7 @@ export const CheckActionCard: React.FC<CheckActionCardProps> = ({
             <Text style={[
               styles.buttonText,
               {
-                color: isActive
+                color: isActive || isOverdue
                   ? uberColors.text.inverse
                   : isDisabled
                     ? uberColors.disabledText

@@ -13,9 +13,11 @@ import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   selectActiveShift,
   selectUpcomingShifts,
+  selectPastScheduledShifts,
   fetchShifts,
   startBreak,
-  endBreak
+  endBreak,
+  Shift,
 } from '../../store/slices/shiftsSlice';
 import { ActiveShiftCard, QuickActionsGrid, UpcomingShiftCard } from './components';
 import { colors, spacing, textStyles, getColors } from '../../theme';
@@ -32,8 +34,15 @@ export const DashboardScreen = () => {
   const user = useAppSelector(selectCurrentUser);
   const activeShift = useAppSelector(selectActiveShift);
   const upcomingShifts = useAppSelector(selectUpcomingShifts);
+  const pastScheduledShifts = useAppSelector(selectPastScheduledShifts);
   const { isDark } = useTheme();
   const themeColors = getColors(isDark);
+
+  // Filter overdue shifts to only those that can still be checked into (haven't ended yet)
+  const overdueShifts = pastScheduledShifts.filter((shift: Shift) => {
+    const endTime = new Date(shift.end_time);
+    return endTime > new Date();
+  });
 
   // Fetch shifts when screen comes into focus
   // Using useFocusEffect instead of useEffect to prevent race conditions
@@ -282,13 +291,30 @@ export const DashboardScreen = () => {
         />
       </View>
 
+      {/* Overdue Shifts Section - Check In Required */}
+      {overdueShifts.length > 0 && (
+        <View style={[styles.section, styles.upcomingShiftsSection]}>
+          <Heading2 style={[styles.sectionTitle, { color: themeColors.error }]}>
+            Check In Required ({overdueShifts.length})
+          </Heading2>
+          {overdueShifts.map((shift: Shift) => (
+            <UpcomingShiftCard
+              key={shift.id}
+              shift={shift}
+              onPress={() => handleShiftPress(shift)}
+              isOverdue={true}
+            />
+          ))}
+        </View>
+      )}
+
       {/* Upcoming Shifts Section */}
-      <View style={[styles.section, styles.upcomingShiftsSection]}>
+      <View style={[styles.section, overdueShifts.length === 0 && styles.upcomingShiftsSection]}>
         <Heading2 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>
           Upcoming Shifts ({upcomingShifts.length})
         </Heading2>
         {upcomingShifts.length > 0 ? (
-          upcomingShifts.slice(0, 3).map((shift) => (
+          upcomingShifts.slice(0, 3).map((shift: Shift) => (
             <UpcomingShiftCard
               key={shift.id}
               shift={shift}

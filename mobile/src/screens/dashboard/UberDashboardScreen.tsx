@@ -15,6 +15,7 @@ import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   selectActiveShift,
   selectUpcomingShifts,
+  selectPastScheduledShifts,
   fetchShifts,
   type Shift,
 } from '../../store/slices/shiftsSlice';
@@ -47,6 +48,7 @@ export const UberDashboardScreen = () => {
   const user = useAppSelector(selectCurrentUser);
   const activeShift = useAppSelector(selectActiveShift);
   const upcomingShifts = useAppSelector(selectUpcomingShifts);
+  const pastScheduledShifts = useAppSelector(selectPastScheduledShifts);
   const [shiftChecks, setShiftChecks] = useState<{
     fireExitChecks: any[];
     capacityChecks: any[];
@@ -72,8 +74,18 @@ export const UberDashboardScreen = () => {
     return () => unsubscribe();
   }, []);
 
-  // Get the next upcoming shift for check-in
+  // Filter overdue shifts (start_time passed but end_time hasn't - can still check in)
+  const overdueShifts = pastScheduledShifts.filter((shift: Shift) => {
+    const endTime = new Date(shift.end_time);
+    return endTime > new Date();
+  });
+
+  // Get the next shift for check-in (prioritize overdue shifts)
+  const nextOverdueShift = overdueShifts.length > 0 ? overdueShifts[0] : null;
   const nextUpcomingShift = upcomingShifts.length > 0 ? upcomingShifts[0] : null;
+
+  // Use overdue shift if available, otherwise use upcoming shift
+  const shiftForCheckIn = nextOverdueShift || nextUpcomingShift;
 
   // Fetch shifts when screen comes into focus
   useFocusEffect(
@@ -158,8 +170,9 @@ export const UberDashboardScreen = () => {
   }, [activeShift, upcomingShifts, shiftChecks]);
 
   // Determine check-in card state
-  const getCheckInStatus = (): 'active' | 'disabled' | 'completed' => {
+  const getCheckInStatus = (): 'active' | 'disabled' | 'completed' | 'overdue' => {
     if (activeShift?.check_in_time) return 'completed';
+    if (nextOverdueShift) return 'overdue';
     if (nextUpcomingShift) return 'active';
     return 'disabled';
   };
@@ -173,9 +186,12 @@ export const UberDashboardScreen = () => {
 
   // Handle check-in press
   const handleCheckIn = () => {
-    if (nextUpcomingShift) {
-      logger.info('[UberDashboard] Check-in pressed, navigating to ShiftDetails');
-      navigation.navigate('ShiftDetails', { shift: nextUpcomingShift });
+    if (shiftForCheckIn) {
+      logger.info('[UberDashboard] Check-in pressed, navigating to ShiftDetails', {
+        isOverdue: !!nextOverdueShift,
+        shiftId: shiftForCheckIn.id,
+      });
+      navigation.navigate('ShiftDetails', { shift: shiftForCheckIn });
     } else if (activeShift) {
       navigation.navigate('ShiftDetails', { shift: activeShift });
     }
@@ -225,8 +241,8 @@ export const UberDashboardScreen = () => {
   // Get user display name
   const userName = user?.first_name || user?.username || 'there';
 
-  // Get current venue name
-  const currentVenueName = activeShift?.venue?.name || nextUpcomingShift?.venue?.name;
+  // Get current venue name (prioritize overdue shift)
+  const currentVenueName = activeShift?.venue?.name || shiftForCheckIn?.venue?.name;
 
   return (
     <View style={[styles.container, { backgroundColor: uberColors.background.light }]}>
@@ -254,7 +270,7 @@ export const UberDashboardScreen = () => {
             venueName={currentVenueName}
             onPress={handleCheckIn}
             isLoading={isLoading}
-            scheduledStartTime={activeShift?.start_time || nextUpcomingShift?.start_time}
+            scheduledStartTime={activeShift?.start_time || shiftForCheckIn?.start_time}
             actualCheckInTime={activeShift?.check_in_time}
           />
 
@@ -275,6 +291,7 @@ export const UberDashboardScreen = () => {
             checkInTime={activeShift.check_in_time}
             checkOutTime={activeShift.check_out_time}
             isActive={!activeShift.check_out_time}
+            scheduledEndTime={activeShift.end_time}
           />
         )}
 
