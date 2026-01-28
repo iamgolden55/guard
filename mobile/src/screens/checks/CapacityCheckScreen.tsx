@@ -16,7 +16,8 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Container, Heading2, Heading3, Body, Card, Button } from '@components/ui';
-import { colors, spacing } from '../../theme';
+import { colors, getColors, spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 import { locationService } from '../../services/locationService';
 import { photoService } from '../../services/photoService';
@@ -33,6 +34,8 @@ export const CapacityCheckScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { shiftId } = route.params;
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
   const activeShift = useAppSelector(selectActiveShift);
 
   // Get venue capacity from shift data (assuming it's available)
@@ -192,9 +195,9 @@ export const CapacityCheckScreen = () => {
   };
 
   return (
-    <Container scrollable={false} safeArea style={styles.container}>
+    <Container scrollable={false} safeArea style={[styles.container, { backgroundColor: colors.background.secondary }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.background.primary, borderBottomColor: colors.border.light }]}>
         <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
           <Ionicons name="close" size={24} color={colors.text.primary} />
         </TouchableOpacity>
@@ -219,8 +222,9 @@ export const CapacityCheckScreen = () => {
         <Card variant="flat" padding="lg" style={styles.formCard}>
           <Body style={styles.label}>Current Capacity Count *</Body>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.background.primary, color: colors.text.primary }]}
             placeholder="Enter number of people"
+            placeholderTextColor={colors.text.tertiary}
             value={currentCount}
             onChangeText={setCurrentCount}
             keyboardType="number-pad"
@@ -271,8 +275,9 @@ export const CapacityCheckScreen = () => {
           <Card variant="flat" padding="lg" style={styles.formCard}>
             <Body style={styles.label}>Action Taken *</Body>
             <TextInput
-              style={[styles.input, styles.textArea]}
+              style={[styles.input, styles.textArea, { backgroundColor: colors.background.primary, color: colors.text.primary }]}
               placeholder="Describe the action taken (e.g., stopped entry, notified supervisor)"
+              placeholderTextColor={colors.text.tertiary}
               value={actionTaken}
               onChangeText={setActionTaken}
               multiline
@@ -309,8 +314,9 @@ export const CapacityCheckScreen = () => {
         <Card variant="flat" padding="lg" style={styles.formCard}>
           <Body style={styles.label}>Additional Notes (Optional)</Body>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            style={[styles.input, styles.textArea, { backgroundColor: colors.background.primary, color: colors.text.primary }]}
             placeholder="Any additional observations..."
+            placeholderTextColor={colors.text.tertiary}
             value={notes}
             onChangeText={setNotes}
             multiline
@@ -351,7 +357,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 0,
-    backgroundColor: colors.background.secondary,
   },
   header: {
     flexDirection: 'row',
@@ -359,9 +364,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
-    backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   closeButton: {
     padding: spacing.sm,
@@ -406,12 +409,9 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.gray[200],
     borderRadius: 12,
     padding: spacing.md,
     fontSize: 16,
-    color: colors.text.primary,
-    backgroundColor: colors.white,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,

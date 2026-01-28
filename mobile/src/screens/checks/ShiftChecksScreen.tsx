@@ -10,7 +10,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Container, Heading2, Heading3, Body, Card, Button } from '@components/ui';
 import { useAppSelector } from '../../hooks/useRedux';
 import { selectActiveShift } from '../../store/slices/shiftsSlice';
-import { colors, spacing } from '../../theme';
+import { colors, getColors, spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
@@ -40,6 +41,8 @@ export const ShiftChecksScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { shiftId } = route.params;
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
 
   const activeShift = useAppSelector(selectActiveShift);
   const [loading, setLoading] = useState(true);
@@ -143,9 +146,9 @@ export const ShiftChecksScreen = () => {
   const progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
   return (
-    <Container scrollable={false} safeArea style={styles.container}>
+    <Container scrollable={false} safeArea style={[styles.container, { backgroundColor: colors.background.secondary }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.background.primary, borderBottomColor: colors.border.light }]}>
         <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
           <Ionicons name="close" size={24} color={colors.text.primary} />
         </TouchableOpacity>
@@ -306,7 +309,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 0,
-    backgroundColor: colors.background.secondary,
   },
   header: {
     flexDirection: 'row',
@@ -314,9 +316,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
-    backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   closeButton: {
     padding: spacing.sm,

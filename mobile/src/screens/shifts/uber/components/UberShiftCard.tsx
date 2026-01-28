@@ -15,7 +15,8 @@ import Animated, {
   withSequence,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { uberColors, uberRadius, uberShadows, uberSpacing, uberShiftStatus } from '../../../../theme/uberTheme';
+import { getUberColors, getUberShadows, getUberShiftStatus, uberRadius, uberSpacing } from '../../../../theme/uberTheme';
+import { useTheme } from '../../../../hooks/useTheme';
 import type { Shift } from '../../../../store/slices/shiftsSlice';
 
 interface UberShiftCardProps {
@@ -84,10 +85,10 @@ const getStatusText = (status: Shift['status']): string => {
   }
 };
 
-// Get status colors
-const getStatusColors = (status: Shift['status']): { bg: string; text: string } => {
-  const statusKey = status as keyof typeof uberShiftStatus;
-  return uberShiftStatus[statusKey] || uberShiftStatus.pending;
+// Get status colors (dynamic based on theme)
+const getStatusColors = (status: Shift['status'], shiftStatus: ReturnType<typeof getUberShiftStatus>): { bg: string; text: string } => {
+  const statusKey = status as keyof typeof shiftStatus;
+  return shiftStatus[statusKey] || shiftStatus.pending;
 };
 
 export const UberShiftCard: React.FC<UberShiftCardProps> = ({
@@ -95,8 +96,13 @@ export const UberShiftCard: React.FC<UberShiftCardProps> = ({
   index,
   onPress,
 }) => {
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
+  const uberShadows = getUberShadows(isDark);
+  const uberShiftStatus = getUberShiftStatus(isDark);
+
   const scale = useSharedValue(1);
-  const statusColors = getStatusColors(shift.status);
+  const statusColors = getStatusColors(shift.status, uberShiftStatus);
   const isInProgress = shift.status === 'in_progress';
 
   // Press animation
@@ -147,22 +153,22 @@ export const UberShiftCard: React.FC<UberShiftCardProps> = ({
         onPressOut={handlePressOut}
         onPress={onPress}
       >
-        <Animated.View style={[styles.card, animatedCardStyle]}>
+        <Animated.View style={[styles.card, { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light, ...uberShadows.soft }, animatedCardStyle]}>
           {/* Time Badge */}
-          <View style={styles.timeBadge}>
-            <Text style={styles.timeNumber}>{hour}</Text>
-            <Text style={styles.timePeriod}>{period}</Text>
+          <View style={[styles.timeBadge, { backgroundColor: uberColors.background.light }]}>
+            <Text style={[styles.timeNumber, { color: uberColors.text.primary }]}>{hour}</Text>
+            <Text style={[styles.timePeriod, { color: uberColors.text.muted }]}>{period}</Text>
           </View>
 
           {/* Content */}
           <View style={styles.content}>
-            <Text style={styles.venueName} numberOfLines={1}>
+            <Text style={[styles.venueName, { color: uberColors.text.primary }]} numberOfLines={1}>
               {shift.venue.name}
             </Text>
-            <Text style={styles.role} numberOfLines={1}>
+            <Text style={[styles.role, { color: uberColors.text.secondary }]} numberOfLines={1}>
               {role}
             </Text>
-            <Text style={styles.timeRange}>
+            <Text style={[styles.timeRange, { color: uberColors.text.secondary }]}>
               {timeRange} • {duration}
             </Text>
 
@@ -196,20 +202,16 @@ export const UberShiftCard: React.FC<UberShiftCardProps> = ({
 const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
-    backgroundColor: uberColors.background.surface,
     borderRadius: uberRadius.xl,
     padding: uberSpacing.base,
     marginHorizontal: uberSpacing.base,
     marginBottom: uberSpacing.md,
     borderWidth: 1,
-    borderColor: uberColors.border.light,
-    ...uberShadows.soft,
   },
   timeBadge: {
     width: 56,
     height: 56,
     borderRadius: uberRadius.lg,
-    backgroundColor: uberColors.background.light,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: uberSpacing.md,
@@ -217,12 +219,10 @@ const styles = StyleSheet.create({
   timeNumber: {
     fontSize: 20,
     fontWeight: '700',
-    color: uberColors.text.primary,
   },
   timePeriod: {
     fontSize: 11,
     fontWeight: '600',
-    color: uberColors.text.muted,
     textTransform: 'uppercase',
   },
   content: {
@@ -231,18 +231,15 @@ const styles = StyleSheet.create({
   venueName: {
     fontSize: 16,
     fontWeight: '600',
-    color: uberColors.text.primary,
     marginBottom: 2,
   },
   role: {
     fontSize: 14,
-    color: uberColors.text.secondary,
     marginBottom: uberSpacing.xs,
   },
   timeRange: {
     fontSize: 13,
     fontWeight: '500',
-    color: uberColors.text.secondary,
     marginBottom: uberSpacing.sm,
   },
   statusBadge: {

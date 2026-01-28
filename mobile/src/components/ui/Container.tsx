@@ -13,7 +13,8 @@ import {
   ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing } from '../../theme';
+import { getColors, spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 interface ContainerProps {
   children: React.ReactNode;
@@ -30,14 +31,18 @@ export const Container: React.FC<ContainerProps> = ({
   scrollable = false,
   keyboardAware = true,
   safeArea = true,
-  padding = 'xl',
+  padding,
   style,
   contentContainerStyle,
 }) => {
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
+
+  // Base style with just flex and background - let screens control padding via style prop
   const containerStyle: ViewStyle = {
     flex: 1,
     backgroundColor: colors.background.primary,
-    padding: spacing[padding],
+    ...(padding && { padding: spacing[padding] }),
     ...style,
   };
 
@@ -61,7 +66,7 @@ export const Container: React.FC<ContainerProps> = ({
   if (keyboardAware && scrollable) {
     return (
       <KeyboardAvoidingView
-        style={styles.keyboardView}
+        style={[styles.keyboardView, { backgroundColor: colors.background.primary }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {safeArea ? (
@@ -83,6 +88,6 @@ export const Container: React.FC<ContainerProps> = ({
 const styles = StyleSheet.create({
   keyboardView: {
     flex: 1,
-    backgroundColor: colors.background.primary,
+    // backgroundColor applied via inline style for dark mode
   },
 });

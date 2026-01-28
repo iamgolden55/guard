@@ -16,7 +16,8 @@ import {
 import SignatureCanvas from 'react-native-signature-canvas';
 import { Ionicons } from '@expo/vector-icons';
 import { Body, BodySmall, Button, Checkbox } from '@components/ui';
-import { colors, spacing, layout } from '../../theme';
+import { colors, getColors, spacing, layout } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 
 interface SignatureModalProps {
@@ -38,6 +39,9 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
   showSIAConfirmation = true,
   showSafetyConfirmation = true,
 }) => {
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
+
   const [signature, setSignature] = useState<string | null>(null);
   const [hasDrawn, setHasDrawn] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -147,28 +151,28 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
     }
   };
 
-  // Signature canvas HTML/CSS style
+  // Signature canvas HTML/CSS style - use light background for visibility in both modes
   const signatureStyle = `
     .signature-pad {
       width: 100%;
       height: 100%;
-      background-color: white;
+      background-color: ${isDark ? '#1f2937' : 'white'};
     }
     .signature-pad-body {
-      border: 2px solid ${colors.border.light};
+      border: 2px solid ${themeColors.border.light};
       border-radius: 8px;
     }
   `;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: themeColors.background.primary }]}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor: themeColors.background.primary, borderBottomColor: themeColors.border.light }]}>
           <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-            <Ionicons name="close" size={28} color={colors.text.primary} />
+            <Ionicons name="close" size={28} color={themeColors.text.primary} />
           </TouchableOpacity>
-          <Body style={styles.headerTitle}>{title}</Body>
+          <Body style={[styles.headerTitle, { color: themeColors.text.primary }]}>{title}</Body>
           <View style={styles.closeButton} />
         </View>
 
@@ -180,14 +184,14 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
         >
           {/* Instructions */}
           <View style={styles.instructions}>
-            <Body style={styles.instructionsTitle}>Sign Below</Body>
-            <BodySmall color={colors.text.secondary}>
+            <Body style={[styles.instructionsTitle, { color: themeColors.text.primary }]}>Sign Below</Body>
+            <BodySmall color={themeColors.text.secondary}>
               Use your finger to draw your signature in the box below
             </BodySmall>
           </View>
 
           {/* Signature Canvas */}
-          <View style={styles.canvasContainer}>
+          <View style={[styles.canvasContainer, { backgroundColor: isDark ? '#1f2937' : colors.white, borderColor: themeColors.border.light }]}>
             <SignatureCanvas
               ref={signatureRef}
               onOK={handleOK}
@@ -199,7 +203,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
               webStyle={signatureStyle}
               autoClear={false}
               backgroundColor="rgba(255,255,255,0)"
-              penColor={colors.text.primary}
+              penColor={isDark ? '#ffffff' : colors.text.primary}
               minWidth={2}
               maxWidth={4}
             />
@@ -229,7 +233,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
 
           {/* Confirmation Checkboxes */}
           <View style={styles.confirmations}>
-            <Body style={styles.confirmationsTitle}>Confirmations</Body>
+            <Body style={[styles.confirmationsTitle, { color: themeColors.text.primary }]}>Confirmations</Body>
 
             {showVenueConfirmation && (
               <Checkbox
@@ -261,7 +265,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
         </ScrollView>
 
         {/* Footer with Confirm Button */}
-        <View style={styles.footer}>
+        <View style={[styles.footer, { backgroundColor: themeColors.background.primary, borderTopColor: themeColors.border.light }]}>
           <Button
             variant="primary"
             size="large"
@@ -279,7 +283,6 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -288,9 +291,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: Platform.OS === 'ios' ? spacing['3xl'] : spacing.lg,
     paddingBottom: spacing.md,
-    backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   closeButton: {
     width: 40,
@@ -320,9 +321,7 @@ const styles = StyleSheet.create({
   canvasContainer: {
     height: 250,
     width: '100%',
-    backgroundColor: colors.white,
     borderWidth: 2,
-    borderColor: colors.border.light,
     borderRadius: layout.borderRadius.md,
     marginBottom: spacing.md,
     overflow: 'hidden',
@@ -355,8 +354,6 @@ const styles = StyleSheet.create({
   footer: {
     padding: spacing.xl,
     paddingBottom: Platform.OS === 'ios' ? spacing['2xl'] : spacing.xl,
-    backgroundColor: colors.white,
     borderTopWidth: 1,
-    borderTopColor: colors.border.light,
   },
 });

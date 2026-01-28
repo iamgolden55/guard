@@ -7,7 +7,8 @@ import React from 'react';
 import { TouchableOpacity, View, StyleSheet, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Body } from './Typography';
-import { colors, spacing } from '../../theme';
+import { colors, getColors, spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 interface CheckboxProps {
   checked: boolean;
@@ -24,6 +25,9 @@ export const Checkbox: React.FC<CheckboxProps> = ({
   disabled = false,
   style,
 }) => {
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
+
   return (
     <TouchableOpacity
       style={[styles.container, style]}
@@ -34,6 +38,7 @@ export const Checkbox: React.FC<CheckboxProps> = ({
       <View
         style={[
           styles.checkbox,
+          { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.dark },
           checked && styles.checkboxChecked,
           disabled && styles.checkboxDisabled,
         ]}
@@ -50,7 +55,8 @@ export const Checkbox: React.FC<CheckboxProps> = ({
         <Body
           style={[
             styles.label,
-            disabled && styles.labelDisabled,
+            { color: themeColors.text.primary },
+            disabled && { color: colors.gray[400] },
           ]}
         >
           {label}
@@ -71,8 +77,7 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: colors.border.dark,
-    backgroundColor: colors.white,
+    // backgroundColor and borderColor applied via inline style for dark mode
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -87,8 +92,6 @@ const styles = StyleSheet.create({
   label: {
     flex: 1,
     lineHeight: 22,
-  },
-  labelDisabled: {
-    color: colors.gray[400],
+    // color applied via inline style for dark mode
   },
 });

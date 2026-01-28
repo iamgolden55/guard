@@ -1,6 +1,7 @@
 /**
  * IncidentReportScreen
  * Quick-tap incident type selection + navigation to detailed form
+ * Uber-inspired design with full-width layout
  */
 
 import React from 'react';
@@ -9,10 +10,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Text,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Container, Body, Caption } from '@components/ui';
-import { colors, spacing, layout, getColors } from '../../theme';
+import { getUberColors, getUberShadows, uberSpacing, uberRadius } from '../../theme/uberTheme';
 import { useTheme } from '../../hooks/useTheme';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -27,42 +29,42 @@ const INCIDENT_TYPES: IncidentTypeOption[] = [
     type: 'security_breach',
     icon: 'shield-outline',
     label: 'Security Breach',
-    color: colors.error,
+    color: '#EF4444',
     severity: 'high',
   },
   {
     type: 'medical_emergency',
     icon: 'medical-outline',
     label: 'Medical Emergency',
-    color: colors.error,
+    color: '#EF4444',
     severity: 'critical',
   },
   {
     type: 'fire_alarm',
     icon: 'flame-outline',
     label: 'Fire Alarm',
-    color: colors.warning,
+    color: '#F59E0B',
     severity: 'critical',
   },
   {
     type: 'suspicious_activity',
     icon: 'eye-outline',
     label: 'Suspicious Activity',
-    color: colors.warning,
+    color: '#F59E0B',
     severity: 'medium',
   },
   {
     type: 'property_damage',
     icon: 'hammer-outline',
     label: 'Property Damage',
-    color: colors.gray[600],
+    color: '#6B7280',
     severity: 'medium',
   },
   {
     type: 'assault',
     icon: 'alert-circle-outline',
     label: 'Assault',
-    color: colors.error,
+    color: '#EF4444',
     severity: 'critical',
   },
 ];
@@ -72,7 +74,8 @@ export const IncidentReportScreen: React.FC = () => {
   const route = useRoute();
   const { shiftId } = (route.params as { shiftId?: number }) || {};
   const { isDark } = useTheme();
-  const themeColors = getColors(isDark);
+  const uberColors = getUberColors(isDark);
+  const uberShadows = getUberShadows(isDark);
 
   const handleQuickReport = (incidentType: IncidentTypeOption) => {
     logger.info('[IncidentReport] Quick report selected', { type: incidentType.type });
@@ -94,14 +97,30 @@ export const IncidentReportScreen: React.FC = () => {
   };
 
   return (
-    <Container safeArea={false} style={styles.container}>
-      <ScrollView style={[styles.scrollView, { backgroundColor: themeColors.background.secondary }]} contentContainerStyle={styles.content}>
+    <SafeAreaView style={[styles.container, { backgroundColor: uberColors.background.light }]} edges={['top']}>
+      <ScrollView
+        style={[styles.scrollView, { backgroundColor: uberColors.background.light }]}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Emergency Banner - Compact */}
-        <View style={styles.emergencyBanner}>
-          <Ionicons name="alert-circle" size={16} color={themeColors.error} />
-          <Body style={[styles.emergencyText, { color: themeColors.error }]}>
+        <View style={[styles.emergencyBanner, { backgroundColor: `${uberColors.error}10` }]}>
+          <View style={[styles.emergencyIcon, { backgroundColor: `${uberColors.error}15` }]}>
+            <Ionicons name="alert-circle" size={18} color={uberColors.error} />
+          </View>
+          <Text style={[styles.emergencyText, { color: uberColors.error }]}>
             Emergency? Call 999 first, then report here
-          </Body>
+          </Text>
+        </View>
+
+        {/* Quick Report Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>
+            Quick Report
+          </Text>
+          <Text style={[styles.sectionSubtitle, { color: uberColors.text.secondary }]}>
+            Tap to report an incident type
+          </Text>
         </View>
 
         {/* Quick Report Grid - 2 Column Layout */}
@@ -109,165 +128,208 @@ export const IncidentReportScreen: React.FC = () => {
           {INCIDENT_TYPES.map((incident) => (
             <TouchableOpacity
               key={incident.type}
-              style={[styles.quickButton, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light }]}
+              style={[
+                styles.quickButton,
+                { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light },
+                uberShadows.soft
+              ]}
               onPress={() => handleQuickReport(incident)}
               activeOpacity={0.7}
             >
               <View
                 style={[
                   styles.quickIconContainer,
-                  { backgroundColor: `${incident.color}15` }
+                  { backgroundColor: `${incident.color}12` }
                 ]}
               >
-                <Ionicons name={incident.icon as any} size={20} color={incident.color} />
+                <Ionicons name={incident.icon as any} size={22} color={incident.color} />
               </View>
-              <Body style={[styles.quickLabel, { color: themeColors.text.primary }]}>{incident.label}</Body>
+              <Text style={[styles.quickLabel, { color: uberColors.text.primary }]}>
+                {incident.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
 
         {/* Alternative Options */}
         <View style={styles.section}>
-          <Body weight="semibold" style={[styles.sectionTitle, { color: themeColors.text.secondary }]}>
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>
             Other Options
-          </Body>
+          </Text>
 
-          <TouchableOpacity style={[styles.optionCard, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light }]} onPress={handleVoiceReport} activeOpacity={0.7}>
-            <View style={[styles.optionIcon, { backgroundColor: `${themeColors.primary}15` }]}>
-              <Ionicons name="mic" size={24} color={themeColors.primary} />
+          <TouchableOpacity
+            style={[
+              styles.optionCard,
+              { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light },
+              uberShadows.soft
+            ]}
+            onPress={handleVoiceReport}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.optionIcon, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
+              <Ionicons name="mic" size={24} color={uberColors.primary} />
             </View>
             <View style={styles.optionContent}>
-              <Body weight="semibold" style={{ color: themeColors.text.primary }}>Voice Report</Body>
-              <Caption color={themeColors.text.secondary}>
+              <Text style={[styles.optionTitle, { color: uberColors.text.primary }]}>Voice Report</Text>
+              <Text style={[styles.optionDescription, { color: uberColors.text.secondary }]}>
                 Record a voice message for hands-free reporting
-              </Caption>
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={themeColors.text.secondary} />
+            <Ionicons name="chevron-forward" size={20} color={uberColors.text.muted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.optionCard, { backgroundColor: themeColors.background.primary, borderColor: themeColors.border.light }]} onPress={handleDetailedReport} activeOpacity={0.7}>
-            <View style={[styles.optionIcon, { backgroundColor: `${themeColors.primary}15` }]}>
-              <Ionicons name="document-text" size={24} color={themeColors.primary} />
+          <TouchableOpacity
+            style={[
+              styles.optionCard,
+              { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light },
+              uberShadows.soft
+            ]}
+            onPress={handleDetailedReport}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.optionIcon, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
+              <Ionicons name="document-text" size={24} color={uberColors.primary} />
             </View>
             <View style={styles.optionContent}>
-              <Body weight="semibold" style={{ color: themeColors.text.primary }}>Detailed Form</Body>
-              <Caption color={themeColors.text.secondary}>
+              <Text style={[styles.optionTitle, { color: uberColors.text.primary }]}>Detailed Form</Text>
+              <Text style={[styles.optionDescription, { color: uberColors.text.secondary }]}>
                 Fill out a comprehensive incident report
-              </Caption>
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={themeColors.text.secondary} />
+            <Ionicons name="chevron-forward" size={20} color={uberColors.text.muted} />
           </TouchableOpacity>
         </View>
 
         {/* Footer Info Text */}
-        <Caption color={themeColors.text.tertiary} style={styles.footerText}>
-          All incidents include automatic timestamps and location
-        </Caption>
+        <View style={[styles.footerBadge, { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light }]}>
+          <Ionicons name="location" size={14} color={uberColors.text.muted} />
+          <Text style={[styles.footerText, { color: uberColors.text.muted }]}>
+            All incidents include automatic timestamps and location
+          </Text>
+        </View>
       </ScrollView>
-    </Container>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 0,
+    flex: 1,
   },
   scrollView: {
     flex: 1,
-    // backgroundColor applied inline with themeColors
   },
   content: {
-    paddingTop: spacing.base,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingTop: uberSpacing.md,
+    paddingHorizontal: uberSpacing.lg,
+    paddingBottom: uberSpacing['3xl'],
   },
   // Emergency Banner - Compact & Visible
   emergencyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: `${colors.error}15`,
-    borderRadius: layout.borderRadius.md,
-    gap: spacing.sm,
-    marginBottom: spacing.base,
+    paddingVertical: uberSpacing.md,
+    paddingHorizontal: uberSpacing.md,
+    borderRadius: uberRadius.lg,
+    gap: uberSpacing.sm,
+    marginBottom: uberSpacing.xl,
+  },
+  emergencyIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emergencyText: {
-    fontSize: 13,
-    // color applied inline with themeColors
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
+  // Section Titles
+  section: {
+    marginBottom: uberSpacing.md,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: uberSpacing.xs,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
   },
   // Quick Report Grid - 2 Column Layout
   quickGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: 0,
-    alignContent: 'flex-start',
+    gap: uberSpacing.sm,
+    marginBottom: uberSpacing.xl,
   },
   quickButton: {
-    width: '48.5%',
-    // backgroundColor and borderColor applied inline with themeColors
-    borderRadius: layout.borderRadius.lg,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
+    width: '48%',
+    borderRadius: uberRadius.lg,
+    paddingVertical: uberSpacing.md,
+    paddingHorizontal: uberSpacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    ...layout.shadow.sm,
+    gap: uberSpacing.sm,
   },
   quickIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
   },
   quickLabel: {
     textAlign: 'center',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600',
-    // color applied inline with themeColors
-    lineHeight: 14,
+    lineHeight: 18,
   },
-  // Other Options Section
-  section: {
-    marginTop: spacing.base,
-    marginBottom: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    marginBottom: spacing.sm,
-    // color applied inline with themeColors
-  },
+  // Option Cards
   optionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.lg,
-    // backgroundColor and borderColor applied inline with themeColors
-    borderRadius: layout.borderRadius.lg,
+    padding: uberSpacing.base,
+    borderRadius: uberRadius.lg,
     borderWidth: 1,
-    marginBottom: spacing.md,
-    ...layout.shadow.sm,
+    marginBottom: uberSpacing.sm,
   },
   optionIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    // backgroundColor applied inline with themeColors
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.md,
+    marginRight: uberSpacing.md,
   },
   optionContent: {
     flex: 1,
   },
-  // Footer Text
+  optionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  optionDescription: {
+    fontSize: 13,
+  },
+  // Footer Badge
+  footerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: uberSpacing.xs,
+    paddingVertical: uberSpacing.md,
+    paddingHorizontal: uberSpacing.base,
+    borderRadius: uberRadius.lg,
+    borderWidth: 1,
+    marginTop: uberSpacing.md,
+  },
   footerText: {
-    textAlign: 'center',
     fontSize: 12,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.lg,
+    fontWeight: '500',
   },
 });

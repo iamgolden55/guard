@@ -314,6 +314,26 @@ class VenueSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Capacity must be greater than zero")
         return value
 
+    def validate_latitude(self, value):
+        """
+        Round latitude to 15 decimal places to match model constraints.
+        Google Maps can return more precision than needed.
+        """
+        if value is not None:
+            from decimal import Decimal, ROUND_HALF_UP
+            return Decimal(str(value)).quantize(Decimal('0.000000000000001'), rounding=ROUND_HALF_UP)
+        return value
+
+    def validate_longitude(self, value):
+        """
+        Round longitude to 15 decimal places to match model constraints.
+        Google Maps can return more precision than needed.
+        """
+        if value is not None:
+            from decimal import Decimal, ROUND_HALF_UP
+            return Decimal(str(value)).quantize(Decimal('0.000000000000001'), rounding=ROUND_HALF_UP)
+        return value
+
     def create(self, validated_data):
         """
         Override create to ensure company is set.

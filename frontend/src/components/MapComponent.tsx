@@ -42,7 +42,6 @@ const MapComponent = forwardRef<MapComponentRef, MapComponentProps>(({
   interactive = true,
   showCurrentLocation = false
 }, ref) => {
-  console.log('MapComponent: Function component called with props:', { apiKey: apiKey ? 'PRESENT' : 'MISSING', height, width });
   const mapRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -304,44 +303,63 @@ const MapComponent = forwardRef<MapComponentRef, MapComponentProps>(({
     }
   }));
 
-  if (isLoading) {
-    return (
-      <div 
-        className={`flex items-center justify-center border rounded-lg ${className}`}
-        style={{ height, width }}
-      >
-        <div className="text-center">
-          <Spinner size={SpinnerSize.large} label="Loading map..." />
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className={className} style={{ height, width }}>
-        <MessageBar messageBarType={MessageBarType.error}>
-          {error}
-        </MessageBar>
-      </div>
-    );
-  }
-
-  console.log('MapComponent: About to render');
-  
+  // Render the map container and overlays as siblings to avoid DOM conflicts
+  // Google Maps modifies the container's children, so React overlays must be outside
   return (
-    <div 
-      ref={(el) => {
-        console.log('MapComponent: Setting ref to:', el);
-        mapRef.current = el;
-      }}
+    <div
       className={`rounded-lg border ${className}`}
-      style={{ height, width, backgroundColor: 'lightblue' }}
-      data-testid="map-container"
+      style={{ height, width, position: 'relative' }}
+      data-testid="map-wrapper"
     >
-      <div style={{ padding: '10px', fontSize: '14px', color: 'black' }}>
-        🗺️ Map container ready (ref: {mapRef.current ? 'SET' : 'NOT SET'})
-      </div>
+      {/* Map container - keep empty, Google Maps will populate it */}
+      <div
+        ref={mapRef}
+        style={{ width: '100%', height: '100%' }}
+        data-testid="map-container"
+      />
+
+      {/* Loading overlay - sibling to map container, not child */}
+      {isLoading && (
+        <div
+          className="flex items-center justify-center"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+            zIndex: 10,
+            pointerEvents: 'none'
+          }}
+        >
+          <div className="text-center">
+            <Spinner size={SpinnerSize.large} label="Loading map..." />
+          </div>
+        </div>
+      )}
+
+      {/* Error overlay - sibling to map container, not child */}
+      {error && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(255, 255, 255, 0.95)'
+          }}
+        >
+          <MessageBar messageBarType={MessageBarType.error} style={{ maxWidth: '90%' }}>
+            {error}
+          </MessageBar>
+        </div>
+      )}
     </div>
   );
 });
