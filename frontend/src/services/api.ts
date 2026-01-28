@@ -7,6 +7,9 @@ const API_URL = import.meta.env.VITE_API_URL;
 let isRefreshing = false;
 let refreshPromise: Promise<any> | null = null;
 
+// Flag to prevent multiple auth failure handlers from running simultaneously
+let isSessionInvalidating = false;
+
 // Create an Axios instance with default config
 // Sprint 3: Use relative URLs to leverage Vite proxy in development
 const api: AxiosInstance = axios.create({
@@ -82,6 +85,11 @@ api.interceptors.response.use(
       enhancedError.request = error.request;
       
       return Promise.reject(enhancedError);
+    }
+
+    // Check if session is already being invalidated - prevent multiple handlers
+    if (isSessionInvalidating) {
+      return Promise.reject(error);
     }
 
     // HYBRID AUTH: Check if error is 401 and we haven't already tried refreshing
@@ -162,9 +170,13 @@ api.interceptors.response.use(
       } catch (refreshError: any) {
         console.error('Token refresh failed:', refreshError?.response?.data || refreshError);
 
-        // Clear tokens on refresh failure
+        // Set flag to prevent other handlers from trying
+        isSessionInvalidating = true;
+
+        // Clear ALL auth tokens on refresh failure (including user - critical fix!)
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
 
         // Redirect to login page immediately (no setTimeout race condition)
         console.log('Redirecting to login page due to authentication failure');
