@@ -5,17 +5,17 @@ import venueService from '../../../services/venueService';
 import shiftService from '../../../services/shiftService';
 import settingsService from '../../../services/settingsService';
 import { bulkCreateShifts } from '../../../services/api';
-import type { Venue, StaffProfile, Shift } from '../../../types';
+import type { Venue, StaffProfile } from '../../../types';
 
 // Local imports
-import { useCalendar, useFilters, useShifts } from './hooks';
-import type { ScheduleShift, BulkShiftDetails } from './types';
-import { THEME } from './types';
+import { useCalendar, useFilters, useShifts, useDayView } from './hooks';
+import type { ScheduleShift, ViewMode, CalendarEvent, PositionedEvent } from './types';
 
 // Components
 import {
-  CalendarHeader,
-  CalendarGrid,
+  SchedulerHeader,
+  MonthView,
+  DayView,
   FilterBar,
   ActionsToolbar,
   CreateShiftDialog,
@@ -28,6 +28,9 @@ import {
 } from './components';
 
 export const ShiftSchedulingPage: React.FC = () => {
+  // View state
+  const [viewMode, setViewMode] = useState<ViewMode>('month');
+
   // Data state
   const [venues, setVenues] = useState<Venue[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
@@ -51,6 +54,12 @@ export const ShiftSchedulingPage: React.FC = () => {
   const filters = useFilters();
   const shiftsHook = useShifts();
 
+  // Day view hook
+  const dayView = useDayView({
+    shifts: shiftsHook.shifts,
+    selectedDate: calendar.currentDate
+  });
+
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
@@ -58,7 +67,6 @@ export const ShiftSchedulingPage: React.FC = () => {
       setDataError(null);
 
       try {
-        // Load venues
         const venuesData = await venueService.getAllVenues();
         const mappedVenues = (Array.isArray(venuesData) ? venuesData : []).map(
           (venue) => ({
@@ -69,7 +77,6 @@ export const ShiftSchedulingPage: React.FC = () => {
         );
         setVenues(mappedVenues);
 
-        // Load staff
         const staffData = await shiftService.getStaffProfiles();
         if (Array.isArray(staffData)) {
           setStaff(staffData);
@@ -78,7 +85,6 @@ export const ShiftSchedulingPage: React.FC = () => {
           setDataError('Failed to load staff profiles');
         }
 
-        // Load settings
         try {
           const settings = await settingsService.getSettings();
           setStaticRate(settings.default_hourly_rate.toString());
@@ -122,10 +128,48 @@ export const ShiftSchedulingPage: React.FC = () => {
     [shiftsHook]
   );
 
+  // Handle day click from month view - switch to day view
+  const handleDayClick = useCallback((date: Date) => {
+    calendar.setCurrentDate(date);
+    setViewMode('day');
+  }, [calendar]);
+
+  // Handle navigation based on view mode
+  const handlePrevious = useCallback(() => {
+    if (viewMode === 'month') {
+      calendar.goToPreviousMonth();
+    } else {
+      calendar.goToPreviousDay();
+    }
+  }, [viewMode, calendar]);
+
+  const handleNext = useCallback(() => {
+    if (viewMode === 'month') {
+      calendar.goToNextMonth();
+    } else {
+      calendar.goToNextDay();
+    }
+  }, [viewMode, calendar]);
+
+  // Handle event edit from day view
+  const handleEditEvent = useCallback((event: CalendarEvent) => {
+    if (event.shift) {
+      setEditingShift(event.shift);
+      setShowEditDialog(true);
+    }
+  }, []);
+
+  // Handle event delete from day view
+  const handleDeleteEvent = useCallback(async (event: CalendarEvent) => {
+    if (event.shift && window.confirm('Are you sure you want to delete this shift?')) {
+      await shiftsHook.handleDeleteShift(event.shift.id);
+      dayView.clearSelection();
+    }
+  }, [shiftsHook, dayView]);
+
   // Create shift handler
   const handleCreateShift = useCallback(
     async (data: CreateShiftFormData) => {
-      // Format times to ISO
       const formatTimeToISO = (date: Date, timeString: string): string => {
         const [hours, minutes] = timeString.split(':').map(Number);
         const dateObj = new Date(date);
@@ -136,14 +180,12 @@ export const ShiftSchedulingPage: React.FC = () => {
       const startDateTime = formatTimeToISO(data.date, data.startTime);
       let endDateTime = formatTimeToISO(data.date, data.endTime);
 
-      // Handle midnight crossing
       if (new Date(endDateTime) < new Date(startDateTime)) {
         const nextDay = new Date(data.date);
         nextDay.setDate(nextDay.getDate() + 1);
         endDateTime = formatTimeToISO(nextDay, data.endTime);
       }
 
-      // Determine pay rate
       let payRate: number | null = null;
       let isSpecialEvent = false;
 
@@ -169,7 +211,8 @@ export const ShiftSchedulingPage: React.FC = () => {
           isSpecialEvent
         );
       } else {
-        const shiftData: Partial<Shift> = {
+        // Using any type due to mismatch between Shift type (camelCase) and API format (snake_case)
+        const shiftData = {
           venue: data.venueId,
           staff_user: data.staffId || null,
           start_time: startDateTime,
@@ -181,7 +224,7 @@ export const ShiftSchedulingPage: React.FC = () => {
           is_special_event: isSpecialEvent
         };
 
-        success = await shiftsHook.createShift(shiftData);
+        success = await shiftsHook.createShift(shiftData as any);
       }
 
       if (success) {
@@ -262,7 +305,6 @@ export const ShiftSchedulingPage: React.FC = () => {
           }
 
           if (data.selectedStaff.length === 0) {
-            // Open shifts
             shifts.push({
               venue: data.venueId,
               staff_user: null,
@@ -272,7 +314,6 @@ export const ShiftSchedulingPage: React.FC = () => {
               required_security_role: 'sg'
             });
           } else if (data.isSequential) {
-            // Sequential assignment
             shifts.push({
               venue: data.venueId,
               staff_user: data.selectedStaff[staffIndex % data.selectedStaff.length],
@@ -283,7 +324,6 @@ export const ShiftSchedulingPage: React.FC = () => {
             });
             staffIndex++;
           } else {
-            // Parallel - all staff on each day
             for (const staffId of data.selectedStaff) {
               shifts.push({
                 venue: data.venueId,
@@ -344,12 +384,10 @@ export const ShiftSchedulingPage: React.FC = () => {
         }
 
         return {
-          venue: shift.venueId,
-          staff_user: shift.staffId,
-          start_time: startDateTime.toISOString(),
-          end_time: endDateTime.toISOString(),
-          status: 'scheduled',
-          required_security_role: shift.requiredSecurityRole || 'sg'
+          venueId: shift.venueId.toString(),
+          staffIds: shift.staffId ? [shift.staffId] : undefined,
+          startTime: startDateTime.toISOString(),
+          endTime: endDateTime.toISOString()
         };
       });
 
@@ -366,35 +404,27 @@ export const ShiftSchedulingPage: React.FC = () => {
     [shiftsHook, calendar, filters.filters]
   );
 
-  // Publish shifts handler
   const handlePublishShifts = useCallback(() => {
-    // TODO: Implement publish logic
     console.log('Publish shifts');
   }, []);
 
-  // Save template handler
   const handleSaveTemplate = useCallback(() => {
-    // TODO: Implement template save
     console.log('Save template');
   }, []);
 
   return (
-    <MainLayout title="Shift Scheduling">
-      <div
-        style={{
-          padding: '24px',
-          maxWidth: '1400px',
-          margin: '0 auto',
-          fontFamily: 'Inter, system-ui, sans-serif'
-        }}
-      >
+    <MainLayout>
+      <div className="p-6 max-w-[1400px] mx-auto">
         {/* Header */}
-        <CalendarHeader
-          monthYearDisplay={calendar.monthYearDisplay}
-          onPreviousMonth={calendar.goToPreviousMonth}
-          onNextMonth={calendar.goToNextMonth}
+        <SchedulerHeader
+          currentDate={calendar.currentDate}
+          monthYearDisplay={viewMode === 'day' ? calendar.dayDisplayLabel : calendar.monthYearDisplay}
+          viewMode={viewMode}
+          onPrevious={handlePrevious}
+          onNext={handleNext}
           onToday={calendar.goToToday}
-          onNewShift={() => handleAddShift(new Date())}
+          onViewModeChange={setViewMode}
+          onAddEvent={() => handleAddShift(calendar.currentDate)}
         />
 
         {/* Filter bar */}
@@ -437,23 +467,39 @@ export const ShiftSchedulingPage: React.FC = () => {
           </MessageBar>
         )}
 
-        {/* Calendar grid */}
-        <div style={{ marginTop: '16px' }}>
-          <CalendarGrid
-            calendarDays={calendar.calendarDays}
-            currentDate={calendar.currentDate}
-            shifts={shiftsHook.shifts}
-            isLoading={isDataLoading || shiftsHook.isLoading}
-            isSelectionMode={shiftsHook.isSelectionMode}
-            selectedShifts={shiftsHook.selectedShifts}
-            getShiftsForDay={shiftsHook.getShiftsForDay}
-            isCurrentMonth={calendar.isCurrentMonth}
-            isToday={calendar.isToday}
-            onAddShift={handleAddShift}
-            onEditShift={handleEditShift}
-            onDeleteShift={handleDeleteShift}
-            onSelectShift={shiftsHook.toggleShiftSelection}
-          />
+        {/* Calendar views */}
+        <div className="mt-4">
+          {viewMode === 'month' ? (
+            <MonthView
+              calendarDays={calendar.calendarDays}
+              currentDate={calendar.currentDate}
+              shifts={shiftsHook.shifts}
+              isLoading={isDataLoading || shiftsHook.isLoading}
+              isSelectionMode={shiftsHook.isSelectionMode}
+              selectedShifts={shiftsHook.selectedShifts}
+              getShiftsForDay={shiftsHook.getShiftsForDay}
+              isCurrentMonth={calendar.isCurrentMonth}
+              isToday={calendar.isToday}
+              onAddShift={handleAddShift}
+              onEditShift={handleEditShift}
+              onSelectShift={shiftsHook.toggleShiftSelection}
+              onDayClick={handleDayClick}
+            />
+          ) : (
+            <DayView
+              currentDate={calendar.currentDate}
+              selectedDate={calendar.currentDate}
+              events={dayView.positionedEvents}
+              selectedEvent={dayView.selectedEvent}
+              eventDates={dayView.eventDates}
+              isLoading={isDataLoading || shiftsHook.isLoading}
+              onDateSelect={(date) => calendar.setCurrentDate(date)}
+              onMonthChange={calendar.goToMonth}
+              onEventClick={dayView.handleEventClick}
+              onEditEvent={handleEditEvent}
+              onDeleteEvent={handleDeleteEvent}
+            />
+          )}
         </div>
 
         {/* Dialogs */}
