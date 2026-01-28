@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Container, Heading2, Body, Button } from '@components/ui';
-import { colors, spacing } from '../../theme';
+import { colors, getColors, spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
@@ -54,6 +55,8 @@ type FlowStep =
 
 export const CheckInFlowScreen: React.FC<CheckInFlowScreenProps> = ({ route }) => {
   const navigation = useNavigation<NavigationProp>();
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
   const { isOnline } = useNetworkStatus();
   const { shiftId, venueId, venueName, venueLatitude, venueLongitude, requiresTerms, venueTerms } =
     route.params;
@@ -416,13 +419,12 @@ export const CheckInFlowScreen: React.FC<CheckInFlowScreenProps> = ({ route }) =
     }
   };
 
-  return <View style={styles.container}>{renderStep()}</View>;
+  return <View style={[styles.container, { backgroundColor: colors.background.primary }]}>{renderStep()}</View>;
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.white,
   },
   stepContainer: {
     flex: 1,

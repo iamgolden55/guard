@@ -18,7 +18,8 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { uberColors, uberRadius, uberSpacing } from '../../../../theme/uberTheme';
+import { getUberColors, uberRadius, uberSpacing } from '../../../../theme/uberTheme';
+import { useTheme } from '../../../../hooks/useTheme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DAY_SIZE = (SCREEN_WIDTH - 48) / 7;
@@ -125,6 +126,8 @@ export const UberMonthPicker: React.FC<UberMonthPickerProps> = ({
   isExpanded,
   shiftCountByDate,
 }) => {
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
   const monthDays = getMonthDays(selectedDate, shiftCountByDate);
   const weeks = [];
   for (let i = 0; i < monthDays.length; i += 7) {
@@ -159,14 +162,14 @@ export const UberMonthPicker: React.FC<UberMonthPickerProps> = ({
   const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
-    <Animated.View style={[styles.container, animatedContainerStyle]}>
+    <Animated.View style={[styles.container, { backgroundColor: uberColors.background.surface, borderBottomColor: uberColors.border.light }, animatedContainerStyle]}>
       {/* Month Navigation Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handlePrevMonth} style={styles.navButton}>
           <Ionicons name="chevron-back" size={24} color={uberColors.text.primary} />
         </TouchableOpacity>
 
-        <Text style={styles.monthTitle}>{formatMonth(selectedDate)}</Text>
+        <Text style={[styles.monthTitle, { color: uberColors.text.primary }]}>{formatMonth(selectedDate)}</Text>
 
         <TouchableOpacity onPress={handleNextMonth} style={styles.navButton}>
           <Ionicons name="chevron-forward" size={24} color={uberColors.text.primary} />
@@ -177,7 +180,7 @@ export const UberMonthPicker: React.FC<UberMonthPickerProps> = ({
       <View style={styles.dayLabelsRow}>
         {dayLabels.map((label) => (
           <View key={label} style={styles.dayLabelContainer}>
-            <Text style={styles.dayLabel}>{label}</Text>
+            <Text style={[styles.dayLabel, { color: uberColors.text.muted }]}>{label}</Text>
           </View>
         ))}
       </View>
@@ -191,8 +194,8 @@ export const UberMonthPicker: React.FC<UberMonthPickerProps> = ({
                 key={dayIndex}
                 style={[
                   styles.dayCell,
-                  day.isSelected && styles.dayCellSelected,
-                  day.isToday && !day.isSelected && styles.dayCellToday,
+                  day.isSelected && { backgroundColor: uberColors.primary },
+                  day.isToday && !day.isSelected && { backgroundColor: uberColors.background.light },
                 ]}
                 onPress={() => day.date && onDateSelect(day.date)}
                 disabled={!day.date}
@@ -203,9 +206,9 @@ export const UberMonthPicker: React.FC<UberMonthPickerProps> = ({
                     <Text
                       style={[
                         styles.dayNumber,
-                        day.isSelected && styles.dayNumberSelected,
-                        day.isToday && !day.isSelected && styles.dayNumberToday,
-                        !day.isCurrentMonth && styles.dayNumberDisabled,
+                        { color: day.isSelected ? uberColors.text.inverse : uberColors.text.primary },
+                        day.isToday && !day.isSelected && { color: uberColors.primary, fontWeight: '700' },
+                        !day.isCurrentMonth && { color: uberColors.text.muted },
                       ]}
                     >
                       {day.dayNumber}
@@ -214,13 +217,13 @@ export const UberMonthPicker: React.FC<UberMonthPickerProps> = ({
                       <View
                         style={[
                           styles.shiftBadge,
-                          day.isSelected && styles.shiftBadgeSelected,
+                          { backgroundColor: day.isSelected ? uberColors.text.inverse : uberColors.success },
                         ]}
                       >
                         <Text
                           style={[
                             styles.shiftBadgeText,
-                            day.isSelected && styles.shiftBadgeTextSelected,
+                            { color: day.isSelected ? uberColors.primary : uberColors.text.inverse },
                           ]}
                         >
                           {day.shiftCount}
@@ -240,9 +243,7 @@ export const UberMonthPicker: React.FC<UberMonthPickerProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: uberColors.background.surface,
     borderBottomWidth: 1,
-    borderBottomColor: uberColors.border.light,
     overflow: 'hidden',
   },
   header: {
@@ -258,7 +259,6 @@ const styles = StyleSheet.create({
   monthTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: uberColors.text.primary,
   },
   dayLabelsRow: {
     flexDirection: 'row',
@@ -272,7 +272,6 @@ const styles = StyleSheet.create({
   dayLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: uberColors.text.muted,
     textTransform: 'uppercase',
   },
   grid: {
@@ -289,27 +288,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: uberRadius.lg,
   },
-  dayCellSelected: {
-    backgroundColor: uberColors.primary,
-  },
-  dayCellToday: {
-    backgroundColor: uberColors.background.light,
-  },
   dayNumber: {
     fontSize: 15,
     fontWeight: '500',
-    color: uberColors.text.primary,
-  },
-  dayNumberSelected: {
-    color: uberColors.text.inverse,
-    fontWeight: '600',
-  },
-  dayNumberToday: {
-    color: uberColors.primary,
-    fontWeight: '700',
-  },
-  dayNumberDisabled: {
-    color: uberColors.text.muted,
   },
   shiftBadge: {
     position: 'absolute',
@@ -318,20 +299,12 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: uberColors.success,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
   },
-  shiftBadgeSelected: {
-    backgroundColor: uberColors.text.inverse,
-  },
   shiftBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: uberColors.text.inverse,
-  },
-  shiftBadgeTextSelected: {
-    color: uberColors.primary,
   },
 });

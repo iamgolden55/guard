@@ -968,6 +968,26 @@ def send_open_shift_notifications(self, open_shift_request_id: int) -> Dict[str,
                 else:
                     notifications_failed += 1
 
+                # Queue email notification for this user
+                try:
+                    # Prepare shifts data for email
+                    email_shifts_data = [
+                        {
+                            'shift_id': s['shift_id'],
+                            'venue_name': s['venue_name'],
+                            'date': s['start_time'].split('T')[0] if 'T' in s.get('start_time', '') else s.get('start_time', ''),
+                            'time': s.get('start_time', '').split('T')[1][:5] if 'T' in s.get('start_time', '') else '',
+                            'required_role': s.get('required_role'),
+                        }
+                        for s in user_shifts
+                    ]
+                    send_open_shift_email_batch.delay(
+                        user_id=user_id,
+                        shifts_data=email_shifts_data
+                    )
+                except Exception as email_error:
+                    logger.warning(f"Could not queue open shift email for user {user_id}: {email_error}")
+
             except Exception as e:
                 logger.exception(f"Error sending notification to user {user_id}: {e}")
                 notifications_failed += 1
@@ -1369,6 +1389,348 @@ def send_staff_welcome_email(
         if self.request.retries < self.max_retries:
             countdown = 60 * (2 ** self.request.retries)
             logger.info(f"Retrying welcome email in {countdown} seconds (attempt {self.request.retries + 1}/{self.max_retries})")
+            raise self.retry(countdown=countdown, exc=exc)
+
+        return {'status': 'failed', 'error': str(exc)}
+
+
+# ==========================================
+# EMAIL NOTIFICATION TASKS
+# ==========================================
+
+@shared_task(bind=True, max_retries=3, queue='notifications')
+def send_shift_assignment_email_task(
+    self,
+    user_id: int,
+    shift_id: int,
+    venue_name: str,
+    venue_address: Optional[str],
+    start_time: str,
+    end_time: str,
+    formatted_date: str,
+    hourly_rate: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Send email notification when a shift is assigned.
+
+    Args:
+        user_id: ID of the user to notify
+        shift_id: ID of the assigned shift
+        venue_name: Name of the venue
+        venue_address: Address of the venue
+        start_time: Formatted start time
+        end_time: Formatted end time
+        formatted_date: Formatted date string
+        hourly_rate: Pay rate per hour (optional)
+
+    Returns:
+        Dict with send status
+    """
+    from .services import email_notification_service
+
+    try:
+        success = email_notification_service.send_shift_assignment_email(
+            user_id=user_id,
+            shift_id=shift_id,
+            venue_name=venue_name,
+            venue_address=venue_address,
+            start_time=start_time,
+            end_time=end_time,
+            formatted_date=formatted_date,
+            hourly_rate=hourly_rate
+        )
+
+        if success:
+            logger.info(f"Shift assignment email sent: user={user_id}, shift={shift_id}")
+            return {'status': 'sent', 'user_id': user_id, 'shift_id': shift_id}
+        else:
+            logger.warning(f"Shift assignment email not sent (preferences): user={user_id}")
+            return {'status': 'skipped', 'reason': 'preferences'}
+
+    except Exception as exc:
+        logger.error(f"Failed to send shift assignment email: {str(exc)}")
+
+        # Retry with exponential backoff: 60s, 120s, 240s
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (2 ** self.request.retries)
+            logger.info(f"Retrying email in {countdown} seconds (attempt {self.request.retries + 1}/{self.max_retries})")
+            raise self.retry(countdown=countdown, exc=exc)
+
+        return {'status': 'failed', 'error': str(exc)}
+
+
+@shared_task(bind=True, max_retries=3, queue='notifications')
+def send_shift_removal_email_task(
+    self,
+    user_id: int,
+    shift_id: int,
+    venue_name: str,
+    shift_date: str,
+    shift_time: str,
+    reason: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Send email notification when a user is removed from a shift.
+
+    Args:
+        user_id: ID of the user to notify
+        shift_id: ID of the shift
+        venue_name: Name of the venue
+        shift_date: Formatted date string
+        shift_time: Formatted time string
+        reason: Optional reason for removal
+
+    Returns:
+        Dict with send status
+    """
+    from .services import email_notification_service
+
+    try:
+        success = email_notification_service.send_shift_removal_email(
+            user_id=user_id,
+            shift_id=shift_id,
+            venue_name=venue_name,
+            shift_date=shift_date,
+            shift_time=shift_time,
+            reason=reason
+        )
+
+        if success:
+            logger.info(f"Shift removal email sent: user={user_id}, shift={shift_id}")
+            return {'status': 'sent', 'user_id': user_id, 'shift_id': shift_id}
+        else:
+            logger.warning(f"Shift removal email not sent (preferences): user={user_id}")
+            return {'status': 'skipped', 'reason': 'preferences'}
+
+    except Exception as exc:
+        logger.error(f"Failed to send shift removal email: {str(exc)}")
+
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (2 ** self.request.retries)
+            raise self.retry(countdown=countdown, exc=exc)
+
+        return {'status': 'failed', 'error': str(exc)}
+
+
+@shared_task(bind=True, max_retries=3, queue='notifications')
+def send_exchange_email_task(
+    self,
+    exchange_id: int,
+    event_type: str
+) -> Dict[str, Any]:
+    """
+    Send email notification for shift exchange events.
+
+    Args:
+        exchange_id: ID of the ShiftExchange instance
+        event_type: Type of event ('created', 'accepted', 'approved')
+
+    Returns:
+        Dict with send status
+    """
+    from .models import ShiftExchange
+    from .services import email_notification_service
+
+    try:
+        exchange = ShiftExchange.objects.select_related(
+            'original_shift',
+            'original_shift__venue',
+            'requesting_user',
+            'target_user'
+        ).get(pk=exchange_id)
+    except ShiftExchange.DoesNotExist:
+        logger.warning(f"ShiftExchange {exchange_id} not found for email")
+        return {'status': 'error', 'reason': 'exchange_not_found'}
+
+    shift = exchange.original_shift
+    venue_name = shift.venue.name if shift.venue else 'Unknown Venue'
+    shift_date = shift.start_time.strftime('%B %d, %Y')
+    shift_time = shift.start_time.strftime('%I:%M %p')
+
+    try:
+        notifications_sent = 0
+
+        if event_type == 'created':
+            # Notify target user of new request
+            requester_name = exchange.requesting_user.get_full_name() or exchange.requesting_user.username
+            success = email_notification_service.send_exchange_request_email(
+                user_id=exchange.target_user.id,
+                requester_name=requester_name,
+                shift_venue=venue_name,
+                shift_date=shift_date,
+                shift_time=shift_time,
+                exchange_id=exchange.id
+            )
+            if success:
+                notifications_sent += 1
+
+        elif event_type == 'accepted':
+            # Notify requesting user that target accepted
+            target_name = exchange.target_user.get_full_name() or exchange.target_user.username
+            success = email_notification_service.send_exchange_accepted_email(
+                user_id=exchange.requesting_user.id,
+                target_name=target_name,
+                shift_venue=venue_name,
+                shift_date=shift_date,
+                exchange_id=exchange.id
+            )
+            if success:
+                notifications_sent += 1
+
+        elif event_type == 'approved':
+            # Notify both users of approval
+            # Requesting user (giving away shift)
+            success1 = email_notification_service.send_exchange_approved_email(
+                user_id=exchange.requesting_user.id,
+                shift_venue=venue_name,
+                shift_date=shift_date,
+                shift_time=shift_time,
+                exchange_id=exchange.id,
+                is_receiving=False,
+                shift_id=shift.id
+            )
+            # Target user (receiving shift)
+            success2 = email_notification_service.send_exchange_approved_email(
+                user_id=exchange.target_user.id,
+                shift_venue=venue_name,
+                shift_date=shift_date,
+                shift_time=shift_time,
+                exchange_id=exchange.id,
+                is_receiving=True,
+                shift_id=shift.id
+            )
+            notifications_sent = (1 if success1 else 0) + (1 if success2 else 0)
+
+        logger.info(
+            f"Exchange email task completed: exchange={exchange_id}, "
+            f"event={event_type}, sent={notifications_sent}"
+        )
+        return {
+            'status': 'success',
+            'exchange_id': exchange_id,
+            'event_type': event_type,
+            'notifications_sent': notifications_sent
+        }
+
+    except Exception as exc:
+        logger.error(f"Failed to send exchange email: {str(exc)}")
+
+        # Retry with exponential backoff
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (2 ** self.request.retries)
+            raise self.retry(countdown=countdown, exc=exc)
+
+        return {'status': 'failed', 'error': str(exc)}
+
+
+@shared_task(bind=True, max_retries=3, queue='notifications')
+def send_open_shift_email_batch(
+    self,
+    user_id: int,
+    shifts_data: list
+) -> Dict[str, Any]:
+    """
+    Send batch email notification for open shifts.
+
+    Args:
+        user_id: ID of the user to notify
+        shifts_data: List of shift data dictionaries
+
+    Returns:
+        Dict with send status
+    """
+    from .services import email_notification_service
+
+    try:
+        batch = len(shifts_data) > 1
+        success = email_notification_service.send_open_shift_notification_email(
+            user_id=user_id,
+            shifts=shifts_data,
+            batch=batch
+        )
+
+        if success:
+            logger.info(f"Open shift email sent: user={user_id}, shifts={len(shifts_data)}")
+            return {'status': 'sent', 'user_id': user_id, 'shift_count': len(shifts_data)}
+        else:
+            return {'status': 'skipped', 'reason': 'preferences'}
+
+    except Exception as exc:
+        logger.error(f"Failed to send open shift email: {str(exc)}")
+
+        # Retry with exponential backoff
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (2 ** self.request.retries)
+            raise self.retry(countdown=countdown, exc=exc)
+
+        return {'status': 'failed', 'error': str(exc)}
+
+
+@shared_task(bind=True, max_retries=3, queue='notifications')
+def send_approval_email_task(
+    self,
+    user_id: int,
+    shift_id: int,
+    approval_type: str,
+    venue_name: str,
+    shift_date: str,
+    shift_time: str,
+    venue_address: Optional[str] = None,
+    hours_worked: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Send email notification for shift or claim approval.
+
+    Args:
+        user_id: ID of the user to notify
+        shift_id: ID of the shift
+        approval_type: 'shift_approved' or 'claim_approved'
+        venue_name: Name of the venue
+        shift_date: Formatted date string
+        shift_time: Formatted time string
+        venue_address: Address of the venue (for claim approvals)
+        hours_worked: Formatted hours worked (for shift approvals)
+
+    Returns:
+        Dict with send status
+    """
+    from .services import email_notification_service
+
+    try:
+        if approval_type == 'shift_approved':
+            success = email_notification_service.send_shift_approved_email(
+                user_id=user_id,
+                shift_id=shift_id,
+                venue_name=venue_name,
+                shift_date=shift_date,
+                shift_time=shift_time,
+                hours_worked=hours_worked
+            )
+        elif approval_type == 'claim_approved':
+            success = email_notification_service.send_claim_approved_email(
+                user_id=user_id,
+                shift_id=shift_id,
+                venue_name=venue_name,
+                venue_address=venue_address,
+                shift_date=shift_date,
+                shift_time=shift_time
+            )
+        else:
+            logger.warning(f"Unknown approval type: {approval_type}")
+            return {'status': 'error', 'reason': 'unknown_approval_type'}
+
+        if success:
+            logger.info(f"Approval email sent: user={user_id}, type={approval_type}, shift={shift_id}")
+            return {'status': 'sent', 'user_id': user_id, 'approval_type': approval_type}
+        else:
+            return {'status': 'skipped', 'reason': 'preferences'}
+
+    except Exception as exc:
+        logger.error(f"Failed to send approval email: {str(exc)}")
+
+        # Retry with exponential backoff
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (2 ** self.request.retries)
             raise self.retry(countdown=countdown, exc=exc)
 
         return {'status': 'failed', 'error': str(exc)}

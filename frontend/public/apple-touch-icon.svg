@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <defs>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#334155"/>
+      <stop offset="100%" style="stop-color:#1e293b"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded background for iOS -->
+  <rect width="180" height="180" rx="20" fill="#1e293b"/>
+  <!-- Shield shape -->
+  <path d="M90 20 L155 42 L155 90 C155 130 130 160 90 172 C50 160 25 130 25 90 L25 42 Z" fill="url(#shieldGrad)"/>
+  <!-- Abstract M letterform -->
+  <path d="M50 130 L50 65 L72 65 L90 100 L108 65 L130 65 L130 130 L115 130 L115 90 L95 130 L85 130 L65 90 L65 130 Z" fill="#ffffff"/>
+  <!-- Accent line -->
+  <path d="M90 32 L145 50 L145 56 L90 40 L35 56 L35 50 Z" fill="#64748b" opacity="0.5"/>
+</svg>

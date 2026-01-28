@@ -518,16 +518,23 @@ class UserViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
     
     def get_user_company(self, request):
-        """Get the user's current company context"""
-        # For now, get the first active company membership where user is owner/admin/manager
+        """Get the user's current company context.
+
+        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
+        for multi-tenant isolation. Falls back to user's primary company.
+        """
+        # Prefer middleware-provided context (set by TenantMiddleware)
+        if hasattr(request, 'current_company') and request.current_company:
+            return request.current_company
+
+        # Fallback: Get first company where user is owner/admin/manager
         membership = request.user.company_memberships.filter(
             is_active=True,
-            role__in=['owner', 'admin', 'manager']
-        ).select_related('company').first()
+            role__in=['owner', 'admin', 'manager'],
+            company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
 
-        if not membership:
-            return None
-        return membership.company
+        return membership.company if membership else None
 
     def get_queryset(self):
         """
@@ -1086,16 +1093,23 @@ class VenueViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
     
     def get_user_company(self, request):
-        """Get the user's current company context"""
-        # For now, get the first active company membership where user is owner/admin/manager
+        """Get the user's current company context.
+
+        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
+        for multi-tenant isolation. Falls back to user's primary company.
+        """
+        # Prefer middleware-provided context (set by TenantMiddleware)
+        if hasattr(request, 'current_company') and request.current_company:
+            return request.current_company
+
+        # Fallback: Get first company where user is owner/admin/manager
         membership = request.user.company_memberships.filter(
             is_active=True,
-            role__in=['owner', 'admin', 'manager']
-        ).select_related('company').first()
+            role__in=['owner', 'admin', 'manager'],
+            company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
 
-        if not membership:
-            return None
-        return membership.company
+        return membership.company if membership else None
 
     def get_queryset(self):
         """
@@ -1814,16 +1828,23 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceSerializer
 
     def get_user_company(self, request):
-        """Get the user's current company context"""
-        # For now, get the first active company membership where user is owner/admin/manager
+        """Get the user's current company context.
+
+        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
+        for multi-tenant isolation. Falls back to user's primary company.
+        """
+        # Prefer middleware-provided context (set by TenantMiddleware)
+        if hasattr(request, 'current_company') and request.current_company:
+            return request.current_company
+
+        # Fallback: Get first company where user is owner/admin/manager
         membership = request.user.company_memberships.filter(
             is_active=True,
-            role__in=['owner', 'admin', 'manager']
-        ).select_related('company').first()
+            role__in=['owner', 'admin', 'manager'],
+            company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
 
-        if not membership:
-            return None
-        return membership.company
+        return membership.company if membership else None
 
     def get_queryset(self):
         """Filter invoices based on user role and company context"""
@@ -2304,16 +2325,23 @@ class SystemSettingsView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get_user_company(self, request):
-        """Get the user's current company context"""
-        # For now, get the first active company membership where user is owner/admin
+        """Get the user's current company context.
+
+        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
+        for multi-tenant isolation. Falls back to user's primary company.
+        """
+        # Prefer middleware-provided context (set by TenantMiddleware)
+        if hasattr(request, 'current_company') and request.current_company:
+            return request.current_company
+
+        # Fallback: Get first company where user is owner/admin
         membership = request.user.company_memberships.filter(
             is_active=True,
-            role__in=['owner', 'admin']
-        ).select_related('company').first()
+            role__in=['owner', 'admin'],
+            company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
 
-        if not membership:
-            return None
-        return membership.company
+        return membership.company if membership else None
 
     def get(self, request):
         """Get the system settings for the user's company"""
@@ -2993,16 +3021,23 @@ class EmploymentTypeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_user_company(self, request):
-        """Get the user's current company context"""
-        # For now, get the first active company membership where user is owner/admin/manager
+        """Get the user's current company context.
+
+        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
+        for multi-tenant isolation. Falls back to user's primary company.
+        """
+        # Prefer middleware-provided context (set by TenantMiddleware)
+        if hasattr(request, 'current_company') and request.current_company:
+            return request.current_company
+
+        # Fallback: Get first company where user is owner/admin/manager
         membership = request.user.company_memberships.filter(
             is_active=True,
-            role__in=['owner', 'admin', 'manager']
-        ).select_related('company').first()
+            role__in=['owner', 'admin', 'manager'],
+            company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
 
-        if not membership:
-            return None
-        return membership.company
+        return membership.company if membership else None
 
     def get_queryset(self):
         """Filter employment types by company context"""
@@ -3069,13 +3104,24 @@ class RecruitmentApplicationViewSet(viewsets.ModelViewSet):
         if self.request.user.is_authenticated and self.request.user.role == 'admin':
             return [IsAuthenticated()]
         return [IsAdminUser()]
-    
+
     def get_user_company(self, request):
-        """Get the user's current company context"""
+        """Get the user's current company context.
+
+        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
+        for multi-tenant isolation. Falls back to user's primary company.
+        """
+        # Prefer middleware-provided context (set by TenantMiddleware)
+        if hasattr(request, 'current_company') and request.current_company:
+            return request.current_company
+
+        # Fallback: Get first company where user is owner/admin/manager
         membership = request.user.company_memberships.filter(
             is_active=True,
-            role__in=['owner', 'admin', 'manager']
-        ).select_related('company').first()
+            role__in=['owner', 'admin', 'manager'],
+            company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+
         return membership.company if membership else None
 
     def get_queryset(self):
@@ -5948,16 +5994,23 @@ class OnboardingViewSet(viewsets.ViewSet):
         return [permission() for permission in permission_classes]
 
     def get_user_company(self, request):
-        """Get the user's current company context"""
-        # For now, get the first active company membership where user is owner/admin
+        """Get the user's current company context.
+
+        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
+        for multi-tenant isolation. Falls back to user's primary company.
+        """
+        # Prefer middleware-provided context (set by TenantMiddleware)
+        if hasattr(request, 'current_company') and request.current_company:
+            return request.current_company
+
+        # Fallback: Get first company where user is owner/admin
         membership = request.user.company_memberships.filter(
             is_active=True,
-            role__in=['owner', 'admin']
-        ).select_related('company').first()
-        
-        if not membership:
-            return None
-        return membership.company
+            role__in=['owner', 'admin'],
+            company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+
+        return membership.company if membership else None
 
     @action(detail=False, methods=['post'], url_path='initiate')
     def initiate_onboarding(self, request):
@@ -6813,16 +6866,22 @@ class ContractorUnavailabilityViewSet(viewsets.ModelViewSet):
             return ContractorUnavailabilityCreateSerializer
         return ContractorUnavailabilitySerializer
 
+    def _get_user_company(self, user):
+        """Get the user's primary company from their company memberships"""
+        membership = user.company_memberships.filter(
+            is_active=True,
+            company__is_active=True
+        ).select_related('company').first()
+        return membership.company if membership else None
+
     def get_queryset(self):
         user = self.request.user
 
-        # Get user's company
-        company = None
-        if hasattr(user, 'profile') and user.profile and user.profile.company:
-            company = user.profile.company
+        # Get user's company from memberships
+        company = self._get_user_company(user)
 
         # Admins/managers can see all unavailability for their company
-        if user.is_superuser or (hasattr(user, 'profile') and user.profile.role in ['admin', 'manager']):
+        if user.is_superuser or user.role in ['admin', 'manager']:
             if company:
                 return ContractorUnavailability.objects.filter(company=company)
             return ContractorUnavailability.objects.none()
@@ -6833,9 +6892,7 @@ class ContractorUnavailabilityViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """Create unavailability for the current user"""
         user = self.request.user
-        company = None
-        if hasattr(user, 'profile') and user.profile and user.profile.company:
-            company = user.profile.company
+        company = self._get_user_company(user)
 
         serializer.save(staff_user=user, company=company)
 
@@ -6943,13 +7000,19 @@ class BankHolidayViewSet(viewsets.ModelViewSet):
     ordering_fields = ['date', 'name']
     ordering = ['date']
 
+    def _get_user_company(self, user):
+        """Get the user's primary company from their company memberships"""
+        membership = user.company_memberships.filter(
+            is_active=True,
+            company__is_active=True
+        ).select_related('company').first()
+        return membership.company if membership else None
+
     def get_queryset(self):
         user = self.request.user
 
-        # Get user's company
-        company = None
-        if hasattr(user, 'profile') and user.profile and user.profile.company:
-            company = user.profile.company
+        # Get user's company from memberships
+        company = self._get_user_company(user)
 
         if company:
             return BankHoliday.objects.filter(company=company)
@@ -6960,16 +7023,14 @@ class BankHolidayViewSet(viewsets.ModelViewSet):
     def check_admin_permission(self):
         """Check if user has admin permissions"""
         user = self.request.user
-        if not user.is_superuser and not (hasattr(user, 'profile') and user.profile.role == 'admin'):
+        if not user.is_superuser and user.role not in ['admin', 'owner']:
             raise ValidationError("Only admins can manage bank holidays")
 
     def perform_create(self, serializer):
         self.check_admin_permission()
 
         user = self.request.user
-        company = None
-        if hasattr(user, 'profile') and user.profile and user.profile.company:
-            company = user.profile.company
+        company = self._get_user_company(user)
 
         if not company:
             raise ValidationError("User is not associated with a company")
@@ -6993,9 +7054,7 @@ class BankHolidayViewSet(viewsets.ModelViewSet):
         self.check_admin_permission()
 
         user = request.user
-        company = None
-        if hasattr(user, 'profile') and user.profile and user.profile.company:
-            company = user.profile.company
+        company = self._get_user_company(user)
 
         if not company:
             return Response(
@@ -7046,17 +7105,23 @@ class StaffLeaveDailyRateViewSet(viewsets.ModelViewSet):
     ordering_fields = ['staff_user__username', 'daily_rate', 'effective_from']
     ordering = ['staff_user__username']
 
+    def _get_user_company(self, user):
+        """Get the user's primary company from their company memberships"""
+        membership = user.company_memberships.filter(
+            is_active=True,
+            company__is_active=True
+        ).select_related('company').first()
+        return membership.company if membership else None
+
     def get_queryset(self):
         user = self.request.user
 
         # Only admins can view daily rates
-        if not user.is_superuser and not (hasattr(user, 'profile') and user.profile.role == 'admin'):
+        if not user.is_superuser and user.role not in ['admin', 'owner']:
             return StaffLeaveDailyRate.objects.none()
 
-        # Get user's company
-        company = None
-        if hasattr(user, 'profile') and user.profile and user.profile.company:
-            company = user.profile.company
+        # Get user's company from memberships
+        company = self._get_user_company(user)
 
         if company:
             return StaffLeaveDailyRate.objects.filter(company=company)
@@ -7070,16 +7135,14 @@ class StaffLeaveDailyRateViewSet(viewsets.ModelViewSet):
     def check_admin_permission(self):
         """Check if user has admin permissions"""
         user = self.request.user
-        if not user.is_superuser and not (hasattr(user, 'profile') and user.profile.role == 'admin'):
+        if not user.is_superuser and user.role not in ['admin', 'owner']:
             raise ValidationError("Only admins can manage staff leave daily rates")
 
     def perform_create(self, serializer):
         self.check_admin_permission()
 
         user = self.request.user
-        company = None
-        if hasattr(user, 'profile') and user.profile and user.profile.company:
-            company = user.profile.company
+        company = self._get_user_company(user)
 
         if not company:
             raise ValidationError("User is not associated with a company")
@@ -7131,9 +7194,7 @@ class StaffLeaveDailyRateViewSet(viewsets.ModelViewSet):
             )
 
         user = request.user
-        company = None
-        if hasattr(user, 'profile') and user.profile and user.profile.company:
-            company = user.profile.company
+        company = self._get_user_company(user)
 
         if not company:
             return Response(
@@ -7158,4 +7219,124 @@ class StaffLeaveDailyRateViewSet(viewsets.ModelViewSet):
         return Response({
             'message': 'Daily rate created' if created else 'Daily rate updated',
             'data': StaffLeaveDailyRateSerializer(rate).data
+        })
+
+
+# =====================================================
+# EMAIL UNSUBSCRIBE VIEW
+# =====================================================
+
+class EmailUnsubscribeView(APIView):
+    """
+    View for handling email unsubscribe requests.
+
+    Allows users to unsubscribe from email notifications without authentication
+    using their unique unsubscribe token.
+
+    GET: Validate token and return masked email address
+    POST: Process unsubscribe request
+    """
+    permission_classes = [AllowAny]
+    throttle_classes = []  # No throttling for unsubscribe
+
+    def get(self, request, token):
+        """
+        Validate unsubscribe token and return user info.
+
+        Returns masked email and available notification types.
+        """
+        try:
+            preferences = NotificationPreferences.objects.select_related('user').get(
+                email_unsubscribe_token=token
+            )
+        except NotificationPreferences.DoesNotExist:
+            return Response(
+                {'error': 'Invalid or expired unsubscribe link'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Mask the email address (e.g., j****@example.com)
+        email = preferences.user.email
+        if email and '@' in email:
+            local, domain = email.split('@', 1)
+            if len(local) > 2:
+                masked_email = f"{local[0]}{'*' * (len(local) - 2)}{local[-1]}@{domain}"
+            else:
+                masked_email = f"{'*' * len(local)}@{domain}"
+        else:
+            masked_email = '****@****'
+
+        return Response({
+            'email': masked_email,
+            'notification_types': [
+                {'key': 'all', 'label': 'All email notifications', 'enabled': preferences.email_notifications_enabled},
+                {'key': 'shift_assignments', 'label': 'Shift assignments', 'enabled': preferences.email_shift_assignments},
+                {'key': 'shift_reminders', 'label': 'Shift reminders', 'enabled': preferences.email_shift_reminders},
+                {'key': 'exchange_notifications', 'label': 'Shift exchanges', 'enabled': preferences.email_exchange_notifications},
+                {'key': 'open_shift_notifications', 'label': 'Open shifts', 'enabled': preferences.email_open_shift_notifications},
+                {'key': 'approval_notifications', 'label': 'Approvals', 'enabled': preferences.email_approval_notifications},
+            ]
+        })
+
+    def post(self, request, token):
+        """
+        Process unsubscribe request.
+
+        Accepts:
+        - unsubscribe_type: 'all' or specific notification type key
+        """
+        try:
+            preferences = NotificationPreferences.objects.get(
+                email_unsubscribe_token=token
+            )
+        except NotificationPreferences.DoesNotExist:
+            return Response(
+                {'error': 'Invalid or expired unsubscribe link'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        unsubscribe_type = request.data.get('unsubscribe_type', 'all')
+
+        # Map of unsubscribe types to preference fields
+        type_field_map = {
+            'all': 'email_notifications_enabled',
+            'shift_assignments': 'email_shift_assignments',
+            'shift_reminders': 'email_shift_reminders',
+            'exchange_notifications': 'email_exchange_notifications',
+            'open_shift_notifications': 'email_open_shift_notifications',
+            'approval_notifications': 'email_approval_notifications',
+        }
+
+        if unsubscribe_type not in type_field_map:
+            return Response(
+                {'error': f'Invalid unsubscribe type: {unsubscribe_type}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Update the preference
+        field_name = type_field_map[unsubscribe_type]
+        setattr(preferences, field_name, False)
+        preferences.save(update_fields=[field_name])
+
+        logger.info(
+            f"Email unsubscribe: user={preferences.user.id}, type={unsubscribe_type}"
+        )
+
+        # Build message based on type
+        if unsubscribe_type == 'all':
+            message = "You have been unsubscribed from all email notifications."
+        else:
+            type_labels = {
+                'shift_assignments': 'shift assignment',
+                'shift_reminders': 'shift reminder',
+                'exchange_notifications': 'shift exchange',
+                'open_shift_notifications': 'open shift',
+                'approval_notifications': 'approval',
+            }
+            message = f"You have been unsubscribed from {type_labels[unsubscribe_type]} emails."
+
+        return Response({
+            'success': True,
+            'message': message,
+            'unsubscribed_type': unsubscribe_type
         })

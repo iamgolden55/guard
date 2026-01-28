@@ -17,8 +17,10 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
-import { Container, Button } from '@components/ui';
-import { colors, spacing } from '../../theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button } from '@components/ui';
+import { colors, spacing, getColors } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import exchangeService, { ShiftExchange, OpenShiftRequest } from '../../services/exchangeService';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -29,6 +31,8 @@ type TabType = 'exchanges' | 'releases';
 export const ShiftExchangesScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const { user } = useAuth();
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
   const currentUserId = user?.id;
   const [activeTab, setActiveTab] = useState<TabType>('exchanges');
   const [directExchanges, setDirectExchanges] = useState<ShiftExchange[]>([]);
@@ -365,12 +369,12 @@ export const ShiftExchangesScreen: React.FC = () => {
       <MaterialCommunityIcons
         name={type === 'exchanges' ? 'swap-horizontal' : 'hand-extended-outline'}
         size={64}
-        color={colors.text.secondary}
+        color={themeColors.text.secondary}
       />
-      <Text style={styles.emptyTitle}>
+      <Text style={[styles.emptyTitle, { color: themeColors.text.primary }]}>
         No {type === 'exchanges' ? 'Exchanges' : 'Releases'}
       </Text>
-      <Text style={styles.emptyText}>
+      <Text style={[styles.emptyText, { color: themeColors.text.secondary }]}>
         {type === 'exchanges'
           ? 'You have no direct shift exchanges'
           : 'You have not released any shifts'}
@@ -381,43 +385,43 @@ export const ShiftExchangesScreen: React.FC = () => {
   const currentData = activeTab === 'exchanges' ? directExchanges : openRequests;
 
   return (
-    <Container style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background.primary }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: themeColors.background.secondary, borderBottomColor: themeColors.border.light }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+          <Ionicons name="arrow-back" size={24} color={themeColors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Shift Exchanges</Text>
+        <Text style={[styles.headerTitle, { color: themeColors.text.primary }]}>Shift Exchanges</Text>
         <TouchableOpacity onPress={() => fetchExchangeData()} style={styles.refreshButton}>
-          <Ionicons name="refresh" size={22} color={colors.text.primary} />
+          <Ionicons name="refresh" size={22} color={themeColors.text.primary} />
         </TouchableOpacity>
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, { backgroundColor: themeColors.background.secondary, borderBottomColor: themeColors.border.light }]}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'exchanges' && styles.tabActive]}
+          style={[styles.tab, activeTab === 'exchanges' && { borderBottomColor: themeColors.primary }]}
           onPress={() => setActiveTab('exchanges')}
         >
-          <Text style={[styles.tabText, activeTab === 'exchanges' && styles.tabTextActive]}>
+          <Text style={[styles.tabText, { color: themeColors.text.secondary }, activeTab === 'exchanges' && { color: themeColors.primary }]}>
             Direct Exchanges
           </Text>
           {directExchanges.length > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{directExchanges.length}</Text>
+            <View style={[styles.tabBadge, { backgroundColor: themeColors.primary }]}>
+              <Text style={[styles.tabBadgeText, { color: themeColors.white }]}>{directExchanges.length}</Text>
             </View>
           )}
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'releases' && styles.tabActive]}
+          style={[styles.tab, activeTab === 'releases' && { borderBottomColor: themeColors.primary }]}
           onPress={() => setActiveTab('releases')}
         >
-          <Text style={[styles.tabText, activeTab === 'releases' && styles.tabTextActive]}>
+          <Text style={[styles.tabText, { color: themeColors.text.secondary }, activeTab === 'releases' && { color: themeColors.primary }]}>
             Released Shifts
           </Text>
           {openRequests.length > 0 && (
-            <View style={styles.tabBadge}>
-              <Text style={styles.tabBadgeText}>{openRequests.length}</Text>
+            <View style={[styles.tabBadge, { backgroundColor: themeColors.primary }]}>
+              <Text style={[styles.tabBadgeText, { color: themeColors.white }]}>{openRequests.length}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -426,8 +430,8 @@ export const ShiftExchangesScreen: React.FC = () => {
       {/* Content */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading exchanges...</Text>
+          <ActivityIndicator size="large" color={themeColors.primary} />
+          <Text style={[styles.loadingText, { color: themeColors.text.secondary }]}>Loading exchanges...</Text>
         </View>
       ) : currentData.length === 0 ? (
         renderEmptyState(activeTab)
@@ -436,7 +440,7 @@ export const ShiftExchangesScreen: React.FC = () => {
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeColors.text.secondary} />}
         >
           {activeTab === 'exchanges'
             ? directExchanges.map(renderExchangeCard)
@@ -444,14 +448,13 @@ export const ShiftExchangesScreen: React.FC = () => {
           <View style={{ height: spacing.xl }} />
         </ScrollView>
       )}
-    </Container>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 0,
-    backgroundColor: colors.background,
+    flex: 1,
   },
   header: {
     flexDirection: 'row',

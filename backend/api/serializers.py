@@ -2558,17 +2558,21 @@ class SNSDeviceTokenSerializer(serializers.ModelSerializer):
 
 class NotificationPreferencesSerializer(serializers.ModelSerializer):
     """Serializer for user notification preferences"""
-    
+
     class Meta:
         model = NotificationPreferences
         fields = [
-            'id', 'user', 'shift_reminders_enabled', 'advance_reminder_hours', 
+            'id', 'user', 'shift_reminders_enabled', 'advance_reminder_hours',
             'final_reminder_minutes', 'exchange_notifications_enabled',
-            'exchange_request_received', 'exchange_request_accepted', 
+            'exchange_request_received', 'exchange_request_accepted',
             'exchange_request_approved', 'available_shifts_notifications_enabled',
-            'new_available_shift', 'incident_alerts_enabled', 
+            'new_available_shift', 'incident_alerts_enabled',
             'sync_notifications_enabled', 'sync_errors_only',
             'quiet_hours_enabled', 'quiet_hours_start', 'quiet_hours_end',
+            # Email notification settings
+            'email_notifications_enabled', 'email_shift_assignments',
+            'email_shift_reminders', 'email_exchange_notifications',
+            'email_open_shift_notifications', 'email_approval_notifications',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'user', 'created_at', 'updated_at']

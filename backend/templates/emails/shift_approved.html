@@ -1,0 +1,92 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Shift Approved - {{ company_name }}{% endblock %}
+
+{% block headline %}Your Shift Has Been Approved{% endblock %}
+
+{% block content %}
+<!-- Body Text -->
+<tr>
+    <td align="left" class="mobile-padding" style="padding: 0 10px 20px 10px;">
+        <p style="margin: 0 0 15px 0; font-size: 16px; line-height: 1.6; color: #555555;">
+            Hello {{ user.first_name|default:user.username }},
+        </p>
+        <p style="margin: 0; font-size: 16px; line-height: 1.6; color: #555555;">
+            Great news! Your completed shift has been approved and will be processed for payment.
+        </p>
+    </td>
+</tr>
+
+<!-- Status Badge -->
+<tr>
+    <td align="center" class="mobile-padding" style="padding: 0 10px 20px 10px;">
+        <table border="0" cellpadding="0" cellspacing="0">
+            <tr>
+                <td style="background-color: #e8f5e9; padding: 8px 20px; border-radius: 20px;">
+                    <span style="font-size: 13px; font-weight: 600; color: #2e7d32; text-transform: uppercase; letter-spacing: 0.5px;">Approved</span>
+                </td>
+            </tr>
+        </table>
+    </td>
+</tr>
+
+<!-- Shift Details Box -->
+<tr>
+    <td align="left" class="mobile-padding" style="padding: 0 10px 25px 10px;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" class="shift-box" style="background-color: #e8f5e9; border-radius: 8px; border-left: 4px solid #4caf50;">
+            <tr>
+                <td style="padding: 20px;">
+                    <p style="margin: 0 0 15px 0; font-size: 14px; font-weight: 600; color: #111111; text-transform: uppercase; letter-spacing: 0.5px;">
+                        Approved Shift
+                    </p>
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                            <td style="padding: 8px 0; border-bottom: 1px solid #c8e6c9;">
+                                <span style="font-size: 14px; color: #666666;">Venue</span>
+                            </td>
+                            <td align="right" style="padding: 8px 0; border-bottom: 1px solid #c8e6c9;">
+                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ venue_name }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; border-bottom: 1px solid #c8e6c9;">
+                                <span style="font-size: 14px; color: #666666;">Date</span>
+                            </td>
+                            <td align="right" style="padding: 8px 0; border-bottom: 1px solid #c8e6c9;">
+                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ shift_date }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0;">
+                                <span style="font-size: 14px; color: #666666;">Time</span>
+                            </td>
+                            <td align="right" style="padding: 8px 0;">
+                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ shift_time }}</span>
+                            </td>
+                        </tr>
+                        {% if hours_worked %}
+                        <tr>
+                            <td style="padding: 8px 0; border-top: 1px solid #c8e6c9;">
+                                <span style="font-size: 14px; color: #666666;">Hours Worked</span>
+                            </td>
+                            <td align="right" style="padding: 8px 0; border-top: 1px solid #c8e6c9;">
+                                <span style="font-size: 14px; font-weight: 600; color: #2e7d32;">{{ hours_worked }}</span>
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </td>
+</tr>
+
+<!-- Note -->
+<tr>
+    <td align="left" class="mobile-padding" style="padding: 0 10px 20px 10px;">
+        <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #888888;">
+            This shift will be included in your next invoice. Check your invoices page for payment details.
+        </p>
+    </td>
+</tr>
+{% endblock %}

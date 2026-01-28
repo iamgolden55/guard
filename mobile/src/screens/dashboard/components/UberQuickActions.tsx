@@ -2,6 +2,7 @@
  * UberQuickActions
  * Uber-style quick action buttons in a clean grid layout
  * Features: Do Checks, Report Incident, View Shifts, Virtual ID
+ * Supports dark mode
  */
 
 import React from 'react';
@@ -12,7 +13,8 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { uberColors, uberShadows, uberRadius, spacing } from '../../../theme';
+import { useTheme } from '../../../hooks/useTheme';
+import { getUberColors, getUberShadows, uberRadius, fontFamilies, spacing } from '../../../theme';
 
 interface QuickAction {
   id: string;
@@ -37,6 +39,10 @@ export const UberQuickActions: React.FC<UberQuickActionsProps> = ({
   onViewVirtualID,
   hasActiveShift = false,
 }) => {
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
+  const uberShadows = getUberShadows(isDark);
+
   const actions: QuickAction[] = [
     {
       id: 'checks',
@@ -67,24 +73,42 @@ export const UberQuickActions: React.FC<UberQuickActionsProps> = ({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>Quick Actions</Text>
+      <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Quick Actions</Text>
       <View style={styles.grid}>
         {actions.map((action) => (
           <TouchableOpacity
             key={action.id}
-            style={[styles.actionButton, action.disabled && styles.actionButtonDisabled]}
+            style={[
+              styles.actionButton,
+              {
+                backgroundColor: uberColors.background.surface,
+                borderColor: uberColors.border.light,
+              },
+              uberShadows.soft,
+              action.disabled && styles.actionButtonDisabled,
+            ]}
             onPress={action.onPress}
             disabled={action.disabled}
             activeOpacity={0.7}
           >
-            <View style={[styles.iconContainer, action.disabled && styles.iconContainerDisabled]}>
+            <View style={[
+              styles.iconContainer,
+              {
+                backgroundColor: action.disabled
+                  ? uberColors.disabled
+                  : uberColors.background.light,
+              },
+            ]}>
               <Ionicons
                 name={action.icon}
                 size={24}
                 color={action.disabled ? uberColors.disabledText : uberColors.primary}
               />
             </View>
-            <Text style={[styles.actionLabel, action.disabled && styles.actionLabelDisabled]}>
+            <Text style={[
+              styles.actionLabel,
+              { color: action.disabled ? uberColors.disabledText : uberColors.text.primary }
+            ]}>
               {action.label}
             </Text>
           </TouchableOpacity>
@@ -101,8 +125,8 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
+    fontFamily: fontFamilies.plusJakarta.bold,
     fontWeight: '700',
-    color: uberColors.text.primary,
     marginBottom: spacing.md,
   },
   grid: {
@@ -112,13 +136,10 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     width: '47%',
-    backgroundColor: uberColors.background.surface,
     borderRadius: uberRadius.xl,
     padding: spacing.base,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: uberColors.border.light,
-    ...uberShadows.soft,
   },
   actionButtonDisabled: {
     opacity: 0.5,
@@ -127,22 +148,15 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: uberColors.background.light,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
   },
-  iconContainerDisabled: {
-    backgroundColor: uberColors.disabled,
-  },
   actionLabel: {
     fontSize: 14,
+    fontFamily: fontFamilies.inter.semiBold,
     fontWeight: '600',
-    color: uberColors.text.primary,
     textAlign: 'center',
-  },
-  actionLabelDisabled: {
-    color: uberColors.disabledText,
   },
 });
 

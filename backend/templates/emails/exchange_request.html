@@ -1,0 +1,69 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Shift Transfer Request - {{ company_name }}{% endblock %}
+
+{% block headline %}New Shift Transfer Request{% endblock %}
+
+{% block content %}
+<!-- Body Text -->
+<tr>
+    <td align="left" class="mobile-padding" style="padding: 0 10px 20px 10px;">
+        <p style="margin: 0 0 15px 0; font-size: 16px; line-height: 1.6; color: #555555;">
+            Hello {{ user.first_name|default:user.username }},
+        </p>
+        <p style="margin: 0; font-size: 16px; line-height: 1.6; color: #555555;">
+            <strong>{{ requester_name }}</strong> would like to transfer a shift to you. Please review the details and respond:
+        </p>
+    </td>
+</tr>
+
+<!-- Shift Details Box -->
+<tr>
+    <td align="left" class="mobile-padding" style="padding: 0 10px 25px 10px;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" class="shift-box" style="background-color: #e8f4fd; border-radius: 8px; border-left: 4px solid #2196f3;">
+            <tr>
+                <td style="padding: 20px;">
+                    <p style="margin: 0 0 15px 0; font-size: 14px; font-weight: 600; color: #111111; text-transform: uppercase; letter-spacing: 0.5px;">
+                        Shift to Be Transferred
+                    </p>
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                            <td style="padding: 8px 0; border-bottom: 1px solid #c8e0f4;">
+                                <span style="font-size: 14px; color: #666666;">Venue</span>
+                            </td>
+                            <td align="right" style="padding: 8px 0; border-bottom: 1px solid #c8e0f4;">
+                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ shift_venue }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; border-bottom: 1px solid #c8e0f4;">
+                                <span style="font-size: 14px; color: #666666;">Date</span>
+                            </td>
+                            <td align="right" style="padding: 8px 0; border-bottom: 1px solid #c8e0f4;">
+                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ shift_date }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0;">
+                                <span style="font-size: 14px; color: #666666;">Time</span>
+                            </td>
+                            <td align="right" style="padding: 8px 0;">
+                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ shift_time }}</span>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </td>
+</tr>
+
+<!-- Note -->
+<tr>
+    <td align="left" class="mobile-padding" style="padding: 0 10px 20px 10px;">
+        <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #888888;">
+            If you accept this transfer, the shift will require manager approval before it's finalized.
+        </p>
+    </td>
+</tr>
+{% endblock %}

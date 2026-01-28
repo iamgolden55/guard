@@ -319,10 +319,13 @@ class AuthService {
             sia_licenses: profileData.siaLicenses || profileData.sia_licenses || [],
             is_approved: profileData.is_approved ?? profileData.isApproved,
             security_roles: profileData.securityRoles || profileData.security_roles || [],
+            // Employment type for contractor vs employee filtering
+            employment_type: profileData.employment_type || profileData.employmentType || null,
           }
         };
 
         console.log('[AuthService] Transformed user ID:', userData.id);
+        console.log('[AuthService] Employment type:', userData.staff_profile?.employment_type);
         return userData;
       }
 

@@ -146,7 +146,7 @@ export const UI_CONFIG = {
   },
 };
 
-// Theme Colors (Liquid Glass UI)
+// Theme Colors (Liquid Glass UI) - Light Mode
 export const COLORS = {
   // Primary Colors (iOS Blue)
   primary: {
@@ -185,13 +185,65 @@ export const COLORS = {
   overlay: 'rgba(0, 0, 0, 0.5)',
 };
 
-// Typography
+// Theme Colors - Dark Mode
+export const COLORS_DARK = {
+  // Primary Colors (iOS Blue - lighter for dark mode)
+  primary: {
+    blue: '#0A84FF',
+    light: '#64D2FF',
+    dark: '#0051D5',
+  },
+
+  // Semantic Colors (same for visibility)
+  success: '#34C759',
+  warning: '#FF9F0A',
+  error: '#FF453A',
+  info: '#64D2FF',
+
+  // Neutral Colors
+  background: {
+    light: '#09090B',
+    dark: '#000000',
+    glass: 'rgba(0, 0, 0, 0.3)',
+  },
+
+  text: {
+    primary: '#FAFAFA',
+    secondary: '#A1A1AA',
+    tertiary: '#71717A',
+    inverse: '#09090B',
+  },
+
+  border: {
+    light: '#27272A',
+    dark: '#3F3F46',
+  },
+
+  // System Colors
+  separator: 'rgba(255, 255, 255, 0.15)',
+  overlay: 'rgba(0, 0, 0, 0.7)',
+};
+
+// Helper to get colors based on theme
+export function getThemeColors(isDark: boolean) {
+  return isDark ? COLORS_DARK : COLORS;
+}
+
+// Typography with custom fonts
 export const TYPOGRAPHY = {
   fontFamily: {
-    regular: 'System',
-    medium: 'System',
-    bold: 'System',
-    mono: 'Courier',
+    // Body text - Inter
+    regular: 'Inter-Regular',
+    medium: 'Inter-Medium',
+    semiBold: 'Inter-SemiBold',
+    bold: 'Inter-Bold',
+    // Headings - Plus Jakarta Sans
+    heading: 'PlusJakartaSans-Regular',
+    headingMedium: 'PlusJakartaSans-Medium',
+    headingSemiBold: 'PlusJakartaSans-SemiBold',
+    headingBold: 'PlusJakartaSans-Bold',
+    // Monospace
+    mono: 'Menlo',
   },
 
   fontSize: {

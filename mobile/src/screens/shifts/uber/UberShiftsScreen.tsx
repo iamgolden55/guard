@@ -33,7 +33,8 @@ import type { MainStackParamList } from '../../../types/navigation';
 import { useAuth } from '../../../hooks/useAuth';
 import exchangeService from '../../../services/exchangeService';
 import { logger } from '../../../utils/logger';
-import { uberColors, uberRadius, uberSpacing, uberShadows } from '../../../theme/uberTheme';
+import { getUberColors, getUberShadows, uberRadius, uberSpacing } from '../../../theme/uberTheme';
+import { useTheme } from '../../../hooks/useTheme';
 
 import {
   UberCalendarStrip,
@@ -82,6 +83,9 @@ export const UberShiftsScreen = () => {
   const dispatch = useAppDispatch();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
+  const uberShadows = getUberShadows(isDark);
 
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
     const today = new Date();
@@ -222,7 +226,7 @@ export const UberShiftsScreen = () => {
     if (!isLoadingMore) return null;
     return (
       <View style={styles.loadingFooter}>
-        <ActivityIndicator size="small" color={uberColors.primary} />
+        <ActivityIndicator size="small" color={getUberColors(isDark).primary} />
       </View>
     );
   };
@@ -231,19 +235,19 @@ export const UberShiftsScreen = () => {
   const upcomingCount = upcomingShifts.length + (activeShift ? 1 : 0);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: uberColors.background.light }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: uberColors.background.surface, borderBottomColor: uberColors.border.light }]}>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>My Shifts</Text>
+          <Text style={[styles.headerTitle, { color: uberColors.text.primary }]}>My Shifts</Text>
           {upcomingCount > 0 && (
-            <Text style={styles.headerSubtitle}>
+            <Text style={[styles.headerSubtitle, { color: uberColors.text.secondary }]}>
               {upcomingCount} upcoming {upcomingCount === 1 ? 'shift' : 'shifts'}
             </Text>
           )}
         </View>
         <TouchableOpacity
-          style={styles.addButton}
+          style={[styles.addButton, { backgroundColor: uberColors.primary }, uberShadows.soft]}
           onPress={() => navigation.navigate('AvailableShifts')}
         >
           <Ionicons name="add" size={24} color={uberColors.text.inverse} />
@@ -269,12 +273,12 @@ export const UberShiftsScreen = () => {
       />
 
       {/* Quick Actions */}
-      <View style={styles.quickActions}>
+      <View style={[styles.quickActions, { backgroundColor: uberColors.background.surface, borderBottomColor: uberColors.border.light }]}>
         <TouchableOpacity
-          style={styles.actionButton}
+          style={[styles.actionButton, { backgroundColor: uberColors.background.light }]}
           onPress={() => navigation.navigate('AvailableShifts')}
         >
-          <View style={styles.actionIconContainer}>
+          <View style={[styles.actionIconContainer, { backgroundColor: `${uberColors.primary}15` }]}>
             <MaterialCommunityIcons
               name="calendar-search"
               size={20}
@@ -282,11 +286,11 @@ export const UberShiftsScreen = () => {
             />
           </View>
           <View style={styles.actionTextContainer}>
-            <Text style={styles.actionTitle}>Available Shifts</Text>
+            <Text style={[styles.actionTitle, { color: uberColors.text.primary }]}>Available Shifts</Text>
           </View>
           {availableShiftsCount > 0 && (
-            <View style={[styles.badge, styles.badgeSuccess]}>
-              <Text style={styles.badgeText}>
+            <View style={[styles.badge, { backgroundColor: uberColors.success }]}>
+              <Text style={[styles.badgeText, { color: uberColors.text.inverse }]}>
                 {availableShiftsCount > 9 ? '9+' : availableShiftsCount}
               </Text>
             </View>
@@ -299,10 +303,10 @@ export const UberShiftsScreen = () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.actionButton}
+          style={[styles.actionButton, { backgroundColor: uberColors.background.light }]}
           onPress={() => navigation.navigate('ShiftExchanges')}
         >
-          <View style={styles.actionIconContainer}>
+          <View style={[styles.actionIconContainer, { backgroundColor: `${uberColors.primary}15` }]}>
             <MaterialCommunityIcons
               name="swap-horizontal"
               size={20}
@@ -310,11 +314,11 @@ export const UberShiftsScreen = () => {
             />
           </View>
           <View style={styles.actionTextContainer}>
-            <Text style={styles.actionTitle}>My Exchanges</Text>
+            <Text style={[styles.actionTitle, { color: uberColors.text.primary }]}>My Exchanges</Text>
           </View>
           {pendingExchangeCount > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>
+            <View style={[styles.badge, { backgroundColor: uberColors.error }]}>
+              <Text style={[styles.badgeText, { color: uberColors.text.inverse }]}>
                 {pendingExchangeCount > 9 ? '9+' : pendingExchangeCount}
               </Text>
             </View>
@@ -328,9 +332,9 @@ export const UberShiftsScreen = () => {
       </View>
 
       {/* Selected Date Header */}
-      <View style={styles.dateHeader}>
-        <Text style={styles.dateHeaderText}>{formatDateHeader(selectedDate)}</Text>
-        <Text style={styles.shiftCount}>
+      <View style={[styles.dateHeader, { backgroundColor: uberColors.background.light }]}>
+        <Text style={[styles.dateHeaderText, { color: uberColors.text.primary }]}>{formatDateHeader(selectedDate)}</Text>
+        <Text style={[styles.shiftCount, { color: uberColors.text.secondary }]}>
           {selectedDateShifts.length} {selectedDateShifts.length === 1 ? 'shift' : 'shifts'}
         </Text>
       </View>
@@ -362,7 +366,6 @@ export const UberShiftsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: uberColors.background.light,
   },
   header: {
     flexDirection: 'row',
@@ -371,9 +374,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: uberSpacing.base,
     paddingTop: uberSpacing.lg,
     paddingBottom: uberSpacing.md,
-    backgroundColor: uberColors.background.surface,
     borderBottomWidth: 1,
-    borderBottomColor: uberColors.border.light,
   },
   headerContent: {
     flex: 1,
@@ -381,37 +382,30 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
-    color: uberColors.text.primary,
     letterSpacing: -0.5,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: uberColors.text.secondary,
     marginTop: uberSpacing.xs,
   },
   addButton: {
     width: 40,
     height: 40,
     borderRadius: uberRadius.full,
-    backgroundColor: uberColors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    ...uberShadows.soft,
   },
   quickActions: {
-    backgroundColor: uberColors.background.surface,
     paddingHorizontal: uberSpacing.base,
     paddingVertical: uberSpacing.sm,
     flexDirection: 'row',
     gap: uberSpacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: uberColors.border.light,
   },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: uberColors.background.light,
     paddingVertical: uberSpacing.sm,
     paddingHorizontal: uberSpacing.md,
     borderRadius: uberRadius.lg,
@@ -421,7 +415,6 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: uberRadius.md,
-    backgroundColor: `${uberColors.primary}15`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -431,10 +424,8 @@ const styles = StyleSheet.create({
   actionTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: uberColors.text.primary,
   },
   badge: {
-    backgroundColor: uberColors.error,
     minWidth: 18,
     height: 18,
     borderRadius: 9,
@@ -442,11 +433,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 5,
   },
-  badgeSuccess: {
-    backgroundColor: uberColors.success,
-  },
   badgeText: {
-    color: uberColors.text.inverse,
     fontSize: 10,
     fontWeight: '700',
   },
@@ -456,16 +443,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: uberSpacing.base,
     paddingVertical: uberSpacing.md,
-    backgroundColor: uberColors.background.light,
   },
   dateHeaderText: {
     fontSize: 18,
     fontWeight: '700',
-    color: uberColors.text.primary,
   },
   shiftCount: {
     fontSize: 14,
-    color: uberColors.text.secondary,
   },
   listContent: {
     flexGrow: 1,

@@ -17,6 +17,7 @@ import {
   Platform,
   ActivityIndicator,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -360,15 +361,85 @@ export const ContractorUnavailabilityScreen: React.FC = () => {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Date Pickers */}
-      {showStartPicker && (
+      {/* Date Pickers - iOS Modal */}
+      {Platform.OS === 'ios' && (
+        <Modal
+          visible={showStartPicker}
+          transparent
+          animationType="slide"
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.datePickerModal}>
+              <View style={styles.datePickerHeader}>
+                <Text style={styles.datePickerTitle}>Select Start Date</Text>
+                <TouchableOpacity onPress={() => setShowStartPicker(false)}>
+                  <Text style={styles.datePickerDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.datePickerContainer}>
+                <DateTimePicker
+                  value={startDate}
+                  mode="date"
+                  display="inline"
+                  minimumDate={new Date()}
+                  themeVariant="light"
+                  accentColor={colors.primary}
+                  onChange={(event, date) => {
+                    if (date) {
+                      setStartDate(date);
+                      if (date > endDate) setEndDate(date);
+                    }
+                  }}
+                  style={styles.inlinePicker}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {Platform.OS === 'ios' && (
+        <Modal
+          visible={showEndPicker}
+          transparent
+          animationType="slide"
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.datePickerModal}>
+              <View style={styles.datePickerHeader}>
+                <Text style={styles.datePickerTitle}>Select End Date</Text>
+                <TouchableOpacity onPress={() => setShowEndPicker(false)}>
+                  <Text style={styles.datePickerDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.datePickerContainer}>
+                <DateTimePicker
+                  value={endDate}
+                  mode="date"
+                  display="inline"
+                  minimumDate={startDate}
+                  themeVariant="light"
+                  accentColor={colors.primary}
+                  onChange={(event, date) => {
+                    if (date) setEndDate(date);
+                  }}
+                  style={styles.inlinePicker}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Date Pickers - Android */}
+      {Platform.OS === 'android' && showStartPicker && (
         <DateTimePicker
           value={startDate}
           mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          display="default"
           minimumDate={new Date()}
           onChange={(event, date) => {
-            setShowStartPicker(Platform.OS === 'ios');
+            setShowStartPicker(false);
             if (date) {
               setStartDate(date);
               if (date > endDate) setEndDate(date);
@@ -377,14 +448,14 @@ export const ContractorUnavailabilityScreen: React.FC = () => {
         />
       )}
 
-      {showEndPicker && (
+      {Platform.OS === 'android' && showEndPicker && (
         <DateTimePicker
           value={endDate}
           mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          display="default"
           minimumDate={startDate}
           onChange={(event, date) => {
-            setShowEndPicker(Platform.OS === 'ios');
+            setShowEndPicker(false);
             if (date) setEndDate(date);
           }}
         />
@@ -633,6 +704,46 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.sm,
     lineHeight: 20,
+  },
+  // Modal date picker styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  datePickerModal: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 34, // Safe area for iPhone
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.base,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  datePickerTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  datePickerDone: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  datePickerContainer: {
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  inlinePicker: {
+    height: 350,
+    width: '100%',
   },
 });
 

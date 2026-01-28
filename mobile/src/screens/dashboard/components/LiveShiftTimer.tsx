@@ -2,17 +2,20 @@
  * LiveShiftTimer
  * Real-time elapsed time display since shift check-in
  * Updates every second when shift is active
+ * Supports dark mode
  */
 
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { uberColors, uberShadows, uberRadius, spacing } from '../../../theme';
+import { useTheme } from '../../../hooks/useTheme';
+import { getUberColors, getUberShadows, uberRadius, fontFamilies, spacing } from '../../../theme';
 
 interface LiveShiftTimerProps {
   checkInTime: string | null;
   checkOutTime?: string | null;
   isActive?: boolean;
+  scheduledEndTime?: string | null;
 }
 
 // Format duration as HH:MM:SS
@@ -21,6 +24,16 @@ const formatDuration = (seconds: number): string => {
   const mins = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
   return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+// Format time as "7:30 PM"
+const formatTime = (dateString: string): string => {
+  const date = new Date(dateString);
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
 };
 
 // Pulsing dot animation
@@ -55,7 +68,12 @@ export const LiveShiftTimer: React.FC<LiveShiftTimerProps> = ({
   checkInTime,
   checkOutTime,
   isActive = true,
+  scheduledEndTime,
 }) => {
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
+  const uberShadows = getUberShadows(isDark);
+
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
@@ -82,38 +100,68 @@ export const LiveShiftTimer: React.FC<LiveShiftTimerProps> = ({
     }
   }, [checkInTime, checkOutTime, isActive]);
 
+  const isRunning = !checkOutTime && isActive;
+
+  // Dynamic styles based on theme and state
+  const timerBoxStyle = [
+    styles.timerBox,
+    {
+      backgroundColor: isRunning
+        ? isDark ? '#052E16' : '#F0FDF4'
+        : uberColors.background.surface,
+      borderColor: isRunning ? uberColors.success : uberColors.border.light,
+    },
+    uberShadows.soft,
+  ];
+
   if (!checkInTime) {
     return (
       <View style={styles.container}>
-        <View style={styles.timerBox}>
-          <Text style={styles.timerLabel}>SHIFT TIMER</Text>
-          <Text style={styles.timerInactive}>--:--:--</Text>
-          <Text style={styles.timerSubtext}>No active shift</Text>
+        <View style={[
+          styles.timerBox,
+          {
+            backgroundColor: uberColors.background.surface,
+            borderColor: uberColors.border.light,
+          },
+          uberShadows.soft,
+        ]}>
+          <Text style={[styles.timerLabel, { color: uberColors.text.secondary }]}>SHIFT TIMER</Text>
+          <Text style={[styles.timerInactive, { color: uberColors.text.muted }]}>--:--:--</Text>
+          <Text style={[styles.timerSubtext, { color: uberColors.text.secondary }]}>No active shift</Text>
         </View>
       </View>
     );
   }
 
-  const isRunning = !checkOutTime && isActive;
-
   return (
     <View style={styles.container}>
-      <View style={[styles.timerBox, isRunning && styles.timerBoxActive]}>
+      <View style={timerBoxStyle}>
         <View style={styles.timerHeader}>
-          <Text style={styles.timerLabel}>SHIFT TIMER</Text>
+          <Text style={[styles.timerLabel, { color: uberColors.text.secondary }]}>SHIFT TIMER</Text>
           {isRunning && (
-            <View style={styles.liveIndicator}>
+            <View style={[styles.liveIndicator, { backgroundColor: uberColors.success }]}>
               <PulsingDot />
               <Text style={styles.liveText}>LIVE</Text>
             </View>
           )}
         </View>
-        <Text style={[styles.timerValue, isRunning && styles.timerValueActive]}>
+        <Text style={[
+          styles.timerValue,
+          { color: isRunning ? uberColors.success : uberColors.text.primary }
+        ]}>
           {formatDuration(elapsedSeconds)}
         </Text>
-        <Text style={styles.timerSubtext}>
+        <Text style={[styles.timerSubtext, { color: uberColors.text.secondary }]}>
           {isRunning ? 'Time on shift' : 'Shift completed'}
         </Text>
+        {isRunning && scheduledEndTime && (
+          <View style={styles.endTimeContainer}>
+            <Ionicons name="time-outline" size={14} color={uberColors.text.muted} />
+            <Text style={[styles.endTimeText, { color: uberColors.text.muted }]}>
+              Shift ends at {formatTime(scheduledEndTime)}
+            </Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -125,17 +173,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   timerBox: {
-    backgroundColor: uberColors.background.surface,
     borderRadius: uberRadius.xl,
     padding: spacing.lg,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: uberColors.border.light,
-    ...uberShadows.soft,
-  },
-  timerBoxActive: {
-    borderColor: uberColors.success,
-    backgroundColor: '#F0FDF4', // Very light green
   },
   timerHeader: {
     flexDirection: 'row',
@@ -146,15 +187,14 @@ const styles = StyleSheet.create({
   },
   timerLabel: {
     fontSize: 12,
+    fontFamily: fontFamilies.inter.semiBold,
     fontWeight: '600',
-    color: uberColors.text.secondary,
     letterSpacing: 1,
   },
   liveIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: uberColors.success,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: uberRadius.full,
@@ -167,30 +207,42 @@ const styles = StyleSheet.create({
   },
   liveText: {
     fontSize: 10,
+    fontFamily: fontFamilies.inter.bold,
     fontWeight: '700',
     color: '#FFFFFF',
   },
   timerValue: {
     fontSize: 48,
+    fontFamily: fontFamilies.plusJakarta.bold,
     fontWeight: '700',
-    color: uberColors.text.primary,
     fontVariant: ['tabular-nums'],
     letterSpacing: 2,
   },
-  timerValueActive: {
-    color: uberColors.success,
-  },
   timerInactive: {
     fontSize: 48,
+    fontFamily: fontFamilies.plusJakarta.bold,
     fontWeight: '700',
-    color: uberColors.text.muted,
     fontVariant: ['tabular-nums'],
     letterSpacing: 2,
   },
   timerSubtext: {
     fontSize: 13,
-    color: uberColors.text.secondary,
+    fontFamily: fontFamilies.inter.regular,
     marginTop: spacing.xs,
+  },
+  endTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  endTimeText: {
+    fontSize: 12,
+    fontFamily: fontFamilies.inter.medium,
+    fontWeight: '500',
   },
 });
 

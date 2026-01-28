@@ -1,6 +1,7 @@
 /**
  * UberUpcomingShifts
  * Uber-style upcoming shifts list with clean card design
+ * Supports dark mode
  */
 
 import React from 'react';
@@ -11,7 +12,8 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { uberColors, uberShadows, uberRadius, spacing } from '../../../theme';
+import { useTheme } from '../../../hooks/useTheme';
+import { getUberColors, getUberShadows, uberRadius, fontFamilies, spacing } from '../../../theme';
 import type { Shift } from '../../../store/slices/shiftsSlice';
 
 interface UberUpcomingShiftsProps {
@@ -43,24 +45,37 @@ const formatTimeRange = (startTime: string, endTime: string): string => {
 const ShiftCard: React.FC<{
   shift: Shift;
   onPress: () => void;
-}> = ({ shift, onPress }) => {
+  isDark: boolean;
+}> = ({ shift, onPress, isDark }) => {
+  const uberColors = getUberColors(isDark);
+  const uberShadows = getUberShadows(isDark);
+
   return (
     <TouchableOpacity
-      style={styles.shiftCard}
+      style={[
+        styles.shiftCard,
+        {
+          backgroundColor: uberColors.background.surface,
+          borderColor: uberColors.border.light,
+        },
+        uberShadows.soft,
+      ]}
       onPress={onPress}
       activeOpacity={0.7}
     >
       {/* Date badge */}
-      <View style={styles.dateBadge}>
-        <Text style={styles.dateText}>{formatDate(shift.start_time)}</Text>
+      <View style={[styles.dateBadge, { backgroundColor: uberColors.background.light }]}>
+        <Text style={[styles.dateText, { color: uberColors.text.primary }]}>
+          {formatDate(shift.start_time)}
+        </Text>
       </View>
 
       {/* Shift details */}
       <View style={styles.shiftDetails}>
-        <Text style={styles.venueName} numberOfLines={1}>
+        <Text style={[styles.venueName, { color: uberColors.text.primary }]} numberOfLines={1}>
           {shift.venue?.name || 'Unknown Venue'}
         </Text>
-        <Text style={styles.timeText}>
+        <Text style={[styles.timeText, { color: uberColors.text.secondary }]}>
           {formatTimeRange(shift.start_time, shift.end_time)}
         </Text>
       </View>
@@ -80,6 +95,9 @@ export const UberUpcomingShifts: React.FC<UberUpcomingShiftsProps> = ({
   onShiftPress,
   maxShifts = 3,
 }) => {
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
+
   if (shifts.length === 0) {
     return null;
   }
@@ -88,13 +106,14 @@ export const UberUpcomingShifts: React.FC<UberUpcomingShiftsProps> = ({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>Upcoming Shifts</Text>
+      <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Upcoming Shifts</Text>
       <View style={styles.shiftsList}>
         {displayedShifts.map((shift) => (
           <ShiftCard
             key={shift.id}
             shift={shift}
             onPress={() => onShiftPress(shift)}
+            isDark={isDark}
           />
         ))}
       </View>
@@ -109,8 +128,8 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
+    fontFamily: fontFamilies.plusJakarta.bold,
     fontWeight: '700',
-    color: uberColors.text.primary,
     marginBottom: spacing.md,
   },
   shiftsList: {
@@ -119,15 +138,11 @@ const styles = StyleSheet.create({
   shiftCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: uberColors.background.surface,
     borderRadius: uberRadius.lg,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: uberColors.border.light,
-    ...uberShadows.soft,
   },
   dateBadge: {
-    backgroundColor: uberColors.background.light,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: uberRadius.default,
@@ -135,8 +150,8 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 12,
+    fontFamily: fontFamilies.inter.semiBold,
     fontWeight: '600',
-    color: uberColors.text.primary,
   },
   shiftDetails: {
     flex: 1,
@@ -144,13 +159,13 @@ const styles = StyleSheet.create({
   },
   venueName: {
     fontSize: 15,
+    fontFamily: fontFamilies.inter.semiBold,
     fontWeight: '600',
-    color: uberColors.text.primary,
     marginBottom: 2,
   },
   timeText: {
     fontSize: 13,
-    color: uberColors.text.secondary,
+    fontFamily: fontFamilies.inter.regular,
   },
 });
 

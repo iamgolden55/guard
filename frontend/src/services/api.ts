@@ -3,6 +3,10 @@ import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestCo
 // Base API configuration
 const API_URL = import.meta.env.VITE_API_URL;
 
+// Refresh lock to prevent race conditions with multiple 401s
+let isRefreshing = false;
+let refreshPromise: Promise<any> | null = null;
+
 // Create an Axios instance with default config
 // Sprint 3: Use relative URLs to leverage Vite proxy in development
 const api: AxiosInstance = axios.create({
@@ -82,29 +86,67 @@ api.interceptors.response.use(
 
     // HYBRID AUTH: Check if error is 401 and we haven't already tried refreshing
     if (originalRequest && error.response?.status === 401 && !originalRequest.headers?.['X-Retry']) {
-      try {
-        // HYBRID AUTH: Send refresh token in body as fallback for Safari
-        const refreshToken = localStorage.getItem('refresh_token');
-        const response = await axios.post(
-          `/api/v1/auth/refresh/`,
-          refreshToken ? { refresh: refreshToken } : {},
-          {
-            withCredentials: true, // Still try cookies
-            headers: {
-              'X-CSRFToken': getCsrfToken() || '',
+      // If already refreshing, wait for the existing refresh to complete
+      if (isRefreshing && refreshPromise) {
+        try {
+          await refreshPromise;
+          // Retry the original request with new token
+          if (originalRequest.headers) {
+            originalRequest.headers['X-Retry'] = 'true';
+            const newToken = localStorage.getItem('access_token');
+            if (newToken) {
+              originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
             }
           }
-        );
-
-        console.log('Token refreshed successfully');
-
-        // HYBRID AUTH: Store new tokens in localStorage if returned
-        if (response.data?.access) {
-          localStorage.setItem('access_token', response.data.access);
+          return api(originalRequest);
+        } catch {
+          return Promise.reject(error);
         }
-        if (response.data?.refresh) {
-          localStorage.setItem('refresh_token', response.data.refresh);
+      }
+
+      // Start the refresh process
+      isRefreshing = true;
+
+      refreshPromise = (async () => {
+        try {
+          // HYBRID AUTH: Send refresh token in body as fallback for Safari
+          const refreshToken = localStorage.getItem('refresh_token');
+
+          // FIX: Use proper API URL in production (relative URL goes to frontend domain otherwise)
+          const refreshUrl = import.meta.env.DEV
+            ? '/api/v1/auth/refresh/'
+            : `${API_URL}/api/v1/auth/refresh/`;
+
+          const response = await axios.post(
+            refreshUrl,
+            refreshToken ? { refresh: refreshToken } : {},
+            {
+              withCredentials: true, // Still try cookies
+              headers: {
+                'X-CSRFToken': getCsrfToken() || '',
+              }
+            }
+          );
+
+          console.log('Token refreshed successfully');
+
+          // HYBRID AUTH: Store new tokens in localStorage if returned
+          if (response.data?.access) {
+            localStorage.setItem('access_token', response.data.access);
+          }
+          if (response.data?.refresh) {
+            localStorage.setItem('refresh_token', response.data.refresh);
+          }
+
+          return response;
+        } finally {
+          isRefreshing = false;
+          refreshPromise = null;
         }
+      })();
+
+      try {
+        const response = await refreshPromise;
 
         // Retry the original request with new token
         if (originalRequest.headers) {
@@ -124,11 +166,9 @@ api.interceptors.response.use(
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
 
-        // Don't redirect immediately if it's an API call during page load
-        setTimeout(() => {
-          console.log('Redirecting to login page due to authentication failure');
-          window.location.href = '/login?expired=true';
-        }, 500);
+        // Redirect to login page immediately (no setTimeout race condition)
+        console.log('Redirecting to login page due to authentication failure');
+        window.location.href = '/login?expired=true';
 
         return Promise.reject(refreshError);
       }

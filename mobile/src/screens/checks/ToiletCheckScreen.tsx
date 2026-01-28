@@ -16,7 +16,8 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Container, Heading2, Heading3, Body, Card, Button } from '@components/ui';
-import { colors, spacing } from '../../theme';
+import { colors, getColors, spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 import { locationService } from '../../services/locationService';
 import { photoService } from '../../services/photoService';
@@ -33,6 +34,8 @@ export const ToiletCheckScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { shiftId } = route.params;
+  const { isDark } = useTheme();
+  const colors = getColors(isDark);
 
   // Form state
   const [locationName, setLocationName] = useState('');
@@ -190,9 +193,9 @@ export const ToiletCheckScreen = () => {
   };
 
   return (
-    <Container scrollable={false} safeArea style={styles.container}>
+    <Container scrollable={false} safeArea style={[styles.container, { backgroundColor: colors.background.secondary }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.background.primary, borderBottomColor: colors.border.light }]}>
         <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
           <Ionicons name="close" size={24} color={colors.text.primary} />
         </TouchableOpacity>
@@ -207,8 +210,9 @@ export const ToiletCheckScreen = () => {
         <Card variant="flat" padding="lg" style={styles.formCard}>
           <Body style={styles.label}>Restroom Location *</Body>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.background.primary, color: colors.text.primary }]}
             placeholder="e.g., Ground Floor Male, Level 2 Female"
+            placeholderTextColor={colors.text.tertiary}
             value={locationName}
             onChangeText={setLocationName}
             autoCapitalize="words"
@@ -222,7 +226,7 @@ export const ToiletCheckScreen = () => {
             <TouchableOpacity
               style={[
                 styles.conditionButton,
-                { borderColor: getConditionColor('clean') },
+                { borderColor: getConditionColor('clean'), backgroundColor: colors.background.primary },
                 condition === 'clean' && { backgroundColor: colors.success + '10' },
               ]}
               onPress={() => setCondition('clean')}
@@ -240,7 +244,7 @@ export const ToiletCheckScreen = () => {
             <TouchableOpacity
               style={[
                 styles.conditionButton,
-                { borderColor: getConditionColor('needs_cleaning') },
+                { borderColor: getConditionColor('needs_cleaning'), backgroundColor: colors.background.primary },
                 condition === 'needs_cleaning' && { backgroundColor: colors.warning + '10' },
               ]}
               onPress={() => setCondition('needs_cleaning')}
@@ -263,7 +267,7 @@ export const ToiletCheckScreen = () => {
             <TouchableOpacity
               style={[
                 styles.conditionButton,
-                { borderColor: getConditionColor('requires_maintenance') },
+                { borderColor: getConditionColor('requires_maintenance'), backgroundColor: colors.background.primary },
                 condition === 'requires_maintenance' && { backgroundColor: colors.error + '10' },
               ]}
               onPress={() => setCondition('requires_maintenance')}
@@ -309,6 +313,7 @@ export const ToiletCheckScreen = () => {
                 key={supply.id}
                 style={[
                   styles.supplyChip,
+                  { backgroundColor: colors.background.primary },
                   suppliesNeeded.includes(supply.id) && styles.supplyChipActive,
                 ]}
                 onPress={() => toggleSupply(supply.id)}
@@ -353,8 +358,9 @@ export const ToiletCheckScreen = () => {
         <Card variant="flat" padding="lg" style={styles.formCard}>
           <Body style={styles.label}>Additional Notes (Optional)</Body>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            style={[styles.input, styles.textArea, { backgroundColor: colors.background.primary, color: colors.text.primary }]}
             placeholder="Any additional observations..."
+            placeholderTextColor={colors.text.tertiary}
             value={notes}
             onChangeText={setNotes}
             multiline
@@ -395,7 +401,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 0,
-    backgroundColor: colors.background.secondary,
   },
   header: {
     flexDirection: 'row',
@@ -403,9 +408,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
-    backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   closeButton: {
     padding: spacing.sm,
@@ -433,12 +436,9 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.gray[200],
     borderRadius: 12,
     padding: spacing.md,
     fontSize: 16,
-    color: colors.text.primary,
-    backgroundColor: colors.white,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -458,7 +458,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 2,
     borderRadius: 8,
-    backgroundColor: colors.white,
   },
   conditionText: {
     marginLeft: spacing.md,
@@ -491,9 +490,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderWidth: 1,
-    borderColor: colors.border.default,
     borderRadius: 20,
-    backgroundColor: colors.white,
   },
   supplyChipActive: {
     backgroundColor: colors.primary,

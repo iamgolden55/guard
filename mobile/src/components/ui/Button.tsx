@@ -12,7 +12,8 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
-import { colors, textStyles, layout, spacing } from '../../theme';
+import { colors, getColors, textStyles, layout, spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'social-apple' | 'social-google';
 export type ButtonSize = 'small' | 'medium' | 'large';
@@ -42,6 +43,8 @@ export const Button: React.FC<ButtonProps> = ({
   style,
   textStyle,
 }) => {
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
   const getButtonStyle = (): ViewStyle => {
     const baseStyle: ViewStyle = {
       flexDirection: 'row',
@@ -66,18 +69,18 @@ export const Button: React.FC<ButtonProps> = ({
       },
     };
 
-    // Variant styles
+    // Variant styles - using theme-aware colors
     const variantStyles: Record<ButtonVariant, ViewStyle> = {
       primary: {
         backgroundColor: colors.primary,
       },
       secondary: {
-        backgroundColor: colors.gray[100],
+        backgroundColor: themeColors.background.secondary,
       },
       outline: {
-        backgroundColor: colors.white,
+        backgroundColor: themeColors.background.primary,
         borderWidth: layout.borderWidth.thin,
-        borderColor: colors.border.light,
+        borderColor: themeColors.border.light,
       },
       ghost: {
         backgroundColor: 'transparent',
@@ -86,7 +89,7 @@ export const Button: React.FC<ButtonProps> = ({
         backgroundColor: colors.apple,
       },
       'social-google': {
-        backgroundColor: colors.white,
+        backgroundColor: themeColors.background.primary,
         borderWidth: layout.borderWidth.thin,
         borderColor: colors.googleBorder,
       },
@@ -104,15 +107,16 @@ export const Button: React.FC<ButtonProps> = ({
   const getTextStyle = (): TextStyle => {
     const baseStyle = size === 'small' ? textStyles.buttonSmall : textStyles.button;
 
+    // Using theme-aware colors for text
     const variantTextStyles: Record<ButtonVariant, TextStyle> = {
       primary: {
         color: colors.text.inverse,
       },
       secondary: {
-        color: colors.text.primary,
+        color: themeColors.text.primary,
       },
       outline: {
-        color: colors.text.primary,
+        color: themeColors.text.primary,
       },
       ghost: {
         color: colors.primary,
@@ -121,7 +125,7 @@ export const Button: React.FC<ButtonProps> = ({
         color: colors.text.inverse,
       },
       'social-google': {
-        color: colors.text.primary,
+        color: themeColors.text.primary,
       },
     };
 

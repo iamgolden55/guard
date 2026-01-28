@@ -93,8 +93,10 @@ class ShiftsService {
       // Transform the backend response to match frontend Shift interface
       const shifts = response.results.map((shift: any) => this.transformShift(shift));
 
-      // Schedule notifications for upcoming shifts
-      await this.scheduleNotificationsForShifts(shifts);
+      // NOTE: Local notification scheduling disabled to prevent duplicates.
+      // Backend push notifications handle all shift reminders via Celery tasks.
+      // See: thoughts/shared/research/2025-01-25-duplicate-shift-notifications.md
+      // await this.scheduleNotificationsForShifts(shifts);
 
       return {
         count: response.count,

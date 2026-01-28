@@ -173,7 +173,7 @@ export const useAuth = () => {
    */
   const checkAuthStatus = useCallback(async () => {
     try {
-      const accessToken = await authService.getAccessToken();
+      let accessToken = await authService.getAccessToken();
       const refreshToken = await authService.getRefreshToken();
 
       // If no tokens, logout immediately
@@ -183,14 +183,22 @@ export const useAuth = () => {
         return { success: false, isAuthenticated: false, user: null };
       }
 
-      // Check if token is expired before making API call
+      // If access token is expired, try to refresh it first
       if (authService.isTokenExpired(accessToken)) {
-        console.log('[useAuth] Token expired, logging out');
-        dispatch(logoutAction());
-        return { success: false, isAuthenticated: false, user: null };
+        console.log('[useAuth] Access token expired, attempting refresh...');
+        const newAccessToken = await authService.refreshAccessToken();
+
+        if (newAccessToken) {
+          console.log('[useAuth] Token refreshed successfully');
+          accessToken = newAccessToken;
+        } else {
+          console.log('[useAuth] Token refresh failed, logging out');
+          dispatch(logoutAction());
+          return { success: false, isAuthenticated: false, user: null };
+        }
       }
 
-      // Token exists and is not expired - fetch user profile
+      // Token exists and is valid - fetch user profile
       console.log('[useAuth] Fetching user profile with valid token');
       const userProfile = await authService.fetchUserProfile(accessToken);
 

@@ -13,12 +13,15 @@ import { selectCurrentUser } from '../../store/slices/authSlice';
 import {
   selectActiveShift,
   selectUpcomingShifts,
+  selectPastScheduledShifts,
   fetchShifts,
   startBreak,
-  endBreak
+  endBreak,
+  Shift,
 } from '../../store/slices/shiftsSlice';
 import { ActiveShiftCard, QuickActionsGrid, UpcomingShiftCard } from './components';
-import { colors, spacing, textStyles } from '../../theme';
+import { colors, spacing, textStyles, getColors } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 import { apiService, ApiTimeoutError, NetworkError, ApiError } from '../../services/api';
 import { ERROR_MESSAGES } from '../../utils/constants';
@@ -31,6 +34,15 @@ export const DashboardScreen = () => {
   const user = useAppSelector(selectCurrentUser);
   const activeShift = useAppSelector(selectActiveShift);
   const upcomingShifts = useAppSelector(selectUpcomingShifts);
+  const pastScheduledShifts = useAppSelector(selectPastScheduledShifts);
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
+
+  // Filter overdue shifts to only those that can still be checked into (haven't ended yet)
+  const overdueShifts = pastScheduledShifts.filter((shift: Shift) => {
+    const endTime = new Date(shift.end_time);
+    return endTime > new Date();
+  });
 
   // Fetch shifts when screen comes into focus
   // Using useFocusEffect instead of useEffect to prevent race conditions
@@ -240,12 +252,12 @@ export const DashboardScreen = () => {
   };
 
   return (
-    <Container scrollable safeArea={false} style={{ padding: 0 }}>
+    <Container scrollable safeArea={false} style={{ padding: 0, backgroundColor: themeColors.background.primary }}>
       {/* Header with greeting */}
       <View style={styles.header}>
         <View style={styles.greetingContainer}>
-          <Heading1 style={styles.greeting}>Hello, {user?.first_name || 'there'}! 👋</Heading1>
-          <Body color={colors.text.secondary}>
+          <Heading1 style={[styles.greeting, { color: themeColors.text.primary }]}>Hello, {user?.first_name || 'there'}! 👋</Heading1>
+          <Body color={themeColors.text.secondary}>
             {activeShift ? 'You have an active shift' : 'Ready for your next shift'}
           </Body>
         </View>
@@ -261,16 +273,16 @@ export const DashboardScreen = () => {
           />
         ) : (
           <Card variant="flat" padding="xl" style={styles.noActiveShiftCard}>
-            <Ionicons name="calendar-outline" size={48} color={colors.gray[400]} style={styles.noActiveShiftIcon} />
-            <Heading3 style={styles.noActiveShiftText}>No active shift</Heading3>
-            <Body color={colors.text.secondary}>Your next shift will appear here</Body>
+            <Ionicons name="calendar-outline" size={48} color={themeColors.gray[400]} style={styles.noActiveShiftIcon} />
+            <Heading3 style={[styles.noActiveShiftText, { color: themeColors.text.primary }]}>No active shift</Heading3>
+            <Body color={themeColors.text.secondary}>Your next shift will appear here</Body>
           </Card>
         )}
       </View>
 
       {/* Quick Actions Section */}
       <View style={styles.section}>
-        <Heading2 style={styles.sectionTitle}>Quick Actions</Heading2>
+        <Heading2 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Quick Actions</Heading2>
         <QuickActionsGrid
           onReportIncident={handleReportIncident}
           onDoChecks={handleDoChecks}
@@ -279,13 +291,30 @@ export const DashboardScreen = () => {
         />
       </View>
 
+      {/* Overdue Shifts Section - Check In Required */}
+      {overdueShifts.length > 0 && (
+        <View style={[styles.section, styles.upcomingShiftsSection]}>
+          <Heading2 style={[styles.sectionTitle, { color: themeColors.error }]}>
+            Check In Required ({overdueShifts.length})
+          </Heading2>
+          {overdueShifts.map((shift: Shift) => (
+            <UpcomingShiftCard
+              key={shift.id}
+              shift={shift}
+              onPress={() => handleShiftPress(shift)}
+              isOverdue={true}
+            />
+          ))}
+        </View>
+      )}
+
       {/* Upcoming Shifts Section */}
-      <View style={[styles.section, styles.upcomingShiftsSection]}>
-        <Heading2 style={styles.sectionTitle}>
+      <View style={[styles.section, overdueShifts.length === 0 && styles.upcomingShiftsSection]}>
+        <Heading2 style={[styles.sectionTitle, { color: themeColors.text.primary }]}>
           Upcoming Shifts ({upcomingShifts.length})
         </Heading2>
         {upcomingShifts.length > 0 ? (
-          upcomingShifts.slice(0, 3).map((shift) => (
+          upcomingShifts.slice(0, 3).map((shift: Shift) => (
             <UpcomingShiftCard
               key={shift.id}
               shift={shift}
@@ -294,7 +323,7 @@ export const DashboardScreen = () => {
           ))
         ) : (
           <Card variant="flat" padding="lg" style={styles.emptyState}>
-            <Body color={colors.text.secondary} style={styles.emptyStateText}>
+            <Body color={themeColors.text.secondary} style={styles.emptyStateText}>
               No upcoming shifts
             </Body>
           </Card>

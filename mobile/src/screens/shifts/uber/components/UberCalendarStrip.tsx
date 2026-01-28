@@ -20,7 +20,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { uberColors, uberRadius, uberSpacing } from '../../../../theme/uberTheme';
+import { getUberColors, uberRadius, uberSpacing } from '../../../../theme/uberTheme';
+import { useTheme } from '../../../../hooks/useTheme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DAY_WIDTH = (SCREEN_WIDTH - 32) / 7;
@@ -89,7 +90,8 @@ const getWeekDays = (centerDate: Date, shiftCountByDate: Map<string, number>): C
 const AnimatedDay: React.FC<{
   day: CalendarDay;
   onPress: () => void;
-}> = ({ day, onPress }) => {
+  uberColors: ReturnType<typeof getUberColors>;
+}> = ({ day, onPress, uberColors }) => {
   const scale = useSharedValue(1);
 
   const handlePress = () => {
@@ -116,7 +118,7 @@ const AnimatedDay: React.FC<{
           key={i}
           style={[
             styles.shiftDot,
-            day.isSelected && styles.shiftDotSelected,
+            { backgroundColor: day.isSelected ? uberColors.text.inverse : uberColors.primary },
           ]}
         />
       );
@@ -129,15 +131,15 @@ const AnimatedDay: React.FC<{
       <Animated.View
         style={[
           styles.dayItem,
-          day.isSelected && styles.dayItemSelected,
-          day.isToday && !day.isSelected && styles.dayItemToday,
+          day.isSelected && { backgroundColor: uberColors.primary },
+          day.isToday && !day.isSelected && { backgroundColor: uberColors.background.light },
           animatedStyle,
         ]}
       >
         <Text
           style={[
             styles.dayLabel,
-            day.isSelected && styles.dayLabelSelected,
+            { color: day.isSelected ? uberColors.text.inverse : uberColors.text.muted },
           ]}
         >
           {day.dayName}
@@ -145,8 +147,8 @@ const AnimatedDay: React.FC<{
         <Text
           style={[
             styles.dayNumber,
-            day.isSelected && styles.dayNumberSelected,
-            day.isToday && !day.isSelected && styles.dayNumberToday,
+            { color: day.isSelected ? uberColors.text.inverse : uberColors.text.primary },
+            day.isToday && !day.isSelected && { color: uberColors.primary, fontWeight: '700' },
           ]}
         >
           {day.dayNumber}
@@ -167,6 +169,8 @@ export const UberCalendarStrip: React.FC<UberCalendarStripProps> = ({
   isMonthExpanded = false,
 }) => {
   const scrollViewRef = useRef<ScrollView>(null);
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
 
   const weekDays = getWeekDays(selectedDate, shiftCountByDate);
 
@@ -190,7 +194,7 @@ export const UberCalendarStrip: React.FC<UberCalendarStripProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: uberColors.background.surface, borderBottomColor: uberColors.border.light }]}>
       {/* Month Header */}
       <View style={styles.monthHeader}>
         <TouchableOpacity onPress={goToPreviousWeek} style={styles.arrow}>
@@ -202,7 +206,7 @@ export const UberCalendarStrip: React.FC<UberCalendarStripProps> = ({
           style={styles.monthButton}
           activeOpacity={0.7}
         >
-          <Text style={styles.monthText}>{formatMonth(selectedDate)}</Text>
+          <Text style={[styles.monthText, { color: uberColors.text.primary }]}>{formatMonth(selectedDate)}</Text>
           <Ionicons
             name={isMonthExpanded ? 'chevron-up' : 'chevron-down'}
             size={18}
@@ -222,6 +226,7 @@ export const UberCalendarStrip: React.FC<UberCalendarStripProps> = ({
             key={formatDateKey(day.date)}
             day={day}
             onPress={() => onDateSelect(day.date)}
+            uberColors={uberColors}
           />
         ))}
       </View>
@@ -231,10 +236,8 @@ export const UberCalendarStrip: React.FC<UberCalendarStripProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: uberColors.background.surface,
     paddingVertical: uberSpacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: uberColors.border.light,
   },
   monthHeader: {
     flexDirection: 'row',
@@ -257,7 +260,6 @@ const styles = StyleSheet.create({
   monthText: {
     fontSize: 16,
     fontWeight: '600',
-    color: uberColors.text.primary,
   },
   daysContainer: {
     flexDirection: 'row',
@@ -271,33 +273,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: uberSpacing.xs,
     borderRadius: uberRadius.lg,
   },
-  dayItemSelected: {
-    backgroundColor: uberColors.primary,
-  },
-  dayItemToday: {
-    backgroundColor: uberColors.background.light,
-  },
   dayLabel: {
     fontSize: 11,
     fontWeight: '500',
-    color: uberColors.text.muted,
     marginBottom: uberSpacing.xs,
     textTransform: 'uppercase',
-  },
-  dayLabelSelected: {
-    color: uberColors.text.inverse,
   },
   dayNumber: {
     fontSize: 16,
     fontWeight: '600',
-    color: uberColors.text.primary,
-  },
-  dayNumberSelected: {
-    color: uberColors.text.inverse,
-  },
-  dayNumberToday: {
-    color: uberColors.primary,
-    fontWeight: '700',
   },
   dotsContainer: {
     flexDirection: 'row',
@@ -310,9 +294,5 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: uberColors.primary,
-  },
-  shiftDotSelected: {
-    backgroundColor: uberColors.text.inverse,
   },
 });

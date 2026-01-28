@@ -24,7 +24,8 @@ import { SignatureModal } from '@components/signature';
 import { VenueTermsModal } from '@components/terms';
 import { TransferShiftModal, ReleaseShiftModal } from '@components/modals';
 import { TransferDetailsCard } from '../../components/shift';
-import { colors, spacing } from '../../theme';
+import { colors, getColors, spacing } from '../../theme';
+import { useTheme } from '../../hooks/useTheme';
 import { Shift, checkInShift, checkOutShift } from '../../store/slices/shiftsSlice';
 import { useAppDispatch } from '../../hooks/useRedux';
 import { useNavigation } from '@react-navigation/native';
@@ -61,6 +62,8 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
 }) => {
   const navigation = useNavigation<NavigationProp>();
   const dispatch = useAppDispatch();
+  const { isDark } = useTheme();
+  const themeColors = getColors(isDark);
 
   // Handle both cases: full shift object OR just ID
   const [shift, setShift] = useState<Shift | null>(route.params.shift || null);
@@ -785,13 +788,13 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
   // Show loading state while fetching shift data
   if (isLoadingShift || !shift) {
     return (
-      <Container style={styles.container}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeButton}>
-          <Ionicons name="close" size={28} color={colors.text.primary} />
+      <Container style={[styles.container, { backgroundColor: themeColors.background.primary }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.closeButton, { backgroundColor: themeColors.background.secondary }]}>
+          <Ionicons name="close" size={28} color={themeColors.text.primary} />
         </TouchableOpacity>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading shift details...</Text>
+          <Text style={[styles.loadingText, { color: themeColors.text.secondary }]}>Loading shift details...</Text>
         </View>
       </Container>
     );
@@ -801,10 +804,10 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
   const statusInfo = getStatusInfo();
 
   return (
-    <Container style={styles.container}>
+    <Container style={[styles.container, { backgroundColor: themeColors.background.primary }]}>
       {/* Close Button */}
-      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeButton}>
-        <Ionicons name="close" size={28} color={colors.text.primary} />
+      <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.closeButton, { backgroundColor: themeColors.background.secondary }]}>
+        <Ionicons name="close" size={28} color={themeColors.text.primary} />
       </TouchableOpacity>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -859,58 +862,58 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
               </View>
             </TouchableOpacity>
           ) : (
-            <View style={[styles.map, styles.mapPlaceholder]}>
-              <Ionicons name="location-outline" size={64} color={colors.text.tertiary} />
-              <Text style={styles.mapPlaceholderText}>Map unavailable</Text>
+            <View style={[styles.map, styles.mapPlaceholder, { backgroundColor: themeColors.background.secondary }]}>
+              <Ionicons name="location-outline" size={64} color={themeColors.text.tertiary} />
+              <Text style={[styles.mapPlaceholderText, { color: themeColors.text.tertiary }]}>Map unavailable</Text>
             </View>
           )}
         </View>
 
         {/* Bold Venue Heading */}
-        <Text style={styles.mainHeading}>{shift.venue.name.toUpperCase()}</Text>
+        <Text style={[styles.mainHeading, { color: themeColors.text.primary }]}>{shift.venue.name.toUpperCase()}</Text>
 
         {/* Address Subtitle */}
-        <Text style={styles.subtitle}>{shift.venue.address}</Text>
+        <Text style={[styles.subtitle, { color: themeColors.text.secondary }]}>{shift.venue.address}</Text>
 
         {/* Date & Time Info */}
-        <Text style={styles.dateText}>{formatDate(shift.start_time)}</Text>
-        <Text style={styles.timeText}>
+        <Text style={[styles.dateText, { color: themeColors.text.primary }]}>{formatDate(shift.start_time)}</Text>
+        <Text style={[styles.timeText, { color: themeColors.text.secondary }]}>
           {formatTime(shift.start_time)} - {formatTime(shift.end_time)} · {calculateDuration()}
         </Text>
 
         {/* Schedule Features */}
         <View style={styles.featuresContainer}>
           <View style={styles.featureItem}>
-            <View style={styles.featureIconCircle}>
+            <View style={[styles.featureIconCircle, { backgroundColor: isDark ? '#1a2744' : '#F0F4FF' }]}>
               <Ionicons name="calendar" size={22} color="#0066FF" />
             </View>
             <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Shift Date</Text>
-              <Text style={styles.featureDescription}>
+              <Text style={[styles.featureTitle, { color: themeColors.text.primary }]}>Shift Date</Text>
+              <Text style={[styles.featureDescription, { color: themeColors.text.secondary }]}>
                 {formatDate(shift.start_time)}
               </Text>
             </View>
           </View>
 
           <View style={styles.featureItem}>
-            <View style={styles.featureIconCircle}>
+            <View style={[styles.featureIconCircle, { backgroundColor: isDark ? '#1a2744' : '#F0F4FF' }]}>
               <Ionicons name="time" size={22} color="#0066FF" />
             </View>
             <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Working Hours</Text>
-              <Text style={styles.featureDescription}>
+              <Text style={[styles.featureTitle, { color: themeColors.text.primary }]}>Working Hours</Text>
+              <Text style={[styles.featureDescription, { color: themeColors.text.secondary }]}>
                 {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
               </Text>
             </View>
           </View>
 
           <View style={styles.featureItem}>
-            <View style={styles.featureIconCircle}>
+            <View style={[styles.featureIconCircle, { backgroundColor: isDark ? '#1a2744' : '#F0F4FF' }]}>
               <MaterialCommunityIcons name="clock-time-four-outline" size={22} color="#0066FF" />
             </View>
             <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Duration</Text>
-              <Text style={styles.featureDescription}>
+              <Text style={[styles.featureTitle, { color: themeColors.text.primary }]}>Duration</Text>
+              <Text style={[styles.featureDescription, { color: themeColors.text.secondary }]}>
                 {calculateDuration()} total shift time
               </Text>
             </View>
@@ -929,7 +932,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
         {/* Team Section - Multi-staff Shifts */}
         {shift.coworkers && shift.coworkers.length > 0 && (
           <>
-            <Text style={styles.sectionHeading}>Your Team</Text>
+            <Text style={[styles.sectionHeading, { color: themeColors.text.secondary }]}>Your Team</Text>
             <View style={styles.teamContainer}>
               {shift.coworkers.map((coworker) => {
                 // Determine co-worker status
@@ -948,7 +951,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
                 }
 
                 return (
-                  <View key={coworker.id} style={styles.teamMemberCard}>
+                  <View key={coworker.id} style={[styles.teamMemberCard, { backgroundColor: themeColors.background.secondary }]}>
                     {/* Avatar */}
                     <View style={styles.teamMemberAvatar}>
                       {coworker.profile_photo ? (
@@ -957,7 +960,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
                           style={styles.teamMemberImage}
                         />
                       ) : (
-                        <View style={styles.teamMemberInitials}>
+                        <View style={[styles.teamMemberInitials, { backgroundColor: isDark ? '#1a2744' : '#E8F0FF' }]}>
                           <Text style={styles.teamMemberInitialsText}>
                             {coworker.first_name?.charAt(0)}
                             {coworker.last_name?.charAt(0)}
@@ -965,12 +968,12 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
                         </View>
                       )}
                       {/* Status indicator dot */}
-                      <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                      <View style={[styles.statusDot, { backgroundColor: statusColor, borderColor: themeColors.background.secondary }]} />
                     </View>
 
                     {/* Name and Status */}
                     <View style={styles.teamMemberInfo}>
-                      <Text style={styles.teamMemberName}>
+                      <Text style={[styles.teamMemberName, { color: themeColors.text.primary }]}>
                         {coworker.first_name} {coworker.last_name}
                       </Text>
                       <View style={styles.teamMemberStatus}>
@@ -995,16 +998,16 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
         shift.venue.requires_capacity_check ||
         shift.venue.requires_id_scan) && (
           <>
-            <Text style={styles.sectionHeading}>Required Venue Checks</Text>
+            <Text style={[styles.sectionHeading, { color: themeColors.text.secondary }]}>Required Venue Checks</Text>
             <View style={styles.checksContainer}>
               {shift.venue.requires_fire_exit_check && (
                 <View style={styles.featureItem}>
-                  <View style={styles.featureIconCircle}>
+                  <View style={[styles.featureIconCircle, { backgroundColor: isDark ? '#1a2744' : '#F0F4FF' }]}>
                     <Ionicons name="flame-outline" size={22} color="#0066FF" />
                   </View>
                   <View style={styles.featureContent}>
-                    <Text style={styles.featureTitle}>Fire Exit Check</Text>
-                    <Text style={styles.featureDescription}>
+                    <Text style={[styles.featureTitle, { color: themeColors.text.primary }]}>Fire Exit Check</Text>
+                    <Text style={[styles.featureDescription, { color: themeColors.text.secondary }]}>
                       Verify all fire exits are accessible
                     </Text>
                   </View>
@@ -1013,12 +1016,12 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
 
               {shift.venue.requires_capacity_check && (
                 <View style={styles.featureItem}>
-                  <View style={styles.featureIconCircle}>
+                  <View style={[styles.featureIconCircle, { backgroundColor: isDark ? '#1a2744' : '#F0F4FF' }]}>
                     <Ionicons name="people-outline" size={22} color="#0066FF" />
                   </View>
                   <View style={styles.featureContent}>
-                    <Text style={styles.featureTitle}>Capacity Check</Text>
-                    <Text style={styles.featureDescription}>
+                    <Text style={[styles.featureTitle, { color: themeColors.text.primary }]}>Capacity Check</Text>
+                    <Text style={[styles.featureDescription, { color: themeColors.text.secondary }]}>
                       Monitor and report venue capacity
                     </Text>
                   </View>
@@ -1027,12 +1030,12 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
 
               {shift.venue.requires_id_scan && (
                 <View style={styles.featureItem}>
-                  <View style={styles.featureIconCircle}>
+                  <View style={[styles.featureIconCircle, { backgroundColor: isDark ? '#1a2744' : '#F0F4FF' }]}>
                     <Ionicons name="card-outline" size={22} color="#0066FF" />
                   </View>
                   <View style={styles.featureContent}>
-                    <Text style={styles.featureTitle}>ID Scanning</Text>
-                    <Text style={styles.featureDescription}>
+                    <Text style={[styles.featureTitle, { color: themeColors.text.primary }]}>ID Scanning</Text>
+                    <Text style={[styles.featureDescription, { color: themeColors.text.secondary }]}>
                       Scan and verify guest identification
                     </Text>
                   </View>
@@ -1044,7 +1047,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
 
         {/* Sync Status */}
         {shift.sync_status !== 'synced' && (
-          <View style={styles.syncCard}>
+          <View style={[styles.syncCard, { backgroundColor: themeColors.background.secondary }]}>
             <View style={[styles.syncIconCircle, shift.sync_status === 'failed' && styles.syncIconError]}>
               <Ionicons
                 name={shift.sync_status === 'failed' ? 'alert-circle-outline' : 'cloud-upload-outline'}
@@ -1053,10 +1056,10 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
               />
             </View>
             <View style={styles.syncContent}>
-              <Text style={styles.syncTitle}>
+              <Text style={[styles.syncTitle, { color: themeColors.text.primary }]}>
                 {shift.sync_status === 'failed' ? 'Sync Failed' : 'Pending Sync'}
               </Text>
-              <Text style={styles.syncDescription}>
+              <Text style={[styles.syncDescription, { color: themeColors.text.secondary }]}>
                 {shift.sync_status === 'failed'
                   ? 'Will retry automatically when online'
                   : 'Waiting for internet connection'}
@@ -1070,7 +1073,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
       </ScrollView>
 
       {/* Action Buttons - Fixed at Bottom */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, { backgroundColor: themeColors.background.primary, borderTopColor: themeColors.border.light }]}>
         {/* Check-In Button - Only show when within check-in window */}
         {shift.status === 'scheduled' && canCheckIn() && (
           <Button
@@ -1089,7 +1092,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
             {/* Secondary Actions Row */}
             <View style={styles.secondaryActionsRow}>
               <TouchableOpacity
-                style={styles.secondaryActionButton}
+                style={[styles.secondaryActionButton, { backgroundColor: themeColors.background.secondary }]}
                 onPress={() => setShowTransferModal(true)}
               >
                 <Ionicons
@@ -1103,7 +1106,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.secondaryActionButton}
+                style={[styles.secondaryActionButton, { backgroundColor: themeColors.background.secondary }]}
                 onPress={() => setShowReleaseModal(true)}
               >
                 <MaterialCommunityIcons
@@ -1117,7 +1120,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.secondaryActionButton, styles.dangerAction]}
+                style={[styles.secondaryActionButton, styles.dangerAction, { backgroundColor: themeColors.background.secondary }]}
                 onPress={() => {
                   Alert.alert(
                     'Cancel Shift',
@@ -1279,7 +1282,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     padding: 0,
-    backgroundColor: colors.white,
+    // backgroundColor applied via inline style for dark mode
   },
   closeButton: {
     position: 'absolute',
@@ -1289,7 +1292,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#dededeff',
+    // backgroundColor applied via inline style for dark mode
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -1338,7 +1341,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   mapPlaceholder: {
-    backgroundColor: '#F8F9FA',
+    // backgroundColor applied via inline style for dark mode
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1458,7 +1461,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#F0F4FF',
+    // backgroundColor applied via inline style for dark mode
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1492,7 +1495,7 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#F8F9FA',
+    // backgroundColor applied via inline style for dark mode
     borderRadius: 12,
     padding: spacing.base,
     gap: spacing.base,
@@ -1526,9 +1529,8 @@ const styles = StyleSheet.create({
   // Footer
   footer: {
     padding: spacing.sm,
-    backgroundColor: colors.white,
+    // backgroundColor and borderTopColor applied via inline style for dark mode
     borderTopWidth: 1,
-    borderTopColor: colors.border.light,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.05,
@@ -1551,7 +1553,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
-    backgroundColor: colors.surface,
+    // backgroundColor applied via inline style for dark mode
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: colors.primary + '30', // 30% opacity
@@ -1586,7 +1588,7 @@ const styles = StyleSheet.create({
   teamMemberCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FA',
+    // backgroundColor applied via inline style for dark mode
     borderRadius: 12,
     padding: spacing.base,
     gap: spacing.base,
@@ -1603,7 +1605,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#E8F0FF',
+    // backgroundColor applied via inline style for dark mode
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1620,7 +1622,7 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: '#F8F9FA',
+    // borderColor applied via inline style for dark mode
   },
   teamMemberInfo: {
     flex: 1,

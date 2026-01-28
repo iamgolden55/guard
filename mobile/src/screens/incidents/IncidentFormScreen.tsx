@@ -1,6 +1,7 @@
 /**
  * IncidentFormScreen
  * Comprehensive form for creating new incident reports
+ * Uber-inspired design with full-width layout
  */
 
 import React, { useState, useEffect } from 'react';
@@ -13,13 +14,15 @@ import {
   Alert,
   Switch,
   Image,
+  Text,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { Container, Heading2, Heading3, Body, Caption, Button } from '@components/ui';
 import { CameraModal } from '../../components/camera/CameraModal';
 import { VideoPlayerModal } from '../../components/video';
-import { colors, spacing, layout } from '../../theme';
+import { getUberColors, getUberShadows, uberSpacing, uberRadius } from '../../theme/uberTheme';
+import { useTheme } from '../../hooks/useTheme';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { IncidentType, IncidentSeverity, Incident } from '../../types/incident';
 import { incidentService } from '../../services/incidentService';
@@ -37,6 +40,9 @@ export const IncidentFormScreen: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { shiftId, prefilledType, prefilledSeverity } = (route.params as RouteParams) || {};
+  const { isDark } = useTheme();
+  const uberColors = getUberColors(isDark);
+  const uberShadows = getUberShadows(isDark);
 
   // Form state
   const [incidentType, setIncidentType] = useState<IncidentType>(prefilledType || 'other');
@@ -74,21 +80,21 @@ export const IncidentFormScreen: React.FC = () => {
     getLocation();
   }, []);
 
-  const incidentTypes: { value: IncidentType; label: string }[] = [
-    { value: 'security_breach', label: 'Security Breach' },
-    { value: 'medical_emergency', label: 'Medical Emergency' },
-    { value: 'fire_alarm', label: 'Fire Alarm' },
-    { value: 'suspicious_activity', label: 'Suspicious Activity' },
-    { value: 'property_damage', label: 'Property Damage' },
-    { value: 'assault', label: 'Assault' },
-    { value: 'other', label: 'Other' },
+  const incidentTypes: { value: IncidentType; label: string; icon: string }[] = [
+    { value: 'security_breach', label: 'Security Breach', icon: 'shield-outline' },
+    { value: 'medical_emergency', label: 'Medical Emergency', icon: 'medical-outline' },
+    { value: 'fire_alarm', label: 'Fire Alarm', icon: 'flame-outline' },
+    { value: 'suspicious_activity', label: 'Suspicious Activity', icon: 'eye-outline' },
+    { value: 'property_damage', label: 'Property Damage', icon: 'hammer-outline' },
+    { value: 'assault', label: 'Assault', icon: 'alert-circle-outline' },
+    { value: 'other', label: 'Other', icon: 'ellipsis-horizontal-outline' },
   ];
 
   const severityLevels: { value: IncidentSeverity; label: string; color: string }[] = [
-    { value: 'low', label: 'Low', color: colors.success },
-    { value: 'medium', label: 'Medium', color: colors.info },
-    { value: 'high', label: 'High', color: colors.warning },
-    { value: 'critical', label: 'Critical', color: colors.error },
+    { value: 'low', label: 'Low', color: '#22C55E' },
+    { value: 'medium', label: 'Medium', color: '#F59E0B' },
+    { value: 'high', label: 'High', color: '#F97316' },
+    { value: 'critical', label: 'Critical', color: '#EF4444' },
   ];
 
   // Photo capture handlers
@@ -287,82 +293,86 @@ export const IncidentFormScreen: React.FC = () => {
     }
   };
 
-  const getSeverityColor = (sev: IncidentSeverity) => {
-    return severityLevels.find((s) => s.value === sev)?.color || colors.text.secondary;
-  };
-
   return (
-    <Container style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: uberColors.background.light }]} edges={['top']}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+      <View style={[styles.header, { backgroundColor: uberColors.background.surface, borderBottomColor: uberColors.border.light }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} activeOpacity={0.7}>
+          <Ionicons name="arrow-back" size={24} color={uberColors.text.primary} />
         </TouchableOpacity>
-        <Heading2>Report Incident</Heading2>
+        <Text style={[styles.headerTitle, { color: uberColors.text.primary }]}>Report Incident</Text>
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={[styles.scrollView, { backgroundColor: uberColors.background.light }]}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Incident Type Selection */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Incident Type *</Heading3>
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Incident Type</Text>
           <View style={styles.typeGrid}>
             {incidentTypes.map((type) => (
               <TouchableOpacity
                 key={type.value}
                 style={[
                   styles.typeButton,
-                  incidentType === type.value && styles.typeButtonSelected,
+                  { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light },
+                  uberShadows.soft,
+                  incidentType === type.value && {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                    borderColor: uberColors.primary,
+                    borderWidth: 2,
+                  },
                 ]}
                 onPress={() => setIncidentType(type.value)}
+                activeOpacity={0.7}
               >
-                <Body
+                <Ionicons
+                  name={type.icon as any}
+                  size={20}
+                  color={incidentType === type.value ? uberColors.primary : uberColors.text.secondary}
+                />
+                <Text
                   style={[
                     styles.typeButtonText,
-                    incidentType === type.value && styles.typeButtonTextSelected,
+                    { color: uberColors.text.primary },
+                    incidentType === type.value && { fontWeight: '600' },
                   ]}
                 >
                   {type.label}
-                </Body>
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
 
-        {/* Severity Selection */}
+        {/* Severity Selection - Horizontal Segmented Control */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Severity *</Heading3>
-          <View style={styles.severityRow}>
-            {severityLevels.map((sev) => (
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Severity</Text>
+          <View style={[styles.severityRow, { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light }, uberShadows.soft]}>
+            {severityLevels.map((sev, index) => (
               <TouchableOpacity
                 key={sev.value}
                 style={[
                   styles.severityButton,
-                  { borderColor: sev.color },
-                  severity === sev.value && {
-                    backgroundColor: `${sev.color}20`,
-                    borderWidth: 2,
-                  },
+                  index !== severityLevels.length - 1 && { borderRightWidth: 1, borderRightColor: uberColors.border.light },
+                  severity === sev.value && { backgroundColor: `${sev.color}15` },
                 ]}
                 onPress={() => setSeverity(sev.value)}
+                activeOpacity={0.7}
               >
-                <View
-                  style={[
-                    styles.severityIndicator,
-                    {
-                      backgroundColor:
-                        severity === sev.value ? sev.color : colors.border.light,
-                    },
-                  ]}
-                />
-                <Body
+                <View style={[styles.severityDot, { backgroundColor: sev.color }]} />
+                <Text
                   style={[
                     styles.severityText,
-                    severity === sev.value && { color: sev.color, fontWeight: '600' },
+                    { color: severity === sev.value ? sev.color : uberColors.text.secondary },
+                    severity === sev.value && { fontWeight: '600' },
                   ]}
                 >
                   {sev.label}
-                </Body>
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -370,30 +380,47 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Title */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Title *</Heading3>
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Title <Text style={styles.required}>*</Text></Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              {
+                backgroundColor: uberColors.background.surface,
+                borderColor: uberColors.border.light,
+                color: uberColors.text.primary
+              },
+              uberShadows.soft
+            ]}
             placeholder="Brief summary of incident"
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={uberColors.text.muted}
             value={title}
             onChangeText={setTitle}
             maxLength={100}
           />
-          <Caption color={colors.text.tertiary} style={styles.charCount}>
+          <Text style={[styles.charCount, { color: uberColors.text.muted }]}>
             {title.length}/100
-          </Caption>
+          </Text>
         </View>
 
         {/* Description */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Description *</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Description <Text style={styles.required}>*</Text></Text>
+          <Text style={[styles.fieldHint, { color: uberColors.text.secondary }]}>
             Describe what happened in detail
-          </Caption>
+          </Text>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            style={[
+              styles.input,
+              styles.textArea,
+              {
+                backgroundColor: uberColors.background.surface,
+                borderColor: uberColors.border.light,
+                color: uberColors.text.primary
+              },
+              uberShadows.soft
+            ]}
             placeholder="Provide detailed description of the incident..."
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={uberColors.text.muted}
             value={description}
             onChangeText={setDescription}
             multiline
@@ -404,35 +431,53 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Location Description */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Location *</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Location <Text style={styles.required}>*</Text></Text>
+          <Text style={[styles.fieldHint, { color: uberColors.text.secondary }]}>
             Where did this incident occur?
-          </Caption>
+          </Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              {
+                backgroundColor: uberColors.background.surface,
+                borderColor: uberColors.border.light,
+                color: uberColors.text.primary
+              },
+              uberShadows.soft
+            ]}
             placeholder="e.g., Main entrance, Floor 2 restroom"
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={uberColors.text.muted}
             value={locationDescription}
             onChangeText={setLocationDescription}
           />
           {currentLocation && (
-            <Caption color={colors.success} style={styles.locationNote}>
-              ✓ GPS coordinates captured ({currentLocation.latitude.toFixed(4)},{' '}
-              {currentLocation.longitude.toFixed(4)})
-            </Caption>
+            <View style={[styles.locationBadge, { backgroundColor: `${uberColors.success}15` }]}>
+              <Ionicons name="location" size={14} color={uberColors.success} />
+              <Text style={[styles.locationNote, { color: uberColors.success }]}>
+                GPS captured ({currentLocation.latitude.toFixed(4)}, {currentLocation.longitude.toFixed(4)})
+              </Text>
+            </View>
           )}
         </View>
 
         {/* Witnesses */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Witnesses</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Witnesses</Text>
+          <Text style={[styles.fieldHint, { color: uberColors.text.secondary }]}>
             Names of witnesses (comma-separated)
-          </Caption>
+          </Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              {
+                backgroundColor: uberColors.background.surface,
+                borderColor: uberColors.border.light,
+                color: uberColors.text.primary
+              },
+              uberShadows.soft
+            ]}
             placeholder="e.g., John Smith, Jane Doe"
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={uberColors.text.muted}
             value={witnesses}
             onChangeText={setWitnesses}
           />
@@ -440,14 +485,22 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Persons Involved */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Persons Involved</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Persons Involved</Text>
+          <Text style={[styles.fieldHint, { color: uberColors.text.secondary }]}>
             Names of people involved (comma-separated)
-          </Caption>
+          </Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              {
+                backgroundColor: uberColors.background.surface,
+                borderColor: uberColors.border.light,
+                color: uberColors.text.primary
+              },
+              uberShadows.soft
+            ]}
             placeholder="e.g., Suspect name, Victim name"
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={uberColors.text.muted}
             value={personsInvolved}
             onChangeText={setPersonsInvolved}
           />
@@ -455,14 +508,23 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Actions Taken */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Actions Taken</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Actions Taken</Text>
+          <Text style={[styles.fieldHint, { color: uberColors.text.secondary }]}>
             What actions did you take?
-          </Caption>
+          </Text>
           <TextInput
-            style={[styles.input, styles.textArea]}
+            style={[
+              styles.input,
+              styles.textArea,
+              {
+                backgroundColor: uberColors.background.surface,
+                borderColor: uberColors.border.light,
+                color: uberColors.text.primary
+              },
+              uberShadows.soft
+            ]}
             placeholder="Describe actions taken to resolve or manage the situation..."
-            placeholderTextColor={colors.text.tertiary}
+            placeholderTextColor={uberColors.text.muted}
             value={actionsTaken}
             onChangeText={setActionsTaken}
             multiline
@@ -473,58 +535,60 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Evidence (Photos & Videos) */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Evidence</Heading3>
-          <Caption color={colors.text.secondary} style={styles.fieldHint}>
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Evidence</Text>
+          <Text style={[styles.fieldHint, { color: uberColors.text.secondary }]}>
             Add photos or videos to support your report
-          </Caption>
+          </Text>
 
           {/* Photo Controls */}
           <View style={styles.evidenceButtons}>
             <TouchableOpacity
-              style={styles.evidenceButton}
+              style={[styles.evidenceButton, { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light }, uberShadows.soft]}
               onPress={handleCameraPhoto}
               activeOpacity={0.7}
             >
-              <Ionicons name="camera" size={24} color={colors.primary} />
-              <Body style={styles.evidenceButtonText}>Take Photo</Body>
+              <Ionicons name="camera" size={24} color={uberColors.primary} />
+              <Text style={[styles.evidenceButtonText, { color: uberColors.text.secondary }]}>Camera</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.evidenceButton}
+              style={[styles.evidenceButton, { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light }, uberShadows.soft]}
               onPress={handleGalleryPhoto}
               activeOpacity={0.7}
             >
-              <Ionicons name="images" size={24} color={colors.primary} />
-              <Body style={styles.evidenceButtonText}>From Gallery</Body>
+              <Ionicons name="images" size={24} color={uberColors.primary} />
+              <Text style={[styles.evidenceButtonText, { color: uberColors.text.secondary }]}>Gallery</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.evidenceButton}
+              style={[styles.evidenceButton, { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light }, uberShadows.soft]}
               onPress={handleCameraVideo}
               activeOpacity={0.7}
             >
-              <Ionicons name="videocam" size={24} color={colors.primary} />
-              <Body style={styles.evidenceButtonText}>Record Video</Body>
+              <Ionicons name="videocam" size={24} color={uberColors.primary} />
+              <Text style={[styles.evidenceButtonText, { color: uberColors.text.secondary }]}>Video</Text>
             </TouchableOpacity>
           </View>
 
           {/* Photo Thumbnails */}
           {photos.length > 0 && (
             <View style={styles.thumbnailContainer}>
-              <Caption color={colors.text.secondary} style={styles.thumbnailLabel}>
+              <Text style={[styles.thumbnailLabel, { color: uberColors.text.secondary }]}>
                 Photos ({photos.length})
-              </Caption>
+              </Text>
               <View style={styles.thumbnailGrid}>
                 {photos.map((photoUri, index) => (
                   <View key={photoUri} style={styles.thumbnailWrapper}>
-                    <Image source={{ uri: photoUri }} style={styles.thumbnail} />
+                    <Image source={{ uri: photoUri }} style={[styles.thumbnail, { backgroundColor: uberColors.border.light }]} />
                     <TouchableOpacity
-                      style={styles.removeButton}
+                      style={[styles.removeButton, { backgroundColor: uberColors.background.surface }]}
                       onPress={() => handleRemovePhoto(photoUri)}
                     >
-                      <Ionicons name="close-circle" size={24} color={colors.error} />
+                      <Ionicons name="close-circle" size={24} color={uberColors.error} />
                     </TouchableOpacity>
-                    <Caption style={styles.thumbnailNumber}>{index + 1}</Caption>
+                    <View style={styles.thumbnailNumberBadge}>
+                      <Text style={styles.thumbnailNumber}>{index + 1}</Text>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -534,26 +598,28 @@ export const IncidentFormScreen: React.FC = () => {
           {/* Video Thumbnails */}
           {videos.length > 0 && (
             <View style={styles.thumbnailContainer}>
-              <Caption color={colors.text.secondary} style={styles.thumbnailLabel}>
+              <Text style={[styles.thumbnailLabel, { color: uberColors.text.secondary }]}>
                 Videos ({videos.length})
-              </Caption>
+              </Text>
               <View style={styles.thumbnailGrid}>
                 {videos.map((videoUri, index) => (
                   <View key={videoUri} style={styles.thumbnailWrapper}>
                     <TouchableOpacity
-                      style={styles.videoThumbnail}
+                      style={[styles.videoThumbnail, { backgroundColor: isDark ? '#27272A' : '#374151' }]}
                       onPress={() => handlePlayVideo(videoUri)}
                       activeOpacity={0.7}
                     >
-                      <Ionicons name="play-circle" size={48} color={colors.white} />
+                      <Ionicons name="play-circle" size={48} color="#FFFFFF" />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.removeButton}
+                      style={[styles.removeButton, { backgroundColor: uberColors.background.surface }]}
                       onPress={() => handleRemoveVideo(videoUri)}
                     >
-                      <Ionicons name="close-circle" size={24} color={colors.error} />
+                      <Ionicons name="close-circle" size={24} color={uberColors.error} />
                     </TouchableOpacity>
-                    <Caption style={styles.thumbnailNumber}>{index + 1}</Caption>
+                    <View style={styles.thumbnailNumberBadge}>
+                      <Text style={styles.thumbnailNumber}>{index + 1}</Text>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -563,49 +629,65 @@ export const IncidentFormScreen: React.FC = () => {
 
         {/* Emergency Services */}
         <View style={styles.section}>
-          <Heading3 style={styles.sectionTitle}>Emergency Services</Heading3>
+          <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>Emergency Services</Text>
 
-          <View style={styles.switchRow}>
+          <View style={[styles.switchRow, { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light }, uberShadows.soft]}>
             <View style={styles.switchLabel}>
-              <Ionicons name="call" size={20} color={colors.error} />
-              <Body style={styles.switchText}>Police Notified</Body>
+              <View style={[styles.switchIcon, { backgroundColor: `${uberColors.error}15` }]}>
+                <Ionicons name="call" size={18} color={uberColors.error} />
+              </View>
+              <Text style={[styles.switchText, { color: uberColors.text.primary }]}>Police Notified</Text>
             </View>
             <Switch
               value={policeNotified}
               onValueChange={setPoliceNotified}
-              trackColor={{ false: colors.gray[300], true: colors.primary }}
-              thumbColor={policeNotified ? colors.white : colors.gray[100]}
+              trackColor={{ false: uberColors.border.medium, true: uberColors.primary }}
+              thumbColor="#FFFFFF"
             />
           </View>
 
-          <View style={styles.switchRow}>
+          <View style={[styles.switchRow, { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light }, uberShadows.soft]}>
             <View style={styles.switchLabel}>
-              <Ionicons name="medical" size={20} color={colors.error} />
-              <Body style={styles.switchText}>Ambulance Called</Body>
+              <View style={[styles.switchIcon, { backgroundColor: `${uberColors.error}15` }]}>
+                <Ionicons name="medical" size={18} color={uberColors.error} />
+              </View>
+              <Text style={[styles.switchText, { color: uberColors.text.primary }]}>Ambulance Called</Text>
             </View>
             <Switch
               value={ambulanceCalled}
               onValueChange={setAmbulanceCalled}
-              trackColor={{ false: colors.gray[300], true: colors.primary }}
-              thumbColor={ambulanceCalled ? colors.white : colors.gray[100]}
+              trackColor={{ false: uberColors.border.medium, true: uberColors.primary }}
+              thumbColor="#FFFFFF"
             />
           </View>
         </View>
 
         {/* Submit Button */}
         <View style={styles.submitSection}>
-          <Button
-            variant="primary"
-            title={isSubmitting ? 'Submitting...' : 'Submit Incident Report'}
+          <TouchableOpacity
+            style={[
+              styles.submitButton,
+              { backgroundColor: uberColors.primary },
+              isSubmitting && { opacity: 0.6 },
+            ]}
             onPress={handleSubmit}
             disabled={isSubmitting}
-            loading={isSubmitting}
-            style={styles.submitButton}
-          />
+            activeOpacity={0.8}
+          >
+            {isSubmitting ? (
+              <Text style={[styles.submitButtonText, { color: uberColors.text.inverse }]}>
+                Submitting...
+              </Text>
+            ) : (
+              <Text style={[styles.submitButtonText, { color: uberColors.text.inverse }]}>
+                Submit Incident Report
+              </Text>
+            )}
+          </TouchableOpacity>
 
-          <Caption color={colors.text.secondary} style={styles.submitNote}>
+          <Text style={[styles.submitNote, { color: uberColors.text.muted }]}>
             * Required fields
-          </Caption>
+          </Text>
         </View>
       </ScrollView>
 
@@ -628,25 +710,29 @@ export const IncidentFormScreen: React.FC = () => {
         videoUri={selectedVideo}
         onClose={() => setShowVideoPlayer(false)}
       />
-    </Container>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 0,
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: uberSpacing.lg,
+    paddingVertical: uberSpacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   backButton: {
-    padding: spacing.xs,
+    padding: uberSpacing.xs,
+    marginLeft: -uberSpacing.xs,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
   },
   headerSpacer: {
     width: 40,
@@ -655,157 +741,172 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingTop: spacing.lg,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xl * 2,
+    paddingTop: uberSpacing.lg,
+    paddingHorizontal: uberSpacing.lg,
+    paddingBottom: uberSpacing['3xl'],
   },
   section: {
-    marginBottom: spacing.xl,
+    marginBottom: uberSpacing.xl,
   },
   sectionTitle: {
-    marginBottom: spacing.sm,
     fontSize: 16,
+    fontWeight: '600',
+    marginBottom: uberSpacing.sm,
+  },
+  required: {
+    color: '#EF4444',
   },
   fieldHint: {
-    marginBottom: spacing.sm,
-    fontSize: 13,
+    fontSize: 14,
+    marginBottom: uberSpacing.sm,
   },
   typeGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
-    alignContent: 'flex-start',
+    gap: uberSpacing.sm,
   },
   typeButton: {
-    width: '48.5%',
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
-    borderRadius: layout.borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border.light,
-    backgroundColor: colors.white,
+    width: '48%',
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  typeButtonSelected: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-    backgroundColor: `${colors.primary}20`,
+    paddingVertical: uberSpacing.md,
+    paddingHorizontal: uberSpacing.md,
+    borderRadius: uberRadius.lg,
+    borderWidth: 1,
+    gap: uberSpacing.sm,
   },
   typeButtonText: {
     fontSize: 14,
-    textAlign: 'center',
-  },
-  typeButtonTextSelected: {
-    color: colors.primary,
-    fontWeight: '700',
+    flex: 1,
   },
   severityRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    borderRadius: uberRadius.lg,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   severityButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.sm,
-    borderRadius: layout.borderRadius.md,
-    borderWidth: 1,
-    backgroundColor: colors.white,
+    justifyContent: 'center',
+    paddingVertical: uberSpacing.md,
+    gap: uberSpacing.xs,
   },
-  severityIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: spacing.xs,
+  severityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   severityText: {
     fontSize: 13,
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.border.light,
-    borderRadius: layout.borderRadius.md,
-    padding: spacing.base,
-    fontSize: 15,
-    color: colors.text.primary,
-    backgroundColor: colors.white,
+    borderRadius: uberRadius.lg,
+    paddingHorizontal: uberSpacing.base,
+    paddingVertical: uberSpacing.md,
+    fontSize: 16,
   },
   textArea: {
     minHeight: 120,
-    paddingTop: spacing.base,
+    paddingTop: uberSpacing.md,
   },
   charCount: {
     textAlign: 'right',
-    marginTop: spacing.xs,
+    marginTop: uberSpacing.xs,
     fontSize: 12,
   },
+  locationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: uberSpacing.xs,
+    marginTop: uberSpacing.sm,
+    paddingVertical: uberSpacing.xs,
+    paddingHorizontal: uberSpacing.sm,
+    borderRadius: uberRadius.default,
+    alignSelf: 'flex-start',
+  },
   locationNote: {
-    marginTop: spacing.xs,
     fontSize: 12,
+    fontWeight: '500',
   },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.base,
-    backgroundColor: colors.background.secondary,
-    borderRadius: layout.borderRadius.md,
-    marginBottom: spacing.sm,
+    paddingVertical: uberSpacing.md,
+    paddingHorizontal: uberSpacing.base,
+    borderRadius: uberRadius.lg,
+    borderWidth: 1,
+    marginBottom: uberSpacing.sm,
   },
   switchLabel: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: uberSpacing.sm,
+  },
+  switchIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   switchText: {
     fontSize: 15,
     fontWeight: '500',
   },
   submitSection: {
-    marginTop: spacing.lg,
+    marginTop: uberSpacing.lg,
+    paddingBottom: uberSpacing.xl,
   },
   submitButton: {
-    marginBottom: spacing.sm,
+    paddingVertical: uberSpacing.base,
+    borderRadius: uberRadius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   submitNote: {
     textAlign: 'center',
     fontSize: 12,
+    marginTop: uberSpacing.sm,
   },
   evidenceButtons: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+    gap: uberSpacing.sm,
+    marginBottom: uberSpacing.md,
   },
   evidenceButton: {
     flex: 1,
     flexDirection: 'column',
     alignItems: 'center',
-    paddingVertical: spacing.base,
-    paddingHorizontal: spacing.xs,
-    borderRadius: layout.borderRadius.md,
+    paddingVertical: uberSpacing.md,
+    paddingHorizontal: uberSpacing.xs,
+    borderRadius: uberRadius.lg,
     borderWidth: 1,
-    borderColor: colors.border.light,
-    backgroundColor: colors.white,
-    gap: spacing.xs,
+    gap: uberSpacing.xs,
   },
   evidenceButtonText: {
     fontSize: 12,
-    textAlign: 'center',
-    color: colors.text.secondary,
+    fontWeight: '500',
   },
   thumbnailContainer: {
-    marginTop: spacing.md,
+    marginTop: uberSpacing.md,
   },
   thumbnailLabel: {
-    marginBottom: spacing.sm,
     fontSize: 13,
     fontWeight: '600',
+    marginBottom: uberSpacing.sm,
   },
   thumbnailGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: uberSpacing.sm,
   },
   thumbnailWrapper: {
     position: 'relative',
@@ -815,14 +916,12 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: '100%',
     height: '100%',
-    borderRadius: layout.borderRadius.md,
-    backgroundColor: colors.gray[200],
+    borderRadius: uberRadius.md,
   },
   videoThumbnail: {
     width: '100%',
     height: '100%',
-    borderRadius: layout.borderRadius.md,
-    backgroundColor: colors.gray[700],
+    borderRadius: uberRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -830,23 +929,24 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -8,
     right: -8,
-    backgroundColor: colors.white,
     borderRadius: 12,
-    shadowColor: colors.black,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  thumbnailNumber: {
+  thumbnailNumberBadge: {
     position: 'absolute',
     bottom: 4,
     left: 4,
-    backgroundColor: colors.black,
-    color: colors.white,
+    backgroundColor: '#000000',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+  },
+  thumbnailNumber: {
+    color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '600',
   },

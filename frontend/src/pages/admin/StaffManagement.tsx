@@ -35,7 +35,8 @@ import {
   Label,
   Persona,
   PersonaSize,
-  ActionButton
+  ActionButton,
+  TooltipHost
 } from '@fluentui/react';
 import { useNavigate } from 'react-router-dom';
 import { MainLayout } from '../../layouts';
@@ -176,8 +177,8 @@ const StaffManagement: React.FC = () => {
     {
       key: 'fullName',
       name: 'Name',
-      minWidth: 150,
-      maxWidth: 200,
+      minWidth: 120,
+      maxWidth: 150,
       isResizable: true,
       onRender: (item: Staff) => <Text>{`${item.firstName} ${item.lastName}`}</Text>,
     },
@@ -185,8 +186,8 @@ const StaffManagement: React.FC = () => {
       key: 'email',
       name: 'Email',
       fieldName: 'email',
-      minWidth: 200,
-      maxWidth: 300,
+      minWidth: 150,
+      maxWidth: 200,
       isResizable: true,
     },
     {
@@ -256,90 +257,9 @@ const StaffManagement: React.FC = () => {
         </div>
       ),
     },
-    {
-      key: 'securityRoles',
-      name: 'Security Roles',
-      minWidth: 150,
-      maxWidth: 200,
-      isResizable: true,
-      onRender: (item: any) => {
-        const roles = item.securityRoles || item.security_roles || [];
-        const roleLabels: { [key: string]: string } = {
-          'ds': 'Door Supervisor',
-          'sg': 'Security Guard',
-          'cctv': 'CCTV Operator',
-          'cp': 'Close Protection',
-          'steward': 'Steward',
-          'k9': 'Dog Handler',
-          'retail': 'Retail Security',
-          'static': 'Static Guard',
-          'mobile': 'Mobile Patrol',
-          'event': 'Event Security'
-        };
-        return (
-          <Stack>
-            {roles.length > 0 ? (
-              roles.map((role: string, index: number) => (
-                <Text key={index} variant="small">
-                  {roleLabels[role] || role}
-                </Text>
-              ))
-            ) : (
-              <Text variant="small" style={{ color: '#9CA3AF' }}>No roles</Text>
-            )}
-          </Stack>
-        );
-      },
-    },
-    {
-      key: 'siaLicenses',
-      name: 'SIA Licenses',
-      minWidth: 120,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: any) => {
-        const licenses = item.siaLicenses || item.sia_licenses || [];
-        return (
-          <Stack>
-            <Text variant="small">
-              {licenses.length > 0 ? `${licenses.length} license${licenses.length !== 1 ? 's' : ''}` : 'No licenses'}
-            </Text>
-            {licenses.length > 0 && (
-              <Text variant="small" style={{ color: '#10B981' }}>
-                ✓ Submitted
-              </Text>
-            )}
-          </Stack>
-        );
-      },
-    },
-    {
-      key: 'approvalStatus',
-      name: 'Approval',
-      minWidth: 100,
-      maxWidth: 120,
-      isResizable: true,
-      onRender: (item: any) => {
-        const isApproved = item.isApproved ?? item.is_approved ?? false;
-        return (
-          <div
-            style={{
-              backgroundColor: isApproved ? '#10B981' : '#F59E0B',
-              color: 'white',
-              padding: '4px 8px',
-              borderRadius: '12px',
-              display: 'inline-block',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              textTransform: 'uppercase',
-              textAlign: 'center'
-            }}
-          >
-            {isApproved ? 'Approved' : 'Pending'}
-          </div>
-        );
-      },
-    },
+
+
+
     {
       key: 'dateJoined',
       name: 'Date Joined',
@@ -349,38 +269,43 @@ const StaffManagement: React.FC = () => {
       isResizable: true,
       onRender: (item: Staff) => <Text>{new Date(item.dateJoined).toLocaleDateString()}</Text>,
     },
-    {
-      key: 'lastLogin',
-      name: 'Last Login',
-      fieldName: 'lastLogin',
-      minWidth: 120,
-      maxWidth: 120,
-      isResizable: true,
-      onRender: (item: Staff) => <Text>{item.lastLogin ? new Date(item.lastLogin).toLocaleDateString() : '-'}</Text>,
-    },
+
     {
       key: 'actions',
       name: 'Actions',
-      minWidth: 150,
-      maxWidth: 150,
+      minWidth: 450,
+      maxWidth: 500,
       isResizable: true,
       onRender: (item: Staff) => (
         <Stack horizontal tokens={{ childrenGap: 8 }}>
-          <Link onClick={() => handleViewStaffDetails(item)}>
-            View Details
-          </Link>
-          <Link onClick={() => handleEditStaff(item)}>
-            Edit
-          </Link>
-          <Link onClick={() => handleAssignEmploymentType(item)}>
-            {item.employmentType ? 'Change Type' : 'Assign Type'}
-          </Link>
-          <Link onClick={() => handleToggleStatus(item)}>
-            {item.isActive ? 'Deactivate' : 'Activate'}
-          </Link>
-          <Link onClick={() => handleDeleteStaff(item)}>
-            Delete
-          </Link>
+          <ActionButton
+            iconProps={{ iconName: 'View' }}
+            onClick={() => handleViewStaffDetails(item)}
+            text="Details"
+          />
+          <ActionButton
+            iconProps={{ iconName: 'Edit' }}
+            onClick={() => handleEditStaff(item)}
+            text="Edit"
+          />
+          <ActionButton
+            iconProps={{ iconName: 'Work' }}
+            onClick={() => handleAssignEmploymentType(item)}
+            styles={{ root: { color: item.employmentType ? undefined : '#F59E0B' } }}
+            text={item.employmentType ? 'Change Type' : 'Assign Type'}
+          />
+          <ActionButton
+            iconProps={{ iconName: item.isActive ? 'BlockContact' : 'Contact' }}
+            onClick={() => handleToggleStatus(item)}
+            styles={{ root: { color: item.isActive ? '#EF4444' : '#10B981' } }}
+            text={item.isActive ? 'Deactivate' : 'Activate'}
+          />
+          <ActionButton
+            iconProps={{ iconName: 'Delete' }}
+            onClick={() => handleDeleteStaff(item)}
+            styles={{ rootHovered: { color: '#EF4444' } }}
+            text="Delete"
+          />
         </Stack>
       ),
     },
@@ -413,20 +338,20 @@ const StaffManagement: React.FC = () => {
           return [];
         })
       ]);
-      
+
       console.log('API Response:', usersResponse.data);
-      
+
       // Handle paginated response - extract results array
       const employmentTypesArray = Array.isArray(employmentTypesResponse) ? employmentTypesResponse : (employmentTypesResponse?.results || []);
-      
+
       setEmploymentTypes(employmentTypesArray);
-      
+
       // For each user, fetch their profile to get employment type
       const staffWithProfiles = await Promise.all(
         usersResponse.data.map(async (user) => {
           let employmentType: EmploymentType | null = null;
           let phone = '';
-          
+
           try {
             // Sprint 3: Use /api/v1/ prefix for cookie authentication
             const profileResponse = await api.get(`/api/v1/staff-profiles/?user=${user.id}`);
@@ -434,7 +359,7 @@ const StaffManagement: React.FC = () => {
             if (profileData && profileData.length > 0) {
               const profile = profileData[0];
               phone = profile.phone_number || '';
-              
+
               // Find employment type if it exists
               if (profile.employment_type_details) {
                 employmentType = profile.employment_type_details;
@@ -444,7 +369,7 @@ const StaffManagement: React.FC = () => {
             // Profile doesn't exist or error fetching it, that's OK
             console.warn(`No profile found for user ${user.id}:`, profileError);
           }
-          
+
           return {
             id: user.id,
             firstName: user.first_name || '',
@@ -459,7 +384,7 @@ const StaffManagement: React.FC = () => {
           };
         })
       );
-      
+
       setStaffList(staffWithProfiles);
     } catch (err) {
       console.error('API Error:', err);
@@ -472,10 +397,10 @@ const StaffManagement: React.FC = () => {
   const loadPendingStaff = useCallback(async () => {
     setPendingLoading(true);
     profileService.getPendingStaffProfiles()
-      .then(data => {
+      .then((data: any) => {
         console.log('Received pending staff data:', data);
         let pendingStaffData = [];
-        
+
         if (data && Array.isArray(data.results)) {
           pendingStaffData = data.results;
         } else if (Array.isArray(data)) { // Fallback if API doesn't paginate
@@ -487,17 +412,17 @@ const StaffManagement: React.FC = () => {
           setPendingLoading(false);
           return;
         }
-        
+
         // Additional frontend filter: only include staff with SIA licenses
-        const filteredPendingStaff = pendingStaffData.filter((staff: StaffProfileDetail) => 
-          staff.sia_licenses && 
+        const filteredPendingStaff = pendingStaffData.filter((staff: StaffProfileDetail) =>
+          staff.sia_licenses &&
           staff.sia_licenses.length > 0 &&
           !staff.is_approved
         );
-        
+
         console.log('Original pending staff count:', pendingStaffData.length);
         console.log('Filtered pending staff count:', filteredPendingStaff.length);
-        
+
         setPendingStaff(filteredPendingStaff);
         setPendingError(null);
       })
@@ -543,7 +468,7 @@ const StaffManagement: React.FC = () => {
 
     // Apply status filter
     if (statusFilter) {
-      filtered = filtered.filter(staff => 
+      filtered = filtered.filter(staff =>
         (statusFilter === 'active' && staff.isActive) ||
         (statusFilter === 'inactive' && !staff.isActive)
       );
@@ -573,12 +498,12 @@ const StaffManagement: React.FC = () => {
   const handleToggleStatus = useCallback(async (staff: Staff) => {
     try {
       console.log('Toggling status for staff ID:', staff.id, 'Current status:', staff.isActive);
-      
+
       // Call the API to update the user's active status
       await api.patch(`/users/${staff.id}/`, {
         is_active: !staff.isActive
       });
-      
+
       try {
         // If API call was successful, update the local state
         const updatedStaff = staffList.map(s =>
@@ -586,7 +511,7 @@ const StaffManagement: React.FC = () => {
         );
         setStaffList(updatedStaff);
         setFilteredStaff(updatedStaff);
-        
+
         // Show success message
         setError(null);
       } catch (stateError) {
@@ -608,12 +533,12 @@ const StaffManagement: React.FC = () => {
   const handleViewStaffDetails = useCallback(async (staff: Staff) => {
     setDetailsLoading(true);
     setShowDetailsPanel(true);
-    
+
     try {
       // Fetch detailed staff profile information
       const response = await api.get(`/staff-profiles/?user=${staff.id}`);
       const profileData = response.data.results?.[0] || response.data[0];
-      
+
       if (profileData) {
         setDetailedStaff(profileData);
       } else {
@@ -644,7 +569,7 @@ const StaffManagement: React.FC = () => {
       await api.patch(`/sia-licenses/${licenseId}/`, {
         status: 'valid'
       });
-      
+
       // Refresh the detailed staff data
       if (detailedStaff) {
         const updatedLicenses = detailedStaff.sia_licenses.map((license: any) =>
@@ -655,7 +580,7 @@ const StaffManagement: React.FC = () => {
           sia_licenses: updatedLicenses
         });
       }
-      
+
       // Show success message
       alert('SIA License approved successfully!');
     } catch (error) {
@@ -666,14 +591,14 @@ const StaffManagement: React.FC = () => {
 
   const handleRejectLicense = useCallback(async (licenseId: number) => {
     const confirmed = window.confirm('Are you sure you want to mark this license as expired? This will prevent the staff member from working until they provide a valid license.');
-    
+
     if (!confirmed) return;
-    
+
     try {
       await api.patch(`/sia-licenses/${licenseId}/`, {
         status: 'expired'
       });
-      
+
       // Refresh the detailed staff data
       if (detailedStaff) {
         const updatedLicenses = detailedStaff.sia_licenses.map((license: any) =>
@@ -684,7 +609,7 @@ const StaffManagement: React.FC = () => {
           sia_licenses: updatedLicenses
         });
       }
-      
+
       // Show success message
       alert('SIA License marked as expired.');
     } catch (error) {
@@ -701,7 +626,7 @@ const StaffManagement: React.FC = () => {
 
       // Call the API to delete the user
       await api.delete(`/api/v1/users/${selectedStaff.id}/`);
-      
+
       try {
         // If API call was successful, update the local state
         const updatedStaff = staffList.filter(s => s.id !== selectedStaff.id);
@@ -709,7 +634,7 @@ const StaffManagement: React.FC = () => {
         setFilteredStaff(filteredStaff.filter(s => s.id !== selectedStaff.id));
         setShowDeleteDialog(false);
         setSelectedStaff(null);
-        
+
         // Show success message
         setError(null);
       } catch (stateError) {
@@ -754,14 +679,14 @@ const StaffManagement: React.FC = () => {
         role: formData.role.toLowerCase(), // Backend expects lowercase roles
         is_active: formData.isActive
       };
-      
+
       console.log('Submitting new staff data:', userData);
-      
+
       // Call the API to create a new user
       const response = await api.post('/users/', userData);
-      
+
       console.log('API response for new staff:', response.data);
-      
+
       try {
         // Map the response to our Staff interface
         const newStaff: Staff = {
@@ -780,13 +705,13 @@ const StaffManagement: React.FC = () => {
         const updatedStaff = [...staffList, newStaff];
         setStaffList(updatedStaff);
         setFilteredStaff(updatedStaff); // Make sure filtered list is also updated
-        
+
         // Close the panel
         setShowAddStaffPanel(false);
-        
+
         // Show success message
         setError(null);
-        
+
         // Force refresh page to prevent blank screen issue
         // This is a temporary workaround - ideally, the state updates above would be sufficient
         window.location.reload();
@@ -815,31 +740,31 @@ const StaffManagement: React.FC = () => {
         role: formData.role.toLowerCase(), // Backend expects lowercase roles
         is_active: formData.isActive
       };
-      
+
       console.log('Updating staff data for ID:', selectedStaff.id, userData);
-      
+
       // Call the API to update the user
       await api.patch(`/users/${selectedStaff.id}/`, userData);
-      
+
       try {
         // If API call was successful, update the local state
         const updatedStaff = staffList.map(s =>
           s.id === selectedStaff.id
             ? {
-                ...s,
-                firstName: formData.firstName,
-                lastName: formData.lastName,
-                email: formData.email,
-                phone: formData.phone || '',
-                role: formData.role,
-                isActive: formData.isActive,
-                address: {
-                  street: formData.street,
-                  city: formData.city,
-                  postalCode: formData.postalCode,
-                  country: formData.country,
-                }
+              ...s,
+              firstName: formData.firstName,
+              lastName: formData.lastName,
+              email: formData.email,
+              phone: formData.phone || '',
+              role: formData.role,
+              isActive: formData.isActive,
+              address: {
+                street: formData.street,
+                city: formData.city,
+                postalCode: formData.postalCode,
+                country: formData.country,
               }
+            }
             : s
         );
 
@@ -847,7 +772,7 @@ const StaffManagement: React.FC = () => {
         setFilteredStaff(updatedStaff); // Make sure filtered list is also updated
         setShowEditStaffPanel(false);
         setSelectedStaff(null);
-        
+
         // Show success message
         setError(null);
       } catch (stateError) {
@@ -918,7 +843,7 @@ const StaffManagement: React.FC = () => {
 
   const handleSubmitEmploymentTypeAssignment = useCallback(async () => {
     if (!selectedStaff || selectedEmploymentType === null) return;
-    
+
     setAssignmentLoading(true);
     try {
       // First, get the staff profile ID for this user
@@ -933,24 +858,24 @@ const StaffManagement: React.FC = () => {
       await api.patch(`/api/v1/staff-profiles/${staffProfile.id}/`, {
         employmentType: selectedEmploymentType
       });
-      
+
       // Update the local state
       const updatedStaff = staffList.map(staff =>
         staff.id === selectedStaff.id
           ? {
-              ...staff,
-              employmentType: employmentTypes.find(et => et.id === selectedEmploymentType) || null
-            }
+            ...staff,
+            employmentType: employmentTypes.find(et => et.id === selectedEmploymentType) || null
+          }
           : staff
       );
       setStaffList(updatedStaff);
       setFilteredStaff(updatedStaff);
-      
+
       // Close the panel
       setShowAssignEmploymentTypePanel(false);
       setSelectedStaff(null);
       setSelectedEmploymentType(null);
-      
+
       // Clear any errors
       setError(null);
     } catch (err) {
@@ -1042,8 +967,8 @@ const StaffManagement: React.FC = () => {
   // Validate form
   const isFormValid = () => {
     return formData.firstName.trim() !== '' &&
-           formData.lastName.trim() !== '' &&
-           formData.email.trim() !== '';
+      formData.lastName.trim() !== '' &&
+      formData.email.trim() !== '';
     // Phone is now optional
   };
 
@@ -1632,8 +1557,8 @@ const StaffManagement: React.FC = () => {
                         <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Status:</Text>
                         <div
                           style={{
-                            backgroundColor: license.status === 'valid' ? '#10B981' : 
-                                           license.status === 'expired' ? '#EF4444' : '#F59E0B',
+                            backgroundColor: license.status === 'valid' ? '#10B981' :
+                              license.status === 'expired' ? '#EF4444' : '#F59E0B',
                             color: 'white',
                             padding: '2px 8px',
                             borderRadius: '12px',
@@ -1689,38 +1614,38 @@ const StaffManagement: React.FC = () => {
             </Stack>
 
             {/* Personal Details */}
-            {(detailedStaff.date_of_birth || detailedStaff.national_insurance_number || 
+            {(detailedStaff.date_of_birth || detailedStaff.national_insurance_number ||
               detailedStaff.street || detailedStaff.city) && (
-              <Stack tokens={{ childrenGap: 10 }}>
-                <Text variant="large" style={{ fontWeight: 'bold', color: '#0078d4' }}>
-                  Personal Details
-                </Text>
-                <Stack tokens={{ childrenGap: 8 }}>
-                  {detailedStaff.date_of_birth && (
-                    <Stack horizontal>
-                      <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Date of Birth:</Text>
-                      <Text>{detailedStaff.date_of_birth}</Text>
-                    </Stack>
-                  )}
-                  {detailedStaff.national_insurance_number && (
-                    <Stack horizontal>
-                      <Text style={{ minWidth: 120, fontWeight: 'bold' }}>NI Number:</Text>
-                      <Text>{detailedStaff.national_insurance_number}</Text>
-                    </Stack>
-                  )}
-                  {(detailedStaff.street || detailedStaff.city) && (
-                    <Stack horizontal>
-                      <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Address:</Text>
-                      <Text>
-                        {[detailedStaff.street, detailedStaff.city, detailedStaff.postal_code, detailedStaff.country]
-                          .filter(Boolean)
-                          .join(', ')}
-                      </Text>
-                    </Stack>
-                  )}
+                <Stack tokens={{ childrenGap: 10 }}>
+                  <Text variant="large" style={{ fontWeight: 'bold', color: '#0078d4' }}>
+                    Personal Details
+                  </Text>
+                  <Stack tokens={{ childrenGap: 8 }}>
+                    {detailedStaff.date_of_birth && (
+                      <Stack horizontal>
+                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Date of Birth:</Text>
+                        <Text>{detailedStaff.date_of_birth}</Text>
+                      </Stack>
+                    )}
+                    {detailedStaff.national_insurance_number && (
+                      <Stack horizontal>
+                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>NI Number:</Text>
+                        <Text>{detailedStaff.national_insurance_number}</Text>
+                      </Stack>
+                    )}
+                    {(detailedStaff.street || detailedStaff.city) && (
+                      <Stack horizontal>
+                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Address:</Text>
+                        <Text>
+                          {[detailedStaff.street, detailedStaff.city, detailedStaff.postal_code, detailedStaff.country]
+                            .filter(Boolean)
+                            .join(', ')}
+                        </Text>
+                      </Stack>
+                    )}
+                  </Stack>
                 </Stack>
-              </Stack>
-            )}
+              )}
           </Stack>
         ) : (
           <Text>Unable to load staff details</Text>
@@ -1752,7 +1677,7 @@ const StaffManagement: React.FC = () => {
               />
             </Stack>
           )}
-          
+
           <Stack tokens={{ childrenGap: 10 }}>
             <Label required>Employment Type</Label>
             <Dropdown
@@ -1773,7 +1698,7 @@ const StaffManagement: React.FC = () => {
               </Text>
             )}
           </Stack>
-          
+
           <Stack horizontal tokens={{ childrenGap: 10 }} horizontalAlign="end" style={{ marginTop: 20 }}>
             <DefaultButton
               text="Cancel"
@@ -1789,7 +1714,7 @@ const StaffManagement: React.FC = () => {
               disabled={!selectedEmploymentType || assignmentLoading}
             />
           </Stack>
-          
+
           {assignmentLoading && (
             <Spinner label="Assigning employment type..." />
           )}
