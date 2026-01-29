@@ -37,6 +37,23 @@ import {
   PivotItem,
   ICheckboxProps
 } from '@fluentui/react';
+import {
+  Add24Regular,
+  CalendarAgenda24Regular,
+  Copy24Regular,
+  Send24Regular,
+  Save24Regular,
+  Dismiss24Regular,
+  CheckboxMultiple24Regular,
+  Filter24Regular,
+  SelectAllOn24Regular,
+  SelectAllOff24Regular,
+  Delete24Regular,
+  Calendar24Regular,
+  FilterDismiss24Regular,
+  ChevronLeft24Regular,
+  ChevronRight24Regular
+} from '@fluentui/react-icons';
 import { MainLayout } from '../../layouts';
 import { Card } from '../../components';
 // import { BulkShiftModal } from '../../components/BulkShiftModal';
@@ -1567,43 +1584,43 @@ const ShiftScheduling: React.FC = () => {
     {
       key: 'newShift',
       text: 'New Shift',
-      iconProps: { iconName: 'Add' },
+      onRenderIcon: () => <Add24Regular />,
       onClick: () => handleNewShift(new Date())
     },
     {
       key: 'bulkCreateShifts',
       text: 'Bulk Create',
-      iconProps: { iconName: 'CalendarAgenda' },
+      onRenderIcon: () => <CalendarAgenda24Regular />,
       onClick: handleOpenBulkShiftDialog
     },
     {
       key: 'copyShifts',
       text: 'Copy Shifts',
-      iconProps: { iconName: 'Copy' },
+      onRenderIcon: () => <Copy24Regular />,
       onClick: handleOpenCopyShiftsDialog
     },
     {
       key: 'publishShifts',
       text: 'Publish Schedule',
-      iconProps: { iconName: 'PublishContent' },
+      onRenderIcon: () => <Send24Regular />,
       onClick: handlePublishShifts
     },
     {
       key: 'saveAsTemplate',
       text: 'Save as Template',
-      iconProps: { iconName: 'Save' },
+      onRenderIcon: () => <Save24Regular />,
       onClick: () => setIsTemplateDialogOpen(true)
     },
     {
       key: 'selectShifts',
       text: isSelectionMode ? 'Exit Selection' : 'Select Shifts',
-      iconProps: { iconName: isSelectionMode ? 'Cancel' : 'MultiSelect' },
+      onRenderIcon: () => isSelectionMode ? <Dismiss24Regular /> : <CheckboxMultiple24Regular />,
       onClick: toggleSelectionMode
     },
     {
       key: 'filter',
       text: 'Filter',
-      iconProps: { iconName: 'Filter' },
+      onRenderIcon: () => <Filter24Regular />,
       subMenuProps: {
         items: [
           {
@@ -1634,21 +1651,21 @@ const ShiftScheduling: React.FC = () => {
     {
       key: 'selectAll',
       text: 'Select All',
-      iconProps: { iconName: 'SelectAll' },
+      onRenderIcon: () => <SelectAllOn24Regular />,
       onClick: selectAllShifts,
       disabled: shifts.length === 0
     },
     {
       key: 'clearSelection',
       text: 'Clear Selection',
-      iconProps: { iconName: 'ClearSelection' },
+      onRenderIcon: () => <SelectAllOff24Regular />,
       onClick: clearAllSelections,
       disabled: selectedShifts.size === 0
     },
     {
       key: 'bulkDelete',
       text: `Delete (${selectedShifts.size})`,
-      iconProps: { iconName: 'Delete' },
+      onRenderIcon: () => <Delete24Regular />,
       onClick: handleBulkDelete,
       disabled: selectedShifts.size === 0
     }
@@ -1658,7 +1675,7 @@ const ShiftScheduling: React.FC = () => {
   const exitSelectionButton: ICommandBarItemProps = {
     key: 'exitSelection',
     text: 'Exit Selection',
-    iconProps: { iconName: 'Cancel' },
+    onRenderIcon: () => <Dismiss24Regular />,
     onClick: toggleSelectionMode
   };
 
@@ -1884,8 +1901,8 @@ const ShiftScheduling: React.FC = () => {
             </h2>
           </div>
           <div className={styles.navigationButtons}>
-            <button className={styles.navButton} onClick={handlePrevMonth}>
-              <i className="ms-Icon ms-Icon--ChevronLeft" style={{ marginRight: '4px' }} />
+            <button className={styles.navButton} onClick={handlePrevMonth} style={{ display: 'flex', alignItems: 'center' }}>
+              <ChevronLeft24Regular style={{ marginRight: '4px', width: 16, height: 16 }} />
               Previous
             </button>
             <button className={`${styles.navButton} ${styles.todayButton}`} onClick={handleToday}>
@@ -1894,7 +1911,7 @@ const ShiftScheduling: React.FC = () => {
             <DefaultButton
               text="Select Month"
               onClick={handleOpenMonthPicker}
-              iconProps={{ iconName: 'Calendar' }}
+              onRenderIcon={() => <Calendar24Regular />}
               split
               menuProps={{
                 items: generateMonthOptions().map(option => ({
@@ -1915,9 +1932,9 @@ const ShiftScheduling: React.FC = () => {
                 }
               }}
             />
-            <button className={styles.navButton} onClick={handleNextMonth}>
+            <button className={styles.navButton} onClick={handleNextMonth} style={{ display: 'flex', alignItems: 'center' }}>
               Next
-              <i className="ms-Icon ms-Icon--ChevronRight" style={{ marginLeft: '4px' }} />
+              <ChevronRight24Regular style={{ marginLeft: '4px', width: 16, height: 16 }} />
             </button>
           </div>
         </div>
@@ -1975,7 +1992,7 @@ const ShiftScheduling: React.FC = () => {
           {(venueFilter || staffFilter) && (
             <DefaultButton
               text="Clear Filters"
-              iconProps={{ iconName: 'ClearFilter' }}
+              onRenderIcon={() => <FilterDismiss24Regular />}
               onClick={() => {
                 setVenueFilter(null);
                 setStaffFilter(null);
@@ -2121,7 +2138,7 @@ const ShiftScheduling: React.FC = () => {
                           {/* Quick delete button - hide in selection mode */}
                           {!isSelectionMode && (
                             <IconButton
-                              iconProps={{ iconName: 'Delete' }}
+                              onRenderIcon={() => <Delete24Regular style={{ fontSize: '10px', color: '#ef4444' }} />}
                               title="Delete shift"
                               styles={{
                                 root: {
@@ -2136,10 +2153,6 @@ const ShiftScheduling: React.FC = () => {
                                   opacity: 0,
                                   transition: 'opacity 0.2s ease',
                                   zIndex: 10
-                                },
-                                icon: {
-                                  fontSize: '10px',
-                                  color: '#ef4444'
                                 }
                               }}
                               className="shift-delete-btn"
@@ -2420,7 +2433,7 @@ const ShiftScheduling: React.FC = () => {
           <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }} styles={{ root: { marginTop: 20 } }}>
             <DefaultButton
               text="Delete"
-              iconProps={{ iconName: 'Delete' }}
+              onRenderIcon={() => <Delete24Regular />}
               onClick={() => setIsConfirmDialogOpen(true)}
             />
             <DefaultButton text="Cancel" onClick={() => setIsEditShiftDialogOpen(false)} />

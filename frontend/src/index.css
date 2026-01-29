@@ -230,7 +230,7 @@ html, body {
 .ms-Nav-link > .ms-Icon,
 .ms-Nav-compositeLink i,
 .ms-Nav-compositeLink .ms-Icon,
-.ms-Button-icon {
+.ms-Nav .ms-Button-icon {
   display: none !important;
   width: 0 !important;
   height: 0 !important;

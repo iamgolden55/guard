@@ -34,6 +34,18 @@ import {
   CheckboxVisibility,
   IconButton
 } from '@fluentui/react';
+import {
+  Copy24Regular,
+  Open24Regular,
+  ArrowClockwise24Regular,
+  ArrowDownload24Regular,
+  Eye24Regular,
+  Checkmark24Regular,
+  Dismiss24Regular,
+  PersonAdd24Regular,
+  Clock24Regular,
+  SearchVisual24Regular
+} from '@fluentui/react-icons';
 import { MainLayout } from '../../layouts';
 import { recruitmentService, RecruitmentApplication, ApplicationFilters } from '../../services/recruitmentService';
 import { employmentTypeService, EmploymentType } from '../../services/employmentTypeService';
@@ -361,13 +373,13 @@ const RecruitmentManagement: React.FC = () => {
     {
       key: 'refresh',
       text: 'Refresh',
-      iconProps: { iconName: 'Refresh' },
+      onRenderIcon: () => <ArrowClockwise24Regular />,
       onClick: loadData
     },
     {
       key: 'export',
       text: 'Export',
-      iconProps: { iconName: 'Download' },
+      onRenderIcon: () => <ArrowDownload24Regular />,
       onClick: () => {
         // TODO: Implement export functionality
         console.log('Export functionality to be implemented');
@@ -424,9 +436,9 @@ const RecruitmentManagement: React.FC = () => {
               />
               <TooltipHost content="Copy recruitment URL">
                 <IconButton
-                  iconProps={{ iconName: 'Copy' }}
                   title="Copy URL"
                   onClick={copyRecruitmentUrl}
+                  onRenderIcon={() => <Copy24Regular />}
                   styles={{
                     root: {
                       backgroundColor: '#0078d4',
@@ -441,9 +453,9 @@ const RecruitmentManagement: React.FC = () => {
               </TooltipHost>
               <TooltipHost content="Open recruitment page">
                 <IconButton
-                  iconProps={{ iconName: 'NavigateExternalInline' }}
                   title="Open URL"
                   onClick={() => window.open(recruitmentUrl, '_blank')}
+                  onRenderIcon={() => <Open24Regular />}
                   styles={{
                     root: {
                       backgroundColor: '#107c10',
