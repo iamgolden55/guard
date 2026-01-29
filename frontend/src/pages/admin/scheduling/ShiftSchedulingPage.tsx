@@ -493,6 +493,7 @@ export const ShiftSchedulingPage: React.FC = () => {
               selectedEvent={dayView.selectedEvent}
               eventDates={dayView.eventDates}
               isLoading={isDataLoading || shiftsHook.isLoading}
+              timeBounds={dayView.timeBounds}
               onDateSelect={(date) => calendar.setCurrentDate(date)}
               onMonthChange={calendar.goToMonth}
               onEventClick={dayView.handleEventClick}

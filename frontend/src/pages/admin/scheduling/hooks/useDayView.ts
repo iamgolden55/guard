@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
-import type { ScheduleShift, CalendarEvent, PositionedEvent } from '../types';
+import type { ScheduleShift, CalendarEvent, PositionedEvent, TimeBounds } from '../types';
 import { SHIFT_STATUS_TO_EVENT_TYPE } from '../constants';
 import { calculateEventPositions } from '../utils/eventOverlap';
+import { calculateTimeBounds } from '../utils/timeUtils';
 
 interface UseDayViewOptions {
   shifts: ScheduleShift[];
@@ -62,10 +63,15 @@ export function useDayView({ shifts, selectedDate }: UseDayViewOptions) {
     });
   }, [calendarEvents, selectedDate]);
 
+  // Calculate time bounds based on day's events
+  const timeBounds = useMemo((): TimeBounds => {
+    return calculateTimeBounds(dayEvents);
+  }, [dayEvents]);
+
   // Calculate positioned events for timeline
   const positionedEvents = useMemo((): PositionedEvent[] => {
-    return calculateEventPositions(dayEvents);
-  }, [dayEvents]);
+    return calculateEventPositions(dayEvents, timeBounds.startHour);
+  }, [dayEvents, timeBounds.startHour]);
 
   // Get dates that have events (for mini calendar dots)
   const eventDates = useMemo(() => {
@@ -94,6 +100,7 @@ export function useDayView({ shifts, selectedDate }: UseDayViewOptions) {
     positionedEvents,
     selectedEvent,
     eventDates,
+    timeBounds,
     setSelectedEvent,
     handleEventClick,
     clearSelection

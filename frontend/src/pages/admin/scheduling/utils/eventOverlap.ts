@@ -1,3 +1,4 @@
+import { DAY_VIEW_CONFIG } from '../constants';
 import type { CalendarEvent, PositionedEvent } from '../types';
 import { dateToPixels, calculateEventHeight } from './timeUtils';
 
@@ -59,7 +60,10 @@ function assignColumns(group: EventGroup): void {
   group.columns = columns;
 }
 
-export function calculateEventPositions(events: CalendarEvent[]): PositionedEvent[] {
+export function calculateEventPositions(
+  events: CalendarEvent[],
+  startHour: number = DAY_VIEW_CONFIG.startHour
+): PositionedEvent[] {
   if (events.length === 0) return [];
 
   const groups = groupOverlappingEvents(events);
@@ -79,7 +83,7 @@ export function calculateEventPositions(events: CalendarEvent[]): PositionedEven
 
         positioned.push({
           ...event,
-          top: dateToPixels(event.start),
+          top: dateToPixels(event.start, startHour),
           height: calculateEventHeight(startTime, endTime),
           left: colIdx * columnWidth,
           width: columnWidth,

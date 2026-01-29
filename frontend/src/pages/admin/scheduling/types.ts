@@ -85,6 +85,11 @@ export interface TimeSlot {
   isHalfHour?: boolean;
 }
 
+export interface TimeBounds {
+  startHour: number;
+  endHour: number;
+}
+
 export const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 export const DAYS_OF_WEEK_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 

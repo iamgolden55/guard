@@ -2,7 +2,7 @@ import React from 'react';
 import { Spinner, SpinnerSize } from '@fluentui/react';
 import { TimelinePanel } from './TimelinePanel';
 import { SidebarPanel } from './SidebarPanel';
-import type { PositionedEvent, CalendarEvent } from '../../types';
+import type { PositionedEvent, CalendarEvent, TimeBounds } from '../../types';
 
 interface DayViewProps {
   currentDate: Date;
@@ -11,6 +11,7 @@ interface DayViewProps {
   selectedEvent: CalendarEvent | null;
   eventDates?: Set<string>;
   isLoading?: boolean;
+  timeBounds: TimeBounds;
   onDateSelect: (date: Date) => void;
   onMonthChange: (date: Date) => void;
   onEventClick: (event: PositionedEvent) => void;
@@ -25,6 +26,7 @@ export const DayView: React.FC<DayViewProps> = ({
   selectedEvent,
   eventDates,
   isLoading = false,
+  timeBounds,
   onDateSelect,
   onMonthChange,
   onEventClick,
@@ -43,6 +45,7 @@ export const DayView: React.FC<DayViewProps> = ({
         events={events}
         selectedEventId={selectedEvent?.id}
         onEventClick={onEventClick}
+        timeBounds={timeBounds}
       />
 
       <SidebarPanel
