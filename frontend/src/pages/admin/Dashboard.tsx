@@ -15,6 +15,7 @@ import MetricCard from '../../components/MetricCard';
 import ActivityHeatMap from '../../components/ActivityHeatMap';
 import { BulkPayrollGeneration, Card, SwipeableTabs } from '../../components';
 import IncompleteShiftsWidget from '../../components/IncompleteShiftsWidget';
+import ActiveShiftsWidget from '../../components/ActiveShiftsWidget';
 import { useAuth } from '../../contexts/AuthContext';
 import { shiftService, invoiceService, deputyService, venueService, employmentTypeService, exchangeService } from '../../services';
 import api from '../../services/api';
@@ -45,6 +46,7 @@ const AdminDashboard: React.FC = () => {
   const [employmentTypes, setEmploymentTypes] = useState<any[]>([]);
   const [showEmploymentTypePrompt, setShowEmploymentTypePrompt] = useState(false);
   const [incompleteShiftsCount, setIncompleteShiftsCount] = useState(0);
+  const [activeShiftsCount, setActiveShiftsCount] = useState(0);
   const [activityHeatMapData, setActivityHeatMapData] = useState<ActivityHeatMapData>({
     days: [],
     summary: { totalScheduled: 0, totalCompleted: 0, completionRate: 0 },
@@ -410,6 +412,9 @@ const AdminDashboard: React.FC = () => {
 
         {/* Activity Heat Map */}
         <ActivityHeatMap data={activityHeatMapData} isLoading={isLoading} />
+
+        {/* Active Shifts Widget - Full Width */}
+        <ActiveShiftsWidget onCountChange={setActiveShiftsCount} maxItems={5} />
 
         {/* Incomplete Shifts + Quick Actions Side by Side */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">

@@ -13,6 +13,7 @@ import AutoCheckoutStatus from './AutoCheckoutStatus';
 import SwipeableTabs from './SwipeableTabs';
 import ApplicationCard from './ApplicationCard';
 import ActiveShiftWidget from './ActiveShiftWidget';
+import ActiveShiftsWidget from './ActiveShiftsWidget';
 import ShiftCard from './ShiftCard';
 import AccountMappingInterface from './AccountMappingInterface';
 import EmploymentTypesManagement from './EmploymentTypesManagement';
@@ -34,6 +35,7 @@ export {
   SwipeableTabs,
   ApplicationCard,
   ActiveShiftWidget,
+  ActiveShiftsWidget,
   ShiftCard,
   AccountMappingInterface,
   EmploymentTypesManagement,
