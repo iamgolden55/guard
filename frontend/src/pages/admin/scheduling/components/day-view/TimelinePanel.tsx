@@ -1,44 +1,48 @@
 import React from 'react';
 import { TimeAxis } from './TimeAxis';
 import { TimelineEventBlock } from './TimelineEventBlock';
-import { DAY_VIEW_CONFIG } from '../../constants';
+import { DAY_VIEW_CONFIG, MODERN_STYLES } from '../../constants';
 import { generateTimeSlots } from '../../utils/timeUtils';
-import type { PositionedEvent } from '../../types';
+import type { PositionedEvent, TimeBounds } from '../../types';
 
 interface TimelinePanelProps {
   events: PositionedEvent[];
   selectedEventId?: string | null;
   onEventClick?: (event: PositionedEvent) => void;
+  timeBounds: TimeBounds;
 }
 
 export const TimelinePanel: React.FC<TimelinePanelProps> = ({
   events,
   selectedEventId,
-  onEventClick
+  onEventClick,
+  timeBounds
 }) => {
-  const timeSlots = generateTimeSlots();
+  const timeSlots = generateTimeSlots(timeBounds.startHour, timeBounds.endHour);
   const totalHeight = timeSlots.length * DAY_VIEW_CONFIG.slotHeight;
 
   return (
     <div className="flex-1 flex overflow-hidden">
-      <TimeAxis />
+      <TimeAxis startHour={timeBounds.startHour} endHour={timeBounds.endHour} />
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto bg-white">
         <div className="relative" style={{ height: `${totalHeight}px` }}>
+          {/* Grid lines with hour/half-hour distinction */}
           {timeSlots.map((slot, index) => (
             <div
               key={slot.hour}
-              className="absolute w-full border-t border-gray-100"
+              className={`absolute w-full border-t ${MODERN_STYLES.gridLine.hour}`}
               style={{ top: `${index * DAY_VIEW_CONFIG.slotHeight}px` }}
             >
+              {/* Half-hour line - more subtle */}
               <div
-                className="absolute w-full border-t border-gray-50"
+                className={`absolute w-full border-t ${MODERN_STYLES.gridLine.halfHour} border-dashed`}
                 style={{ top: `${DAY_VIEW_CONFIG.halfSlotHeight}px` }}
               />
             </div>
           ))}
 
-          <CurrentTimeIndicator />
+          <CurrentTimeIndicator startHour={timeBounds.startHour} endHour={timeBounds.endHour} />
 
           <div className="absolute inset-0 ml-1 mr-2">
             {events.map((event) => (
@@ -56,17 +60,23 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
   );
 };
 
-const CurrentTimeIndicator: React.FC = () => {
+interface CurrentTimeIndicatorProps {
+  startHour: number;
+  endHour: number;
+}
+
+const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({ startHour, endHour }) => {
   const now = new Date();
   const hours = now.getHours();
   const minutes = now.getMinutes();
 
-  if (hours < DAY_VIEW_CONFIG.startHour || hours >= DAY_VIEW_CONFIG.endHour) {
+  if (hours < startHour || hours >= endHour) {
     return null;
   }
 
-  const totalMinutes = (hours - DAY_VIEW_CONFIG.startHour) * 60 + minutes;
+  const totalMinutes = (hours - startHour) * 60 + minutes;
   const top = (totalMinutes / 60) * DAY_VIEW_CONFIG.slotHeight;
+  const { currentTime } = MODERN_STYLES;
 
   return (
     <div
@@ -74,8 +84,10 @@ const CurrentTimeIndicator: React.FC = () => {
       style={{ top: `${top}px` }}
     >
       <div className="flex items-center">
-        <div className="w-2 h-2 bg-red-500 rounded-full -ml-1" />
-        <div className="flex-1 h-0.5 bg-red-500" />
+        {/* Glowing dot indicator */}
+        <div className={`w-3 h-3 ${currentTime.dot} rounded-full -ml-1.5 ${currentTime.glow}`} />
+        {/* Time line with glow */}
+        <div className={`flex-1 h-[2px] ${currentTime.line} ${currentTime.glow}`} />
       </div>
     </div>
   );

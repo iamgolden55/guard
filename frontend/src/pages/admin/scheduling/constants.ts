@@ -72,3 +72,28 @@ export const getWeekNumber = (date: Date): number => {
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 };
+
+// Modern UI styling tokens for Day View components
+export const MODERN_STYLES = {
+  eventBlock: {
+    base: 'rounded-lg border-l-[5px] px-3 py-2 text-left cursor-pointer overflow-hidden',
+    transition: 'transition-all duration-200 ease-out',
+    hover: 'hover:scale-[1.02] hover:shadow-lg hover:-translate-y-0.5',
+    active: 'active:scale-[0.99]',
+    selected: 'ring-2 ring-amber-500 ring-offset-2 shadow-lg'
+  },
+  gridLine: {
+    hour: 'border-gray-200',
+    halfHour: 'border-gray-100/60'
+  },
+  currentTime: {
+    line: 'bg-red-500',
+    dot: 'bg-red-500',
+    glow: 'shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+  },
+  calendar: {
+    selected: 'bg-amber-500 text-white',
+    eventDot: 'bg-amber-500',
+    hover: 'hover:bg-gray-100'
+  }
+} as const;

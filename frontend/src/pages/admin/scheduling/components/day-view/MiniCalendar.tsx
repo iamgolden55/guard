@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { ChevronLeft16Regular, ChevronRight16Regular } from '@fluentui/react-icons';
 import { DAYS_OF_WEEK } from '../../types';
+import { MODERN_STYLES } from '../../constants';
 
 interface MiniCalendarProps {
   currentDate: Date;
@@ -71,12 +72,14 @@ export const MiniCalendar: React.FC<MiniCalendarProps> = ({
     onMonthChange(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
   };
 
+  const { calendar } = MODERN_STYLES;
+
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-3">
+    <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
       <div className="flex items-center justify-between mb-3">
         <button
           onClick={handlePrevMonth}
-          className="p-1 hover:bg-gray-100 rounded"
+          className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"
         >
           <ChevronLeft16Regular className="w-4 h-4 text-gray-600" />
         </button>
@@ -85,13 +88,13 @@ export const MiniCalendar: React.FC<MiniCalendarProps> = ({
         </span>
         <button
           onClick={handleNextMonth}
-          className="p-1 hover:bg-gray-100 rounded"
+          className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"
         >
           <ChevronRight16Regular className="w-4 h-4 text-gray-600" />
         </button>
       </div>
 
-      <div className="grid grid-cols-7 mb-1">
+      <div className="grid grid-cols-7 mb-1.5">
         {DAYS_OF_WEEK.map((day) => (
           <div key={day} className="text-center text-xs font-medium text-gray-400 py-1">
             {day[0]}
@@ -99,25 +102,25 @@ export const MiniCalendar: React.FC<MiniCalendarProps> = ({
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-0.5">
+      <div className="grid grid-cols-7 gap-1">
         {calendarDays.map((day, index) => (
           <button
             key={index}
             onClick={() => onDateSelect(day)}
             className={`
               relative w-7 h-7 flex items-center justify-center text-xs rounded-full
-              transition-colors
+              transition-all duration-150
               ${!isCurrentMonth(day) ? 'text-gray-300' : 'text-gray-700'}
-              ${isTodayDate(day) ? 'font-bold' : ''}
+              ${isTodayDate(day) && !isSelected(day) ? 'font-bold ring-1 ring-amber-300' : ''}
               ${isSelected(day)
-                ? 'bg-indigo-600 text-white'
-                : 'hover:bg-gray-100'
+                ? `${calendar.selected} shadow-sm`
+                : `${calendar.hover}`
               }
             `}
           >
             {day.getDate()}
             {hasEvents(day) && !isSelected(day) && (
-              <span className="absolute bottom-0.5 w-1 h-1 bg-indigo-500 rounded-full" />
+              <span className={`absolute bottom-0 w-1.5 h-1.5 ${calendar.eventDot} rounded-full`} />
             )}
           </button>
         ))}
