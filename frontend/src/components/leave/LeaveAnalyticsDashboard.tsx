@@ -32,6 +32,7 @@ import {
 import { Bar, Line, Doughnut, Radar } from 'react-chartjs-2';
 import { LeaveStatistics, LeaveType, LeaveRequestFilterOptions } from '../../types/leave';
 import { useAuth } from '../../contexts/AuthContext';
+import api from '../../services/api';
 
 // Register Chart.js components
 ChartJS.register(
@@ -130,7 +131,7 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
 
   // Fetch analytics data with filters
   const fetchAnalytics = async () => {
-    if (!authState.token) return;
+    if (!authState.user) return;
 
     setIsFetchingAnalytics(true);
     try {
@@ -156,18 +157,7 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
         filters.department.forEach(dept => params.append('department', dept));
       }
 
-      const response = await fetch(`/api/v1/leave/reports/analytics/?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch analytics');
-      }
-
-      const data = await response.json();
+      const { data } = await api.get(`/api/v1/leave/reports/analytics/?${params.toString()}`);
       setAnalyticsData(data);
     } catch (error) {
       console.error('Error fetching analytics:', error);
@@ -179,7 +169,7 @@ const LeaveAnalyticsDashboard: React.FC<LeaveAnalyticsDashboardProps> = ({
   // Fetch analytics on mount and when filters change
   useEffect(() => {
     fetchAnalytics();
-  }, [authState.token, filters]);
+  }, [authState.user, filters]);
 
   // Dropdown options
   const periodOptions: IDropdownOption[] = [

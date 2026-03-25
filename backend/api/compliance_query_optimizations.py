@@ -126,7 +126,7 @@ class OptimizedComplianceViolationManager(models.Manager):
             'user__first_name',
             'user__last_name',
             'user__email',
-            'user__staffprofile__employee_id'
+            'user__profile__employee_id'
         ).annotate(
             total_violations=Count('id'),
             critical_violations=Count('id', filter=Q(severity='critical')),
@@ -293,7 +293,7 @@ class OptimizedWorkingHoursMetricsManager(models.Manager):
 
     def get_queryset(self):
         """Optimize with select_related for user data"""
-        return super().get_queryset().select_related('user', 'user__staffprofile')
+        return super().get_queryset().select_related('user', 'user__profile')
 
     def for_period_range(self, start_date, end_date, period_type=None):
         """

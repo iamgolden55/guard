@@ -10,6 +10,7 @@ import {
   CompanyContextResponse
 } from '../types';
 import useAuth from './AuthContext';
+import api from '../services/api';
 
 // Define the context value structure
 interface CompanyContextValue {
@@ -89,43 +90,44 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     setCompanyState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // TODO: Replace with actual API call
-      const mockCompanies: SecurityCompany[] = [
-        {
-          id: '1',
-          name: 'Elite Security Services',
-          registrationNumber: 'ESS-001',
-          countryCode: 'GB',
-          complianceProfileId: 1,
-          staffCapacity: 50,
-          subscriptionTier: 'PROFESSIONAL' as any,
-          industry: 'Security Services',
-          website: 'https://elitesecurity.com',
-          phone: '+44 20 1234 5678',
-          logoUrl: '',
-          createdAt: '2024-01-01T00:00:00Z',
-          updatedAt: '2024-01-01T00:00:00Z',
-          onboardingCompleted: true,
-          onboardingStep: 5
-        }
-      ];
+      const response = await api.get('/api/v1/companies/');
+      const companiesData = response.data.results || response.data;
 
-      const mockMemberships: UserCompanyMembership[] = [
-        {
-          id: '1',
-          userId: authState.user.id,
-          companyId: '1',
-          role: 'OWNER' as CompanyRole,
-          isOwner: true,
-          permissions: Object.values(CompanyPermission),
-          joinedAt: '2024-01-01T00:00:00Z'
-        }
-      ];
+      // Map API response to SecurityCompany type
+      const companies: SecurityCompany[] = (Array.isArray(companiesData) ? companiesData : [companiesData]).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        registrationNumber: c.registration_number || '',
+        countryCode: c.country_code || 'GB',
+        complianceProfileId: c.compliance_profile_id || null,
+        staffCapacity: c.staff_capacity || 50,
+        subscriptionTier: (c.subscription_tier || 'professional').toUpperCase(),
+        industry: c.industry_type || 'Security Services',
+        website: c.website || '',
+        phone: c.primary_contact_phone || '',
+        logoUrl: c.logo_url || '',
+        createdAt: c.created_at || '',
+        updatedAt: c.updated_at || '',
+        onboardingCompleted: c.onboarding_completed ?? true,
+        onboardingStep: c.onboarding_step || 5
+      }));
+
+      // Build memberships from user's role — the companies endpoint returns
+      // companies the user has access to, so we create memberships accordingly
+      const memberships: UserCompanyMembership[] = companies.map(c => ({
+        id: `${authState.user!.id}-${c.id}`,
+        userId: authState.user!.id,
+        companyId: c.id,
+        role: (authState.user!.role === 'admin' ? 'OWNER' : authState.user!.role.toUpperCase()) as CompanyRole,
+        isOwner: authState.user!.role === 'admin',
+        permissions: authState.user!.role === 'admin' ? Object.values(CompanyPermission) : [],
+        joinedAt: c.createdAt
+      }));
 
       setCompanyState(prev => ({
         ...prev,
-        companies: mockCompanies,
-        userMemberships: mockMemberships,
+        companies,
+        userMemberships: memberships,
         isLoading: false
       }));
 
@@ -274,28 +276,27 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
   const loadCompanyDetails = useCallback(async (companyId: string) => {
     try {
-      // TODO: Replace with actual API calls
-      const mockSubscriptionDetails: SubscriptionDetails = {
-        tier: 'PROFESSIONAL' as any,
-        status: 'active',
-        currentPeriodStart: '2024-01-01T00:00:00Z',
-        currentPeriodEnd: '2024-02-01T00:00:00Z',
+      const response = await api.get('/api/v1/companies/current/');
+      const data = response.data.company || response.data;
+
+      setSubscriptionDetails({
+        tier: (data.subscription_tier || 'professional').toUpperCase(),
+        status: data.subscription_status || 'active',
+        currentPeriodStart: data.subscription_start_date || '',
+        currentPeriodEnd: data.subscription_end_date || '',
         cancelAtPeriodEnd: false
-      };
+      });
 
-      const mockCompanyLimits: CompanyLimits = {
-        staffCount: 25,
-        maxStaff: 50,
-        venuesCount: 8,
-        maxVenues: 20,
-        shiftsPerMonth: 150,
-        maxShiftsPerMonth: 500,
-        storageUsed: 2.5,
-        maxStorage: 10
-      };
-
-      setSubscriptionDetails(mockSubscriptionDetails);
-      setCompanyLimits(mockCompanyLimits);
+      setCompanyLimits({
+        staffCount: data.current_staff_count || 0,
+        maxStaff: data.staff_capacity || 50,
+        venuesCount: data.current_venue_count || 0,
+        maxVenues: data.venue_capacity || 20,
+        shiftsPerMonth: data.current_shifts_month || 0,
+        maxShiftsPerMonth: data.max_shifts_per_month || 500,
+        storageUsed: data.storage_used || 0,
+        maxStorage: data.max_storage || 10
+      });
 
     } catch (error) {
       console.error('Failed to load company details:', error);

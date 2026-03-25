@@ -98,7 +98,7 @@ class OptimizedShiftQuerySet(models.QuerySet, CompanyQuerySetMixin):
             'venue__company'
         ).prefetch_related(
             Prefetch(
-                'staff_user__staffprofile',
+                'staff_user__profile',
                 to_attr='staff_profile'
             )
         )
@@ -154,7 +154,7 @@ class OptimizedShiftQuerySet(models.QuerySet, CompanyQuerySetMixin):
         ).select_related(
             'staff_user',
             'venue',
-            'staff_user__staffprofile'
+            'staff_user__profile'
         ).order_by('end_time')
 
     def company_staff_utilization(self, company_id, date_range=None):
@@ -203,7 +203,7 @@ class OptimizedUserCompanyQuerySet(models.QuerySet):
             'company'
         ).prefetch_related(
             Prefetch(
-                'user__staffprofile',
+                'user__profile',
                 to_attr='staff_profile'
             ),
             Prefetch(

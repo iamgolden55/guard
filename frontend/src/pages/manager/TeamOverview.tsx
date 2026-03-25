@@ -17,6 +17,7 @@ import {
 } from '@fluentui/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { leaveService } from '../../services';
+import api from '../../services/api';
 import {
   User,
   LeaveBalanceSummary,
@@ -78,18 +79,7 @@ const TeamOverview: React.FC = () => {
     setIsLoading(true);
     try {
       // Get team overview data (this would be a specialized endpoint)
-      const teamOverviewResponse = await fetch('/api/v1/leave/team-overview/', {
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!teamOverviewResponse.ok) {
-        throw new Error('Failed to fetch team overview');
-      }
-
-      const teamOverviewData = await teamOverviewResponse.json();
+      const { data: teamOverviewData } = await api.get('/api/v1/leave/team-overview/');
 
       // Process team members data
       const processedTeamMembers: TeamMemberData[] = teamOverviewData.team_members.map((member: any) => ({
@@ -129,7 +119,7 @@ const TeamOverview: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [authState.token, authState.user]);
+  }, [authState.user]);
 
   // Initial load
   useEffect(() => {

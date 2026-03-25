@@ -14,6 +14,7 @@ import {
 } from '@fluentui/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { leaveService } from '../../services';
+import api from '../../services/api';
 import {
   LeaveStatistics,
   LeaveType,
@@ -78,7 +79,7 @@ const LeaveReports: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [authState.token, authState.user]);
+  }, [authState.user]);
 
   // Initial load
   useEffect(() => {
@@ -100,7 +101,7 @@ const LeaveReports: React.FC = () => {
 
   // Handle export
   const handleExport = useCallback(async (format: 'csv' | 'xlsx' | 'pdf', options: ExportOptions) => {
-    if (!authState.token) {
+    if (!authState.user) {
       setNotification({
         type: MessageBarType.error,
         message: 'Authentication required for export'
@@ -147,20 +148,10 @@ const LeaveReports: React.FC = () => {
       }
 
       // Fetch the file from backend
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${authState.token}`
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Export failed: ${response.statusText}`);
-      }
+      const response = await api.get(endpoint, { responseType: 'blob' });
 
       // Download the file
-      const blob = await response.blob();
-      downloadBlob(blob, `${fileName}.${fileExtension}`);
+      downloadBlob(response.data, `${fileName}.${fileExtension}`);
 
     } catch (error) {
       console.error('Export error:', error);
@@ -168,7 +159,7 @@ const LeaveReports: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
-  }, [filters, authState.token]);
+  }, [filters, authState.user]);
 
   // Utility function to download blob
   const downloadBlob = (blob: Blob, filename: string) => {

@@ -15,6 +15,7 @@ import {
 } from '@fluentui/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { leaveService } from '../../services';
+import api from '../../services/api';
 import {
   LeaveType
 } from '../../types/leave';
@@ -149,23 +150,12 @@ const LeaveSettings: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [authState.token, authState.user]);
+  }, [authState.user]);
 
   // Fetch accrual settings
   const fetchAccrualSettings = async (): Promise<AccrualSettingsData> => {
     try {
-      const response = await fetch('/api/v1/leave/settings/system_config/', {
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch accrual settings');
-      }
-
-      const data = await response.json();
+      const { data } = await api.get('/api/v1/leave/settings/system_config/');
       return data.accrual_settings || getDefaultAccrualSettings();
     } catch (error) {
       console.error('Error fetching accrual settings:', error);
@@ -176,18 +166,7 @@ const LeaveSettings: React.FC = () => {
   // Fetch blackout periods
   const fetchBlackoutPeriods = async (): Promise<BlackoutPeriod[]> => {
     try {
-      const response = await fetch('/api/v1/leave/blackout-periods/', {
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch blackout periods');
-      }
-
-      const data = await response.json();
+      const { data } = await api.get('/api/v1/leave/blackout-periods/');
       return data.results || data || [];
     } catch (error) {
       console.error('Error fetching blackout periods:', error);
@@ -198,18 +177,7 @@ const LeaveSettings: React.FC = () => {
   // Fetch notification settings
   const fetchNotificationSettings = async (): Promise<NotificationSettings> => {
     try {
-      const response = await fetch('/api/v1/leave/settings/notifications/', {
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch notification settings');
-      }
-
-      const data = await response.json();
+      const { data } = await api.get('/api/v1/leave/settings/notifications/');
       return data || getDefaultNotificationSettings();
     } catch (error) {
       console.error('Error fetching notification settings:', error);
@@ -220,18 +188,8 @@ const LeaveSettings: React.FC = () => {
   // Fetch system health
   const fetchSystemHealth = async (): Promise<SystemHealthData | null> => {
     try {
-      const response = await fetch('/api/v1/leave/settings/system_health/', {
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch system health');
-      }
-
-      return await response.json();
+      const { data } = await api.get('/api/v1/leave/settings/system_health/');
+      return data;
     } catch (error) {
       console.error('Error fetching system health:', error);
       return null;
@@ -284,18 +242,7 @@ const LeaveSettings: React.FC = () => {
   // Handle accrual settings save
   const handleSaveAccrualSettings = useCallback(async (settings: AccrualSettingsData) => {
     try {
-      const response = await fetch('/api/v1/leave/settings/system_config/', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ accrual_settings: settings })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save accrual settings');
-      }
+      await api.put('/api/v1/leave/settings/system_config/', { accrual_settings: settings });
 
       setAccrualSettings(settings);
       setNotification({
@@ -306,23 +253,12 @@ const LeaveSettings: React.FC = () => {
       console.error('Error saving accrual settings:', error);
       throw error;
     }
-  }, [authState.token]);
+  }, []);
 
   // Handle notification settings save
   const handleSaveNotificationSettings = useCallback(async (settings: NotificationSettings) => {
     try {
-      const response = await fetch('/api/v1/leave/settings/notifications/', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(settings)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save notification settings');
-      }
+      await api.put('/api/v1/leave/settings/notifications/', settings);
 
       setNotificationSettings(settings);
       setNotification({
@@ -333,12 +269,11 @@ const LeaveSettings: React.FC = () => {
       console.error('Error saving notification settings:', error);
       throw error;
     }
-  }, [authState.token]);
+  }, []);
 
   // Handle blackout period save
   const handleSaveBlackoutPeriod = useCallback(async (period: BlackoutPeriod) => {
     try {
-      const method = period.id ? 'PUT' : 'POST';
       const url = period.id
         ? `/api/v1/leave/blackout-periods/${period.id}/`
         : '/api/v1/leave/blackout-periods/';
@@ -350,20 +285,9 @@ const LeaveSettings: React.FC = () => {
         leave_type_ids: leave_types
       };
 
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestData)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save blackout period');
-      }
-
-      const savedPeriod = await response.json();
+      const { data: savedPeriod } = period.id
+        ? await api.put(url, requestData)
+        : await api.post(url, requestData);
 
       if (period.id) {
         setBlackoutPeriods(prev => prev.map(p => p.id === period.id ? savedPeriod : p));
@@ -374,53 +298,30 @@ const LeaveSettings: React.FC = () => {
       console.error('Error saving blackout period:', error);
       throw error;
     }
-  }, [authState.token]);
+  }, []);
 
   // Handle blackout period delete
   const handleDeleteBlackoutPeriod = useCallback(async (periodId: number) => {
     try {
-      const response = await fetch(`/api/v1/leave/blackout-periods/${periodId}/`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete blackout period');
-      }
+      await api.delete(`/api/v1/leave/blackout-periods/${periodId}/`);
 
       setBlackoutPeriods(prev => prev.filter(p => p.id !== periodId));
     } catch (error) {
       console.error('Error deleting blackout period:', error);
       throw error;
     }
-  }, [authState.token]);
+  }, []);
 
   // Handle blackout period activation toggle
   const handleActivateBlackoutPeriod = useCallback(async (periodId: number, isActive: boolean) => {
     try {
-      const response = await fetch(`/api/v1/leave/blackout-periods/${periodId}/`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ is_active: isActive })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update blackout period status');
-      }
-
-      const updatedPeriod = await response.json();
+      const { data: updatedPeriod } = await api.patch(`/api/v1/leave/blackout-periods/${periodId}/`, { is_active: isActive });
       setBlackoutPeriods(prev => prev.map(p => p.id === periodId ? updatedPeriod : p));
     } catch (error) {
       console.error('Error updating blackout period status:', error);
       throw error;
     }
-  }, [authState.token]);
+  }, []);
 
   // Handle reset to defaults
   const handleResetToDefaults = useCallback(async () => {

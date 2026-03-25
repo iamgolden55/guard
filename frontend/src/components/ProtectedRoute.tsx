@@ -22,7 +22,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) => {
   console.log('ProtectedRoute - Auth State:', {
     isAuthenticated: authState.isAuthenticated,
     isLoading: authState.isLoading,
-    token: authState.token ? 'exists' : 'missing',
     user: authState.user ? `${authState.user.username} (${authState.user.role})` : 'missing',
     location: location.pathname
   });

@@ -184,9 +184,11 @@ const LEAVE_ENDPOINTS = {
   LEAVE_BALANCES: '/leave/balances/',
   LEAVE_APPROVALS: '/leave/approvals/',
   LEAVE_CALENDAR: '/leave/calendar/',
-  TEAM_OVERVIEW: '/leave/team/overview/',
-  TEAM_BALANCES: '/leave/team/balances/',
-  TEAM_CALENDAR: '/leave/team/calendar/',
+  LEAVE_STATISTICS: '/leave/reports/',
+  LEAVE_ANALYTICS: '/leave/reports',
+  TEAM_OVERVIEW: '/leave/team-overview/',
+  TEAM_BALANCES: '/leave/team-overview/team_balances/',
+  TEAM_CALENDAR: '/leave/team-overview/team_calendar/',
   LEAVE_SETTINGS: '/leave/settings/',
   BLACKOUT_PERIODS: '/leave/blackout-periods/'
 } as const;

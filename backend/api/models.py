@@ -1618,6 +1618,7 @@ class Shift(models.Model):
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
         ('cancelled', 'Cancelled'),
+        ('no_show', 'No Show'),
     )
 
     staff_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shifts', null=True, blank=True)
@@ -1800,9 +1801,8 @@ class Shift(models.Model):
 
         super().save(*args, **kwargs)
 
-        # Auto-create OpenShiftRequest for new unassigned shifts
-        if is_new_unassigned and self.status == 'open':
-            self.create_open_shift_request()
+        # OpenShiftRequest creation is handled by the post_save signal
+        # in signals.py (auto_create_open_shift_request) to avoid duplicates.
 
         # Cancel any OpenShiftRequest when staff is assigned to a previously open shift
         # OR when status changes from 'open' to something else
@@ -1937,12 +1937,6 @@ class Shift(models.Model):
         else:
             # For same-day shifts: must be on the same date
             is_valid_checkin_period = (current_date == shift_start_date)
-        
-        # Development override for testing
-        import os
-        if os.environ.get('DJANGO_DEBUG') == 'True' and not is_valid_checkin_period:
-            # Allow late check-in in debug mode for testing
-            is_valid_checkin_period = True
         
         if not is_valid_checkin_period:
             if current_date < shift_start_date:
@@ -2204,8 +2198,8 @@ class Shift(models.Model):
             settings = SystemSettings.objects.first()
             if settings:
                 return settings.special_event_pay_rate if self.is_special_event else settings.default_hourly_rate
-        except:
-            pass
+        except Exception:
+            logger.exception('Error in get_effective_hourly_rate')
             
         # Final fallback to hardcoded defaults
         return 14.00 if self.is_special_event else 12.50
@@ -2252,7 +2246,8 @@ class Shift(models.Model):
         try:
             settings = SystemSettings.get_settings()
             force_timeout_minutes = settings.auto_checkout_force_timeout
-        except:
+        except Exception:
+            logger.exception('Error in can_force_timeout')
             # Fallback to default if settings unavailable
             force_timeout_minutes = 720  # 12 hours
             
@@ -2275,7 +2270,8 @@ class Shift(models.Model):
             if not settings.auto_checkout_enabled:
                 return False
             grace_period_minutes = settings.auto_checkout_grace_period
-        except:
+        except Exception:
+            logger.exception('Error in can_auto_checkout')
             # Fallback to defaults if settings unavailable
             grace_period_minutes = 30
         
@@ -5267,7 +5263,7 @@ class ReportTemplate(models.Model):
 
         # Check venue-based access for non-admin users
         if self.allowed_venues.exists():
-            user_venues = user.staffprofile.venues.all() if hasattr(user, 'staffprofile') else []
+            user_venues = user.profile.venues.all() if hasattr(user, 'profile') else []
             return self.allowed_venues.filter(id__in=user_venues).exists()
 
         return True

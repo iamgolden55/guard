@@ -18,6 +18,7 @@ import {
 } from '@fluentui/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { LeaveRequestFilterOptions } from '../../types/leave';
+import api from '../../services/api';
 
 interface DetailedLeaveRequest {
   id: number;
@@ -80,7 +81,7 @@ const LeaveRequestsTable: React.FC<LeaveRequestsTableProps> = ({
 
   // Fetch detailed requests
   const fetchDetailedRequests = useCallback(async () => {
-    if (!authState.token) return;
+    if (!authState.user) return;
 
     setIsLoading(true);
     setError('');
@@ -106,21 +107,7 @@ const LeaveRequestsTable: React.FC<LeaveRequestsTableProps> = ({
         filters.department.forEach(dept => params.append('department', dept));
       }
 
-      const response = await fetch(
-        `/api/v1/leave/reports/detailed_requests/?${params.toString()}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${authState.token}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const { data } = await api.get(`/api/v1/leave/reports/detailed_requests/?${params.toString()}`);
       setRequests(data.results || []);
       setPagination(data.pagination);
     } catch (err: any) {
@@ -129,7 +116,7 @@ const LeaveRequestsTable: React.FC<LeaveRequestsTableProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [authState.token, currentPage, pageSize, sortField, filters]);
+  }, [authState.user, currentPage, pageSize, sortField, filters]);
 
   // Fetch data on mount and when dependencies change
   useEffect(() => {

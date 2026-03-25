@@ -12,6 +12,7 @@ import {
 } from '@fluentui/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { leaveService } from '../../services';
+import api from '../../services/api';
 import {
   LeavePolicy,
   LeaveType,
@@ -90,7 +91,7 @@ const LeavePolicies: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [authState.token, authState.user]);
+  }, [authState.user]);
 
   // Mock employment types data - replace with actual API call when endpoint is available
   const fetchEmploymentTypes = async (): Promise<EmploymentType[]> => {
@@ -145,96 +146,64 @@ const LeavePolicies: React.FC = () => {
     } finally {
       setIsFormLoading(false);
     }
-  }, [selectedPolicy, authState.token]);
+  }, [selectedPolicy]);
 
   // Create policy API call
   const createPolicy = async (policyData: Partial<LeavePolicy>): Promise<LeavePolicy> => {
-    const response = await fetch('/api/v1/leave-policies/', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authState.token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        name: policyData.name,
-        leave_type_id: policyData.leave_type?.id,
-        employment_type_ids: policyData.employment_types?.map(et => et.id),
-        accrual_method: policyData.accrual_method,
-        accrual_rate: policyData.accrual_rate,
-        max_accrual_per_year: policyData.max_accrual_per_year,
-        max_balance: policyData.max_balance,
-        service_brackets: policyData.service_brackets,
-        carryover_method: policyData.carryover_method,
-        carryover_limit: policyData.carryover_limit,
-        carryover_expiry_months: policyData.carryover_expiry_months,
-        probation_months: policyData.probation_months,
-        min_employment_days: policyData.min_employment_days,
-        allow_negative_balance: policyData.allow_negative_balance,
-        negative_balance_limit: policyData.negative_balance_limit,
-        is_active: policyData.is_active,
-        effective_date: policyData.effective_date,
-        expiry_date: policyData.expiry_date
-      })
+    const { data } = await api.post('/api/v1/leave-policies/', {
+      name: policyData.name,
+      leave_type_id: policyData.leave_type?.id,
+      employment_type_ids: policyData.employment_types?.map(et => et.id),
+      accrual_method: policyData.accrual_method,
+      accrual_rate: policyData.accrual_rate,
+      max_accrual_per_year: policyData.max_accrual_per_year,
+      max_balance: policyData.max_balance,
+      service_brackets: policyData.service_brackets,
+      carryover_method: policyData.carryover_method,
+      carryover_limit: policyData.carryover_limit,
+      carryover_expiry_months: policyData.carryover_expiry_months,
+      probation_months: policyData.probation_months,
+      min_employment_days: policyData.min_employment_days,
+      allow_negative_balance: policyData.allow_negative_balance,
+      negative_balance_limit: policyData.negative_balance_limit,
+      is_active: policyData.is_active,
+      effective_date: policyData.effective_date,
+      expiry_date: policyData.expiry_date
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to create policy');
-    }
-
-    return response.json();
+    return data;
   };
 
   // Update policy API call
   const updatePolicy = async (policyId: number, policyData: Partial<LeavePolicy>): Promise<LeavePolicy> => {
-    const response = await fetch(`/api/v1/leave-policies/${policyId}/`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${authState.token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        name: policyData.name,
-        leave_type_id: policyData.leave_type?.id,
-        employment_type_ids: policyData.employment_types?.map(et => et.id),
-        accrual_method: policyData.accrual_method,
-        accrual_rate: policyData.accrual_rate,
-        max_accrual_per_year: policyData.max_accrual_per_year,
-        max_balance: policyData.max_balance,
-        service_brackets: policyData.service_brackets,
-        carryover_method: policyData.carryover_method,
-        carryover_limit: policyData.carryover_limit,
-        carryover_expiry_months: policyData.carryover_expiry_months,
-        probation_months: policyData.probation_months,
-        min_employment_days: policyData.min_employment_days,
-        allow_negative_balance: policyData.allow_negative_balance,
-        negative_balance_limit: policyData.negative_balance_limit,
-        is_active: policyData.is_active,
-        effective_date: policyData.effective_date,
-        expiry_date: policyData.expiry_date
-      })
+    const { data } = await api.put(`/api/v1/leave-policies/${policyId}/`, {
+      name: policyData.name,
+      leave_type_id: policyData.leave_type?.id,
+      employment_type_ids: policyData.employment_types?.map(et => et.id),
+      accrual_method: policyData.accrual_method,
+      accrual_rate: policyData.accrual_rate,
+      max_accrual_per_year: policyData.max_accrual_per_year,
+      max_balance: policyData.max_balance,
+      service_brackets: policyData.service_brackets,
+      carryover_method: policyData.carryover_method,
+      carryover_limit: policyData.carryover_limit,
+      carryover_expiry_months: policyData.carryover_expiry_months,
+      probation_months: policyData.probation_months,
+      min_employment_days: policyData.min_employment_days,
+      allow_negative_balance: policyData.allow_negative_balance,
+      negative_balance_limit: policyData.negative_balance_limit,
+      is_active: policyData.is_active,
+      effective_date: policyData.effective_date,
+      expiry_date: policyData.expiry_date
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to update policy');
-    }
-
-    return response.json();
+    return data;
   };
 
   // Handle policy delete
   const handleDeletePolicy = useCallback(async (policyId: number) => {
     try {
-      const response = await fetch(`/api/v1/leave-policies/${policyId}/`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete policy');
-      }
+      await api.delete(`/api/v1/leave-policies/${policyId}/`);
 
       setNotification({
         type: MessageBarType.success,
@@ -249,22 +218,12 @@ const LeavePolicies: React.FC = () => {
         message: 'Failed to delete policy. Please try again.'
       });
     }
-  }, [authState.token]);
+  }, []);
 
   // Handle policy activate/deactivate
   const handleActivatePolicy = useCallback(async (policyId: number, isActive: boolean) => {
     try {
-      const response = await fetch(`/api/v1/leave-policies/${policyId}/${isActive ? 'activate' : 'deactivate'}/`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authState.token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to ${isActive ? 'activate' : 'deactivate'} policy`);
-      }
+      await api.post(`/api/v1/leave-policies/${policyId}/${isActive ? 'activate' : 'deactivate'}/`);
 
       setNotification({
         type: MessageBarType.success,
@@ -279,7 +238,7 @@ const LeavePolicies: React.FC = () => {
         message: `Failed to ${isActive ? 'activate' : 'deactivate'} policy. Please try again.`
       });
     }
-  }, [authState.token]);
+  }, []);
 
   // Handle form cancel
   const handleCancelForm = useCallback(() => {

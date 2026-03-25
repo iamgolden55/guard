@@ -213,7 +213,7 @@ class MultiTenantQueryOptimizer:
             # Build query with proper joins
             queryset = UserCompanyMembership.objects.select_related(
                 'user',
-                'user__staffprofile'
+                'user__profile'
             ).filter(
                 company_id=company_id
             )
@@ -224,7 +224,7 @@ class MultiTenantQueryOptimizer:
             staff_data = []
             for membership in queryset:
                 user = membership.user
-                staff_profile = getattr(user, 'staffprofile', None)
+                staff_profile = getattr(user, 'profile', None)
 
                 staff_data.append({
                     'user_id': user.id,

@@ -7,6 +7,7 @@ import {
   OnboardingProgress,
   StepValidation
 } from '../types';
+import api from '../services/api';
 
 // Define the context value structure
 interface OnboardingContextValue {
@@ -466,8 +467,27 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         return false;
       }
 
-      // TODO: Submit to API
-      console.log('Submitting onboarding data:', onboardingState.formData);
+      const formData = onboardingState.formData;
+
+      // Submit each onboarding section to the API
+      if (formData.companyInfo) {
+        await api.put('/api/v1/onboarding/company-info/', formData.companyInfo);
+      }
+
+      if (formData.regionalSetup) {
+        await api.put('/api/v1/onboarding/regional-setup/', formData.regionalSetup);
+      }
+
+      if (formData.staffConfig) {
+        await api.put('/api/v1/onboarding/staff-config/', formData.staffConfig);
+      }
+
+      if (formData.integrations) {
+        await api.put('/api/v1/onboarding/integrations/', formData.integrations);
+      }
+
+      // Mark onboarding as complete
+      await api.post('/api/v1/onboarding/complete/');
 
       // Clear saved progress after successful submission
       clearSavedProgress();

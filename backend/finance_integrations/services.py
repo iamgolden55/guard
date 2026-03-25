@@ -229,8 +229,8 @@ class FinanceIntegrationService:
         )
         
         # Add staff profile details if available
-        if hasattr(user, 'staffprofile'):
-            profile = user.staffprofile
+        if hasattr(user, 'profile'):
+            profile = user.profile
             if profile.phone_number:
                 contact.phone = profile.phone_number
             if profile.address_line1:
@@ -454,8 +454,8 @@ class FinanceIntegrationService:
         )
         
         # Add staff profile details if available
-        if hasattr(user, 'staffprofile'):
-            profile = user.staffprofile
+        if hasattr(user, 'profile'):
+            profile = user.profile
             if profile.employee_number:
                 employee.employee_number = profile.employee_number
             if profile.start_date:
