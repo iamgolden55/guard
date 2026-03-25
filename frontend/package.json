@@ -34,7 +34,9 @@
     "react-signature-canvas": "^1.0.7",
     "tailwindcss-animate": "^1.0.7",
     "trim-canvas": "^0.1.2",
-    "yup": "^1.6.1"
+    "yup": "^1.6.1",
+    "@sentry/react": "^8.45.0",
+    "posthog-js": "^1.194.0"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

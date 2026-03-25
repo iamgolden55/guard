@@ -10,14 +10,14 @@ export default defineConfig({
 		host: true,
 		proxy: {
 			'/api': {
-				target: 'http://localhost:8000',
+				target: process.env.API_URL || 'http://localhost:8000',
 				changeOrigin: true,
 				secure: false,
 				cookieDomainRewrite: 'localhost',
 				cookiePathRewrite: '/',
 			},
 			'/ws': {
-				target: 'ws://localhost:8000',
+				target: (process.env.API_URL || 'http://localhost:8000').replace('http', 'ws'),
 				ws: true,
 				changeOrigin: true,
 			}

@@ -1,0 +1,192 @@
+name: meadsecurity
+
+x-api-env: &api-env
+  DJANGO_SETTINGS_MODULE: core.settings
+  DJANGO_SECRET_KEY: dev-secret-key-not-for-production
+  DJANGO_DEBUG: "True"
+  DJANGO_ALLOWED_HOSTS: "*"
+  DB_HOST: db
+  DB_NAME: meadsecurity
+  DB_USER: meadsecurity
+  DB_PASSWORD: meadsecurity
+  DB_PORT: "5432"
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/1
+  CELERY_RESULT_BACKEND: redis://redis:6379/2
+  # MailHog email (captures all outbound email in dev)
+  EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+  EMAIL_HOST: mailhog
+  EMAIL_PORT: "1025"
+  EMAIL_USE_TLS: "false"
+  DEFAULT_FROM_EMAIL: "Info <info@meadsecurity.co.uk>"
+  HR_FROM_EMAIL: "HR <hr@meadsecurity.co.uk>"
+  INFO_FROM_EMAIL: "Info <info@meadsecurity.co.uk>"
+  PAYMENT_FROM_EMAIL: "Payments <payment@meadsecurity.co.uk>"
+  FRONTEND_URL: http://localhost:3000
+  # Sentry DSN (set in docker/.env or leave empty to disable)
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  SENTRY_ENVIRONMENT: development
+  # PostHog (set in docker/.env or leave empty to disable)
+  POSTHOG_API_KEY: ${POSTHOG_API_KEY:-}
+  POSTHOG_HOST: ${POSTHOG_HOST:-https://eu.i.posthog.com}
+
+x-api-build: &api-build
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.api
+    args:
+      INSTALL_DEV: "true"
+
+x-api-depends: &api-depends
+  db:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: meadsecurity
+      POSTGRES_USER: meadsecurity
+      POSTGRES_PASSWORD: meadsecurity
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # SQL files in init/ run automatically on first start (fresh volume only)
+      - ./init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meadsecurity"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI — view captured emails at http://localhost:8025
+
+  migrate:
+    <<: *api-build
+    env_file: ../backend/.env
+    environment:
+      <<: *api-env
+    depends_on:
+      <<: *api-depends
+    volumes:
+      - ../backend:/app
+    command: python manage.py migrate --noinput
+    restart: "no"
+
+  api:
+    <<: *api-build
+    env_file: ../backend/.env
+    environment:
+      <<: *api-env
+    ports:
+      - "8000:8000"
+    depends_on:
+      <<: *api-depends
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ../backend:/app
+    command: daphne -b 0.0.0.0 -p 8000 core.asgi:application
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    env_file: ../frontend/.env
+    environment:
+      API_URL: http://api:8000
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../frontend/src:/app/src
+      - ../frontend/index.html:/app/index.html
+      - ../frontend/vite.config.ts:/app/vite.config.ts
+      - ../frontend/tailwind.config.js:/app/tailwind.config.js
+      - ../frontend/postcss.config.js:/app/postcss.config.js
+      - ../frontend/tsconfig.json:/app/tsconfig.json
+      - ../frontend/.env:/app/.env
+      - web_node_modules:/app/node_modules
+    depends_on:
+      - api
+
+  celery-worker:
+    <<: *api-build
+    env_file: ../backend/.env
+    environment:
+      <<: *api-env
+    depends_on:
+      <<: *api-depends
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ../backend:/app
+    command: >
+      celery -A core worker
+      -l info
+      -Q celery,reports,cleanup,notifications
+      --concurrency=2
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A core inspect ping --timeout 5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  celery-beat:
+    <<: *api-build
+    env_file: ../backend/.env
+    environment:
+      <<: *api-env
+    depends_on:
+      <<: *api-depends
+      migrate:
+        condition: service_completed_successfully
+      celery-worker:
+        condition: service_healthy
+    volumes:
+      - ../backend:/app
+    command: >
+      celery -A core beat
+      -l info
+    restart: unless-stopped
+
+  flower:
+    <<: *api-build
+    env_file: ../backend/.env
+    environment:
+      <<: *api-env
+    ports:
+      - "5555:5555"
+    depends_on:
+      celery-worker:
+        condition: service_healthy
+    volumes:
+      - ../backend:/app
+    command: celery -A core flower --port=5555
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  web_node_modules:

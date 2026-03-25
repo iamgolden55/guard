@@ -559,3 +559,32 @@ if not DEBUG:
     if csrf_origins:
         env_csrf_origins = [origin.strip() for origin in csrf_origins.split(',') if origin.strip()]
         CSRF_TRUSTED_ORIGINS = list(set(CSRF_TRUSTED_ORIGINS + env_csrf_origins))
+
+# ==========================================
+# SENTRY ERROR TRACKING
+# ==========================================
+SENTRY_DSN = os.getenv('SENTRY_DSN', '')
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.celery import CeleryIntegration
+    from sentry_sdk.integrations.redis import RedisIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            DjangoIntegration(),
+            CeleryIntegration(),
+            RedisIntegration(),
+        ],
+        environment=os.getenv('SENTRY_ENVIRONMENT', 'development'),
+        traces_sample_rate=0.1 if not DEBUG else 1.0,
+        profiles_sample_rate=0.1 if not DEBUG else 1.0,
+        send_default_pii=False,
+    )
+
+# ==========================================
+# POSTHOG ANALYTICS
+# ==========================================
+POSTHOG_API_KEY = os.getenv('POSTHOG_API_KEY', '')
+POSTHOG_HOST = os.getenv('POSTHOG_HOST', 'https://eu.i.posthog.com')

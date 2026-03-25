@@ -1,49 +1,6 @@
-# Dependencies
-/node_modules
-/.pnp
-.pnp.js
-
-# Testing
-/coverage
-
-# Production
-/build
-/dist
-
-# Misc
-.DS_Store
-.env
-.env.*
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Editor directories and files
-.idea
-.vscode
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Playwright MCP test artifacts
-.playwright-mcp/
-mobile/.expo/
-
-# Build outputs (should never be committed)
-frontend/dist/
-frontend/node_modules/
-**/node_modules/
-**/dist/
-
+# ===========================================
 # Python
+# ===========================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -51,3 +8,99 @@ __pycache__/
 .Python
 *.egg-info/
 .eggs/
+venv/
+.venv/
+env/
+*.egg
+
+# ===========================================
+# Node.js
+# ===========================================
+**/node_modules/
+**/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp
+.pnp.js
+
+# ===========================================
+# Environment & Secrets
+# ===========================================
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# ===========================================
+# IDE & Editor
+# ===========================================
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+
+# ===========================================
+# Build & Output
+# ===========================================
+/build
+/coverage
+frontend/dist/
+*.zip
+
+# ===========================================
+# Docker
+# ===========================================
+# Don't ignore docker/.env — it only has placeholder vars
+# But do ignore any local overrides
+docker/.env.local
+# Database dump for Docker init (local data, don't commit)
+docker/init/
+
+# ===========================================
+# Django
+# ===========================================
+backend/staticfiles/
+backend/media/
+backend/logs/
+backend/*.log
+*.log
+db.sqlite3
+
+# ===========================================
+# Celery
+# ===========================================
+celerybeat-schedule
+celerybeat.pid
+
+# ===========================================
+# Testing
+# ===========================================
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# ===========================================
+# Mobile (Expo)
+# ===========================================
+mobile/.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# ===========================================
+# Misc
+# ===========================================
+.playwright-mcp/
+*.bak
+*.tmp
+temp_backup/
+.superdesign/
