@@ -83,7 +83,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
       // Staff users don't need onboarding - they join existing companies
       if (currentUser?.role === 'staff') {
-        console.log('AuthContext: Staff user detected, skipping onboarding API call');
+        // Staff users don't need onboarding - they join existing companies
         return {
           isCompleted: true,
           currentStep: 5,
@@ -105,20 +105,12 @@ function AuthProvider({ children }: { children: ReactNode }) {
           hasCompany: apiResponse.isCompleted // If onboarding is completed, user has company
         };
 
-        console.log('AuthContext fetchOnboardingStatus result:', {
-          raw_isCompleted: apiResponse.isCompleted,
-          raw_currentStep: apiResponse.currentStep,
-          raw_completedSteps: apiResponse.completedSteps,
-          parsed_result: result
-        });
-
         return result;
       } catch (apiError) {
         console.error('API call failed, falling back to localStorage:', apiError);
 
         // Fallback to localStorage if API call fails
         const savedProgress = onboardingService.getProgress();
-        console.log('DEBUG: Using localStorage fallback:', savedProgress);
 
         const fallbackResult = {
           isCompleted: savedProgress?.isCompleted || false,
@@ -128,7 +120,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
           hasCompany: !!savedProgress?.companyId
         };
 
-        console.log('DEBUG: Fallback result:', fallbackResult);
         return fallbackResult;
       }
     } catch (error) {
@@ -174,7 +165,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
       // Handle null response (user doesn't have a company yet)
       if (!response || !response.membership) {
-        console.log('No company membership found - user may be in onboarding');
         return null;
       }
 
@@ -187,15 +177,13 @@ function AuthProvider({ children }: { children: ReactNode }) {
         companyName: response.membership.company_name
       };
     } catch (error) {
-      console.log('Failed to fetch company membership (this is expected for new users):', error);
+      // Expected for new users without company membership
       return null;
     }
   }, []);
 
   // Function to complete onboarding
   const completeOnboarding = useCallback(async (companyId: string) => {
-    console.log('Completing onboarding and refreshing company membership...');
-
     // Update onboarding state
     setAuthState(prev => ({
       ...prev,
@@ -223,7 +211,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
           hasCompany: true
         }
       }));
-      console.log('Company membership refreshed successfully:', companyMembership);
     } catch (error) {
       console.error('Failed to refresh company membership after onboarding:', error);
       // Don't throw - the onboarding is still complete, user can refresh page
@@ -233,7 +220,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
   // Sprint 3: Function to refresh the user token (cookie-based)
   const refreshUserToken = useCallback(async (): Promise<boolean> => {
     try {
-      console.log('Proactively refreshing token via cookies...');
       // Sprint 3: Call cookie-based refresh endpoint (refresh token is in httpOnly cookie)
       await authService.refreshToken();
 
@@ -275,21 +261,15 @@ function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Only run initialization once
     if (!initializeRef.current) {
-      console.log('DEBUG: Initialization already ran, skipping');
       return;
     }
 
-    console.log('DEBUG: Starting AuthContext initialization (Sprint 3: Cookie-based)');
     // Mark as initialized immediately to prevent re-runs
     initializeRef.current = false;
 
     const initializeAuth = async () => {
       // Sprint 3: Only get user from localStorage (tokens are in httpOnly cookies)
       const userStr = localStorage.getItem('user');
-
-      console.log('DEBUG: Retrieved from localStorage:', {
-        hasUser: !!userStr
-      });
 
       let user = null;
       if (userStr) {
@@ -317,7 +297,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
       // Sprint 3: If no user, set auth state to not authenticated
       if (!user) {
-        console.log('DEBUG: No user found, setting unauthenticated state');
         setAuthState(prev => ({
           ...prev,
           user: null,
@@ -329,7 +308,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Sprint 3: We have a user, validate session by calling API (cookies handle auth)
-      console.log('DEBUG: User found, setting loading state and validating session');
       setAuthState(prev => ({
         ...prev,
         user,
@@ -340,11 +318,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
       // Don't validate if we're currently logging in
       if (isLoggingInRef.current) {
-        console.log('DEBUG: Currently logging in, skipping session validation');
         return;
       }
-
-      console.log('DEBUG: Starting session validation (cookie-based)');
 
       try {
         // Sprint 3: Validate the session by fetching user profile (cookies sent automatically)
@@ -369,14 +344,11 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
         // Mark onboarding as successfully fetched
         onboardingFetchedRef.current = true;
-        console.log('DEBUG: Session validation successful');
       } catch (error) {
-        console.log('DEBUG: Session validation failed');
 
         // Check if user was already cleared by api.ts interceptor (session invalidated)
         const userStillExists = localStorage.getItem('user');
         if (!userStillExists) {
-          console.log('DEBUG: User already cleared by interceptor, skipping recovery');
           setAuthState({
             user: null,
             isAuthenticated: false,
@@ -389,12 +361,10 @@ function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        console.log('DEBUG: Attempting token refresh');
         // Sprint 3: Try to refresh the token once before logging out (cookie-based)
         const refreshSuccessful = await refreshUserToken();
 
         if (!refreshSuccessful) {
-          console.log('DEBUG: Token refresh failed, clearing auth data');
           // Sprint 3: Clear user data (tokens are in httpOnly cookies, cleared by backend)
           localStorage.removeItem('user');
 
@@ -413,7 +383,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
             currentMembership: null
           });
         } else {
-          console.log('DEBUG: Token refresh successful, validating user again');
           // Sprint 3: Token refresh was successful, try to get user profile again
           try {
             const validatedUser = await authService.getUserProfile();
@@ -437,7 +406,6 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
             // Mark onboarding as successfully fetched
             onboardingFetchedRef.current = true;
-            console.log('DEBUG: User validation successful after token refresh');
           } catch (secondError) {
             console.error('Profile fetch failed after token refresh:', secondError);
             // Sprint 3: Clear user data (tokens in httpOnly cookies)
@@ -603,9 +571,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
         userRole: authState.user.role,
         targetRole: role
       });
-      const hasRole = authState.user?.role.toLowerCase() === role.toLowerCase();
-      console.log(`isUserRole(${role}): ${hasRole} (using user.role: ${authState.user.role})`);
-      return hasRole;
+      return authState.user?.role.toLowerCase() === role.toLowerCase();
     }
 
     // Check company membership role
@@ -614,13 +580,10 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
     // Map owner role to admin for dashboard purposes
     if (membershipRole === 'owner' && targetRole === 'admin') {
-      console.log(`isUserRole(${role}): true (owner mapped to admin)`);
       return true;
     }
 
-    const hasRole = membershipRole === targetRole;
-    console.log(`isUserRole(${role}): ${hasRole} (membership.role: ${membershipRole})`);
-    return hasRole;
+    return membershipRole === targetRole;
   };
 
   const value: AuthContextValue = {

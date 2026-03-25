@@ -465,15 +465,11 @@ const ShiftScheduling: React.FC = () => {
       setIsLoading(true);
       setError(null);
       
-      console.log("Fetching shifts with filters:", { venueFilter, staffFilter });
-      
       // Use the updated getShifts function
       const filteredShiftsFromApi = await getShifts({
         venueId: venueFilter,
         staffId: staffFilter
       });
-      
-      console.log("Raw API response:", filteredShiftsFromApi);
       
       // Map the API response to ScheduleShift type
       const mappedShifts = filteredShiftsFromApi.map((shift: any) => {
@@ -499,21 +495,6 @@ const ShiftScheduling: React.FC = () => {
         };
       });
       
-      console.log("Loaded and mapped shifts:", mappedShifts.length);
-      console.log("Active filters - Venue:", venueFilter || 'All', "Staff:", staffFilter || 'All');
-      if (mappedShifts.length > 0) {
-        const dateRange = {
-          earliest: new Date(Math.min(...mappedShifts.map(s => s.date.getTime()))),
-          latest: new Date(Math.max(...mappedShifts.map(s => s.date.getTime())))
-        };
-        console.log(`📅 Shifts date range: ${dateRange.earliest.toLocaleDateString()} to ${dateRange.latest.toLocaleDateString()}`);
-        console.log(`Sample shifts:`, mappedShifts.slice(0, 3).map(s => ({
-          id: s.id,
-          date: s.date.toLocaleDateString(),
-          venue: s.venueName,
-          staff: s.staffName
-        })));
-      }
       setShifts(mappedShifts);
     } catch (err) {
       console.error('Error loading shifts:', err);
@@ -542,7 +523,6 @@ const ShiftScheduling: React.FC = () => {
   // Also reload shifts when calendar days are ready (fallback)
   useEffect(() => {
     if (calendarDays.length > 0) {
-      console.log('Calendar days ready, ensuring shifts are loaded');
       loadShifts();
     }
   }, [calendarDays, loadShifts]);
@@ -553,8 +533,6 @@ const ShiftScheduling: React.FC = () => {
       const days: Date[] = [];
       const year = date.getFullYear();
       const month = date.getMonth();
-
-      console.log(`Generating calendar days for ${year}-${month + 1}`);
 
       // Get the first day of the month
       const firstDay = new Date(year, month, 1);
@@ -583,7 +561,6 @@ const ShiftScheduling: React.FC = () => {
         }
       }
 
-      console.log(`Generated ${days.length} calendar days`);
       setCalendarDays(days);
     } catch (error) {
       console.error("Error generating calendar days:", error);
@@ -610,11 +587,6 @@ const ShiftScheduling: React.FC = () => {
              shiftDate.getMonth() === date.getMonth() &&
              shiftDate.getFullYear() === date.getFullYear();
     });
-
-    // Debug logging for days with shifts
-    if (dayShifts.length > 0) {
-      console.log(`📆 ${date.toLocaleDateString()}: Found ${dayShifts.length} shift(s)`);
-    }
 
     return dayShifts;
   };
@@ -686,7 +658,6 @@ const ShiftScheduling: React.FC = () => {
         is_special_event: isSpecialEvent || false
       });
 
-      console.log('Multi-staff shifts created successfully:', response);
       return true;
     } catch (err: any) {
       console.error('Error creating multi-staff shifts:', err);
@@ -898,28 +869,16 @@ const ShiftScheduling: React.FC = () => {
       }
 
       // Filter out past dates - only keep shifts that start in the future
-      console.log(`Current time: ${now.toISOString()}`);
-      console.log(`Generated ${dates.length} total dates`);
-
       const futureDates = dates.filter(date => {
         const shiftStart = formatTimeToISO(date, newShiftStartTime);
-        const isPast = new Date(shiftStart) <= now;
-        if (isPast) {
-          console.log(`Skipping past date: ${date.toDateString()} at ${newShiftStartTime} (${shiftStart})`);
-        }
-        return !isPast;
+        return new Date(shiftStart) > now;
       });
-
-      console.log(`Future dates after filtering: ${futureDates.length}`);
 
       if (futureDates.length === 0) {
         setError('All recurring shift dates are in the past. Please select a future date range.');
         return;
       }
 
-      if (futureDates.length < dates.length) {
-        console.log(`✓ Skipped ${dates.length - futureDates.length} past shift dates, creating ${futureDates.length} future shifts`);
-      }
 
       // Create shifts for all future dates
       let allSuccessful = true;
@@ -951,13 +910,10 @@ const ShiftScheduling: React.FC = () => {
     }
     
     if (success) {
-      console.log('✅ Shifts created successfully, reloading calendar...');
       // Close dialog and reset form
       handleCloseNewShiftDialog();
       // Reload shifts to show newly created ones
       await loadShifts();
-      console.log(`✅ Calendar reloaded. Total shifts in state: ${shifts.length}`);
-      console.log(`📅 Current calendar month: ${currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`);
     }
   };
 
@@ -1019,14 +975,10 @@ const ShiftScheduling: React.FC = () => {
         required_security_role: selectedShift.requiredSecurityRole || 'sg'
       };
 
-      console.log('Updating shift:', selectedShift.id, updateData);
-
       // Call API to update the shift
       const updatedShift = await updateShift(selectedShift.id.toString(), updateData);
 
       if (updatedShift) {
-        console.log('Shift updated successfully:', updatedShift);
-        
         // Update local state with the response
         const updatedShifts = shifts.map(shift => {
           if (shift.id === selectedShift.id) {
@@ -1085,7 +1037,6 @@ const ShiftScheduling: React.FC = () => {
         setIsEditShiftDialogOpen(false);
         
         // Show success message
-        console.log(`Successfully deleted shift ${selectedShift.id}`);
       } else {
         // Show error message
         console.error('Failed to delete shift');
@@ -1161,7 +1112,6 @@ const ShiftScheduling: React.FC = () => {
       if (failCount > 0) {
         alert(`Deleted ${successCount} shifts successfully. ${failCount} shifts failed to delete.`);
       } else {
-        console.log(`Successfully deleted ${successCount} shifts`);
       }
     } catch (error) {
       console.error('Error during bulk delete:', error);
@@ -1206,7 +1156,6 @@ const ShiftScheduling: React.FC = () => {
         }));
         setShifts(updatedShifts);
         
-        console.log(`Successfully published ${shiftIds.length} shifts`);
       } else {
         setError('Failed to publish shifts. Please try again.');
       }
@@ -1298,8 +1247,6 @@ const ShiftScheduling: React.FC = () => {
       }
 
       if (templatesCreated > 0) {
-        console.log(`Successfully created ${templatesCreated} template(s)`);
-        
         // Reset form and close dialog
         setTemplateName('');
         setTemplateDescription('');
@@ -1352,8 +1299,6 @@ const ShiftScheduling: React.FC = () => {
     setError(null);
     
     try {
-      console.log(`Attempting to create ${shifts.length} shifts`);
-      
       if (!shifts.length) {
         setError('No shifts to create. Please check your selection.');
         setIsLoading(false);
@@ -1373,7 +1318,6 @@ const ShiftScheduling: React.FC = () => {
       
       if (result) {
         // Reload shifts after bulk creation
-        console.log('Shifts created successfully, reloading data');
         await loadShifts();
         setIsBulkShiftDialogOpen(false);
       } else {
@@ -1485,14 +1429,8 @@ const ShiftScheduling: React.FC = () => {
           sourceDate.getDate()
         );
 
-        console.log(`Processing shift ${shift.id} at ${shift.venueName}:`);
-        console.log(`  Source date: ${sourceDate.toDateString()}`);
-        console.log(`  Target date: ${targetDate.toDateString()}`);
-        console.log(`  Target month validation: ${targetDate.getMonth()} === ${targetMonth.getMonth()}`);
-
         // Skip if the day doesn't exist in the target month (e.g., Feb 30)
         if (targetDate.getMonth() !== targetMonth.getMonth()) {
-          console.log(`  SKIPPED: Invalid date mapping`);
           continue;
         }
 
@@ -1503,7 +1441,6 @@ const ShiftScheduling: React.FC = () => {
         // Skip shifts that would have start times in the past
         const now = new Date();
         if (startDateTime < now) {
-          console.log(`  SKIPPED: Target datetime ${startDateTime.toISOString()} is in the past`);
           continue;
         }
 
@@ -1518,7 +1455,6 @@ const ShiftScheduling: React.FC = () => {
           const endDate = new Date(targetDate);
           endDate.setDate(endDate.getDate() + 1);
           endDateStr = endDate.toISOString().split('T')[0];
-          console.log(`  OVERNIGHT SHIFT detected: End time moved to next day (${endDateStr})`);
         }
 
         const shiftToCreate: any = {
@@ -1532,15 +1468,6 @@ const ShiftScheduling: React.FC = () => {
           shiftToCreate.staffIds = [shift.staffId];
         }
         
-        console.log(`  ADDED to create queue:`, shiftToCreate);
-        console.log(`  Original shift data:`, {
-          id: shift.id,
-          venueId: shift.venueId,
-          staffId: shift.staffId,
-          date: shift.date,
-          startTime: shift.startTime,
-          endTime: shift.endTime
-        });
         shiftsToCreate.push(shiftToCreate);
       }
 
@@ -1550,9 +1477,7 @@ const ShiftScheduling: React.FC = () => {
       }
 
       // Use the bulk create API to create the copied shifts
-      console.log(`Sending ${shiftsToCreate.length} shifts to bulk create API:`, shiftsToCreate);
       const result = await bulkCreateShifts(shiftsToCreate, true); // Allow past dates for copy operation
-      console.log('Bulk create API result:', result);
 
       if (result && result.length > 0) {
         // Reload shifts to get the updated data
@@ -1566,7 +1491,6 @@ const ShiftScheduling: React.FC = () => {
         setSourceMonth(null);
         setTargetMonth(null);
 
-        console.log(`Successfully copied ${result.length} shifts to ${targetMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`);
       } else {
         setError('Failed to copy shifts. Please try again.');
       }
@@ -2762,9 +2686,6 @@ const ShiftScheduling: React.FC = () => {
                 const endDateObj = new Date(endDate);
                 let shiftIndex = 0;
                 
-                console.log(`Generating shifts from ${currentDate.toDateString()} to ${endDateObj.toDateString()}`);
-                console.log(`Selected staff: ${selectedStaff.length}, Sequential mode: ${isSequential}`);
-                
                 while (currentDate <= endDateObj) {
                   const dayOfWeek = currentDate.getDay();
                   if (daysOfWeek.includes(dayOfWeek)) {
@@ -2796,8 +2717,6 @@ const ShiftScheduling: React.FC = () => {
                   // Move to next day
                   currentDate.setDate(currentDate.getDate() + 1);
                 }
-                
-                console.log(`Created ${shiftsToCreate.length} shifts for submission`);
                 
                 if (shiftsToCreate.length > 0) {
                   handleCreateBulkShifts(shiftsToCreate);

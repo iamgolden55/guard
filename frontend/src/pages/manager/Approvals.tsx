@@ -520,8 +520,8 @@ const Approvals: React.FC = () => {
     {
       key: 'actions',
       name: 'Actions',
-      minWidth: 300,
-      maxWidth: 350,
+      minWidth: 360,
+      maxWidth: 420,
       isResizable: true,
       onRender: (item: IncompleteShift) => (
         <Stack horizontal tokens={{ childrenGap: 8 }} verticalAlign="center">
@@ -652,8 +652,6 @@ const Approvals: React.FC = () => {
     try {
       // Get pending approvals from the exchange service
       const approvals = await exchangeService.getPendingApprovals();
-      
-      console.log('Pending approvals:', approvals);
       
       setExchanges(approvals.exchange_requests || []);
       setOpenShiftRequests(approvals.shift_claims || []);
@@ -1178,11 +1176,12 @@ const Approvals: React.FC = () => {
 
             {manualAction === 'checkin' && (
               <TextField
-                label="Check-in Time"
+                label="Actual Arrival Time"
                 type="datetime-local"
                 value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
                 onChange={(_, newValue) => setManualCheckinTime(newValue ? new Date(newValue).toISOString() : '')}
-                description="When did the staff member actually start work?"
+                max={new Date().toISOString().slice(0, 16)}
+                description="Adjust if the staff member arrived at a different time than now"
               />
             )}
 
@@ -1214,7 +1213,7 @@ const Approvals: React.FC = () => {
 
                 {manualAction === 'checkout' && (
                   <TextField
-                    label="Check-out Time"
+                    label="Actual Departure Time"
                     type="datetime-local"
                     value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
                     onChange={(_, newValue) => {
@@ -1229,7 +1228,8 @@ const Approvals: React.FC = () => {
                         }
                       }
                     }}
-                    description="When did the staff member finish work?"
+                    max={new Date().toISOString().slice(0, 16)}
+                    description="Adjust if the staff member departed at a different time than now"
                   />
                 )}
               </>

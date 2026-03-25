@@ -385,8 +385,6 @@ const StaffManagement: React.FC = () => {
         })
       ]);
 
-      console.log('API Response:', usersResponse.data);
-
       // Handle paginated response - extract results array
       const employmentTypesArray = Array.isArray(employmentTypesResponse) ? employmentTypesResponse : (employmentTypesResponse?.results || []);
 
@@ -444,7 +442,6 @@ const StaffManagement: React.FC = () => {
     setPendingLoading(true);
     profileService.getPendingStaffProfiles()
       .then((data: any) => {
-        console.log('Received pending staff data:', data);
         let pendingStaffData = [];
 
         if (data && Array.isArray(data.results)) {
@@ -465,9 +462,6 @@ const StaffManagement: React.FC = () => {
           staff.sia_licenses.length > 0 &&
           !staff.is_approved
         );
-
-        console.log('Original pending staff count:', pendingStaffData.length);
-        console.log('Filtered pending staff count:', filteredPendingStaff.length);
 
         setPendingStaff(filteredPendingStaff);
         setPendingError(null);
@@ -543,8 +537,6 @@ const StaffManagement: React.FC = () => {
 
   const handleToggleStatus = useCallback(async (staff: Staff) => {
     try {
-      console.log('Toggling status for staff ID:', staff.id, 'Current status:', staff.isActive);
-
       // Call the API to update the user's active status
       await api.patch(`/api/v1/users/${staff.id}/`, {
         is_active: !staff.isActive
@@ -770,8 +762,6 @@ const StaffManagement: React.FC = () => {
     const staffName = `${selectedStaff.firstName} ${selectedStaff.lastName}`;
 
     try {
-      console.log('Deleting staff ID:', selectedStaff.id);
-
       // Call the API to delete the user
       await api.delete(`/api/v1/users/${selectedStaff.id}/`);
 
@@ -838,12 +828,8 @@ const StaffManagement: React.FC = () => {
         is_active: formData.isActive
       };
 
-      console.log('Submitting new staff data:', userData);
-
       // Call the API to create a new user
       const response = await api.post('/api/v1/users/', userData);
-
-      console.log('API response for new staff:', response.data);
 
       try {
         // Map the response to our Staff interface
@@ -898,8 +884,6 @@ const StaffManagement: React.FC = () => {
         role: formData.role.toLowerCase(), // Backend expects lowercase roles
         is_active: formData.isActive
       };
-
-      console.log('Updating staff data for ID:', selectedStaff.id, userData);
 
       // Call the API to update the user
       await api.patch(`/api/v1/users/${selectedStaff.id}/`, userData);
@@ -968,7 +952,6 @@ const StaffManagement: React.FC = () => {
     try {
       // Fetch full profile details using the ID from the list item
       const response = await api.get<StaffProfileDetail>(`/api/v1/staff-profiles/${staffListItem.id}/`);
-      console.log("Full staff details received for review:", response.data);
       setReviewingStaff(response.data);
     } catch (err) {
       console.error('Failed to fetch staff details for review:', err);
