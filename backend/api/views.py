@@ -2531,7 +2531,7 @@ def my_profile(request):
                 email = user.email
                 address = {'street': '', 'city': '', 'postalCode': '', 'country': ''}
 
-            # Get bank details if StaffProfile exists for this admin user
+            # Get bank details and employment type if StaffProfile exists for this admin user
             from api.models import StaffProfile as SP
             bank_details_response = {
                 'accountName': '',
@@ -2539,16 +2539,30 @@ def my_profile(request):
                 'sortCode': '',
                 'bankName': ''
             }
+            employment_type_response = None
             try:
-                staff_profile = SP.objects.filter(user=user).select_related('bank_details').first()
-                if staff_profile and staff_profile.bank_details:
-                    bd = staff_profile.bank_details
-                    bank_details_response = {
-                        'accountName': bd.account_name or '',
-                        'accountNumber': bd.account_number or '',
-                        'sortCode': bd.sort_code or '',
-                        'bankName': bd.bank_name or ''
-                    }
+                staff_profile = SP.objects.filter(user=user).select_related('bank_details', 'employment_type').first()
+                if staff_profile:
+                    try:
+                        if staff_profile.bank_details:
+                            bd = staff_profile.bank_details
+                            bank_details_response = {
+                                'accountName': bd.account_name or '',
+                                'accountNumber': bd.account_number or '',
+                                'sortCode': bd.sort_code or '',
+                                'bankName': bd.bank_name or ''
+                            }
+                    except Exception:
+                        pass  # No bank details relation
+                    if staff_profile.employment_type:
+                        et = staff_profile.employment_type
+                        employment_type_response = {
+                            'id': et.id,
+                            'name': et.name,
+                            'description': et.description,
+                            'employment_category': et.employment_category,
+                            'is_active': et.is_active
+                        }
             except Exception:
                 pass
 
@@ -2585,6 +2599,9 @@ def my_profile(request):
                 'availableDays': [],
                 'preferredVenues': [],
                 'notes': '',
+                'employment_type': employment_type_response,
+                'employment_type_details': employment_type_response,
+                'employmentType': employment_type_response,
                 'isApproved': True,  # Admin users are always approved
                 'securityRoles': getattr(user, 'security_roles', []),
                 'passwordLastChanged': user.password_last_changed.isoformat() if user.password_last_changed else None
