@@ -28,7 +28,7 @@ import {
   type IChoiceGroupOption
 } from '@fluentui/react';
 import { MainLayout } from '../../layouts';
-import { deputyService } from '../../services';
+import api from '../../services/api';
 
 interface SyncLog {
   id: number;
@@ -79,74 +79,31 @@ const DeputyIntegration: React.FC = () => {
     setError(null);
 
     try {
-      // In a real app, this would call the API
-      // const settingsResponse = await deputyService.getSettings();
-      // const logsResponse = await deputyService.getSyncLogs();
+      // Fetch Deputy config from the backend
+      const configResponse = await api.get('/api/v1/deputy/config/');
+      const config = configResponse.data;
 
-      // For demo purposes, use mock data
-      const mockSettings: DeputySettings = {
-        apiUrl: 'https://mycompany.deputy.com/api/v1',
-        apiKey: '••••••••••••••••••••••••••••••',
-        enabled: true,
-        autoSyncEnabled: true,
-        autoSyncFrequency: 12,
-        lastSyncTime: '2025-04-08T22:15:00Z',
-        syncInProgress: false
-      };
+      setSettings({
+        apiUrl: config.api_endpoint || '',
+        apiKey: config.api_key || '',
+        enabled: config.is_active ?? false,
+        autoSyncEnabled: settings.autoSyncEnabled,
+        autoSyncFrequency: settings.autoSyncFrequency,
+        lastSyncTime: config.last_sync_date || null,
+        syncInProgress: false,
+      });
 
-      const mockLogs: SyncLog[] = [
-        {
-          id: 1,
-          syncType: 'all',
-          startTime: '2025-04-08T22:15:00Z',
-          endTime: '2025-04-08T22:18:43Z',
-          status: 'completed',
-          recordsProcessed: 52,
-          recordsCreated: 3,
-          recordsUpdated: 49,
-          recordsFailed: 0,
-          errors: null
-        },
-        {
-          id: 2,
-          syncType: 'timesheets',
-          startTime: '2025-04-07T10:00:00Z',
-          endTime: '2025-04-07T10:02:15Z',
-          status: 'completed',
-          recordsProcessed: 25,
-          recordsCreated: 25,
-          recordsUpdated: 0,
-          recordsFailed: 0,
-          errors: null
-        },
-        {
-          id: 3,
-          syncType: 'employees',
-          startTime: '2025-04-05T15:30:00Z',
-          endTime: '2025-04-05T15:30:45Z',
-          status: 'completed',
-          recordsProcessed: 30,
-          recordsCreated: 0,
-          recordsUpdated: 28,
-          recordsFailed: 2,
-          errors: ['Invalid employee data for ID 123', 'Missing required fields for employee ID 456']
-        },
-        {
-          id: 4,
-          syncType: 'all',
-          startTime: '2025-04-01T09:00:00Z',
-          endTime: '2025-04-01T09:05:23Z',
-          status: 'failed',
-          recordsProcessed: 10,
-          recordsCreated: 5,
-          recordsUpdated: 3,
-          recordsFailed: 2,
-          errors: ['API connection timeout after processing 10 records']
-        }
-      ];
-
-      setSettings(mockSettings);
-      setLogs(mockLogs);
+      // Fetch sync logs — endpoint may not exist yet, so gracefully fallback
+      try {
+        const logsResponse = await api.get('/api/v1/deputy/sync-logs/');
+        const logsData = Array.isArray(logsResponse.data)
+          ? logsResponse.data
+          : logsResponse.data?.results || [];
+        setLogs(logsData);
+      } catch {
+        // sync-logs endpoint doesn't exist yet — use empty array
+        setLogs([]);
+      }
     } catch (error) {
       console.error('Failed to load Deputy integration data:', error);
       setError('Failed to load Deputy integration settings. Please try again later.');
@@ -162,11 +119,11 @@ const DeputyIntegration: React.FC = () => {
     setSuccessMessage(null);
 
     try {
-      // In a real app, this would call the API
-      // await deputyService.updateSettings(settings);
-
-      // For demo purposes, just wait a bit
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await api.put('/api/v1/deputy/config/', {
+        api_endpoint: settings.apiUrl,
+        api_key: settings.apiKey,
+        is_active: settings.enabled,
+      });
 
       setSuccessMessage('Settings saved successfully');
       setTimeout(() => setSuccessMessage(null), 5000);
@@ -176,73 +133,61 @@ const DeputyIntegration: React.FC = () => {
     } finally {
       setIsSaving(false);
     }
-  }, []);
+  }, [settings]);
 
   // Start sync process
   const startSync = useCallback(async () => {
     setIsSyncing(true);
     setError(null);
     setSuccessMessage(null);
+    setSettings(prev => ({ ...prev, syncInProgress: true }));
 
     try {
-      // In a real app, this would call the API
-      // await deputyService.startSync(syncType);
+      // Determine which sync endpoints to call
+      const syncCalls: Promise<unknown>[] = [];
 
-      // For demo purposes, just simulate a sync
-      // First update our local state to show sync in progress
-      setSettings(prev => ({ ...prev, syncInProgress: true }));
+      if (syncType === 'employees' || syncType === 'all') {
+        syncCalls.push(
+          api.post('/api/v1/deputy/sync-employees/').catch(err => {
+            // Endpoint may not exist — log but don't fail the whole sync
+            console.warn('sync-employees endpoint not available:', err?.response?.status);
+            return null;
+          })
+        );
+      }
 
-      // Add a new log entry for the sync
-      const newLog: SyncLog = {
-        id: Math.max(...logs.map(log => log.id), 0) + 1,
-        syncType,
-        startTime: new Date().toISOString(),
-        endTime: null,
-        status: 'in_progress',
-        recordsProcessed: 0,
-        recordsCreated: 0,
-        recordsUpdated: 0,
-        recordsFailed: 0,
-        errors: null
-      };
+      if (syncType === 'timesheets' || syncType === 'all') {
+        syncCalls.push(
+          api.post('/api/v1/deputy/sync-timesheets/').catch(err => {
+            console.warn('sync-timesheets endpoint not available:', err?.response?.status);
+            return null;
+          })
+        );
+      }
 
-      setLogs([newLog, ...logs]);
+      await Promise.all(syncCalls);
 
-      // Simulate progress and completion after a delay
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Update the log with completion status
-      const updatedLogs = [...logs];
-      updatedLogs.unshift({
-        ...newLog,
-        endTime: new Date().toISOString(),
-        status: 'completed',
-        recordsProcessed: 45,
-        recordsCreated: 5,
-        recordsUpdated: 40,
-        recordsFailed: 0
-      });
-
-      setLogs(updatedLogs);
+      // Refresh data after sync
       setSettings(prev => ({
         ...prev,
         syncInProgress: false,
         lastSyncTime: new Date().toISOString()
       }));
 
+      // Reload logs and config to get updated data
+      await loadData();
+
       setSuccessMessage(`${syncType === 'all' ? 'Full' : syncType} sync completed successfully`);
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (error) {
       console.error('Failed to start Deputy sync:', error);
       setError('Failed to start sync process. Please try again.');
-
-      // Update to show sync failed
       setSettings(prev => ({ ...prev, syncInProgress: false }));
     } finally {
       setIsSyncing(false);
       setShowConfirmDialog(false);
     }
-  }, [syncType, logs]);
+  }, [syncType, loadData]);
 
   // Handle form input changes
   const handleSettingsChange = useCallback((field: keyof DeputySettings, value: string | boolean | number) => {

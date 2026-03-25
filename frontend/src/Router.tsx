@@ -99,7 +99,8 @@ const Router: React.FC = () => {
         <Route path="/shifts/:id/checks" element={<ShiftChecks />} />
         <Route path="/shifts/exchange" element={<ShiftExchange />} />
         <Route path="/invoices" element={<MyInvoices />} />
-        <Route path="/invoices/:id" element={<div>Invoice Details</div>} />
+        {/* TODO: Build InvoiceDetails page — redirecting to list for now */}
+        <Route path="/invoices/:id" element={<MyInvoices />} />
         <Route path="/profile" element={<ProfilePage />} />
 
         {/* Leave Management - Consolidated Routes */}
@@ -151,7 +152,8 @@ const Router: React.FC = () => {
         />
         <Route path="/admin/scheduling" element={<ShiftScheduling />} />
         <Route path="/admin/invoices" element={<InvoiceGeneration />} />
-        <Route path="/admin/payrates" element={<div>Pay Rates</div>} />
+        {/* TODO: Build dedicated PayRates page — redirecting to invoices for now */}
+        <Route path="/admin/payrates" element={<InvoiceGeneration />} />
         <Route
           path="/admin/deputy"
           element={
@@ -160,7 +162,8 @@ const Router: React.FC = () => {
             </Suspense>
           }
         />
-        <Route path="/admin/deputy/sync" element={<div>Deputy Sync</div>} />
+        {/* TODO: Build dedicated Deputy Sync page — redirecting to deputy for now */}
+        <Route path="/admin/deputy/sync" element={<DeputyIntegration />} />
         <Route
           path="/admin/recruitment"
           element={
@@ -248,11 +251,6 @@ const DashboardRouter: React.FC = () => {
   // CRITICAL: Wait for auth state to fully load before routing
   // Fixed: Removed !authState.currentMembership check to prevent infinite spinner
   if (authState.isLoading || !authState.user) {
-    console.log('DashboardRouter - Loading state:', {
-      isLoading: authState.isLoading,
-      hasUser: !!authState.user,
-      hasMembership: !!authState.currentMembership
-    });
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -265,12 +263,6 @@ const DashboardRouter: React.FC = () => {
 
   // Handle users without company membership
   if (!authState.currentMembership) {
-    console.warn('DashboardRouter - No company membership found', {
-      userId: authState.user.id,
-      onboardingComplete: authState.onboarding.isCompleted,
-      hasCompany: authState.onboarding.hasCompany
-    });
-
     // Redirect to company setup page
     return <Navigate to="/company-setup" replace />;
   }
@@ -280,34 +272,21 @@ const DashboardRouter: React.FC = () => {
   const userRole = authState.user.role.toLowerCase();
   const effectiveRole = membershipRole === 'owner' ? 'admin' : membershipRole;
 
-  // Log for debugging (remove after fix confirmed)
-  console.log('DashboardRouter - User role:', {
-    userRole: userRole,
-    membershipRole: membershipRole,
-    effectiveRole: effectiveRole,
-    isOwner: authState.currentMembership.isOwner
-  });
-
   // CRITICAL SECURITY: Staff users must NEVER access admin dashboard
   // Double-check both user.role and membership.role to prevent any bypass
   if (userRole === 'staff') {
-    console.log('SECURITY: Staff user detected, forcing StaffDashboard');
     return <StaffDashboard />;
   }
 
-  // CRITICAL: Use direct role comparison
   if (effectiveRole === UserRole.ADMIN.toLowerCase()) {
-    console.log('Rendering AdminDashboard');
     return <AdminDashboard />;
   }
 
   if (effectiveRole === UserRole.MANAGER.toLowerCase()) {
-    console.log('Rendering ManagerDashboard');
     return <ManagerDashboard />;
   }
 
   // Default to staff dashboard for safety
-  console.log('Defaulting to StaffDashboard');
   return <StaffDashboard />;
 };
 
