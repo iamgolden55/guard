@@ -48,7 +48,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1/', include('api.urls')),
     path('api/v1/shifts/', include('shifts.urls')),  # Shifts under v1 API for mobile app compatibility
-    path('api/shifts/', include('shifts.urls')),  # Keep legacy endpoint for backward compatibility
     path('api/v1/finance/', include('finance_integrations.urls')),  # Add finance integrations under v1 API
     path('api/v1/leave/', include('leave_management.urls')),  # Add leave management
     path('api/v1/health/', health_check, name='health-check'),  # Health check for Render/load balancers

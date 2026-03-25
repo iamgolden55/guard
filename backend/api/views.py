@@ -325,7 +325,30 @@ class LoginView(APIView):
                     user.account_locked_until = now + timedelta(minutes=30)
                     user.save(update_fields=['failed_login_attempts', 'last_failed_login', 'account_locked_until'])
 
-                    # TODO: Send email notification to user about account lockout
+                    # Send email notification to user about account lockout
+                    try:
+                        from django.core.mail import send_mail
+                        lockout_time = user.account_locked_until.strftime('%Y-%m-%d %H:%M:%S %Z')
+                        user_name = user.get_full_name() or user.username
+                        send_mail(
+                            subject='Account Locked - Too Many Failed Login Attempts',
+                            message=(
+                                f'Dear {user_name},\n\n'
+                                f'Your account has been locked due to too many failed login attempts.\n\n'
+                                f'Lockout time: {lockout_time}\n'
+                                f'Your account will be automatically unlocked after 30 minutes.\n\n'
+                                f'If you did not attempt to log in, someone else may be trying to access '
+                                f'your account. Please contact support immediately.\n\n'
+                                f'If you need immediate access, please reach out to your administrator.\n\n'
+                                f'Regards,\n'
+                                f'Mead Security Team'
+                            ),
+                            from_email=settings.DEFAULT_FROM_EMAIL,
+                            recipient_list=[user.email],
+                            fail_silently=True,
+                        )
+                    except Exception:
+                        logger.warning(f'Failed to send account lockout email to user {user.pk}')
 
                     return Response({
                         'message': 'Account locked',

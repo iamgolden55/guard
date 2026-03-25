@@ -1720,28 +1720,72 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
 
         return Response(statistics_data)
 
+    def _get_filtered_leave_requests(self, request):
+        """
+        Build a filtered queryset of LeaveRequest objects based on query params.
+        Applies multi-tenant company filtering and select_related to avoid N+1.
+
+        Supported query params: year, start_date, end_date, leave_type, status
+        """
+        current_year = timezone.now().year
+        year = int(request.query_params.get('year', current_year))
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        leave_type_ids = request.query_params.getlist('leave_type')
+        status_filters = request.query_params.getlist('status')
+
+        # Base queryset filtered by year
+        queryset = LeaveRequest.objects.filter(created_at__year=year)
+
+        # Multi-tenant: restrict to the requesting user's company
+        user_membership = request.user.company_memberships.filter(
+            is_active=True
+        ).select_related('company').first()
+
+        if user_membership:
+            company_user_ids = user_membership.company.memberships.filter(
+                is_active=True
+            ).values_list('user_id', flat=True)
+            queryset = queryset.filter(staff_user_id__in=company_user_ids)
+        else:
+            queryset = queryset.none()
+
+        # Apply optional filters
+        if start_date:
+            queryset = queryset.filter(start_date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(end_date__lte=end_date)
+        if leave_type_ids:
+            leave_type_ids = [int(lt_id) for lt_id in leave_type_ids]
+            queryset = queryset.filter(leave_type_id__in=leave_type_ids)
+        if status_filters:
+            queryset = queryset.filter(status__in=status_filters)
+
+        # Optimise with select_related to avoid N+1 queries
+        queryset = queryset.select_related(
+            'staff_user', 'leave_type'
+        ).order_by('-created_at')
+
+        return queryset
+
     @action(detail=False, methods=['get'])
     def export_xlsx(self, request):
-        """Export analytics data to Excel format"""
+        """Export leave requests data to Excel format"""
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from django.http import HttpResponse
         import io
 
-        # Get analytics data with same filters
-        analytics_response = self.analytics(request)
-        data = analytics_response.data
+        queryset = self._get_filtered_leave_requests(request)
 
         # Create workbook
         wb = Workbook()
-
-        # Summary Sheet
-        ws_summary = wb.active
-        ws_summary.title = "Summary"
+        ws = wb.active
+        ws.title = "Leave Requests"
 
         # Header styling
         header_fill = PatternFill(start_color="0078D4", end_color="0078D4", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True, size=12)
+        header_font = Font(color="FFFFFF", bold=True, size=11)
         border = Border(
             left=Side(style='thin'),
             right=Side(style='thin'),
@@ -1749,80 +1793,38 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
             bottom=Side(style='thin')
         )
 
-        # Summary section
-        ws_summary['A1'] = 'Leave Analytics Summary'
-        ws_summary['A1'].font = Font(bold=True, size=14)
-        ws_summary['A2'] = f"Period: {data['period']['year']}"
-
-        row = 4
-        ws_summary[f'A{row}'] = 'Metric'
-        ws_summary[f'B{row}'] = 'Value'
-        ws_summary[f'A{row}'].fill = header_fill
-        ws_summary[f'B{row}'].fill = header_fill
-        ws_summary[f'A{row}'].font = header_font
-        ws_summary[f'B{row}'].font = header_font
-
-        summary = data['summary']
-        metrics = [
-            ('Total Requests', summary['total_requests']),
-            ('Approved Requests', summary['approved_requests']),
-            ('Pending Requests', summary['pending_requests']),
-            ('Rejected Requests', summary['rejected_requests']),
-            ('Total Days Taken', summary['total_days_taken']),
-            ('Average Days per Request', summary['average_days_per_request']),
-            ('Approval Rate (%)', summary['approval_rate']),
+        headers = [
+            'Employee Name', 'Email', 'Leave Type', 'Start Date',
+            'End Date', 'Days Requested', 'Status', 'Reason', 'Created At'
         ]
+        column_widths = [25, 30, 20, 14, 14, 16, 14, 40, 20]
 
-        for i, (metric, value) in enumerate(metrics, start=5):
-            ws_summary[f'A{i}'] = metric
-            ws_summary[f'B{i}'] = value
-
-        # Column widths
-        ws_summary.column_dimensions['A'].width = 25
-        ws_summary.column_dimensions['B'].width = 15
-
-        # Monthly Trends Sheet
-        ws_monthly = wb.create_sheet("Monthly Trends")
-        headers = ['Month', 'Total Requests', 'Approved', 'Rejected', 'Total Days']
-        for col, header in enumerate(headers, start=1):
-            cell = ws_monthly.cell(row=1, column=col)
-            cell.value = header
+        for col_idx, header in enumerate(headers, start=1):
+            cell = ws.cell(row=1, column=col_idx, value=header)
             cell.fill = header_fill
             cell.font = header_font
             cell.border = border
+            cell.alignment = Alignment(horizontal='center', vertical='center')
 
-        for row_idx, month_data in enumerate(data['monthly_trends'], start=2):
-            ws_monthly.cell(row=row_idx, column=1, value=month_data['month_name'])
-            ws_monthly.cell(row=row_idx, column=2, value=month_data['total_requests'])
-            ws_monthly.cell(row=row_idx, column=3, value=month_data['approved'])
-            ws_monthly.cell(row=row_idx, column=4, value=month_data['rejected'])
-            ws_monthly.cell(row=row_idx, column=5, value=month_data['total_days'])
+        # Set column widths
+        for col_idx, width in enumerate(column_widths, start=1):
+            ws.column_dimensions[chr(64 + col_idx)].width = width
 
-        # Auto-width columns
-        for col in range(1, 6):
-            ws_monthly.column_dimensions[chr(64 + col)].width = 18
+        # Write data rows
+        for row_idx, leave_req in enumerate(queryset, start=2):
+            ws.cell(row=row_idx, column=1, value=f"{leave_req.staff_user.first_name} {leave_req.staff_user.last_name}")
+            ws.cell(row=row_idx, column=2, value=leave_req.staff_user.email)
+            ws.cell(row=row_idx, column=3, value=leave_req.leave_type.name)
+            ws.cell(row=row_idx, column=4, value=leave_req.start_date.isoformat())
+            ws.cell(row=row_idx, column=5, value=leave_req.end_date.isoformat())
+            ws.cell(row=row_idx, column=6, value=float(leave_req.days_requested))
+            ws.cell(row=row_idx, column=7, value=leave_req.status)
+            ws.cell(row=row_idx, column=8, value=leave_req.reason)
+            ws.cell(row=row_idx, column=9, value=leave_req.created_at.strftime('%Y-%m-%d %H:%M:%S'))
 
-        # Leave Types Breakdown Sheet
-        if data['leave_types_breakdown']:
-            ws_types = wb.create_sheet("Leave Types")
-            headers = ['Leave Type', 'Code', 'Requests', 'Total Days', 'Avg Days', 'Percentage']
-            for col, header in enumerate(headers, start=1):
-                cell = ws_types.cell(row=1, column=col)
-                cell.value = header
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.border = border
-
-            for row_idx, type_data in enumerate(data['leave_types_breakdown'], start=2):
-                ws_types.cell(row=row_idx, column=1, value=type_data['leave_type'])
-                ws_types.cell(row=row_idx, column=2, value=type_data['code'])
-                ws_types.cell(row=row_idx, column=3, value=type_data['request_count'])
-                ws_types.cell(row=row_idx, column=4, value=type_data['total_days'])
-                ws_types.cell(row=row_idx, column=5, value=type_data['average_days'])
-                ws_types.cell(row=row_idx, column=6, value=f"{type_data['percentage']}%")
-
-            for col in range(1, 7):
-                ws_types.column_dimensions[chr(64 + col)].width = 16
+            # Apply border to data cells
+            for col_idx in range(1, len(headers) + 1):
+                ws.cell(row=row_idx, column=col_idx).border = border
 
         # Save to BytesIO
         excel_file = io.BytesIO()
@@ -1830,11 +1832,12 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
         excel_file.seek(0)
 
         # Create response
+        year = request.query_params.get('year', timezone.now().year)
         response = HttpResponse(
             excel_file.read(),
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
-        filename = f"leave_analytics_{data['period']['year']}.xlsx"
+        filename = f"leave_requests_{year}.xlsx"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
         return response
@@ -1988,71 +1991,38 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def export_csv(self, request):
-        """Export analytics data to CSV format"""
+        """Export leave requests data to CSV format"""
         import csv
         from django.http import HttpResponse
-        import io
 
-        # Get analytics data with same filters
-        analytics_response = self.analytics(request)
-        data = analytics_response.data
+        queryset = self._get_filtered_leave_requests(request)
 
-        # Create CSV buffer
-        output = io.StringIO()
-        writer = csv.writer(output)
-
-        # Write summary section
-        writer.writerow(['Leave Analytics Summary'])
-        writer.writerow(['Period:', data['period']['year']])
-        writer.writerow([])
-
-        writer.writerow(['Summary Statistics'])
-        writer.writerow(['Metric', 'Value'])
-
-        summary = data['summary']
-        writer.writerow(['Total Requests', summary['total_requests']])
-        writer.writerow(['Approved Requests', summary['approved_requests']])
-        writer.writerow(['Pending Requests', summary['pending_requests']])
-        writer.writerow(['Rejected Requests', summary['rejected_requests']])
-        writer.writerow(['Total Days Taken', f"{summary['total_days_taken']:.1f}"])
-        writer.writerow(['Average Days per Request', f"{summary['average_days_per_request']:.2f}"])
-        writer.writerow(['Approval Rate (%)', f"{summary['approval_rate']:.1f}"])
-        writer.writerow([])
-
-        # Write monthly trends
-        writer.writerow(['Monthly Trends'])
-        writer.writerow(['Month', 'Total Requests', 'Approved', 'Rejected', 'Total Days'])
-
-        for month in data['monthly_trends']:
-            writer.writerow([
-                month['month_name'],
-                month['total_requests'],
-                month['approved'],
-                month['rejected'],
-                f"{month['total_days']:.1f}"
-            ])
-        writer.writerow([])
-
-        # Write leave types breakdown
-        if data['leave_types_breakdown']:
-            writer.writerow(['Leave Types Breakdown'])
-            writer.writerow(['Leave Type', 'Code', 'Requests', 'Total Days', 'Avg Days', 'Percentage'])
-
-            for lt in data['leave_types_breakdown']:
-                writer.writerow([
-                    lt['leave_type'],
-                    lt['code'],
-                    lt['request_count'],
-                    f"{lt['total_days']:.1f}",
-                    f"{lt['average_days']:.1f}",
-                    f"{lt['percentage']:.1f}%"
-                ])
-
-        # Create response
-        output.seek(0)
-        response = HttpResponse(output.getvalue(), content_type='text/csv')
-        filename = f"leave_analytics_{data['period']['year']}.csv"
+        year = request.query_params.get('year', timezone.now().year)
+        response = HttpResponse(content_type='text/csv')
+        filename = f"leave_requests_{year}.csv"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        writer = csv.writer(response)
+
+        # Write header row
+        writer.writerow([
+            'Employee Name', 'Email', 'Leave Type', 'Start Date',
+            'End Date', 'Days Requested', 'Status', 'Reason', 'Created At'
+        ])
+
+        # Write data rows
+        for leave_req in queryset:
+            writer.writerow([
+                f"{leave_req.staff_user.first_name} {leave_req.staff_user.last_name}",
+                leave_req.staff_user.email,
+                leave_req.leave_type.name,
+                leave_req.start_date.isoformat(),
+                leave_req.end_date.isoformat(),
+                float(leave_req.days_requested),
+                leave_req.status,
+                leave_req.reason,
+                leave_req.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            ])
 
         return response
 

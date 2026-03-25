@@ -27,7 +27,8 @@ const DeputyIntegration = lazy(() => import('./pages/admin/DeputyIntegration'));
 const RecruitmentManagement = lazy(() => import('./pages/admin/RecruitmentManagement'));
 const RecruitmentApplication = lazy(() => import('./pages/public/RecruitmentApplication'));
 const EmploymentTypesManagement = lazy(() => import('./pages/admin/EmploymentTypesManagement'));
-// Reports feature removed
+const ReportsPage = lazy(() => import('./pages/reports/ReportsPage'));
+const LeaveReports = lazy(() => import('./pages/admin/LeaveReports'));
 const Attendance = lazy(() => import('./pages/admin/Attendance'));
 const AnalyticsDashboard = lazy(() => import('./pages/admin/AnalyticsDashboard'));
 const BankHolidayManagement = lazy(() => import('./pages/admin/BankHolidayManagement'));
@@ -36,7 +37,7 @@ const ComplianceSettings = lazy(() => import('./components/compliance/Compliance
 // Leave Management Pages - Lazy Loading
 const TeamOverview = lazy(() => import('./pages/manager/TeamOverview'));
 const LeavePolicies = lazy(() => import('./pages/admin/LeavePolicies'));
-// Leave reports removed
+// Leave reports re-enabled above
 const LeaveSettings = lazy(() => import('./pages/admin/LeaveSettings'));
 
 // Onboarding Components - Lazy Loading
@@ -196,7 +197,22 @@ const Router: React.FC = () => {
             </Suspense>
           }
         />
-        {/* Reports routes removed */}
+        <Route
+          path="/admin/reports"
+          element={
+            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading reports...</span></div>}>
+              <ReportsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/admin/leave-reports"
+          element={
+            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading leave reports...</span></div>}>
+              <LeaveReports />
+            </Suspense>
+          }
+        />
         <Route path="/admin/finance-integrations" element={<FinanceIntegrations />} />
         <Route path="/admin/finance-integrations/oauth-callback" element={<FinanceIntegrationsOAuthCallback />} />
 
