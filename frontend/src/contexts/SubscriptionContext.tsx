@@ -159,30 +159,30 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     } catch (error) {
       console.error('Failed to fetch subscription data:', error);
 
-      // Fallback to defaults if API fails
+      // Fallback to restrictive defaults if API fails - only enable basic starter features
       setState(prev => ({
         ...prev,
         isLoading: false,
         error: 'Failed to load subscription data',
         subscriptionData: {
           subscription_tier: 'starter',
-          subscription_status: 'trial_active',
-          is_trial: true,
+          subscription_status: 'active',
+          is_trial: false,
           trial_end_date: null,
-          trial_days_remaining: 30,
+          trial_days_remaining: 0,
           features: {
             basic_scheduling: true,
             staff_management: true,
             venue_management: true,
             shift_tracking: true,
-            leave_management: true,
-            deputy_integration: true,
-            compliance_tracking: true,
-            advanced_reports: true,
-            multi_venue: true,
-            api_access: true,
-            custom_branding: true,
-            priority_support: true,
+            leave_management: false,
+            deputy_integration: false,
+            compliance_tracking: false,
+            advanced_reports: false,
+            multi_venue: false,
+            api_access: false,
+            custom_branding: false,
+            priority_support: false,
           },
           staff_capacity: 50,
           venue_capacity: 10,

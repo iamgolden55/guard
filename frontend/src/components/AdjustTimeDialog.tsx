@@ -14,13 +14,13 @@ import {
   SpinnerSize,
   Label,
 } from '@fluentui/react';
-import { format, parseISO, differenceInMinutes } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import shiftService from '../services/shiftService';
-import type { Shift } from '../types';
 import type { AdjustmentData, AdjustmentResponse } from '../types/invoice';
 
+// Uses raw API response (snake_case fields) rather than the camelCase Shift type
 interface AdjustTimeDialogProps {
-  shift: Shift;
+  shift: Record<string, any>;
   isOpen: boolean;
   onDismiss: () => void;
   onSuccess: () => void;
@@ -81,12 +81,14 @@ const AdjustTimeDialog: React.FC<AdjustTimeDialogProps> = ({
   }, [isOpen, shift]);
 
   // Calculate adjusted hours when times change
+  // Uses seconds/3600 to match backend precision exactly
   useEffect(() => {
     if (adjustedCheckIn && adjustedCheckOut) {
       const checkIn = new Date(adjustedCheckIn);
       const checkOut = new Date(adjustedCheckOut);
-      const minutes = differenceInMinutes(checkOut, checkIn);
-      const hours = minutes / 60;
+      const diffMs = checkOut.getTime() - checkIn.getTime();
+      // Calculate hours using seconds (matching backend: total_seconds() / 3600)
+      const hours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
 
       // Auto-calculate payment impact
       if (shift.hourly_rate && shift.actual_hours_worked) {
@@ -167,11 +169,11 @@ const AdjustTimeDialog: React.FC<AdjustTimeDialogProps> = ({
       return;
     }
 
-    // Calculate adjusted hours
+    // Calculate adjusted hours using seconds/3600 to match backend precision exactly
     const checkIn = new Date(adjustedCheckIn);
     const checkOut = new Date(adjustedCheckOut);
-    const minutes = differenceInMinutes(checkOut, checkIn);
-    const adjustedHours = minutes / 60;
+    const diffMs = checkOut.getTime() - checkIn.getTime();
+    const adjustedHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
 
     if (adjustedHours <= 0) {
       setError('Check-out must be after check-in');
@@ -205,11 +207,30 @@ const AdjustTimeDialog: React.FC<AdjustTimeDialogProps> = ({
       onDismiss();
     } catch (err: any) {
       console.error('Error adjusting shift times:', err);
-      setError(
-        err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        'Failed to adjust shift times. Please try again.'
-      );
+      // Extract validation errors from DRF response
+      const responseData = err?.response?.data;
+      let errorMessage = 'Failed to adjust shift times. Please try again.';
+
+      if (responseData) {
+        if (typeof responseData === 'string') {
+          errorMessage = responseData;
+        } else if (responseData.detail) {
+          errorMessage = responseData.detail;
+        } else if (responseData.message) {
+          errorMessage = responseData.message;
+        } else if (typeof responseData === 'object') {
+          // Handle DRF validation errors: {"field": ["error1", "error2"]}
+          const errors = Object.entries(responseData)
+            .map(([field, messages]) => {
+              const msgList = Array.isArray(messages) ? messages : [messages];
+              return `${field}: ${msgList.join(', ')}`;
+            })
+            .join('; ');
+          if (errors) errorMessage = errors;
+        }
+      }
+
+      setError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }

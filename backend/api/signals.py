@@ -17,15 +17,15 @@ logger = logging.getLogger(__name__)
 @receiver(pre_save, sender=SecurityCompany)
 def setup_trial_period(sender, instance, **kwargs):
     """
-    Automatically set up 30-day trial for new companies.
+    Automatically set up 14-day trial for new companies.
 
-    This signal ensures every new company starts with a 30-day trial period
+    This signal ensures every new company starts with a 14-day trial period
     where they have access to all features regardless of their selected tier.
     After the trial expires, features are restricted to their subscription tier.
 
     Trial Setup:
     - is_trial = True
-    - trial_end_date = created_at + 30 days
+    - trial_end_date = created_at + 14 days
     - Full feature access during trial
     - After trial: Features restricted to subscription_tier
     """
@@ -34,10 +34,10 @@ def setup_trial_period(sender, instance, **kwargs):
         # Set trial period for new companies
         if not instance.is_trial and not instance.trial_end_date:
             instance.is_trial = True
-            instance.trial_end_date = timezone.now() + timedelta(days=30)
+            instance.trial_end_date = timezone.now() + timedelta(days=14)
 
             logger.info(
-                f"Auto-enabled 30-day trial for new company: {instance.name} "
+                f"Auto-enabled 14-day trial for new company: {instance.name} "
                 f"(expires: {instance.trial_end_date})"
             )
 
@@ -484,7 +484,7 @@ def notify_shift_deletion(sender, instance, **kwargs):
         return
 
     # Only notify for future/active shifts (not past completed ones)
-    if instance.status in ['completed', 'cancelled']:
+    if instance.status in ['completed', 'cancelled', 'no_show']:
         return
 
     try:

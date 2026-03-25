@@ -23,14 +23,14 @@ const shiftApi = api;
 class ShiftService {
   // Venue-related methods
   async getVenues(): Promise<Venue[]> {
-    const response = await api.get<Venue[]>('/venues/');
+    const response = await api.get<Venue[]>('/api/v1/venues/');
     return response.data;
   }
 
   // Terms and conditions acceptance
   async hasAcceptedVenueTerms(venueId: number): Promise<boolean> {
     try {
-      const response = await api.get<{ hasAccepted: boolean }>(`/venues/${venueId}/terms_acceptance/`);
+      const response = await api.get<{ hasAccepted: boolean }>(`/api/v1/venues/${venueId}/terms_acceptance/`);
       return response.data.hasAccepted;
     } catch (error) {
       console.error('Error checking terms acceptance:', error);
@@ -39,7 +39,7 @@ class ShiftService {
   }
 
   async acceptVenueTerms(venueId: number): Promise<AcceptedVenueTerms> {
-    const response = await api.post<AcceptedVenueTerms>(`/venues/${venueId}/accept_terms/`, {});
+    const response = await api.post<AcceptedVenueTerms>(`/api/v1/venues/${venueId}/accept_terms/`, {});
     return response.data;
   }
 
@@ -101,13 +101,13 @@ class ShiftService {
       if (params.isPublished !== undefined) queryParams.append('is_published', params.isPublished.toString());
     }
     
-    const url = `/scheduled-shifts/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    const url = `/api/v1/scheduled-shifts/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
     const response = await api.get<ScheduledShift[]>(url);
     return response.data;
   }
 
   async getScheduledShiftById(shiftId: number): Promise<ScheduledShift> {
-    const response = await api.get<ScheduledShift>(`/scheduled-shifts/${shiftId}/`);
+    const response = await api.get<ScheduledShift>(`/api/v1/scheduled-shifts/${shiftId}/`);
     return response.data;
   }
 
@@ -136,7 +136,7 @@ class ShiftService {
       pay_rate: data.payRate || null
     };
     
-    const response = await api.post<ScheduledShift>('/scheduled-shifts/', requestData);
+    const response = await api.post<ScheduledShift>('/api/v1/scheduled-shifts/', requestData);
     return response.data;
   }
 
@@ -167,26 +167,26 @@ class ShiftService {
     if (data.requiresToiletChecks !== undefined) requestData.requires_toilet_checks = data.requiresToiletChecks;
     if (data.payRate !== undefined) requestData.pay_rate = data.payRate;
     
-    const response = await api.patch<ScheduledShift>(`/scheduled-shifts/${shiftId}/`, requestData);
+    const response = await api.patch<ScheduledShift>(`/api/v1/scheduled-shifts/${shiftId}/`, requestData);
     return response.data;
   }
 
   async deleteScheduledShift(shiftId: number): Promise<void> {
-    await api.delete(`/scheduled-shifts/${shiftId}/`);
+    await api.delete(`/api/v1/scheduled-shifts/${shiftId}/`);
   }
 
   async publishScheduledShifts(shiftIds: number[]): Promise<ScheduledShift[]> {
-    const response = await api.post<ScheduledShift[]>('/scheduled-shifts/publish/', { shift_ids: shiftIds });
+    const response = await api.post<ScheduledShift[]>('/api/v1/scheduled-shifts/publish/', { shift_ids: shiftIds });
     return response.data;
   }
 
   async assignStaffToShift(shiftId: number, staffId: number): Promise<ScheduledShift> {
-    const response = await api.post<ScheduledShift>(`/scheduled-shifts/${shiftId}/assign/`, { staff_id: staffId });
+    const response = await api.post<ScheduledShift>(`/api/v1/scheduled-shifts/${shiftId}/assign/`, { staff_id: staffId });
     return response.data;
   }
 
   async unassignStaffFromShift(shiftId: number): Promise<ScheduledShift> {
-    const response = await api.post<ScheduledShift>(`/scheduled-shifts/${shiftId}/unassign/`, {});
+    const response = await api.post<ScheduledShift>(`/api/v1/scheduled-shifts/${shiftId}/unassign/`, {});
     return response.data;
   }
 
@@ -208,18 +208,18 @@ class ShiftService {
       end_occurrences: data.endOccurrences || null
     };
     
-    const response = await api.post<RecurringShiftPattern>('/recurring-patterns/', requestData);
+    const response = await api.post<RecurringShiftPattern>('/api/v1/recurring-patterns/', requestData);
     return response.data;
   }
 
   async generateRecurringShifts(patternId: number): Promise<ScheduledShift[]> {
-    const response = await api.post<ScheduledShift[]>(`/recurring-patterns/${patternId}/generate/`, {});
+    const response = await api.post<ScheduledShift[]>(`/api/v1/recurring-patterns/${patternId}/generate/`, {});
     return response.data;
   }
 
   // Shift templates methods
   async getShiftTemplates(): Promise<ShiftTemplate[]> {
-    const response = await api.get<ShiftTemplate[]>('/shift-templates/');
+    const response = await api.get<ShiftTemplate[]>('/api/v1/shift-templates/');
     return response.data;
   }
 
@@ -246,7 +246,7 @@ class ShiftService {
       requires_toilet_checks: data.requiresToiletChecks !== undefined ? data.requiresToiletChecks : false
     };
     
-    const response = await api.post<ShiftTemplate>('/shift-templates/', requestData);
+    const response = await api.post<ShiftTemplate>('/api/v1/shift-templates/', requestData);
     return response.data;
   }
 
@@ -263,7 +263,7 @@ class ShiftService {
       staff_ids: data.staffIds || []
     };
     
-    const response = await api.post<ScheduledShift[]>(`/shift-templates/${templateId}/apply/`, requestData);
+    const response = await api.post<ScheduledShift[]>(`/api/v1/shift-templates/${templateId}/apply/`, requestData);
     return response.data;
   }
 
@@ -297,7 +297,7 @@ class ShiftService {
       requires_toilet_checks: data.requiresToiletChecks !== undefined ? data.requiresToiletChecks : false
     };
     
-    const response = await api.post<ScheduledShift[]>('/scheduled-shifts/bulk/', requestData);
+    const response = await api.post<ScheduledShift[]>('/api/v1/scheduled-shifts/bulk/', requestData);
     return response.data;
   }
 
@@ -316,7 +316,7 @@ class ShiftService {
       include_staff_assignments: data.includeStaffAssignments !== undefined ? data.includeStaffAssignments : true
     };
     
-    const response = await api.post<ScheduledShift[]>('/scheduled-shifts/copy/', requestData);
+    const response = await api.post<ScheduledShift[]>('/api/v1/scheduled-shifts/copy/', requestData);
     return response.data;
   }
 

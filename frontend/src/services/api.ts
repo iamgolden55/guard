@@ -1,4 +1,5 @@
 import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
+import type { Shift } from '../types/shift';
 
 // Base API configuration
 const API_URL = import.meta.env.VITE_API_URL;
@@ -259,21 +260,11 @@ export const register = async (userData: any) => {
   }
 };
 
-// Shift types
-export interface Shift {
-  id: string;
-  venueId: string;
-  venueName: string;
-  staffId?: string;
-  staffName?: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  status: 'draft' | 'published' | 'assigned';
-}
+// Re-export Shift type for consumers that import from api.ts
+export type { Shift } from '../types/shift';
 
 // Get all shifts - Updated to use correct endpoint and handle pagination
-export const getShifts = async (params?: any): Promise<Shift[]> => {
+export const getShifts = async (params?: any): Promise<any[]> => {
   try {
     // Build query string if params are provided, but request all records
     let queryString = '?page_size=1000'; // Request large page size to get all shifts
@@ -320,9 +311,9 @@ export const getShifts = async (params?: any): Promise<Shift[]> => {
 };
 
 // Get filtered shifts
-export const getFilteredShifts = async (venueId?: string, staffId?: string): Promise<Shift[]> => {
+export const getFilteredShifts = async (venueId?: string, staffId?: string): Promise<any[]> => {
   try {
-    let url = '/shifts?';
+    let url = '/api/v1/shifts?';
     if (venueId) url += `venueId=${venueId}&`;
     if (staffId) url += `staffId=${staffId}`;
     
@@ -348,7 +339,7 @@ export const getFilteredShifts = async (venueId?: string, staffId?: string): Pro
 };
 
 // Create a new shift
-export const createShift = async (shiftData: Omit<Shift, 'id'>): Promise<Shift | null> => {
+export const createShift = async (shiftData: Record<string, any>): Promise<Shift | null> => {
   try {
     // Use /api/v1/ prefix to go through Vite proxy to backend
     const response = await api.post(`/api/v1/shifts/`, shiftData);
@@ -360,7 +351,7 @@ export const createShift = async (shiftData: Omit<Shift, 'id'>): Promise<Shift |
 };
 
 // Update a shift
-export const updateShift = async (id: string, shiftData: Partial<Shift>): Promise<Shift | null> => {
+export const updateShift = async (id: string | number, shiftData: Record<string, any>): Promise<Shift | null> => {
   try {
     // Use /api/v1/ prefix to go through Vite proxy to backend
     const response = await api.put(`/api/v1/shifts/${id}/`, shiftData);
@@ -377,7 +368,7 @@ export const updateShift = async (id: string, shiftData: Partial<Shift>): Promis
 };
 
 // Delete a shift
-export const deleteShift = async (id: string): Promise<boolean> => {
+export const deleteShift = async (id: string | number): Promise<boolean> => {
   try {
     // Use /api/v1/ prefix to go through Vite proxy to backend
     await api.delete(`/api/v1/shifts/${id}/`);
@@ -406,7 +397,7 @@ export const bulkCreateShifts = async (shifts: Array<{
   isSequential?: boolean;
   hourlyRate?: number | null;
   isSpecialEvent?: boolean;
-}>, allowPastDates: boolean = false): Promise<Shift[] | null> => {
+}>, allowPastDates: boolean = false): Promise<any[] | null> => {
   try {
     const results = [];
     let successCount = 0;
@@ -499,7 +490,7 @@ export const bulkCreateShifts = async (shifts: Array<{
 // Publish shifts
 export const publishShifts = async (shiftIds: string[]): Promise<boolean> => {
   try {
-    await api.post('/shifts/publish', { shiftIds });
+    await api.post('/api/v1/shifts/publish/', { shiftIds });
     return true;
   } catch (error: any) {
     console.error('Error publishing shifts:', error);
@@ -508,9 +499,9 @@ export const publishShifts = async (shiftIds: string[]): Promise<boolean> => {
 };
 
 // Assign staff to shift
-export const assignStaffToShift = async (shiftId: string, staffId: string): Promise<Shift | null> => {
+export const assignStaffToShift = async (shiftId: string | number, staffId: string | number): Promise<Shift | null> => {
   try {
-    const response = await api.put(`/shifts/${shiftId}/assign`, { staffId });
+    const response = await api.put(`/api/v1/shifts/${shiftId}/assign/`, { staffId });
     return response.data;
   } catch (error: any) {
     console.error('Error assigning staff to shift:', error);

@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
 from cryptography.fernet import Fernet
 import json
@@ -12,8 +13,13 @@ class EncryptedJSONField(models.TextField):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Get encryption key from environment or generate one for development
-        key = os.getenv('FINANCE_ENCRYPTION_KEY', Fernet.generate_key())
+        # Get encryption key from environment - require it to be set
+        key = os.getenv('FINANCE_ENCRYPTION_KEY')
+        if not key:
+            raise ImproperlyConfigured(
+                "FINANCE_ENCRYPTION_KEY environment variable must be set. "
+                "Generate one with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+            )
         if isinstance(key, str):
             key = key.encode()
         self.cipher = Fernet(key)

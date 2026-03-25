@@ -1,4 +1,3 @@
-import axios from 'axios';
 import api from './api';
 
 // Types for Finance Integrations
@@ -192,179 +191,138 @@ export interface TestConnectionResponse {
 
 class FinanceIntegrationsService {
   private baseUrl = '/api/v1/finance';
-  
-  // Create axios instance with auth token
-  private createAuthenticatedRequest = () => {
-    // Use 'access_token' to match the key used by AuthContext and api.ts
-    const token = localStorage.getItem('access_token');
-    return axios.create({
-      baseURL: this.baseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      },
-      timeout: 15000,
-      withCredentials: true, // Enable credentials for cookie-based auth fallback
-    });
-  };
 
   // Provider methods
   async getProviders(): Promise<AccountingProvider[]> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.get('/providers/');
+    const response = await api.get(`${this.baseUrl}/providers/`);
     return response.data.results || response.data;
   }
 
   async getSupportedProviders(): Promise<Record<string, string>> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.get('/providers/supported/');
+    const response = await api.get(`${this.baseUrl}/providers/supported/`);
     return response.data;
   }
 
   // Connection methods
   async getConnections(): Promise<ProviderConnection[]> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.get('/connections/');
+    const response = await api.get(`${this.baseUrl}/connections/`);
     return response.data.results || response.data;
   }
 
   async getConnection(id: number): Promise<ProviderConnection> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.get(`/connections/${id}/`);
+    const response = await api.get(`${this.baseUrl}/connections/${id}/`);
     return response.data;
   }
 
   async createConnection(data: Partial<ProviderConnection>): Promise<ProviderConnection> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.post('/connections/', data);
+    const response = await api.post(`${this.baseUrl}/connections/`, data);
     return response.data;
   }
 
   async updateConnection(id: number, data: Partial<ProviderConnection>): Promise<ProviderConnection> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.patch(`/connections/${id}/`, data);
+    const response = await api.patch(`${this.baseUrl}/connections/${id}/`, data);
     return response.data;
   }
 
   async deleteConnection(id: number): Promise<void> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    await axiosInstance.delete(`/connections/${id}/`);
+    await api.delete(`${this.baseUrl}/connections/${id}/`);
   }
 
   async testConnection(id: number): Promise<TestConnectionResponse> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.post(`/connections/${id}/test_connection/`);
+    const response = await api.post(`${this.baseUrl}/connections/${id}/test_connection/`);
     return response.data;
   }
 
   async refreshToken(id: number): Promise<ProviderConnection> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.post(`/connections/${id}/refresh_token/`);
+    const response = await api.post(`${this.baseUrl}/connections/${id}/refresh_token/`);
     return response.data;
   }
 
   // Provider data methods
   async getProviderAccounts(connectionId: number): Promise<ProviderAccount[]> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.get(`/connections/${connectionId}/accounts/`);
+    const response = await api.get(`${this.baseUrl}/connections/${connectionId}/accounts/`);
     return response.data;
   }
 
   async getProviderVATCodes(connectionId: number): Promise<ProviderVATCode[]> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.get(`/connections/${connectionId}/vat_codes/`);
+    const response = await api.get(`${this.baseUrl}/connections/${connectionId}/vat_codes/`);
     return response.data;
   }
 
   async getProviderEarningsTypes(connectionId: number): Promise<ProviderEarningsType[]> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.get(`/connections/${connectionId}/earnings_types/`);
+    const response = await api.get(`${this.baseUrl}/connections/${connectionId}/earnings_types/`);
     return response.data;
   }
 
   // Mapping methods
   async getAccountMappings(connectionId?: number): Promise<AccountMapping[]> {
-    const axiosInstance = this.createAuthenticatedRequest();
     const params = connectionId ? `?connection=${connectionId}` : '';
-    const response = await axiosInstance.get(`/account-mappings/${params}`);
+    const response = await api.get(`${this.baseUrl}/account-mappings/${params}`);
     return response.data.results || response.data;
   }
 
   async createAccountMapping(data: Partial<AccountMapping>): Promise<AccountMapping> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.post(`/account-mappings/`, data);
+    const response = await api.post(`${this.baseUrl}/account-mappings/`, data);
     return response.data;
   }
 
   async updateAccountMapping(id: number, data: Partial<AccountMapping>): Promise<AccountMapping> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.patch(`/account-mappings/${id}/`, data);
+    const response = await api.patch(`${this.baseUrl}/account-mappings/${id}/`, data);
     return response.data;
   }
 
   async deleteAccountMapping(id: number): Promise<void> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    await axiosInstance.delete(`/account-mappings/${id}/`);
+    await api.delete(`${this.baseUrl}/account-mappings/${id}/`);
   }
 
   async getVATMappings(connectionId?: number): Promise<VATCodeMapping[]> {
-    const axiosInstance = this.createAuthenticatedRequest();
     const params = connectionId ? `?connection=${connectionId}` : '';
-    const response = await axiosInstance.get(`/vat-mappings/${params}`);
+    const response = await api.get(`${this.baseUrl}/vat-mappings/${params}`);
     return response.data.results || response.data;
   }
 
   async createVATMapping(data: Partial<VATCodeMapping>): Promise<VATCodeMapping> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.post(`/vat-mappings/`, data);
+    const response = await api.post(`${this.baseUrl}/vat-mappings/`, data);
     return response.data;
   }
 
   async updateVATMapping(id: number, data: Partial<VATCodeMapping>): Promise<VATCodeMapping> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.patch(`/vat-mappings/${id}/`, data);
+    const response = await api.patch(`${this.baseUrl}/vat-mappings/${id}/`, data);
     return response.data;
   }
 
   async deleteVATMapping(id: number): Promise<void> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    await axiosInstance.delete(`/vat-mappings/${id}/`);
+    await api.delete(`${this.baseUrl}/vat-mappings/${id}/`);
   }
 
   async getEarningsMappings(connectionId?: number): Promise<EarningsTypeMapping[]> {
-    const axiosInstance = this.createAuthenticatedRequest();
     const params = connectionId ? `?connection=${connectionId}` : '';
-    const response = await axiosInstance.get(`/earnings-mappings/${params}`);
+    const response = await api.get(`${this.baseUrl}/earnings-mappings/${params}`);
     return response.data.results || response.data;
   }
 
   async createEarningsMapping(data: Partial<EarningsTypeMapping>): Promise<EarningsTypeMapping> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.post(`/earnings-mappings/`, data);
+    const response = await api.post(`${this.baseUrl}/earnings-mappings/`, data);
     return response.data;
   }
 
   async updateEarningsMapping(id: number, data: Partial<EarningsTypeMapping>): Promise<EarningsTypeMapping> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.patch(`/earnings-mappings/${id}/`, data);
+    const response = await api.patch(`${this.baseUrl}/earnings-mappings/${id}/`, data);
     return response.data;
   }
 
   async deleteEarningsMapping(id: number): Promise<void> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    await axiosInstance.delete(`/earnings-mappings/${id}/`);
+    await api.delete(`${this.baseUrl}/earnings-mappings/${id}/`);
   }
 
   // OAuth methods
   async initiateOAuth(data: OAuthInitiateRequest): Promise<OAuthInitiateResponse> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.post('/oauth/initiate/', data);
+    const response = await api.post(`${this.baseUrl}/oauth/initiate/`, data);
     return response.data;
   }
 
   async completeOAuth(data: OAuthCallbackRequest): Promise<ProviderConnection> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.post('/oauth/callback/', data);
+    const response = await api.post(`${this.baseUrl}/oauth/callback/`, data);
     return response.data;
   }
 
@@ -375,36 +333,31 @@ class FinanceIntegrationsService {
     tenants: Array<{ tenant_id: string; tenant_name: string; tenant_type: string }>;
     provider_key: string;
   }> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.post('/oauth/tenants/', data);
+    const response = await api.post(`${this.baseUrl}/oauth/tenants/`, data);
     return response.data;
   }
 
   // Export methods
   async exportInvoices(data: InvoiceExportRequest): Promise<{exports: any[]}> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.post('/export/invoices/', data);
+    const response = await api.post(`${this.baseUrl}/export/invoices/`, data);
     return response.data;
   }
 
   async exportPayroll(data: PayrollExportRequest): Promise<PayrollExport> {
-    const axiosInstance = this.createAuthenticatedRequest();
-    const response = await axiosInstance.post('/export/payroll/', data);
+    const response = await api.post(`${this.baseUrl}/export/payroll/`, data);
     return response.data;
   }
 
   // Export tracking methods
   async getInvoiceExports(connectionId?: number): Promise<InvoiceExport[]> {
-    const axiosInstance = this.createAuthenticatedRequest();
     const params = connectionId ? `?connection=${connectionId}` : '';
-    const response = await axiosInstance.get(`/invoice-exports/${params}`);
+    const response = await api.get(`${this.baseUrl}/invoice-exports/${params}`);
     return response.data.results || response.data;
   }
 
   async getPayrollExports(connectionId?: number): Promise<PayrollExport[]> {
-    const axiosInstance = this.createAuthenticatedRequest();
     const params = connectionId ? `?connection=${connectionId}` : '';
-    const response = await axiosInstance.get(`/payroll-exports/${params}`);
+    const response = await api.get(`${this.baseUrl}/payroll-exports/${params}`);
     return response.data.results || response.data;
   }
 
@@ -414,14 +367,13 @@ class FinanceIntegrationsService {
     operation?: string;
     level?: string;
   }): Promise<SyncLog[]> {
-    const axiosInstance = this.createAuthenticatedRequest();
     const params = new URLSearchParams();
     if (filters?.connection) params.append('connection', filters.connection.toString());
     if (filters?.operation) params.append('operation', filters.operation);
     if (filters?.level) params.append('level', filters.level);
 
     const queryString = params.toString();
-    const response = await axiosInstance.get(`/logs/${queryString ? `?${queryString}` : ''}`);
+    const response = await api.get(`${this.baseUrl}/logs/${queryString ? `?${queryString}` : ''}`);
     return response.data.results || response.data;
   }
 

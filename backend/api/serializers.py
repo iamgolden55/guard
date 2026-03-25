@@ -42,13 +42,7 @@ class BankDetailsSerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at', 'updated_at', 'staff_profile')
 
     def to_internal_value(self, data):
-        """Log incoming data for debugging"""
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"BankDetailsSerializer - Incoming data: {data}")
-        result = super().to_internal_value(data)
-        logger.info(f"BankDetailsSerializer - Converted to internal: {result}")
-        return result
+        return super().to_internal_value(data)
 
     def to_representation(self, instance):
         # Hide sensitive data in responses
@@ -468,7 +462,13 @@ class TimeAdjustmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = TimeAdjustment
         fields = '__all__'
-        read_only_fields = ('created_at', 'adjusted_by')
+        read_only_fields = (
+            'created_at',
+            'adjusted_by',
+            'original_check_in_time',
+            'original_check_out_time',
+            'original_actual_hours',
+        )
 
     def validate(self, data):
         """Validate time adjustment constraints"""
@@ -536,12 +536,14 @@ class TimeAdjustmentSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Create time adjustment and store original shift times"""
+        from decimal import Decimal
+
         shift = validated_data['shift']
 
-        # Store original times from shift
+        # Store original times from shift (use 0 if no hours worked yet)
         validated_data['original_check_in_time'] = shift.check_in_time
         validated_data['original_check_out_time'] = shift.check_out_time
-        validated_data['original_actual_hours'] = shift.actual_hours_worked
+        validated_data['original_actual_hours'] = shift.actual_hours_worked or Decimal('0.00')
 
         return super().create(validated_data)
 

@@ -19,6 +19,8 @@ from google.auth.transport import requests as google_requests
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
+from api.models import UserCompanyMembership, SecurityCompany
+
 
 def get_tokens_for_user(user):
     """Generate JWT tokens for a user"""
@@ -133,6 +135,16 @@ def get_or_create_social_user(email, first_name=None, last_name=None, provider='
     """
     try:
         user = User.objects.get(email=email)
+        # Ensure existing user has a company membership (may be missing for legacy users)
+        if not UserCompanyMembership.objects.filter(user=user).exists():
+            default_company = SecurityCompany.objects.filter(is_active=True).first()
+            if default_company:
+                UserCompanyMembership.objects.create(
+                    user=user,
+                    company=default_company,
+                    role='staff',
+                )
+                logger.info("Created missing company membership for existing user %s in company %s", email, default_company.name)
         return user, False
     except User.DoesNotExist:
         # Create new user
@@ -152,6 +164,19 @@ def get_or_create_social_user(email, first_name=None, last_name=None, provider='
         )
         user.set_unusable_password()  # Social auth users don't have passwords
         user.save()
+
+        # Ensure the user has a company membership (required for multi-tenant system)
+        if not UserCompanyMembership.objects.filter(user=user).exists():
+            default_company = SecurityCompany.objects.filter(is_active=True).first()
+            if default_company:
+                UserCompanyMembership.objects.create(
+                    user=user,
+                    company=default_company,
+                    role='staff',
+                )
+                logger.info("Created company membership for user %s in company %s", email, default_company.name)
+            else:
+                logger.warning("No active SecurityCompany found for new social auth user %s", email)
 
         logger.info("Created new user via %s: %s", provider, email)
         return user, True
@@ -212,6 +237,14 @@ def apple_auth(request):
         last_name=last_name,
         provider='apple'
     )
+
+    # Check if account is active (not deactivated by admin)
+    if not user.is_active:
+        logger.warning("Apple auth attempt for deactivated account: %s", user_email)
+        return Response(
+            {'error': 'Your account has been deactivated. Please contact support.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
 
     # Generate tokens
     tokens = get_tokens_for_user(user)
@@ -284,6 +317,14 @@ def google_auth(request):
         last_name=last_name,
         provider='google'
     )
+
+    # Check if account is active (not deactivated by admin)
+    if not user.is_active:
+        logger.warning("Google auth attempt for deactivated account: %s", email)
+        return Response(
+            {'error': 'Your account has been deactivated. Please contact support.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
 
     # Generate tokens
     tokens = get_tokens_for_user(user)

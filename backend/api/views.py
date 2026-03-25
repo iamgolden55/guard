@@ -2267,17 +2267,18 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             )
 
 class InvoiceItemViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminUser]
     queryset = InvoiceItem.objects.all()
     serializer_class = InvoiceItemSerializer
 
 class PayRateViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminUser]
     queryset = PayRate.objects.all()
     serializer_class = PayRateSerializer
 
 class DeputyConfigViewSet(viewsets.ModelViewSet):
     """ViewSet for the DeputyConfig model"""
+    permission_classes = [IsAuthenticated, IsAdminUser]
     queryset = DeputyConfig.objects.all()
     serializer_class = DeputyConfigSerializer
 
@@ -2312,12 +2313,12 @@ class DeputyConfigView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class DeputyEmployeeViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminUser]
     queryset = DeputyEmployee.objects.all()
     serializer_class = DeputyEmployeeSerializer
 
 class DeputyTimesheetViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminUser]
     queryset = DeputyTimesheet.objects.all()
     serializer_class = DeputyTimesheetSerializer
 

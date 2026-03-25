@@ -21,7 +21,8 @@ export enum ShiftStatus {
   ACTIVE = 'active',
   COMPLETED = 'completed',
   APPROVED = 'approved',
-  REJECTED = 'rejected'
+  REJECTED = 'rejected',
+  NO_SHOW = 'no_show',
 }
 
 // New types for shift scheduling
