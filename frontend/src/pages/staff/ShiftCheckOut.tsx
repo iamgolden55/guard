@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Header, Container, SpaceBetween, KeyValuePairs, Alert } from '../../components/cloudscape';
 import { SignatureCanvas } from '../../components';
 import { shiftService } from '../../services';
+import { offlineQueue, OfflineQueue } from '../../services/offlineQueue';
 
 interface ShiftDetails {
   id: number;
@@ -286,7 +287,30 @@ const ShiftCheckOut: React.FC = () => {
         }
       });
     } catch (error) {
-      console.error('Check-out failed:', error);
+      console.error('Check-out failed, attempting offline save:', error);
+
+      // Save to offline queue so the submission is not lost
+      try {
+        const submission = OfflineQueue.createSubmission('check-out', parseInt(id!), {
+          latitude: checkOutData.location!.latitude,
+          longitude: checkOutData.location!.longitude,
+          accuracy: checkOutData.location!.accuracy,
+          photo: checkOutData.photo ?? undefined,
+          signature: checkOutData.signature ?? undefined,
+        });
+        await offlineQueue.add(submission);
+
+        navigate('/shifts', {
+          state: {
+            message: 'Check-out saved offline. It will be submitted automatically when your connection is restored.',
+            type: 'info',
+          },
+        });
+        return;
+      } catch (offlineError) {
+        console.error('Failed to save check-out offline:', offlineError);
+      }
+
       setError('Failed to check out. Please try again.');
     } finally {
       setIsCheckingOut(false);

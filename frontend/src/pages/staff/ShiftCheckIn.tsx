@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Header, Container, SpaceBetween, KeyValuePairs, Alert } from '../../components/cloudscape';
 import { SignatureCanvas } from '../../components';
 import { shiftService } from '../../services';
+import { offlineQueue, OfflineQueue } from '../../services/offlineQueue';
 
 interface ShiftDetails {
   id: number;
@@ -449,7 +450,30 @@ const ShiftCheckIn: React.FC = () => {
         }
       });
     } catch (error: any) {
-      console.error('Check-in failed:', error);
+      console.error('Check-in failed, attempting offline save:', error);
+
+      // Save to offline queue so the submission is not lost
+      try {
+        const submission = OfflineQueue.createSubmission('check-in', parseInt(id!), {
+          latitude: checkInData.location!.latitude,
+          longitude: checkInData.location!.longitude,
+          accuracy: checkInData.location!.accuracy,
+          photo: checkInData.photo ?? undefined,
+          signature: checkInData.signature ?? undefined,
+        });
+        await offlineQueue.add(submission);
+
+        navigate('/shifts', {
+          state: {
+            message: 'Check-in saved offline. It will be submitted automatically when your connection is restored.',
+            type: 'info',
+          },
+        });
+        return;
+      } catch (offlineError) {
+        console.error('Failed to save check-in offline:', offlineError);
+      }
+
       const errorMessage = error.response?.data?.error || error.response?.data?.detail || error.message || 'Failed to check in. Please try again.';
       setError(`Check-in failed: ${errorMessage}`);
     } finally {

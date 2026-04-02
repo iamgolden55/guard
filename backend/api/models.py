@@ -1186,7 +1186,6 @@ class Venue(models.Model):
         SecurityCompany,
         on_delete=models.CASCADE,
         related_name='venues',
-        null=True,  # Temporary for migration - will be changed to NOT NULL after migration
         help_text="Company that owns this venue"
     )
 
@@ -6320,3 +6319,226 @@ class AuditLog(models.Model):
             ip_address=ip_address,
             user_agent=user_agent,
         )
+
+
+# =====================================================
+# IN-APP NOTIFICATION INBOX
+# =====================================================
+
+class Notification(models.Model):
+    """In-app notification with read/unread tracking."""
+    TYPE_CHOICES = [
+        ('shift_assigned', 'Shift Assigned'),
+        ('shift_removed', 'Shift Removed'),
+        ('shift_updated', 'Shift Updated'),
+        ('shift_approved', 'Shift Approved'),
+        ('shift_rejected', 'Shift Rejected'),
+        ('open_shift', 'Open Shift Available'),
+        ('exchange_request', 'Exchange Request'),
+        ('exchange_approved', 'Exchange Approved'),
+        ('exchange_rejected', 'Exchange Rejected'),
+        ('leave_approved', 'Leave Approved'),
+        ('leave_rejected', 'Leave Rejected'),
+        ('compliance_alert', 'Compliance Alert'),
+        ('sia_expiry', 'SIA License Expiry'),
+        ('invoice_ready', 'Invoice Ready'),
+        ('general', 'General'),
+    ]
+    PRIORITY_CHOICES = [
+        ('low', 'Low'),
+        ('normal', 'Normal'),
+        ('high', 'High'),
+        ('urgent', 'Urgent'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='notifications')
+    company = models.ForeignKey('SecurityCompany', on_delete=models.CASCADE, null=True, blank=True)
+
+    notification_type = models.CharField(max_length=30, choices=TYPE_CHOICES, default='general')
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='normal')
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+
+    # Optional link to related object
+    related_type = models.CharField(max_length=50, blank=True)  # e.g., 'shift', 'invoice', 'leave_request'
+    related_id = models.CharField(max_length=255, blank=True)
+    action_url = models.CharField(max_length=500, blank=True)  # Frontend route to navigate to
+
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'notifications'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_read', '-created_at']),
+            models.Index(fields=['user', 'notification_type']),
+        ]
+
+    def __str__(self):
+        return f"[{self.notification_type}] {self.title} -> {self.user}"
+
+    def mark_read(self):
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save(update_fields=['is_read', 'read_at'])
+
+    @classmethod
+    def send(cls, user, title, message, notification_type='general', priority='normal',
+             related_type='', related_id='', action_url='', company=None):
+        """Create a notification for a user."""
+        return cls.objects.create(
+            user=user,
+            company=company,
+            notification_type=notification_type,
+            priority=priority,
+            title=title,
+            message=message,
+            related_type=related_type,
+            related_id=str(related_id) if related_id else '',
+            action_url=action_url,
+        )
+
+
+# =====================================================
+# CLIENT BILLING MODELS
+# =====================================================
+
+class ClientInvoice(models.Model):
+    """Invoice sent to a client/venue for security services provided.
+
+    This is distinct from the staff Invoice model which tracks pay stubs.
+    ClientInvoice represents what the security company bills its clients
+    for services rendered at their venues.
+    """
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('sent', 'Sent'),
+        ('paid', 'Paid'),
+        ('overdue', 'Overdue'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    company = models.ForeignKey(
+        SecurityCompany,
+        on_delete=models.CASCADE,
+        related_name='client_invoices',
+        help_text="Security company issuing the invoice"
+    )
+    venue = models.ForeignKey(
+        Venue,
+        on_delete=models.CASCADE,
+        related_name='client_invoices',
+        help_text="Venue/client being billed"
+    )
+    invoice_number = models.CharField(max_length=50, unique=True)
+
+    # Billing period
+    start_date = models.DateField(help_text="Start of billing period")
+    end_date = models.DateField(help_text="End of billing period")
+
+    # Financials
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    tax_rate = models.DecimalField(
+        max_digits=5, decimal_places=2, default=20.00,
+        help_text="Tax/VAT rate percentage (default 20% UK VAT)"
+    )
+    tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    # Status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    issued_date = models.DateField(null=True, blank=True)
+    due_date = models.DateField(null=True, blank=True)
+    paid_date = models.DateField(null=True, blank=True)
+
+    # Client details (denormalized for invoice permanence — snapshot at time of creation)
+    client_name = models.CharField(max_length=255, help_text="Client/venue name at time of invoicing")
+    client_address = models.TextField(blank=True)
+    client_email = models.EmailField(blank=True)
+
+    # Metadata
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True,
+        related_name='created_client_invoices'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'client_invoices'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['company', 'status']),
+            models.Index(fields=['venue', 'start_date']),
+            models.Index(fields=['invoice_number']),
+        ]
+
+    def __str__(self):
+        return f"{self.invoice_number} - {self.venue.name} ({self.status})"
+
+    def calculate_totals(self):
+        """Recalculate subtotal, tax, and total from line items."""
+        from decimal import Decimal
+        self.subtotal = sum(
+            (item.total for item in self.line_items.all()),
+            Decimal('0.00')
+        )
+        self.tax_amount = (self.subtotal * self.tax_rate / 100).quantize(
+            Decimal('0.01')
+        )
+        self.total_amount = self.subtotal + self.tax_amount
+        self.save(update_fields=['subtotal', 'tax_amount', 'total_amount'])
+
+    @classmethod
+    def generate_invoice_number(cls, company):
+        """Generate sequential invoice number: INV-YYYY-NNNN"""
+        year = timezone.now().year
+        prefix = f'INV-{year}-'
+        last = cls.objects.filter(
+            company=company,
+            invoice_number__startswith=prefix
+        ).order_by('-invoice_number').first()
+        if last:
+            seq = int(last.invoice_number.split('-')[-1]) + 1
+        else:
+            seq = 1
+        return f'{prefix}{seq:04d}'
+
+
+class ClientInvoiceItem(models.Model):
+    """Line item on a client invoice, optionally linked to a shift."""
+    invoice = models.ForeignKey(
+        ClientInvoice, on_delete=models.CASCADE, related_name='line_items'
+    )
+    shift = models.ForeignKey(
+        Shift, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='client_invoice_items',
+        help_text="Source shift (if generated from shifts)"
+    )
+
+    description = models.CharField(max_length=500)
+    date = models.DateField()
+    hours = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+    rate = models.DecimalField(
+        max_digits=8, decimal_places=2, default=0,
+        help_text="Client billing rate per hour (distinct from staff pay rate)"
+    )
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    class Meta:
+        db_table = 'client_invoice_items'
+        ordering = ['date']
+
+    def __str__(self):
+        return f"{self.description} - {self.date} ({self.hours}h @ {self.rate})"
+
+    def save(self, *args, **kwargs):
+        from decimal import Decimal
+        self.total = (self.hours * self.rate).quantize(Decimal('0.01'))
+        super().save(*args, **kwargs)

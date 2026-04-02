@@ -16,6 +16,7 @@ import { employmentTypeService } from './employmentTypeService';
 import { bankHolidayService } from './bankHolidayService';
 import { staffLeaveRateService } from './staffLeaveRateService';
 import { contractorUnavailabilityService } from './contractorUnavailabilityService';
+import { offlineQueue } from './offlineQueue';
 
 export {
   api,
@@ -35,5 +36,6 @@ export {
   employmentTypeService,
   bankHolidayService,
   staffLeaveRateService,
-  contractorUnavailabilityService
+  contractorUnavailabilityService,
+  offlineQueue
 };

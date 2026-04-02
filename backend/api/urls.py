@@ -28,13 +28,15 @@ from .views import (
     # Company recruitment views
     CompanyRecruitmentViewSet,
     # Notification system views
-    SNSDeviceTokenViewSet, NotificationPreferencesViewSet,
+    SNSDeviceTokenViewSet, NotificationPreferencesViewSet, NotificationViewSet,
     # Password reset views
     PasswordResetRequestView, PasswordResetValidateView, PasswordResetConfirmView,
     # Leave management / contractor availability views
     ContractorUnavailabilityViewSet, BankHolidayViewSet, StaffLeaveDailyRateViewSet,
     # Email unsubscribe view
     EmailUnsubscribeView,
+    # Client billing views
+    ClientInvoiceViewSet,
 )
 from .social_auth import apple_auth, google_auth
 
@@ -87,10 +89,13 @@ router.register('company-recruitment', CompanyRecruitmentViewSet, basename='comp
 # Notification system endpoints
 router.register('notifications/devices', SNSDeviceTokenViewSet, basename='notification-devices')
 router.register('notifications/preferences', NotificationPreferencesViewSet, basename='notification-preferences')
+router.register('notifications/inbox', NotificationViewSet, basename='notification-inbox')
 # Leave management / contractor availability endpoints
 router.register('contractor-unavailability', ContractorUnavailabilityViewSet, basename='contractor-unavailability')
 router.register('bank-holidays', BankHolidayViewSet, basename='bank-holidays')
 router.register('staff-leave-rates', StaffLeaveDailyRateViewSet, basename='staff-leave-rates')
+# Client billing endpoints
+router.register('client-invoices', ClientInvoiceViewSet, basename='client-invoices')
 
 urlpatterns = [
     path('', include(router.urls)),

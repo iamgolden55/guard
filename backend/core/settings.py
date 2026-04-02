@@ -639,3 +639,10 @@ if SENTRY_DSN:
 # ==========================================
 POSTHOG_API_KEY = os.getenv('POSTHOG_API_KEY', '')
 POSTHOG_HOST = os.getenv('POSTHOG_HOST', 'https://eu.i.posthog.com')
+
+# ==========================================
+# WEBHOOK SECURITY
+# ==========================================
+WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', '')
+if not WEBHOOK_SECRET and not DEBUG:
+    raise ValueError('WEBHOOK_SECRET environment variable is required in production')

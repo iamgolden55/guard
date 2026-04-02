@@ -13,12 +13,14 @@ from .models import (
     # Onboarding models
     SecurityCompany, CompanyOnboarding, CompanyIntegration, UserCompanyMembership,
     # Notification models
-    SNSDeviceToken, NotificationPreferences,
+    SNSDeviceToken, NotificationPreferences, Notification,
     # Password reset models
     PasswordResetToken,
     # Leave/Availability models
     ContractorUnavailability, BankHoliday, StaffLeaveDailyRate,
-    EMPLOYMENT_CATEGORY_CHOICES
+    EMPLOYMENT_CATEGORY_CHOICES,
+    # Client billing models
+    ClientInvoice, ClientInvoiceItem,
 )
 
 User = get_user_model() # Ensure User model is fetched
@@ -2770,3 +2772,89 @@ class AvailabilityCheckSerializer(serializers.Serializer):
     date = serializers.DateField()
     is_available = serializers.BooleanField(read_only=True)
     reason = serializers.CharField(read_only=True, allow_blank=True)
+
+
+# =====================================================
+# IN-APP NOTIFICATION INBOX SERIALIZERS
+# =====================================================
+
+class NotificationSerializer(serializers.ModelSerializer):
+    """Serializer for in-app notifications."""
+    class Meta:
+        model = Notification
+        fields = [
+            'id', 'user', 'company', 'notification_type', 'priority',
+            'title', 'message', 'related_type', 'related_id', 'action_url',
+            'is_read', 'read_at', 'created_at',
+        ]
+        read_only_fields = [
+            'id', 'user', 'company', 'notification_type', 'priority',
+            'title', 'message', 'related_type', 'related_id', 'action_url',
+            'read_at', 'created_at',
+        ]
+
+
+# =====================================================
+# CLIENT BILLING SERIALIZERS
+# =====================================================
+
+class ClientInvoiceItemSerializer(serializers.ModelSerializer):
+    """Serializer for client invoice line items."""
+    class Meta:
+        model = ClientInvoiceItem
+        fields = [
+            'id', 'invoice', 'shift', 'description', 'date',
+            'hours', 'rate', 'total',
+        ]
+        read_only_fields = ('id', 'total', 'invoice')
+
+
+class ClientInvoiceSerializer(serializers.ModelSerializer):
+    """Full serializer for client invoices with nested line items."""
+    line_items = ClientInvoiceItemSerializer(many=True, read_only=True)
+    venue_name = serializers.CharField(source='venue.name', read_only=True)
+    company_name = serializers.CharField(source='company.name', read_only=True)
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ClientInvoice
+        fields = [
+            'id', 'company', 'venue', 'venue_name', 'company_name',
+            'invoice_number', 'start_date', 'end_date',
+            'subtotal', 'tax_rate', 'tax_amount', 'total_amount',
+            'status', 'issued_date', 'due_date', 'paid_date',
+            'client_name', 'client_address', 'client_email',
+            'notes', 'created_by', 'created_by_name',
+            'created_at', 'updated_at',
+            'line_items',
+        ]
+        read_only_fields = (
+            'id', 'invoice_number', 'subtotal', 'tax_amount', 'total_amount',
+            'created_by', 'created_at', 'updated_at',
+        )
+
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return f"{obj.created_by.first_name} {obj.created_by.last_name}".strip() or obj.created_by.username
+        return None
+
+
+class ClientInvoiceGenerateSerializer(serializers.Serializer):
+    """Serializer for the generate action — accepts params to auto-create an invoice from shifts."""
+    venue_id = serializers.UUIDField(help_text="Venue to bill")
+    start_date = serializers.DateField(help_text="Billing period start")
+    end_date = serializers.DateField(help_text="Billing period end")
+    billing_rate = serializers.DecimalField(
+        max_digits=8, decimal_places=2,
+        help_text="Hourly rate to bill the client (per hour)"
+    )
+    tax_rate = serializers.DecimalField(
+        max_digits=5, decimal_places=2, default=20.00, required=False,
+        help_text="Tax/VAT rate percentage (default 20%)"
+    )
+    notes = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate(self, data):
+        if data['start_date'] > data['end_date']:
+            raise serializers.ValidationError("start_date must be before end_date")
+        return data

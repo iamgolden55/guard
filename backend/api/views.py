@@ -44,13 +44,15 @@ from .models import (
     # Onboarding models
     SecurityCompany, CompanyOnboarding, CompanyIntegration, UserCompanyMembership,
     # Notification models
-    SNSDeviceToken, NotificationPreferences,
+    SNSDeviceToken, NotificationPreferences, Notification,
     # Password reset models
     PasswordResetToken,
     # Leave/Availability models
     ContractorUnavailability, BankHoliday, StaffLeaveDailyRate,
     # Audit logging
     AuditLog,
+    # Client billing models
+    ClientInvoice, ClientInvoiceItem,
 )
 from .serializers import (
     UserSerializer, StaffProfileSerializer, EmergencyContactSerializer,
@@ -73,7 +75,9 @@ from .serializers import (
     SNSDeviceTokenSerializer, NotificationPreferencesSerializer,
     # Leave/Availability serializers
     ContractorUnavailabilitySerializer, ContractorUnavailabilityCreateSerializer,
-    BankHolidaySerializer, StaffLeaveDailyRateSerializer, StaffLeaveDailyRateUpdateSerializer
+    BankHolidaySerializer, StaffLeaveDailyRateSerializer, StaffLeaveDailyRateUpdateSerializer,
+    # Client billing serializers
+    ClientInvoiceSerializer, ClientInvoiceItemSerializer, ClientInvoiceGenerateSerializer,
 )
 
 User = get_user_model()
@@ -2348,157 +2352,57 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='generate-pdf')
     def generate_pdf(self, request, pk=None):
-        """Generate PDF for an invoice"""
+        """Generate a pay-stub PDF for an invoice on the fly using ReportLab."""
         invoice = self.get_object()
-        
+
         try:
-            from django.template.loader import render_to_string
-            from weasyprint import HTML, CSS
-            from api.models import StaffProfile
-            import os
-            from django.conf import settings
-            
-            # Create PDF directory if it doesn't exist
-            pdf_dir = os.path.join(settings.MEDIA_ROOT, 'invoices')
-            os.makedirs(pdf_dir, exist_ok=True)
-            
-            # Create PDF filename
-            pdf_filename = f"invoice_{invoice.id}.pdf"
-            pdf_path = os.path.join(pdf_dir, pdf_filename)
-            
-            # Get staff profile for additional details
-            staff_profile = None
-            try:
-                staff_profile = StaffProfile.objects.get(user=invoice.staff_user)
-            except StaffProfile.DoesNotExist:
-                pass
-            
-            # Get staff name
-            staff_name = f"{invoice.staff_user.first_name} {invoice.staff_user.last_name}".strip()
-            if not staff_name:
-                staff_name = invoice.staff_user.username
-            
-            # Get invoice items and calculate total leave days
-            invoice_items = invoice.items.all()
-            total_leave_days = invoice_items.filter(
-                item_type__in=['bank_holiday', 'annual_leave']
-            ).count()
+            from django.http import FileResponse
+            from api.utils.invoice_pdf import generate_invoice_pdf
 
-            # Prepare context for template
-            context = {
-                'invoice': invoice,
-                'invoice_items': invoice_items,
-                'staff_name': staff_name,
-                'staff_profile': staff_profile,
-                'total_leave_days': total_leave_days if total_leave_days > 0 else None,
-            }
+            pdf_buffer = generate_invoice_pdf(invoice)
 
-            # Render HTML template
-            html_content = render_to_string('invoice_pdf.html', context)
-            
-            # Generate PDF from HTML
-            HTML(string=html_content).write_pdf(pdf_path)
-            
-            # Update the invoice with the PDF URL
+            # Persist the serving URL so the frontend knows a PDF is available
             pdf_url = f"/api/v1/invoices/{invoice.id}/pdf/"
             invoice.pdf_url = pdf_url
-            invoice.save()
-            
-            # Return the PDF file directly instead of just the URL
-            from django.http import FileResponse
+            invoice.save(update_fields=['pdf_url'])
+
             response = FileResponse(
-                open(pdf_path, 'rb'),
+                pdf_buffer,
                 content_type='application/pdf',
-                filename=f"invoice_{invoice.id}.pdf"
+                filename=f"invoice_{invoice.id}.pdf",
             )
             return response
-            
+
         except Exception as e:
             logger.error(f"Error generating PDF for invoice {invoice.id}: {str(e)}")
             return Response(
                 {'error': 'Failed to generate PDF'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-    
+
     @action(detail=True, methods=['get'], url_path='pdf')
     def serve_pdf(self, request, pk=None):
-        """Serve the PDF file for an invoice"""
+        """Serve a pay-stub PDF for an invoice (generates on the fly)."""
         invoice = self.get_object()
-        
+
         try:
-            import os
-            from django.conf import settings
-            from django.http import FileResponse, Http404
-            
-            # Check if PDF exists
-            pdf_filename = f"invoice_{invoice.id}.pdf"
-            pdf_path = os.path.join(settings.MEDIA_ROOT, 'invoices', pdf_filename)
-            
-            if not os.path.exists(pdf_path):
-                # Try to generate PDF if it doesn't exist
-                try:
-                    from django.template.loader import render_to_string
-                    from weasyprint import HTML, CSS
-                    from api.models import StaffProfile
-                    
-                    # Create invoices directory if it doesn't exist
-                    invoices_dir = os.path.join(settings.MEDIA_ROOT, 'invoices')
-                    os.makedirs(invoices_dir, exist_ok=True)
-                    
-                    # Get staff profile for additional details
-                    staff_profile = None
-                    try:
-                        staff_profile = StaffProfile.objects.get(user=invoice.staff_user)
-                    except StaffProfile.DoesNotExist:
-                        pass
-                    
-                    # Get staff name
-                    staff_name = f"{invoice.staff_user.first_name} {invoice.staff_user.last_name}".strip()
-                    if not staff_name:
-                        staff_name = invoice.staff_user.username
-                    
-                    # Get invoice items and calculate total leave days
-                    invoice_items = invoice.items.all()
-                    total_leave_days = invoice_items.filter(
-                        item_type__in=['bank_holiday', 'annual_leave']
-                    ).count()
+            from django.http import FileResponse
+            from api.utils.invoice_pdf import generate_invoice_pdf
 
-                    # Prepare context for template
-                    context = {
-                        'invoice': invoice,
-                        'invoice_items': invoice_items,
-                        'staff_name': staff_name,
-                        'staff_profile': staff_profile,
-                        'total_leave_days': total_leave_days if total_leave_days > 0 else None,
-                    }
+            pdf_buffer = generate_invoice_pdf(invoice)
 
-                    # Render HTML template
-                    html_content = render_to_string('invoice_pdf.html', context)
+            # Ensure pdf_url is set
+            if not invoice.pdf_url:
+                invoice.pdf_url = f"/api/v1/invoices/{invoice.id}/pdf/"
+                invoice.save(update_fields=['pdf_url'])
 
-                    # Generate PDF from HTML
-                    HTML(string=html_content).write_pdf(pdf_path)
-
-                    # Update the invoice with the PDF URL
-                    pdf_url = f"/api/v1/invoices/{invoice.id}/pdf/"
-                    invoice.pdf_url = pdf_url
-                    invoice.save()
-
-                except Exception as e:
-                    logger.error(f"Error generating PDF on-demand for invoice {invoice.id}: {str(e)}")
-                    raise Http404("Failed to generate PDF")
-                
-                # Check again if PDF exists after generation
-                if not os.path.exists(pdf_path):
-                    raise Http404("PDF not found")
-            
-            # Serve the PDF file
             response = FileResponse(
-                open(pdf_path, 'rb'),
+                pdf_buffer,
                 content_type='application/pdf',
-                filename=f"invoice_{invoice.id}.pdf"
+                filename=f"invoice_{invoice.id}.pdf",
             )
             return response
-            
+
         except Exception as e:
             logger.error(f"Error serving PDF for invoice {invoice.id}: {str(e)}")
             return Response(
@@ -7109,6 +7013,73 @@ class NotificationPreferencesViewSet(viewsets.ModelViewSet):
 
 
 # =====================================================
+# IN-APP NOTIFICATION INBOX VIEWS
+# =====================================================
+
+from .serializers import NotificationSerializer
+
+
+class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for the in-app notification inbox.
+
+    Endpoints:
+    - GET  /api/v1/notifications/inbox/          - List notifications (filterable)
+    - GET  /api/v1/notifications/inbox/{id}/      - Retrieve a single notification
+    - GET  /api/v1/notifications/inbox/unread_count/ - Badge count of unread
+    - POST /api/v1/notifications/inbox/{id}/mark_read/ - Mark one as read
+    - POST /api/v1/notifications/inbox/mark_all_read/  - Mark all as read
+    """
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['is_read', 'notification_type', 'priority']
+    ordering_fields = ['created_at']
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        """Return notifications for the current user, scoped to their company."""
+        user = self.request.user
+        qs = Notification.objects.filter(user=user)
+
+        # Company scoping via middleware or membership
+        company = getattr(self.request, 'current_company', None)
+        if not company:
+            membership = user.company_memberships.filter(
+                is_active=True
+            ).select_related('company').first()
+            if membership:
+                company = membership.company
+
+        if company:
+            qs = qs.filter(Q(company=company) | Q(company__isnull=True))
+
+        return qs
+
+    @action(detail=False, methods=['get'])
+    def unread_count(self, request):
+        """Return the count of unread notifications for badge display."""
+        count = self.get_queryset().filter(is_read=False).count()
+        return Response({'count': count})
+
+    @action(detail=True, methods=['post'])
+    def mark_read(self, request, pk=None):
+        """Mark a single notification as read."""
+        notification = self.get_object()
+        notification.mark_read()
+        return Response({'status': 'Notification marked as read'})
+
+    @action(detail=False, methods=['post'])
+    def mark_all_read(self, request):
+        """Mark all unread notifications as read."""
+        updated = self.get_queryset().filter(is_read=False).update(
+            is_read=True,
+            read_at=timezone.now()
+        )
+        return Response({'status': f'{updated} notifications marked as read'})
+
+
+# =====================================================
 # PASSWORD RESET VIEWS
 # =====================================================
 
@@ -7788,4 +7759,290 @@ class EmailUnsubscribeView(APIView):
             'success': True,
             'message': message,
             'unsubscribed_type': unsubscribe_type
+        })
+
+
+# =====================================================
+# CLIENT BILLING VIEWSET
+# =====================================================
+
+class ClientInvoiceViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing client invoices (billing venues/clients for security services).
+
+    Permissions: admin and manager roles only.
+    Company-scoped: all queries are filtered to the user's company context.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = ClientInvoiceSerializer
+
+    def get_user_company(self, request):
+        """Get the user's current company context."""
+        if hasattr(request, 'current_company') and request.current_company:
+            return request.current_company
+        membership = request.user.company_memberships.filter(
+            is_active=True,
+            role__in=['owner', 'admin', 'manager'],
+            company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
+
+    def check_admin_or_manager(self, request):
+        """Raise 403 if user is not admin or manager."""
+        if request.user.role not in ('admin', 'manager'):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Only admins and managers can access client invoices.")
+
+    def get_queryset(self):
+        self.check_admin_or_manager(self.request)
+        company = self.get_user_company(self.request)
+        if not company:
+            return ClientInvoice.objects.none()
+
+        queryset = ClientInvoice.objects.filter(
+            company=company
+        ).select_related('venue', 'company', 'created_by').prefetch_related('line_items')
+
+        # Filtering
+        venue_id = self.request.query_params.get('venue')
+        status_filter = self.request.query_params.get('status')
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+
+        if venue_id:
+            queryset = queryset.filter(venue_id=venue_id)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        if start_date:
+            queryset = queryset.filter(start_date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(end_date__lte=end_date)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        self.check_admin_or_manager(self.request)
+        company = self.get_user_company(self.request)
+        if not company:
+            raise ValidationError("No company context found.")
+        invoice_number = ClientInvoice.generate_invoice_number(company)
+        serializer.save(
+            company=company,
+            created_by=self.request.user,
+            invoice_number=invoice_number,
+        )
+
+    @action(detail=False, methods=['post'])
+    def generate(self, request):
+        """Generate a client invoice from approved shifts at a venue for a date range.
+
+        POST body:
+            venue_id: UUID
+            start_date: YYYY-MM-DD
+            end_date: YYYY-MM-DD
+            billing_rate: Decimal (hourly rate to charge the client)
+            tax_rate: Decimal (optional, default 20.00)
+            notes: str (optional)
+        """
+        self.check_admin_or_manager(request)
+        company = self.get_user_company(request)
+        if not company:
+            return Response(
+                {'error': 'No company context found.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        gen_serializer = ClientInvoiceGenerateSerializer(data=request.data)
+        gen_serializer.is_valid(raise_exception=True)
+        data = gen_serializer.validated_data
+
+        # Validate venue belongs to company
+        try:
+            venue = Venue.objects.get(id=data['venue_id'], company=company)
+        except Venue.DoesNotExist:
+            return Response(
+                {'error': 'Venue not found in your company.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Find approved shifts at this venue in the date range
+        shifts = Shift.objects.filter(
+            venue=venue,
+            start_time__date__gte=data['start_date'],
+            start_time__date__lte=data['end_date'],
+            status='approved',
+            actual_hours_worked__isnull=False,
+        ).select_related('staff_user').order_by('start_time')
+
+        if not shifts.exists():
+            return Response(
+                {'error': 'No approved shifts found for this venue in the specified period.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check for existing invoice covering same venue and period
+        existing = ClientInvoice.objects.filter(
+            company=company,
+            venue=venue,
+            start_date=data['start_date'],
+            end_date=data['end_date'],
+            status__in=['draft', 'sent'],
+        ).first()
+        if existing:
+            return Response(
+                {
+                    'error': 'A client invoice already exists for this venue and period.',
+                    'existing_invoice_id': str(existing.id),
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+
+        # Build the invoice
+        from decimal import Decimal
+        billing_rate = data['billing_rate']
+        tax_rate = data.get('tax_rate', Decimal('20.00'))
+
+        invoice = ClientInvoice.objects.create(
+            company=company,
+            venue=venue,
+            invoice_number=ClientInvoice.generate_invoice_number(company),
+            start_date=data['start_date'],
+            end_date=data['end_date'],
+            tax_rate=tax_rate,
+            status='draft',
+            client_name=venue.contact_name or venue.name,
+            client_address=f"{venue.address}, {venue.city}, {venue.postal_code}",
+            client_email=venue.contact_email or '',
+            notes=data.get('notes', ''),
+            created_by=request.user,
+        )
+
+        # Create line items from shifts
+        items = []
+        for shift in shifts:
+            hours = shift.actual_hours_worked or Decimal('0')
+            staff_name = ''
+            if shift.staff_user:
+                staff_name = f"{shift.staff_user.first_name} {shift.staff_user.last_name}".strip()
+                if not staff_name:
+                    staff_name = shift.staff_user.username
+
+            item = ClientInvoiceItem(
+                invoice=invoice,
+                shift=shift,
+                description=f"Security services - {staff_name} ({shift.required_security_role})",
+                date=shift.start_time.date(),
+                hours=hours,
+                rate=billing_rate,
+            )
+            items.append(item)
+
+        ClientInvoiceItem.objects.bulk_create(items)
+        # bulk_create doesn't call save(), so calculate totals manually
+        for item in invoice.line_items.all():
+            item.save()  # triggers total calculation per item
+
+        invoice.calculate_totals()
+
+        serializer = ClientInvoiceSerializer(invoice)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def send_invoice(self, request, pk=None):
+        """Mark invoice as sent, setting issued_date and due_date (net 30)."""
+        self.check_admin_or_manager(request)
+        invoice = self.get_object()
+
+        if invoice.status not in ('draft',):
+            return Response(
+                {'error': f'Cannot send invoice with status "{invoice.status}". Only draft invoices can be sent.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        today = timezone.now().date()
+        invoice.status = 'sent'
+        invoice.issued_date = today
+        invoice.due_date = today + timedelta(days=30)
+        invoice.save(update_fields=['status', 'issued_date', 'due_date', 'updated_at'])
+
+        AuditLog.log(
+            user=request.user,
+            company=invoice.company,
+            action='client_invoice_sent',
+            resource_type='ClientInvoice',
+            resource_id=str(invoice.id),
+            details={'invoice_number': invoice.invoice_number},
+            request=request,
+        )
+
+        serializer = ClientInvoiceSerializer(invoice)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def mark_paid(self, request, pk=None):
+        """Mark invoice as paid."""
+        self.check_admin_or_manager(request)
+        invoice = self.get_object()
+
+        if invoice.status not in ('sent', 'overdue'):
+            return Response(
+                {'error': f'Cannot mark invoice as paid with status "{invoice.status}".'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        invoice.status = 'paid'
+        invoice.paid_date = request.data.get('paid_date', timezone.now().date())
+        invoice.save(update_fields=['status', 'paid_date', 'updated_at'])
+
+        AuditLog.log(
+            user=request.user,
+            company=invoice.company,
+            action='client_invoice_paid',
+            resource_type='ClientInvoice',
+            resource_id=str(invoice.id),
+            details={
+                'invoice_number': invoice.invoice_number,
+                'paid_date': str(invoice.paid_date),
+                'total_amount': str(invoice.total_amount),
+            },
+            request=request,
+        )
+
+        serializer = ClientInvoiceSerializer(invoice)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Get summary statistics for client invoices."""
+        self.check_admin_or_manager(request)
+        company = self.get_user_company(request)
+        if not company:
+            return Response({'error': 'No company context found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        invoices = ClientInvoice.objects.filter(company=company)
+
+        total_billed = invoices.exclude(status='cancelled').aggregate(
+            total=Sum('total_amount')
+        )['total'] or 0
+        total_paid = invoices.filter(status='paid').aggregate(
+            total=Sum('total_amount')
+        )['total'] or 0
+        total_outstanding = invoices.filter(status__in=['sent', 'overdue']).aggregate(
+            total=Sum('total_amount')
+        )['total'] or 0
+        total_draft = invoices.filter(status='draft').aggregate(
+            total=Sum('total_amount')
+        )['total'] or 0
+
+        return Response({
+            'total_billed': float(total_billed),
+            'total_paid': float(total_paid),
+            'total_outstanding': float(total_outstanding),
+            'total_draft': float(total_draft),
+            'count_by_status': {
+                'draft': invoices.filter(status='draft').count(),
+                'sent': invoices.filter(status='sent').count(),
+                'paid': invoices.filter(status='paid').count(),
+                'overdue': invoices.filter(status='overdue').count(),
+                'cancelled': invoices.filter(status='cancelled').count(),
+            }
         })

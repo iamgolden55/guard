@@ -5,11 +5,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { shiftService, invoiceService, profileService } from '../../services';
 import { type Shift, type Invoice, ShiftStatus, StaffProfile } from '../../types';
 import MandatoryProfileForm from '../../components/MandatoryProfileForm';
+import { useOfflineSync } from '../../hooks/useOfflineSync';
 import { Header, Container, SpaceBetween, StatusIndicator, Alert, EmptyState } from '../../components/cloudscape';
 
 const StaffDashboard: React.FC = () => {
   const { authState } = useAuth();
   const navigate = useNavigate();
+  const { pendingCount, isSyncing, isOnline, syncNow, lastSyncResult } = useOfflineSync();
   const [isLoading, setIsLoading] = useState(true);
   const [activeShift, setActiveShift] = useState<Shift | null>(null);
   const [recentShifts, setRecentShifts] = useState<Shift[]>([]);
@@ -153,6 +155,49 @@ const StaffDashboard: React.FC = () => {
             Resubmit profile
           </button>
         </Alert>
+      )}
+
+      {/* Pending offline submissions */}
+      {pendingCount > 0 && (
+        <Container header={
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <h2 className="text-lg font-semibold text-gray-900">Pending submissions</h2>
+          </div>
+        }>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <p className="text-sm text-gray-700">
+                <span className="font-semibold text-amber-600">{pendingCount}</span> check-in/check-out
+                submission{pendingCount > 1 ? 's' : ''} saved offline, waiting to sync.
+              </p>
+              {!isOnline && (
+                <p className="text-xs text-gray-500 mt-1">
+                  You are currently offline. Submissions will sync automatically when connectivity returns.
+                </p>
+              )}
+              {lastSyncResult && (
+                <p className="text-xs text-green-600 mt-1">{lastSyncResult}</p>
+              )}
+            </div>
+            <button
+              onClick={syncNow}
+              disabled={isSyncing || !isOnline}
+              className="px-4 h-9 text-sm font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 whitespace-nowrap"
+            >
+              {isSyncing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                'Sync now'
+              )}
+            </button>
+          </div>
+        </Container>
       )}
 
       {/* Header */}

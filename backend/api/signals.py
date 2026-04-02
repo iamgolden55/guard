@@ -7,7 +7,7 @@ from django.db.models.signals import post_save, pre_save, pre_delete
 from django.dispatch import receiver
 from datetime import timedelta
 from django.utils import timezone
-from .models import SecurityCompany, Shift, OpenShiftRequest, ShiftExchange, AuditLog, ShiftStatusHistory
+from .models import SecurityCompany, Shift, OpenShiftRequest, ShiftExchange, AuditLog, ShiftStatusHistory, Notification
 from .services import push_notification_service
 import logging
 
@@ -137,6 +137,22 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
         except Exception as e:
             logger.exception(f"Error sending shift removal notification: {e}")
 
+        # In-app notification
+        try:
+            company = instance.venue.company if instance.venue else None
+            Notification.send(
+                user=previous_staff,
+                title='Shift Removed',
+                message=f'You have been removed from your shift at {venue_name} on {formatted_date} at {formatted_time}.',
+                notification_type='shift_removed',
+                related_type='shift',
+                related_id=str(instance.id),
+                action_url=f'/shifts/{instance.id}',
+                company=company,
+            )
+        except Exception as e:
+            logger.warning(f"Could not create in-app shift removal notification: {e}")
+
         # Queue email notification for shift removal
         try:
             from .tasks import send_shift_removal_email_task
@@ -174,6 +190,23 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
             )
         except Exception as e:
             logger.exception(f"Error sending shift reassignment notification: {e}")
+
+        # In-app notification for reassigned-away staff
+        try:
+            company = instance.venue.company if instance.venue else None
+            new_staff_name = current_staff.get_full_name() or current_staff.username
+            Notification.send(
+                user=previous_staff,
+                title='Shift Reassigned',
+                message=f'Your shift at {venue_name} on {formatted_date} at {formatted_time} has been reassigned to {new_staff_name}.',
+                notification_type='shift_removed',
+                related_type='shift',
+                related_id=str(instance.id),
+                action_url=f'/shifts/{instance.id}',
+                company=company,
+            )
+        except Exception as e:
+            logger.warning(f"Could not create in-app shift reassignment notification: {e}")
 
         # Queue email notification for old staff being replaced
         try:
@@ -223,6 +256,22 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
             logger.warning(
                 f"Failed to send shift assignment notification for shift {instance.id}"
             )
+
+        # In-app notification for new assignment
+        try:
+            company = instance.venue.company if instance.venue else None
+            Notification.send(
+                user=current_staff,
+                title='Shift Assigned',
+                message=f'You have been assigned a shift at {venue_name} on {formatted_date} at {formatted_time}.',
+                notification_type='shift_assigned',
+                related_type='shift',
+                related_id=str(instance.id),
+                action_url=f'/shifts/{instance.id}',
+                company=company,
+            )
+        except Exception as e:
+            logger.warning(f"Could not create in-app shift assignment notification: {e}")
 
         # Schedule reminder tasks via Celery
         try:

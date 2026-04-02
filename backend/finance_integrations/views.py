@@ -3,12 +3,15 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.utils import timezone
+import hashlib
+import hmac
 import json
 import logging
 
@@ -587,9 +590,30 @@ class WebhookView(APIView):
     
     authentication_classes = []  # Webhooks don't use standard auth
     permission_classes = []
-    
+
+    def verify_webhook_signature(self, request):
+        """Verify HMAC-SHA256 webhook signature for request authenticity."""
+        signature = request.headers.get('X-Webhook-Signature', '')
+        if not signature:
+            return False
+        secret = getattr(settings, 'WEBHOOK_SECRET', '')
+        if not secret:
+            logger.warning("WEBHOOK_SECRET not configured")
+            return False
+        expected = hmac.new(
+            secret.encode('utf-8'),
+            request.body,
+            hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(signature, expected)
+
     def post(self, request, provider_key):
         """Process webhook from accounting provider"""
+        if not self.verify_webhook_signature(request):
+            return HttpResponse(
+                'Invalid or missing webhook signature',
+                status=403
+            )
         try:
             # Find the provider
             provider_model = get_object_or_404(
