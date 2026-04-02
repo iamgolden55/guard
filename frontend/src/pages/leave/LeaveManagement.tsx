@@ -14,7 +14,6 @@ import LeavePolicies from '../admin/LeavePolicies';
 import LeaveSettings from '../admin/LeaveSettings';
 import ContractorUnavailability from './ContractorUnavailability';
 import { useStaffProfile } from '../../hooks/useStaffProfile';
-import { Spinner, SpinnerSize } from '@fluentui/react';
 
 const LeaveManagement: React.FC = () => {
   const { isUserRole } = useAuth();
@@ -32,7 +31,13 @@ const LeaveManagement: React.FC = () => {
     if (profileLoading) {
       return (
         <div className="flex items-center justify-center h-64">
-          <Spinner size={SpinnerSize.large} label="Loading..." />
+          <div className="flex items-center gap-3 text-gray-500">
+            <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-sm">Loading...</span>
+          </div>
         </div>
       );
     }
@@ -52,7 +57,13 @@ const LeaveManagement: React.FC = () => {
     if (profileLoading) {
       return (
         <div className="flex items-center justify-center h-64">
-          <Spinner size={SpinnerSize.large} label="Loading..." />
+          <div className="flex items-center gap-3 text-gray-500">
+            <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-sm">Loading...</span>
+          </div>
         </div>
       );
     }
@@ -68,7 +79,7 @@ const LeaveManagement: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="flex -mx-5 lg:-mx-6 -mt-4">
       {/* Sidebar */}
       <div className="w-64 flex-shrink-0">
         <LeaveSidebar />
@@ -129,22 +140,22 @@ const LeaveManagement: React.FC = () => {
             {/* Manager Routes - Available to Managers and Admins */}
             {(isUserRole(UserRole.MANAGER) || isUserRole(UserRole.ADMIN)) && (
               <>
-                <Route 
-                  path="/approvals" 
+                <Route
+                  path="/approvals"
                   element={
-                    <LeaveApprovalDashboard 
+                    <LeaveApprovalDashboard
                       onApprovalChange={handleRequestSuccess}
                       className="max-w-7xl"
                     />
-                  } 
+                  }
                 />
-                <Route 
-                  path="/calendar" 
+                <Route
+                  path="/calendar"
                   element={
-                    <LeaveCalendar 
+                    <LeaveCalendar
                       className="max-w-7xl"
                     />
-                  } 
+                  }
                 />
                 <Route
                   path="/team-overview"

@@ -249,6 +249,7 @@ const ReportDashboard: React.FC<ReportDashboardProps> = ({
               icon={<AddRegular />}
               appearance="primary"
               onClick={onCreateReport}
+              style={{ backgroundColor: '#d13438', borderColor: '#d13438' }}
             >
               Create Report
             </Button>

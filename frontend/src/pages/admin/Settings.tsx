@@ -1,30 +1,7 @@
 import type React from 'react';
 import { useState, useEffect } from 'react';
-import {
-  Stack,
-  Text,
-  TextField,
-  PrimaryButton,
-  Toggle,
-  Label,
-  Pivot,
-  PivotItem,
-  MessageBar,
-  MessageBarType,
-  Separator,
-  Dropdown,
-  IDropdownOption,
-  Spinner,
-  SpinnerSize,
-  DefaultButton,
-  DetailsList,
-  DetailsListLayoutMode,
-  SelectionMode,
-  type IColumn,
-  Link,
-  Icon
-} from '@fluentui/react';
-import { MainLayout } from '../../layouts';
+import { Header, Container, SpaceBetween, StatusIndicator, CloudscapeTable, ExpandableSection, ConfirmationModal, Alert } from '../../components/cloudscape';
+import Flashbar, { useFlashbar } from '../../components/cloudscape/Flashbar';
 import { settingsService, type SystemSettings } from '../../services/settingsService';
 import EmploymentTypesManagement from '../../components/EmploymentTypesManagement';
 import { financeIntegrationsService } from '../../services';
@@ -63,28 +40,60 @@ interface SettingsState {
   };
 }
 
-const syncFrequencyOptions: IDropdownOption[] = [
-  { key: 'hourly', text: 'Hourly' },
-  { key: 'daily', text: 'Daily' },
-  { key: 'realtime', text: 'Real-time' }
+const syncFrequencyOptions = [
+  { value: 'hourly', label: 'Hourly' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'realtime', label: 'Real-time' }
 ];
 
-const sessionTimeoutOptions: IDropdownOption[] = [
-  { key: '15', text: '15 minutes' },
-  { key: '30', text: '30 minutes' },
-  { key: '60', text: '1 hour' },
-  { key: '120', text: '2 hours' }
+const sessionTimeoutOptions = [
+  { value: '15', label: '15 minutes' },
+  { value: '30', label: '30 minutes' },
+  { value: '60', label: '1 hour' },
+  { value: '120', label: '2 hours' }
 ];
+
+// Toggle Switch component
+const ToggleSwitch: React.FC<{
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+}> = ({ checked, onChange, label, description, disabled }) => (
+  <div className="flex items-center justify-between py-2">
+    <div>
+      <p className="text-sm font-medium text-gray-900">{label}</p>
+      {description && <p className="text-xs text-gray-500">{description}</p>}
+    </div>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+        checked ? 'bg-red-600' : 'bg-gray-300'
+      } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </button>
+  </div>
+);
 
 const Settings: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('general');
+  const { items: flashItems, addFlash, removeFlash } = useFlashbar();
 
   const [settings, setSettings] = useState<SettingsState | null>(null);
-  
+
   // Finance integrations state
   const [financeConnections, setFinanceConnections] = useState<ProviderConnection[]>([]);
   const [financeProviders, setFinanceProviders] = useState<AccountingProvider[]>([]);
@@ -162,13 +171,11 @@ const Settings: React.FC = () => {
 
   const handleSaveSettings = async () => {
     if (!settings) {
-      setSaveError("Settings not loaded yet, cannot save.");
+      addFlash({ type: 'error', content: 'Settings not loaded yet, cannot save.' });
       return;
     }
-    
+
     setIsSaving(true);
-    setSaveSuccess(false);
-    setSaveError(null);
 
     const backendSettings = {
       company_name: settings.generalSettings.companyName,
@@ -193,13 +200,11 @@ const Settings: React.FC = () => {
 
     try {
       await settingsService.updateSettings(backendSettings);
-
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      addFlash({ type: 'success', content: 'Settings saved successfully.' });
     } catch (error) {
       console.error('Failed to save settings:', error);
       const errorMessage = error instanceof Error ? error.message : 'Please try again.';
-      setSaveError(`Failed to save settings: ${errorMessage}`);
+      addFlash({ type: 'error', content: `Failed to save settings: ${errorMessage}` });
     } finally {
       setIsSaving(false);
     }
@@ -207,9 +212,9 @@ const Settings: React.FC = () => {
 
   const handleInputChange = (section: keyof SettingsState, field: string, value: string | boolean) => {
     setSettings(prev => ({
-      ...prev,
+      ...prev!,
       [section]: {
-        ...prev[section],
+        ...prev![section],
         [field]: value
       }
     }));
@@ -219,18 +224,17 @@ const Settings: React.FC = () => {
     try {
       setFinanceLoading(true);
       const result = await financeIntegrationsService.testConnection(connection.id);
-      
+
       if (result.success) {
-        setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 3000);
+        addFlash({ type: 'success', content: 'Connection test passed.' });
       } else {
-        setSaveError(`Connection test failed: ${result.error_message}`);
+        addFlash({ type: 'error', content: `Connection test failed: ${result.error_message}` });
       }
-      
+
       await loadFinanceIntegrations();
     } catch (error) {
       console.error('Connection test failed:', error);
-      setSaveError('Connection test failed. Please try again.');
+      addFlash({ type: 'error', content: 'Connection test failed. Please try again.' });
     } finally {
       setFinanceLoading(false);
     }
@@ -244,419 +248,429 @@ const Settings: React.FC = () => {
     try {
       setFinanceLoading(true);
       await financeIntegrationsService.deleteConnection(connection.id);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      addFlash({ type: 'success', content: 'Connection deleted successfully.' });
       await loadFinanceIntegrations();
     } catch (error) {
       console.error('Delete connection failed:', error);
-      setSaveError('Failed to delete connection. Please try again.');
+      addFlash({ type: 'error', content: 'Failed to delete connection. Please try again.' });
     } finally {
       setFinanceLoading(false);
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'connected':
-        return <Icon iconName="CheckMark" style={{ color: 'green' }} />;
-      case 'expired':
-      case 'error':
-        return <Icon iconName="Error" style={{ color: 'red' }} />;
-      case 'pending':
-        return <Icon iconName="Clock" style={{ color: 'orange' }} />;
-      default:
-        return <Icon iconName="Warning" style={{ color: 'gray' }} />;
-    }
-  };
-
-  // Column definitions for connections table
-  const connectionColumns: IColumn[] = [
-    {
-      key: 'provider',
-      name: 'Provider',
-      fieldName: 'provider_name',
-      minWidth: 120,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: ProviderConnection) => (
-        <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-          <img 
-            src={financeIntegrationsService.getProviderLogo(item.provider_key)} 
-            alt={item.provider_name}
-            style={{ width: 24, height: 24 }}
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = 'none';
-            }}
-          />
-          <Text>{item.provider_name}</Text>
-        </Stack>
-      )
-    },
-    {
-      key: 'company',
-      name: 'Company',
-      fieldName: 'company_name',
-      minWidth: 150,
-      maxWidth: 200,
-      isResizable: true
-    },
-    {
-      key: 'status',
-      name: 'Status',
-      fieldName: 'status',
-      minWidth: 100,
-      maxWidth: 120,
-      isResizable: true,
-      onRender: (item: ProviderConnection) => (
-        <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 4 }}>
-          {getStatusIcon(item.status)}
-          <Text>{item.status}</Text>
-          {item.is_sandbox && <Text style={{ fontSize: '10px', color: 'orange' }}>(Sandbox)</Text>}
-        </Stack>
-      )
-    },
-    {
-      key: 'lastSync',
-      name: 'Last Sync',
-      fieldName: 'last_sync_at',
-      minWidth: 120,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: ProviderConnection) => (
-        <Text>
-          {item.last_sync_at ? new Date(item.last_sync_at).toLocaleDateString() : 'Never'}
-        </Text>
-      )
-    },
-    {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 150,
-      maxWidth: 200,
-      isResizable: true,
-      onRender: (item: ProviderConnection) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
-          <Link onClick={() => handleTestConnection(item)} disabled={financeLoading}>Test</Link>
-          <Link onClick={() => handleDeleteConnection(item)} style={{ color: 'red' }} disabled={financeLoading}>Delete</Link>
-        </Stack>
-      )
-    }
+  const tabs = [
+    { id: 'general', label: 'General Settings' },
+    { id: 'notifications', label: 'Notifications' },
+    { id: 'integration', label: 'Integration' },
+    { id: 'security', label: 'Security' },
+    { id: 'employment', label: 'Employment Types' },
+    { id: 'finance', label: 'Finance Integrations' },
   ];
 
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">System Settings</Text>
-        </Stack>
+    <SpaceBetween size="l">
+      <Header
+        actions={
+          <div className="flex gap-2">
+            <button
+              className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              disabled={isSaving || isLoading}
+            >
+              Reset to Defaults
+            </button>
+            <button
+              onClick={handleSaveSettings}
+              disabled={isSaving || isLoading}
+              className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+            >
+              {isSaving && (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              )}
+              {isSaving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+        }
+      >
+        System Settings
+      </Header>
 
-        {isLoading && <Spinner label="Loading settings..." size={SpinnerSize.large} />}
+      <Flashbar items={flashItems} onDismiss={removeFlash} />
 
-        {loadError && (
-          <MessageBar messageBarType={MessageBarType.error} isMultiline={false}>
-            {loadError}
-          </MessageBar>
-        )}
+      {isLoading && (
+        <Container>
+          <div className="flex items-center justify-center py-12">
+            <div className="flex flex-col items-center gap-3">
+              <svg className="animate-spin h-8 w-8 text-red-600" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <p className="text-sm text-gray-500">Loading settings...</p>
+            </div>
+          </div>
+        </Container>
+      )}
 
-        {saveSuccess && (
-          <MessageBar
-            messageBarType={MessageBarType.success}
-            isMultiline={false}
-            dismissButtonAriaLabel="Close"
-            onDismiss={() => setSaveSuccess(false)}
-          >
-            Settings saved successfully.
-          </MessageBar>
-        )}
+      {loadError && (
+        <Alert type="error">{loadError}</Alert>
+      )}
 
-        {saveError && (
-          <MessageBar
-            messageBarType={MessageBarType.error}
-            isMultiline={false}
-            dismissButtonAriaLabel="Close"
-            onDismiss={() => setSaveError(null)}
-          >
-            {saveError}
-          </MessageBar>
-        )}
+      {!isLoading && !loadError && settings && (
+        <>
+          {/* Tabs */}
+          <div className="border-b border-gray-200">
+            <nav className="flex gap-0 -mb-px overflow-x-auto">
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={activeTab === tab.id
+                    ? 'px-4 py-2.5 text-sm font-medium text-red-600 border-b-2 border-red-600 whitespace-nowrap'
+                    : 'px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent whitespace-nowrap'
+                  }
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </div>
 
-        {!isLoading && !loadError && settings && (
-          <>
-            <Pivot aria-label="Settings Sections">
-              <PivotItem headerText="General Settings">
-                <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
-                  <Label>Company Information</Label>
-                  <TextField
-                    label="Company Name"
-                    value={settings.generalSettings.companyName}
-                    onChange={(_, newValue) =>
-                      handleInputChange('generalSettings', 'companyName', newValue || '')}
-                  />
-                  <TextField
-                    label="Support Email"
-                    value={settings.generalSettings.supportEmail}
-                    onChange={(_, newValue) =>
-                      handleInputChange('generalSettings', 'supportEmail', newValue || '')}
-                  />
-                  <TextField
-                    label="Support Phone"
-                    value={settings.generalSettings.supportPhone}
-                    onChange={(_, newValue) =>
-                      handleInputChange('generalSettings', 'supportPhone', newValue || '')}
-                  />
+          {/* General Settings */}
+          {activeTab === 'general' && (
+            <SpaceBetween size="l">
+              <Container header={<Header variant="h2">Company Information</Header>}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                    <input
+                      type="text"
+                      className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      value={settings.generalSettings.companyName}
+                      onChange={(e) => handleInputChange('generalSettings', 'companyName', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Support Email</label>
+                    <input
+                      type="email"
+                      className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      value={settings.generalSettings.supportEmail}
+                      onChange={(e) => handleInputChange('generalSettings', 'supportEmail', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Support Phone</label>
+                    <input
+                      type="tel"
+                      className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      value={settings.generalSettings.supportPhone}
+                      onChange={(e) => handleInputChange('generalSettings', 'supportPhone', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </Container>
 
-                  <Separator />
-                  <Label>Payment & Invoicing</Label>
-                  <TextField
-                    label="Static Pay Rate (£)"
-                    value={settings.generalSettings.staticPayRate}
-                    onChange={(_, newValue) =>
-                      handleInputChange('generalSettings', 'staticPayRate', newValue || '')}
-                  />
-                  <TextField
-                    label="Standard Pay Rate (£) (Special Events)"
-                    value={settings.generalSettings.standardPayRate}
-                    onChange={(_, newValue) =>
-                      handleInputChange('generalSettings', 'standardPayRate', newValue || '')}
-                  />
-                  <TextField
-                    label="Default Payment Terms"
-                    value={settings.generalSettings.defaultPaymentTerms}
-                    onChange={(_, newValue) =>
-                      handleInputChange('generalSettings', 'defaultPaymentTerms', newValue || '')}
-                  />
-                  <TextField
-                    label="Invoice Prefix"
-                    value={settings.generalSettings.invoicePrefix}
-                    onChange={(_, newValue) =>
-                      handleInputChange('generalSettings', 'invoicePrefix', newValue || '')}
-                  />
-                  <Toggle
+              <Container header={<Header variant="h2">Payment & Invoicing</Header>}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Static Pay Rate (GBP)</label>
+                    <input
+                      type="text"
+                      className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      value={settings.generalSettings.staticPayRate}
+                      onChange={(e) => handleInputChange('generalSettings', 'staticPayRate', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Standard Pay Rate (GBP) (Special Events)</label>
+                    <input
+                      type="text"
+                      className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      value={settings.generalSettings.standardPayRate}
+                      onChange={(e) => handleInputChange('generalSettings', 'standardPayRate', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Default Payment Terms</label>
+                    <input
+                      type="text"
+                      className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      value={settings.generalSettings.defaultPaymentTerms}
+                      onChange={(e) => handleInputChange('generalSettings', 'defaultPaymentTerms', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Prefix</label>
+                    <input
+                      type="text"
+                      className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      value={settings.generalSettings.invoicePrefix}
+                      onChange={(e) => handleInputChange('generalSettings', 'invoicePrefix', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <ToggleSwitch
                     label="Automatic Invoice Generation"
                     checked={settings.generalSettings.automaticInvoicing}
-                    onChange={(_, checked) =>
-                      handleInputChange('generalSettings', 'automaticInvoicing', checked || false)}
-                    onText="Enabled"
-                    offText="Disabled"
+                    onChange={(checked) => handleInputChange('generalSettings', 'automaticInvoicing', checked)}
                   />
-                </Stack>
-              </PivotItem>
-
-              <PivotItem headerText="Notifications">
-                <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
-                  <Label>Notification Channels</Label>
-                  <Toggle
-                    label="Email Notifications"
-                    checked={settings.notificationSettings.emailNotifications}
-                    onChange={(_, checked) =>
-                      handleInputChange('notificationSettings', 'emailNotifications', checked || false)}
-                    onText="Enabled"
-                    offText="Disabled"
-                  />
-                  <Toggle
-                    label="SMS Notifications"
-                    checked={settings.notificationSettings.smsNotifications}
-                    onChange={(_, checked) =>
-                      handleInputChange('notificationSettings', 'smsNotifications', checked || false)}
-                    onText="Enabled"
-                    offText="Disabled"
-                  />
-
-                  <Separator />
-                  <Label>Notification Types</Label>
-                  <Toggle
-                    label="Shift Reminders"
-                    checked={settings.notificationSettings.shiftReminders}
-                    onChange={(_, checked) =>
-                      handleInputChange('notificationSettings', 'shiftReminders', checked || false)}
-                    onText="Enabled"
-                    offText="Disabled"
-                  />
-                  <Toggle
-                    label="Invoice Reminders"
-                    checked={settings.notificationSettings.invoiceReminders}
-                    onChange={(_, checked) =>
-                      handleInputChange('notificationSettings', 'invoiceReminders', checked || false)}
-                    onText="Enabled"
-                    offText="Disabled"
-                  />
-                  <Toggle
-                    label="Automatic Report Generation"
-                    checked={settings.notificationSettings.reportGeneration}
-                    onChange={(_, checked) =>
-                      handleInputChange('notificationSettings', 'reportGeneration', checked || false)}
-                    onText="Enabled"
-                    offText="Disabled"
-                  />
-                </Stack>
-              </PivotItem>
-
-              <PivotItem headerText="Integration">
-                <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
-                  <Label>Deputy Integration</Label>
-                  <Toggle
-                    label="Enable Deputy Integration"
-                    checked={settings.integrationSettings.deputyEnabled}
-                    onChange={(_, checked) =>
-                      handleInputChange('integrationSettings', 'deputyEnabled', checked || false)}
-                    onText="Enabled"
-                    offText="Disabled"
-                  />
-                  <TextField
-                    label="Deputy API Key"
-                    type="password"
-                    value={settings.integrationSettings.deputyApiKey}
-                    onChange={(_, newValue) =>
-                      handleInputChange('integrationSettings', 'deputyApiKey', newValue || '')}
-                    disabled={!settings.integrationSettings.deputyEnabled}
-                  />
-                  <TextField
-                    label="Deputy Domain"
-                    value={settings.integrationSettings.deputyDomain}
-                    onChange={(_, newValue) =>
-                      handleInputChange('integrationSettings', 'deputyDomain', newValue || '')}
-                    disabled={!settings.integrationSettings.deputyEnabled}
-                  />
-                  <Dropdown
-                    label="Sync Frequency"
-                    selectedKey={settings.integrationSettings.syncFrequency}
-                    options={syncFrequencyOptions}
-                    onChange={(_, option) =>
-                      option && handleInputChange('integrationSettings', 'syncFrequency', option.key as string)}
-                    disabled={!settings.integrationSettings.deputyEnabled}
-                  />
-                </Stack>
-              </PivotItem>
-
-              <PivotItem headerText="Security">
-                <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
-                  <Label>Shift Security Requirements</Label>
-                  <Toggle
-                    label="Require Staff Signatures"
-                    checked={settings.securitySettings.requireSignatures}
-                    onChange={(_, checked) =>
-                      handleInputChange('securitySettings', 'requireSignatures', checked || false)}
-                    onText="Required"
-                    offText="Optional"
-                  />
-                  <Toggle
-                    label="Require Manager Approval"
-                    checked={settings.securitySettings.requireManagerApproval}
-                    onChange={(_, checked) =>
-                      handleInputChange('securitySettings', 'requireManagerApproval', checked || false)}
-                    onText="Required"
-                    offText="Optional"
-                  />
-                  <Toggle
-                    label="Require Shift Photos"
-                    checked={settings.securitySettings.requireShiftPhotos}
-                    onChange={(_, checked) =>
-                      handleInputChange('securitySettings', 'requireShiftPhotos', checked || false)}
-                    onText="Required"
-                    offText="Optional"
-                  />
-
-                  <Separator />
-                  <Label>Portal Security</Label>
-                  <Dropdown
-                    label="Session Timeout"
-                    selectedKey={settings.securitySettings.sessionTimeout}
-                    options={sessionTimeoutOptions}
-                    onChange={(_, option) =>
-                      option && handleInputChange('securitySettings', 'sessionTimeout', option.key as string)}
-                  />
-                  <Toggle
-                    label="Allow Staff Shift Exchange"
-                    checked={settings.securitySettings.allowShiftExchange}
-                    onChange={(_, checked) =>
-                      handleInputChange('securitySettings', 'allowShiftExchange', checked || false)}
-                    onText="Allowed"
-                    offText="Disallowed"
-                  />
-                </Stack>
-              </PivotItem>
-
-              <PivotItem headerText="Employment Types">
-                <div style={{ padding: '20px 0' }}>
-                  <EmploymentTypesManagement key="employment-types" />
                 </div>
-              </PivotItem>
+              </Container>
+            </SpaceBetween>
+          )}
 
-              <PivotItem headerText="Finance Integrations">
-                <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
-                  <Label>Accounting Software Connections</Label>
-                  <Text className="text-gray-600">
-                    Manage connections to accounting software for automated invoice and payroll sync.
-                  </Text>
-                  
-                  {financeLoading ? (
-                    <div className="flex justify-center py-4">
-                      <Spinner size={SpinnerSize.medium} label="Loading connections..." />
-                    </div>
-                  ) : financeConnections.length === 0 ? (
-                    <div className="text-center py-8">
-                      <Icon iconName="PlugDisconnected" style={{ fontSize: 48, color: '#ccc', marginBottom: 16 }} />
-                      <Text variant="large">No accounting connections configured</Text>
-                      <Text>Set up accounting integrations in the Finance Integrations page.</Text>
-                      <PrimaryButton
-                        text="Go to Finance Integrations"
-                        iconProps={{ iconName: 'NavigateExternalInline' }}
-                        onClick={() => window.location.href = '/admin/finance-integrations'}
-                        style={{ marginTop: 16 }}
-                      />
-                    </div>
-                  ) : (
-                    <Stack tokens={{ childrenGap: 12 }}>
-                      <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                        <Text variant="medium" style={{ fontWeight: 600 }}>
-                          Connected Providers ({financeConnections.length})
-                        </Text>
-                        <Link 
-                          onClick={() => window.location.href = '/admin/finance-integrations'}
-                          style={{ fontSize: 14 }}
-                        >
-                          Manage All Connections
-                        </Link>
-                      </Stack>
-                      
-                      <DetailsList
-                        items={financeConnections}
-                        columns={connectionColumns}
-                        layoutMode={DetailsListLayoutMode.justified}
-                        selectionMode={SelectionMode.none}
-                        isHeaderVisible={true}
-                        compact
-                      />
-                      
-                      <MessageBar messageBarType={MessageBarType.info}>
-                        <Text>
-                          Finance integrations allow automatic export of invoices and payroll to your accounting software. 
-                          You can export data from the Invoice Management page.
-                        </Text>
-                      </MessageBar>
-                    </Stack>
-                  )}
-                </Stack>
-              </PivotItem>
-            </Pivot>
+          {/* Notifications */}
+          {activeTab === 'notifications' && (
+            <SpaceBetween size="l">
+              <Container header={<Header variant="h2">Notification Channels</Header>}>
+                <ToggleSwitch
+                  label="Email Notifications"
+                  checked={settings.notificationSettings.emailNotifications}
+                  onChange={(checked) => handleInputChange('notificationSettings', 'emailNotifications', checked)}
+                />
+                <ToggleSwitch
+                  label="SMS Notifications"
+                  checked={settings.notificationSettings.smsNotifications}
+                  onChange={(checked) => handleInputChange('notificationSettings', 'smsNotifications', checked)}
+                />
+              </Container>
 
-            <Stack horizontal tokens={{ childrenGap: 10 }} horizontalAlign="end" style={{ marginTop: 20 }}>
-              <DefaultButton
-                text="Reset to Defaults"
-                disabled={isSaving || isLoading}
-              />
-              <PrimaryButton
-                text={isSaving ? "Saving..." : "Save Settings"}
-                onClick={handleSaveSettings}
-                disabled={isSaving || isLoading}
-                iconProps={isSaving ? { iconName: 'Hourglass' } : { iconName: 'Save' }}
-              />
-              {isSaving && <Spinner size={SpinnerSize.small} />}
-            </Stack>
-          </>
-        )}
-      </Stack>
-    </MainLayout>
+              <Container header={<Header variant="h2">Notification Types</Header>}>
+                <ToggleSwitch
+                  label="Shift Reminders"
+                  checked={settings.notificationSettings.shiftReminders}
+                  onChange={(checked) => handleInputChange('notificationSettings', 'shiftReminders', checked)}
+                />
+                <ToggleSwitch
+                  label="Invoice Reminders"
+                  checked={settings.notificationSettings.invoiceReminders}
+                  onChange={(checked) => handleInputChange('notificationSettings', 'invoiceReminders', checked)}
+                />
+                <ToggleSwitch
+                  label="Automatic Report Generation"
+                  checked={settings.notificationSettings.reportGeneration}
+                  onChange={(checked) => handleInputChange('notificationSettings', 'reportGeneration', checked)}
+                />
+              </Container>
+            </SpaceBetween>
+          )}
+
+          {/* Integration */}
+          {activeTab === 'integration' && (
+            <Container header={<Header variant="h2">Deputy Integration</Header>}>
+              <SpaceBetween size="m">
+                <ToggleSwitch
+                  label="Enable Deputy Integration"
+                  checked={settings.integrationSettings.deputyEnabled}
+                  onChange={(checked) => handleInputChange('integrationSettings', 'deputyEnabled', checked)}
+                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Deputy API Key</label>
+                  <input
+                    type="password"
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-100"
+                    value={settings.integrationSettings.deputyApiKey}
+                    onChange={(e) => handleInputChange('integrationSettings', 'deputyApiKey', e.target.value)}
+                    disabled={!settings.integrationSettings.deputyEnabled}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Deputy Domain</label>
+                  <input
+                    type="text"
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-100"
+                    value={settings.integrationSettings.deputyDomain}
+                    onChange={(e) => handleInputChange('integrationSettings', 'deputyDomain', e.target.value)}
+                    disabled={!settings.integrationSettings.deputyEnabled}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sync Frequency</label>
+                  <select
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-100"
+                    value={settings.integrationSettings.syncFrequency}
+                    onChange={(e) => handleInputChange('integrationSettings', 'syncFrequency', e.target.value)}
+                    disabled={!settings.integrationSettings.deputyEnabled}
+                  >
+                    {syncFrequencyOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </SpaceBetween>
+            </Container>
+          )}
+
+          {/* Security */}
+          {activeTab === 'security' && (
+            <SpaceBetween size="l">
+              <Container header={<Header variant="h2">Shift Security Requirements</Header>}>
+                <ToggleSwitch
+                  label="Require Staff Signatures"
+                  checked={settings.securitySettings.requireSignatures}
+                  onChange={(checked) => handleInputChange('securitySettings', 'requireSignatures', checked)}
+                />
+                <ToggleSwitch
+                  label="Require Manager Approval"
+                  checked={settings.securitySettings.requireManagerApproval}
+                  onChange={(checked) => handleInputChange('securitySettings', 'requireManagerApproval', checked)}
+                />
+                <ToggleSwitch
+                  label="Require Shift Photos"
+                  checked={settings.securitySettings.requireShiftPhotos}
+                  onChange={(checked) => handleInputChange('securitySettings', 'requireShiftPhotos', checked)}
+                />
+              </Container>
+
+              <Container header={<Header variant="h2">Portal Security</Header>}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Session Timeout</label>
+                  <select
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    value={settings.securitySettings.sessionTimeout}
+                    onChange={(e) => handleInputChange('securitySettings', 'sessionTimeout', e.target.value)}
+                  >
+                    {sessionTimeoutOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <ToggleSwitch
+                  label="Allow Staff Shift Exchange"
+                  checked={settings.securitySettings.allowShiftExchange}
+                  onChange={(checked) => handleInputChange('securitySettings', 'allowShiftExchange', checked)}
+                />
+              </Container>
+            </SpaceBetween>
+          )}
+
+          {/* Employment Types */}
+          {activeTab === 'employment' && (
+            <EmploymentTypesManagement key="employment-types" />
+          )}
+
+          {/* Finance Integrations */}
+          {activeTab === 'finance' && (
+            <Container header={<Header variant="h2">Accounting Software Connections</Header>}>
+              <p className="text-sm text-gray-600 mb-4">
+                Manage connections to accounting software for automated invoice and payroll sync.
+              </p>
+
+              {financeLoading ? (
+                <div className="flex justify-center py-8">
+                  <svg className="animate-spin h-6 w-6 text-red-600" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                </div>
+              ) : financeConnections.length === 0 ? (
+                <div className="text-center py-8">
+                  <svg className="mx-auto h-12 w-12 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-4.486a4.5 4.5 0 00-6.364-6.364L4.5 6.394" />
+                  </svg>
+                  <p className="text-base font-medium text-gray-900 mb-1">No accounting connections configured</p>
+                  <p className="text-sm text-gray-500 mb-4">Set up accounting integrations in the Finance Integrations page.</p>
+                  <button
+                    onClick={() => window.location.href = '/admin/finance-integrations'}
+                    className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    Go to Finance Integrations
+                  </button>
+                </div>
+              ) : (
+                <SpaceBetween size="m">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-gray-900">
+                      Connected Providers ({financeConnections.length})
+                    </p>
+                    <button
+                      onClick={() => window.location.href = '/admin/finance-integrations'}
+                      className="text-sm text-red-600 hover:text-red-700 font-medium"
+                    >
+                      Manage All Connections
+                    </button>
+                  </div>
+
+                  <CloudscapeTable
+                    columnDefinitions={[
+                      {
+                        id: 'provider',
+                        header: 'Provider',
+                        cell: (item: ProviderConnection) => (
+                          <div className="flex items-center gap-2">
+                            <img
+                              src={financeIntegrationsService.getProviderLogo(item.provider_key)}
+                              alt={item.provider_name}
+                              className="w-6 h-6"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                            <span className="text-sm">{item.provider_name}</span>
+                          </div>
+                        ),
+                      },
+                      {
+                        id: 'company',
+                        header: 'Company',
+                        cell: (item: ProviderConnection) => item.company_name || '-',
+                      },
+                      {
+                        id: 'status',
+                        header: 'Status',
+                        cell: (item: ProviderConnection) => (
+                          <div className="flex items-center gap-2">
+                            <StatusIndicator type={item.status === 'connected' ? 'success' : item.status === 'pending' ? 'warning' : 'error'}>
+                              {item.status}
+                            </StatusIndicator>
+                            {item.is_sandbox && <span className="text-xs text-amber-600">(Sandbox)</span>}
+                          </div>
+                        ),
+                      },
+                      {
+                        id: 'lastSync',
+                        header: 'Last Sync',
+                        cell: (item: ProviderConnection) => item.last_sync_at ? new Date(item.last_sync_at).toLocaleDateString() : 'Never',
+                      },
+                      {
+                        id: 'actions',
+                        header: 'Actions',
+                        cell: (item: ProviderConnection) => (
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => handleTestConnection(item)}
+                              disabled={financeLoading}
+                              className="text-sm text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
+                            >
+                              Test
+                            </button>
+                            <button
+                              onClick={() => handleDeleteConnection(item)}
+                              disabled={financeLoading}
+                              className="text-sm text-gray-500 hover:text-red-600 font-medium disabled:opacity-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ),
+                      },
+                    ]}
+                    items={financeConnections}
+                    empty="No connections found."
+                  />
+
+                  <Alert type="info">
+                    Finance integrations allow automatic export of invoices and payroll to your accounting software.
+                    You can export data from the Invoice Management page.
+                  </Alert>
+                </SpaceBetween>
+              )}
+            </Container>
+          )}
+        </>
+      )}
+    </SpaceBetween>
   );
 };
 

@@ -1,28 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Text,
-  Stack,
-  ProgressIndicator,
-  Spinner,
-  SpinnerSize,
-  MessageBar,
-  MessageBarType,
-  Icon,
-  DefaultButton,
-  IStackTokens,
-  Shimmer,
-  ShimmerElementType,
-  IShimmerElement,
-  Tooltip,
-  DirectionalHint
-} from '@fluentui/react';
 import { useAuth } from '../contexts/AuthContext';
 import { leaveService } from '../services';
 import type {
   LeaveBalanceResponse,
   LeaveBalanceSummary,
-  User
 } from '../types/leave';
+import { Container, SpaceBetween, Alert, EmptyState } from './cloudscape';
 
 interface LeaveBalanceDisplayProps {
   userId?: number;
@@ -30,7 +13,7 @@ interface LeaveBalanceDisplayProps {
   compact?: boolean;
   className?: string;
   onRequestLeave?: (leaveTypeId: number) => void;
-  refreshTrigger?: number; // For external refresh control
+  refreshTrigger?: number;
 }
 
 interface BalanceCardProps {
@@ -45,29 +28,24 @@ const BalanceCard: React.FC<BalanceCardProps> = ({ balance, compact, onRequestLe
 
   // Calculate progress percentages
   const usedPercentage = parseFloat(entitlement.used_to_date) / parseFloat(entitlement.total_entitlement);
-  const availablePercentage = parseFloat(balance.available_balance) / parseFloat(entitlement.total_entitlement);
   const pendingPercentage = parseFloat(balance.pending_balance) / parseFloat(entitlement.total_entitlement);
 
   // Determine card status color based on available balance
   const availableDays = parseFloat(balance.available_balance);
   const totalDays = parseFloat(entitlement.total_entitlement);
 
-  let statusColor = '#107C10'; // Green - Good balance
+  let statusColor = '#16a34a'; // Green
   let statusText = 'Good';
-  let statusIcon = 'CheckMark';
 
   if (availableDays <= 0) {
-    statusColor = '#D13438'; // Red - No balance
+    statusColor = '#dc2626'; // Red
     statusText = 'Depleted';
-    statusIcon = 'Warning';
   } else if (availableDays < totalDays * 0.2) {
-    statusColor = '#FF8C00'; // Orange - Low balance
+    statusColor = '#f97316'; // Orange
     statusText = 'Low';
-    statusIcon = 'Info';
   } else if (availableDays < totalDays * 0.5) {
-    statusColor = '#FFB900'; // Yellow - Medium balance
+    statusColor = '#eab308'; // Yellow
     statusText = 'Medium';
-    statusIcon = 'Clock';
   }
 
   // Calculate time until refresh/accrual
@@ -77,12 +55,12 @@ const BalanceCard: React.FC<BalanceCardProps> = ({ balance, compact, onRequestLe
 
   return (
     <div
-      className={`bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-all duration-300 ease-out hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5 ${
+      className={`bg-white rounded-xl border border-gray-200 p-5 transition-all duration-200 hover:shadow-md ${
         compact ? 'min-h-0' : 'min-h-[200px]'
       }`}
       style={{ borderLeft: `4px solid ${leave_type.color_code}` }}
     >
-      <Stack tokens={{ childrenGap: compact ? 8 : 12 }}>
+      <div className="space-y-3">
         {/* Header */}
         <div className="flex items-start justify-between">
           <div className="flex-1">
@@ -90,112 +68,89 @@ const BalanceCard: React.FC<BalanceCardProps> = ({ balance, compact, onRequestLe
               <div
                 className="w-3 h-3 rounded-full flex-shrink-0"
                 style={{ backgroundColor: leave_type.color_code }}
-                aria-hidden="true"
               />
-              <Text variant={compact ? 'medium' : 'large'} className="font-semibold text-gray-900">
+              <span className={`${compact ? 'text-sm' : 'text-base'} font-semibold text-gray-900`}>
                 {leave_type.name}
-              </Text>
-              <Text variant="small" className="text-gray-500">
-                ({leave_type.code})
-              </Text>
+              </span>
+              <span className="text-xs text-gray-500">({leave_type.code})</span>
             </div>
             {!compact && leave_type.description && (
-              <Text variant="small" className="text-gray-600 mt-1">
-                {leave_type.description}
-              </Text>
+              <p className="text-xs text-gray-600 mt-1">{leave_type.description}</p>
             )}
           </div>
 
-          <Tooltip content={`Status: ${statusText}`} directionalHint={DirectionalHint.topCenter}>
-            <Icon
-              iconName={statusIcon}
-              className="text-lg"
-              style={{ color: statusColor }}
-              aria-label={`Balance status: ${statusText}`}
-            />
-          </Tooltip>
+          <span
+            className="text-xs font-medium px-2 py-0.5 rounded-full"
+            style={{
+              color: statusColor,
+              backgroundColor: `${statusColor}15`
+            }}
+            title={`Balance status: ${statusText}`}
+          >
+            {statusText}
+          </span>
         </div>
 
         {/* Balance Overview */}
         <div className={`grid ${compact ? 'grid-cols-2' : 'grid-cols-3'} gap-2 text-center`}>
-          <div className="p-2 bg-blue-50 rounded-lg">
-            <Text variant={compact ? 'small' : 'medium'} className="font-bold text-blue-900">
+          <div className="p-2 bg-gray-50 rounded-lg">
+            <p className={`${compact ? 'text-sm' : 'text-base'} font-bold text-gray-900`}>
               {balance.available_balance}
-            </Text>
-            <Text variant="small" className="text-blue-700">
-              Available
-            </Text>
+            </p>
+            <p className="text-xs text-gray-600">Available</p>
           </div>
 
           <div className="p-2 bg-gray-50 rounded-lg">
-            <Text variant={compact ? 'small' : 'medium'} className="font-bold text-gray-900">
+            <p className={`${compact ? 'text-sm' : 'text-base'} font-bold text-gray-900`}>
               {entitlement.used_to_date}
-            </Text>
-            <Text variant="small" className="text-gray-700">
-              Used
-            </Text>
+            </p>
+            <p className="text-xs text-gray-600">Used</p>
           </div>
 
           {!compact && (
             <div className="p-2 bg-orange-50 rounded-lg">
-              <Text variant="small" className="font-bold text-orange-900">
-                {balance.pending_balance}
-              </Text>
-              <Text variant="small" className="text-orange-700">
-                Pending
-              </Text>
+              <p className="text-sm font-bold text-orange-900">{balance.pending_balance}</p>
+              <p className="text-xs text-orange-700">Pending</p>
             </div>
           )}
 
           {compact && parseFloat(balance.pending_balance) > 0 && (
             <div className="p-2 bg-orange-50 rounded-lg">
-              <Text variant="small" className="font-bold text-orange-900">
-                {balance.pending_balance}
-              </Text>
-              <Text variant="small" className="text-orange-700">
-                Pending
-              </Text>
+              <p className="text-sm font-bold text-orange-900">{balance.pending_balance}</p>
+              <p className="text-xs text-orange-700">Pending</p>
             </div>
           )}
         </div>
 
         {/* Progress Bar */}
-        <div className="space-y-2">
+        <div className="space-y-1">
           <div className="flex justify-between items-center">
-            <Text variant="small" className="text-gray-600">
-              Usage Progress
-            </Text>
-            <Text variant="small" className="text-gray-800 font-medium">
+            <span className="text-xs text-gray-600">Usage Progress</span>
+            <span className="text-xs text-gray-800 font-medium">
               {entitlement.used_to_date} / {entitlement.total_entitlement} days
-            </Text>
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full" style={{ height: compact ? '4px' : '6px' }}>
+            <div
+              className="bg-red-500 rounded-full transition-all duration-300"
+              style={{
+                width: `${Math.min(usedPercentage * 100, 100)}%`,
+                height: compact ? '4px' : '6px'
+              }}
+            />
           </div>
 
-          <ProgressIndicator
-            percentComplete={Math.min(usedPercentage, 1)}
-            barHeight={compact ? 4 : 6}
-            className="mb-2"
-            progressHidden={false}
-            ariaValueText={`${Math.round(usedPercentage * 100)}% of leave entitlement used`}
-          />
-
-          {/* Secondary progress indicators for pending/available */}
+          {/* Secondary progress for pending */}
           {!compact && parseFloat(balance.pending_balance) > 0 && (
             <div className="space-y-1">
               <div className="flex justify-between items-center">
-                <Text variant="small" className="text-orange-600">
-                  Pending Requests
-                </Text>
-                <Text variant="small" className="text-orange-700">
-                  {balance.pending_balance} days
-                </Text>
+                <span className="text-xs text-orange-600">Pending Requests</span>
+                <span className="text-xs text-orange-700">{balance.pending_balance} days</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div
                   className="bg-orange-400 h-2 rounded-full transition-all duration-300"
-                  style={{
-                    width: `${Math.min(pendingPercentage * 100, 100)}%`
-                  }}
-                  aria-hidden="true"
+                  style={{ width: `${Math.min(pendingPercentage * 100, 100)}%` }}
                 />
               </div>
             </div>
@@ -204,84 +159,62 @@ const BalanceCard: React.FC<BalanceCardProps> = ({ balance, compact, onRequestLe
 
         {/* Additional Info */}
         {!compact && (
-          <div className="pt-2 border-t border-gray-100 space-y-2">
+          <div className="pt-2 border-t border-gray-100 space-y-1">
             {entitlement.carried_over !== '0' && (
               <div className="flex justify-between">
-                <Text variant="small" className="text-gray-600">Carried Over:</Text>
-                <Text variant="small" className="text-green-700 font-medium">
-                  {entitlement.carried_over} days
-                </Text>
+                <span className="text-xs text-gray-600">Carried Over:</span>
+                <span className="text-xs text-green-700 font-medium">{entitlement.carried_over} days</span>
               </div>
             )}
-
             <div className="flex justify-between">
-              <Text variant="small" className="text-gray-600">Annual Entitlement:</Text>
-              <Text variant="small" className="text-gray-800 font-medium">
-                {entitlement.annual_entitlement} days
-              </Text>
+              <span className="text-xs text-gray-600">Annual Entitlement:</span>
+              <span className="text-xs text-gray-800 font-medium">{entitlement.annual_entitlement} days</span>
             </div>
-
             {entitlement.last_accrual_date && (
               <div className="flex justify-between">
-                <Text variant="small" className="text-gray-600">Last Accrual:</Text>
-                <Text variant="small" className="text-gray-800">
-                  {new Date(entitlement.last_accrual_date).toLocaleDateString()}
-                </Text>
+                <span className="text-xs text-gray-600">Last Accrual:</span>
+                <span className="text-xs text-gray-800">{new Date(entitlement.last_accrual_date).toLocaleDateString()}</span>
               </div>
             )}
-
             <div className="flex justify-between">
-              <Text variant="small" className="text-blue-600">Next Accrual:</Text>
-              <Text variant="small" className="text-blue-700">
-                {daysUntilNextAccrual} days
-              </Text>
+              <span className="text-xs text-gray-600">Next Accrual:</span>
+              <span className="text-xs text-gray-800">{daysUntilNextAccrual} days</span>
             </div>
           </div>
         )}
 
         {/* Action Button */}
         {onRequestLeave && availableDays > 0 && (
-          <div className="pt-2">
-            <DefaultButton
-              text={compact ? 'Request' : 'Request Leave'}
-              iconProps={{ iconName: 'Add' }}
-              onClick={() => onRequestLeave(leave_type.id)}
-              className="w-full"
-              disabled={!leave_type.is_active}
-              ariaLabel={`Request ${leave_type.name} leave`}
-            />
-          </div>
+          <button
+            onClick={() => onRequestLeave(leave_type.id)}
+            disabled={!leave_type.is_active}
+            className="w-full px-4 h-8 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            aria-label={`Request ${leave_type.name} leave`}
+          >
+            {compact ? 'Request' : 'Request Leave'}
+          </button>
         )}
 
         {!leave_type.is_active && (
-          <MessageBar
-            messageBarType={MessageBarType.info}
-            className="mt-2"
-            isMultiline={false}
-          >
+          <Alert type="info">
             This leave type is currently not available for new requests.
-          </MessageBar>
+          </Alert>
         )}
-      </Stack>
+      </div>
     </div>
   );
 };
 
 // Shimmer placeholder for loading state
-const BalanceCardShimmer: React.FC<{ compact: boolean }> = ({ compact }) => {
-  const shimmerElements: IShimmerElement[] = [
-    { type: ShimmerElementType.line, height: compact ? 20 : 24, width: '60%' },
-    { type: ShimmerElementType.gap, width: '40%' },
-    { type: ShimmerElementType.line, height: 16, width: '100%' },
-    { type: ShimmerElementType.line, height: 16, width: '80%' },
-  ];
-
-  return (
-    <div className={`bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-all duration-300 ease-out ${compact ? 'min-h-0' : 'min-h-[200px]'}`}>
-      <Shimmer shimmerElements={shimmerElements} />
+const BalanceCardShimmer: React.FC<{ compact: boolean }> = ({ compact }) => (
+  <div className={`bg-white rounded-xl border border-gray-200 p-5 animate-pulse ${compact ? 'min-h-0' : 'min-h-[200px]'}`}>
+    <div className="space-y-3">
+      <div className="h-5 bg-gray-200 rounded w-3/5" />
+      <div className="h-4 bg-gray-200 rounded w-full" />
+      <div className="h-4 bg-gray-200 rounded w-4/5" />
     </div>
-  );
-};
+  </div>
+);
 
 // Main component
 const LeaveBalanceDisplay: React.FC<LeaveBalanceDisplayProps> = ({
@@ -330,19 +263,12 @@ const LeaveBalanceDisplay: React.FC<LeaveBalanceDisplayProps> = ({
     loadBalanceData(true);
   };
 
-  const stackTokens: IStackTokens = { childrenGap: compact ? 12 : 20 };
-
   if (isLoading && !balanceData) {
     return (
       <div className={className}>
         {showTitle && (
-          <div className="mb-4">
-            <Text variant="xLarge" className="font-semibold text-gray-900">
-              Leave Balances
-            </Text>
-          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Leave Balances</h2>
         )}
-
         <div className={`grid ${compact ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'} gap-4`}>
           {[...Array(3)].map((_, index) => (
             <BalanceCardShimmer key={index} compact={compact} />
@@ -355,20 +281,18 @@ const LeaveBalanceDisplay: React.FC<LeaveBalanceDisplayProps> = ({
   if (error) {
     return (
       <div className={className}>
-        <MessageBar
-          messageBarType={MessageBarType.error}
-          isMultiline
-          actions={
-            <DefaultButton
-              text="Retry"
-              iconProps={{ iconName: 'Refresh' }}
+        <Alert type="error">
+          <div className="flex items-center justify-between">
+            <span>{error}</span>
+            <button
               onClick={handleRefresh}
               disabled={isRefreshing}
-            />
-          }
-        >
-          {error}
-        </MessageBar>
+              className="px-4 h-8 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </Alert>
       </div>
     );
   }
@@ -377,16 +301,11 @@ const LeaveBalanceDisplay: React.FC<LeaveBalanceDisplayProps> = ({
     return (
       <div className={className}>
         {showTitle && (
-          <div className="mb-4">
-            <Text variant="xLarge" className="font-semibold text-gray-900">
-              Leave Balances
-            </Text>
-          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Leave Balances</h2>
         )}
-
-        <MessageBar messageBarType={MessageBarType.info}>
+        <Alert type="info">
           No leave entitlements found. Contact your administrator if you believe this is an error.
-        </MessageBar>
+        </Alert>
       </div>
     );
   }
@@ -396,61 +315,45 @@ const LeaveBalanceDisplay: React.FC<LeaveBalanceDisplayProps> = ({
       {showTitle && (
         <div className="flex items-center justify-between mb-4">
           <div>
-            <Text variant="xLarge" className="font-semibold text-gray-900">
-              Leave Balances
-            </Text>
+            <h2 className="text-xl font-semibold text-gray-900">Leave Balances</h2>
             {balanceData.user && (
-              <Text variant="medium" className="text-gray-600 mt-1">
+              <p className="text-sm text-gray-600 mt-1">
                 {balanceData.user.first_name} {balanceData.user.last_name}
-              </Text>
+              </p>
             )}
           </div>
-
-          <DefaultButton
-            text="Refresh"
-            iconProps={{ iconName: isRefreshing ? 'Clock' : 'Refresh' }}
+          <button
             onClick={handleRefresh}
             disabled={isRefreshing}
-            ariaLabel="Refresh leave balances"
-          />
+            className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            aria-label="Refresh leave balances"
+          >
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
         </div>
       )}
 
       {/* Summary Cards */}
       {!compact && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-blue-50 rounded-2xl shadow-sm border border-blue-200 p-6 transition-all duration-300 ease-out hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5">
-            <Stack tokens={{ childrenGap: 4 }}>
-              <Text variant="large" className="font-bold text-blue-900">
-                {balanceData.total_days_available}
-              </Text>
-              <Text variant="medium" className="text-blue-700">
-                Total Available Days
-              </Text>
-            </Stack>
-          </div>
-
-          <div className="bg-gray-50 rounded-2xl shadow-sm border border-gray-200 p-6 transition-all duration-300 ease-out hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5">
-            <Stack tokens={{ childrenGap: 4 }}>
-              <Text variant="large" className="font-bold text-gray-900">
-                {balanceData.total_days_used}
-              </Text>
-              <Text variant="medium" className="text-gray-700">
-                Total Days Used
-              </Text>
-            </Stack>
-          </div>
-
-          <div className="bg-orange-50 rounded-2xl shadow-sm border border-orange-200 p-6 transition-all duration-300 ease-out hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5">
-            <Stack tokens={{ childrenGap: 4 }}>
-              <Text variant="large" className="font-bold text-orange-900">
-                {balanceData.total_days_pending}
-              </Text>
-              <Text variant="medium" className="text-orange-700">
-                Days Pending Approval
-              </Text>
-            </Stack>
-          </div>
+          <Container>
+            <div className="space-y-1">
+              <p className="text-2xl font-bold text-gray-900">{balanceData.total_days_available}</p>
+              <p className="text-sm text-gray-600">Total Available Days</p>
+            </div>
+          </Container>
+          <Container>
+            <div className="space-y-1">
+              <p className="text-2xl font-bold text-gray-900">{balanceData.total_days_used}</p>
+              <p className="text-sm text-gray-600">Total Days Used</p>
+            </div>
+          </Container>
+          <Container>
+            <div className="space-y-1">
+              <p className="text-2xl font-bold text-orange-600">{balanceData.total_days_pending}</p>
+              <p className="text-sm text-gray-600">Days Pending Approval</p>
+            </div>
+          </Container>
         </div>
       )}
 
@@ -473,8 +376,11 @@ const LeaveBalanceDisplay: React.FC<LeaveBalanceDisplayProps> = ({
       {isRefreshing && (
         <div className="fixed bottom-4 right-4 bg-white p-3 rounded-lg shadow-lg border border-gray-200">
           <div className="flex items-center gap-2">
-            <Spinner size={SpinnerSize.small} />
-            <Text variant="small">Refreshing balances...</Text>
+            <svg className="animate-spin w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-xs text-gray-600">Refreshing balances...</span>
           </div>
         </div>
       )}

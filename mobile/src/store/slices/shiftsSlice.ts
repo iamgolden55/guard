@@ -14,7 +14,7 @@ export interface Coworker {
   shift_id: number;
   check_in_time?: string | null;
   check_out_time?: string | null;
-  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'pending_approval' | 'approved';
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'pending_approval' | 'approved' | 'no_show';
 }
 
 export interface Shift {
@@ -35,7 +35,7 @@ export interface Shift {
   required_security_role: string;
   actual_start_time?: string;
   actual_end_time?: string;
-  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'pending_approval' | 'approved';
+  status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'pending_approval' | 'approved' | 'no_show';
   check_in_time?: string;
   check_out_time?: string;
   check_in_latitude?: number;
@@ -379,7 +379,7 @@ const shiftsSlice = createSlice({
 
         // Clear tracking for shifts that are now confirmed as completed by backend
         const confirmedCompletedIds = shifts
-          .filter(s => ['completed', 'approved', 'pending_approval'].includes(s.status))
+          .filter(s => ['completed', 'approved', 'pending_approval', 'no_show'].includes(s.status))
           .map(s => s.id);
         state.recentlyCheckedOutShiftIds = recentlyCheckedOut.filter(
           id => !confirmedCompletedIds.includes(id)
@@ -395,9 +395,9 @@ const shiftsSlice = createSlice({
           .filter(s => s.status === 'scheduled' && new Date(s.start_time) < now)
           .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
 
-        // Completed shifts (includes both 'completed' and 'approved' statuses)
+        // Completed shifts (includes 'completed', 'approved', and 'no_show' statuses)
         state.completedShifts = shifts
-          .filter(s => s.status === 'completed' || s.status === 'approved')
+          .filter(s => s.status === 'completed' || s.status === 'approved' || s.status === 'no_show')
           .sort((a, b) => new Date(b.end_time).getTime() - new Date(a.end_time).getTime());
       })
       .addCase(fetchShifts.rejected, (state, action) => {
@@ -458,7 +458,7 @@ const shiftsSlice = createSlice({
 
         // Append completed shifts
         const newCompleted = newShifts
-          .filter(s => s.status === 'completed' || s.status === 'approved');
+          .filter(s => s.status === 'completed' || s.status === 'approved' || s.status === 'no_show');
         state.completedShifts = [...state.completedShifts, ...newCompleted]
           .sort((a, b) => new Date(b.end_time).getTime() - new Date(a.end_time).getTime());
       })

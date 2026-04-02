@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { MainLayout } from '../../layouts';
 import { shiftService, venueService } from '../../services';
 import type { Venue } from '../../types';
 import type { AttendanceReport, StaffAttendanceMetric, PerformanceStatus } from '../../types/attendance';
@@ -283,7 +282,7 @@ const Attendance: React.FC = () => {
   };
 
   return (
-    <MainLayout>
+    <>
       <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           {/* Header Section */}
@@ -586,7 +585,7 @@ const Attendance: React.FC = () => {
           50% { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); }
         }
       `}</style>
-    </MainLayout>
+    </>
   );
 };
 

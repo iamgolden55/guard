@@ -1,17 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Stack,
-  Text,
-  MessageBar,
-  MessageBarType,
-  Spinner,
-  SpinnerSize,
-  IStackTokens,
-  DefaultButton,
-  IconButton,
-  Pivot,
-  PivotItem
-} from '@fluentui/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { leaveService } from '../../services';
 import api from '../../services/api';
@@ -24,6 +11,8 @@ import LeaveAnalyticsDashboard from '../../components/leave/LeaveAnalyticsDashbo
 import ReportFilters from '../../components/leave/ReportFilters';
 import ExportReportButton from '../../components/leave/ExportReportButton';
 import LeaveRequestsTable from '../../components/leave/LeaveRequestsTable';
+import { Header, Container, SpaceBetween, EmptyState } from '../../components/cloudscape';
+import Flashbar, { useFlashbar } from '../../components/cloudscape/Flashbar';
 
 interface ExportOptions {
   format: 'csv' | 'xlsx' | 'pdf';
@@ -37,11 +26,6 @@ interface ExportOptions {
   };
 }
 
-const stackTokens: IStackTokens = {
-  childrenGap: 24,
-  padding: 16,
-};
-
 const LeaveReports: React.FC = () => {
   const { authState } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
@@ -49,11 +33,9 @@ const LeaveReports: React.FC = () => {
   const [statistics, setStatistics] = useState<LeaveStatistics | null>(null);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [filters, setFilters] = useState<LeaveRequestFilterOptions>({});
-  const [notification, setNotification] = useState<{
-    type: MessageBarType;
-    message: string;
-  } | null>(null);
+  const { items: flashItems, addFlash, removeFlash } = useFlashbar();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'detailed' | 'scheduled' | 'custom'>('dashboard');
 
   // Fetch reports data
   const fetchReportsData = useCallback(async () => {
@@ -72,10 +54,7 @@ const LeaveReports: React.FC = () => {
 
     } catch (error) {
       console.error('Error fetching reports data:', error);
-      setNotification({
-        type: MessageBarType.error,
-        message: 'Failed to load reports data. Please try again.'
-      });
+      addFlash({ type: 'error', content: 'Failed to load reports data. Please try again.' });
     } finally {
       setIsLoading(false);
     }
@@ -89,23 +68,18 @@ const LeaveReports: React.FC = () => {
   // Handle filter changes
   const handleFiltersChange = useCallback((newFilters: LeaveRequestFilterOptions) => {
     setFilters(newFilters);
-    // Filters are automatically applied via LeaveAnalyticsDashboard's useEffect
   }, []);
 
   // Reset filters
   const handleResetFilters = useCallback(() => {
     setFilters({});
-    // In a real implementation, you would refetch data without filters
     console.log('Filters reset');
   }, []);
 
   // Handle export
   const handleExport = useCallback(async (format: 'csv' | 'xlsx' | 'pdf', options: ExportOptions) => {
     if (!authState.user) {
-      setNotification({
-        type: MessageBarType.error,
-        message: 'Authentication required for export'
-      });
+      addFlash({ type: 'error', content: 'Authentication required for export' });
       return;
     }
 
@@ -192,74 +166,63 @@ const LeaveReports: React.FC = () => {
         }
       });
 
-      setNotification({
-        type: MessageBarType.success,
-        message: `Analytics exported successfully as ${format.toUpperCase()}!`
-      });
+      addFlash({ type: 'success', content: `Analytics exported successfully as ${format.toUpperCase()}!` });
     } catch (error) {
-      setNotification({
-        type: MessageBarType.error,
-        message: 'Failed to export analytics. Please try again.'
-      });
+      addFlash({ type: 'error', content: 'Failed to export analytics. Please try again.' });
     }
   }, [handleExport, filters]);
 
-  // Clear notification after 5 seconds
-  useEffect(() => {
-    if (notification) {
-      const timer = setTimeout(() => setNotification(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [notification]);
-
   if (isLoading) {
     return (
-      <div className="leave-reports-page">
-        <Stack horizontal horizontalAlign="center" verticalAlign="center" tokens={{ padding: 40 }}>
-          <Spinner size={SpinnerSize.large} label="Loading reports..." />
-        </Stack>
+      <div className="flex items-center justify-center py-16">
+        <div className="flex items-center gap-3 text-gray-500">
+          <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm">Loading reports...</span>
+        </div>
       </div>
     );
   }
 
+  const tabs = [
+    { key: 'dashboard', label: 'Dashboard Overview' },
+    { key: 'detailed', label: 'Detailed Reports' },
+    { key: 'scheduled', label: 'Scheduled Reports' },
+    { key: 'custom', label: 'Custom Reports' },
+  ] as const;
+
   return (
     <div className="max-w-7xl">
-      <Stack tokens={stackTokens}>
+      <SpaceBetween size="l">
         {/* Page Header */}
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Stack>
-            <Text variant="xxLarge" styles={{ root: { fontWeight: 600 } }}>
-              Leave Reports & Analytics
-            </Text>
-            <Text variant="medium" styles={{ root: { color: '#666' } }}>
-              Comprehensive insights into leave patterns, trends, and organizational metrics
-            </Text>
-          </Stack>
+        <Header
+          variant="h1"
+          description="Comprehensive insights into leave patterns, trends, and organizational metrics"
+          actions={
+            <div className="flex items-center gap-2">
+              <ExportReportButton
+                filters={filters}
+                onExport={handleExport}
+                isExporting={isExporting}
+              />
+              <button
+                onClick={() => setRefreshTrigger(prev => prev + 1)}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Refresh data"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
+          }
+        >
+          Leave Reports & Analytics
+        </Header>
 
-          <Stack horizontal tokens={{ childrenGap: 8 }}>
-            <ExportReportButton
-              filters={filters}
-              onExport={handleExport}
-              isExporting={isExporting}
-            />
-            <IconButton
-              iconProps={{ iconName: 'Refresh' }}
-              onClick={() => setRefreshTrigger(prev => prev + 1)}
-              title="Refresh data"
-            />
-          </Stack>
-        </Stack>
-
-        {/* Notification */}
-        {notification && (
-          <MessageBar
-            messageBarType={notification.type}
-            onDismiss={() => setNotification(null)}
-            dismissButtonAriaLabel="Close"
-          >
-            {notification.message}
-          </MessageBar>
-        )}
+        <Flashbar items={flashItems} onDismiss={removeFlash} />
 
         {/* Report Filters */}
         <ReportFilters
@@ -269,145 +232,141 @@ const LeaveReports: React.FC = () => {
           initialFilters={filters}
         />
 
-        {/* Main Content */}
-        <Pivot>
-          <PivotItem headerText="Dashboard Overview">
-            <LeaveAnalyticsDashboard
-              statistics={statistics}
-              leaveTypes={leaveTypes}
-              isLoading={isLoading}
-              filters={filters}
-              onRefresh={handleAnalyticsRefresh}
-              onExport={handleAnalyticsExport}
-            />
-          </PivotItem>
+        {/* Tabs */}
+        <div className="border-b border-gray-200">
+          <nav className="flex space-x-0">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={
+                  activeTab === tab.key
+                    ? 'px-4 py-2.5 text-sm font-medium text-red-600 border-b-2 border-red-600'
+                    : 'px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent'
+                }
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
 
-          <PivotItem headerText="Detailed Reports">
-            <Stack tokens={{ childrenGap: 16 }}>
-              {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-                  <Stack tokens={{ childrenGap: 8 }}>
-                    <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                      <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>
-                        Report Period
-                      </Text>
-                      <IconButton iconProps={{ iconName: 'Calendar' }} />
-                    </Stack>
-                    <Text variant="small" styles={{ root: { color: '#666' } }}>
-                      {filters.start_date && filters.end_date
-                        ? `${new Date(filters.start_date).toLocaleDateString()} - ${new Date(filters.end_date).toLocaleDateString()}`
-                        : 'All Time'
-                      }
-                    </Text>
-                  </Stack>
-                </div>
+        {/* Tab Content */}
+        {activeTab === 'dashboard' && (
+          <LeaveAnalyticsDashboard
+            statistics={statistics}
+            leaveTypes={leaveTypes}
+            isLoading={isLoading}
+            filters={filters}
+            onRefresh={handleAnalyticsRefresh}
+            onExport={handleAnalyticsExport}
+          />
+        )}
 
-                <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-                  <Stack tokens={{ childrenGap: 8 }}>
-                    <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                      <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>
-                        Data Points
-                      </Text>
-                      <IconButton iconProps={{ iconName: 'Database' }} />
-                    </Stack>
-                    <Text variant="large" styles={{ root: { fontWeight: 600, color: '#0078d4' } }}>
-                      {statistics?.total_requests || 0}
-                    </Text>
-                    <Text variant="small" styles={{ root: { color: '#666' } }}>
-                      Leave requests analyzed
-                    </Text>
-                  </Stack>
-                </div>
+        {activeTab === 'detailed' && (
+          <SpaceBetween size="m">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Container>
+                <SpaceBetween size="xs">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-gray-900">Report Period</p>
+                    <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {filters.start_date && filters.end_date
+                      ? `${new Date(filters.start_date).toLocaleDateString()} - ${new Date(filters.end_date).toLocaleDateString()}`
+                      : 'All Time'
+                    }
+                  </p>
+                </SpaceBetween>
+              </Container>
 
-                <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-                  <Stack tokens={{ childrenGap: 8 }}>
-                    <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                      <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>
-                        Last Updated
-                      </Text>
-                      <IconButton iconProps={{ iconName: 'Refresh' }} />
-                    </Stack>
-                    <Text variant="small" styles={{ root: { color: '#666' } }}>
-                      {new Date().toLocaleString()}
-                    </Text>
-                  </Stack>
-                </div>
-              </div>
+              <Container>
+                <SpaceBetween size="xs">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-gray-900">Data Points</p>
+                    <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                    </svg>
+                  </div>
+                  <p className="text-2xl font-bold text-red-600">{statistics?.total_requests || 0}</p>
+                  <p className="text-xs text-gray-500">Leave requests analyzed</p>
+                </SpaceBetween>
+              </Container>
 
-              {/* Detailed Leave Requests Table */}
-              <div className="bg-white p-6 rounded-lg border border-gray-200">
-                <Stack tokens={{ childrenGap: 16 }}>
-                  <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
-                    Detailed Leave Request Data
-                  </Text>
+              <Container>
+                <SpaceBetween size="xs">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-gray-900">Last Updated</p>
+                    <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </div>
+                  <p className="text-xs text-gray-500">{new Date().toLocaleString()}</p>
+                </SpaceBetween>
+              </Container>
+            </div>
 
-                  <LeaveRequestsTable
-                    filters={filters}
-                    onRefresh={handleAnalyticsRefresh}
-                  />
-                </Stack>
-              </div>
-            </Stack>
-          </PivotItem>
-
-          <PivotItem headerText="Scheduled Reports">
-            <Stack tokens={{ childrenGap: 16 }}>
-              <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
-                  Automated Report Schedule
-                </Text>
-                <DefaultButton
-                  text="New Scheduled Report"
-                  iconProps={{ iconName: 'Add' }}
+            {/* Detailed Leave Requests Table */}
+            <Container>
+              <SpaceBetween size="m">
+                <h3 className="text-lg font-semibold text-gray-900">Detailed Leave Request Data</h3>
+                <LeaveRequestsTable
+                  filters={filters}
+                  onRefresh={handleAnalyticsRefresh}
                 />
-              </Stack>
+              </SpaceBetween>
+            </Container>
+          </SpaceBetween>
+        )}
 
-              {/* Scheduled Reports Placeholder */}
-              <div className="bg-white p-6 rounded-lg border border-gray-200">
-                <div className="text-center py-12">
-                  <IconButton iconProps={{ iconName: 'ClockSchedule' }} styles={{ root: { fontSize: 48, marginBottom: 16 } }} />
-                  <Text variant="medium" styles={{ root: { color: '#666', marginBottom: 16 } }}>
-                    No scheduled reports configured
-                  </Text>
-                  <Text variant="small" styles={{ root: { color: '#666' } }}>
-                    Set up automated reports to be generated and delivered on a regular schedule.
-                    Perfect for monthly manager reports, quarterly analytics, or annual summaries.
-                  </Text>
-                </div>
-              </div>
-            </Stack>
-          </PivotItem>
+        {activeTab === 'scheduled' && (
+          <SpaceBetween size="m">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Automated Report Schedule</h3>
+              <button className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                New Scheduled Report
+              </button>
+            </div>
+            <Container>
+              <EmptyState
+                title="No scheduled reports configured"
+                description="Set up automated reports to be generated and delivered on a regular schedule. Perfect for monthly manager reports, quarterly analytics, or annual summaries."
+                icon={
+                  <svg className="w-12 h-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                }
+              />
+            </Container>
+          </SpaceBetween>
+        )}
 
-          <PivotItem headerText="Custom Reports">
-            <Stack tokens={{ childrenGap: 16 }}>
-              <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
-                  Custom Report Builder
-                </Text>
-                <DefaultButton
-                  text="Build Custom Report"
-                  iconProps={{ iconName: 'ReportDocument' }}
-                />
-              </Stack>
-
-              {/* Custom Report Builder Placeholder */}
-              <div className="bg-white p-6 rounded-lg border border-gray-200">
-                <div className="text-center py-12">
-                  <IconButton iconProps={{ iconName: 'ReportDocument' }} styles={{ root: { fontSize: 48, marginBottom: 16 } }} />
-                  <Text variant="medium" styles={{ root: { color: '#666', marginBottom: 16 } }}>
-                    Custom report builder coming soon
-                  </Text>
-                  <Text variant="small" styles={{ root: { color: '#666' } }}>
-                    Create custom reports with drag-and-drop fields, custom calculations,
-                    and personalized visualizations tailored to your organization's needs.
-                  </Text>
-                </div>
-              </div>
-            </Stack>
-          </PivotItem>
-        </Pivot>
-      </Stack>
+        {activeTab === 'custom' && (
+          <SpaceBetween size="m">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Custom Report Builder</h3>
+              <button className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                Build Custom Report
+              </button>
+            </div>
+            <Container>
+              <EmptyState
+                title="Custom report builder coming soon"
+                description="Create custom reports with drag-and-drop fields, custom calculations, and personalized visualizations tailored to your organization's needs."
+                icon={
+                  <svg className="w-12 h-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                }
+              />
+            </Container>
+          </SpaceBetween>
+        )}
+      </SpaceBetween>
     </div>
   );
 };

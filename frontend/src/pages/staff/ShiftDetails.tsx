@@ -1,16 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Stack,
-  Text,
-  Spinner,
-  SpinnerSize,
-  MessageBar,
-  MessageBarType,
-  DefaultButton,
-  PrimaryButton
-} from '@fluentui/react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MainLayout } from '../../layouts';
+import { Header, Container, SpaceBetween, KeyValuePairs, StatusIndicator, Alert, EmptyState } from '../../components/cloudscape';
 import { shiftService } from '../../services';
 import { FireExitCheck, CapacityCheck, ToiletCheck, ConditionRating } from '../../types';
 
@@ -40,7 +30,7 @@ interface ShiftDetails {
   durationHours?: number;
 }
 
-const ShiftDetails: React.FC = () => {
+const ShiftDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [shift, setShift] = useState<ShiftDetails | null>(null);
@@ -58,7 +48,7 @@ const ShiftDetails: React.FC = () => {
 
     try {
       const shiftId = parseInt(id);
-      
+
       // Load shift details and all check data in parallel
       const [allShifts, fireData, capacityData, toiletData] = await Promise.all([
         shiftService.getAllShiftsForManager().catch(() => []),
@@ -75,10 +65,7 @@ const ShiftDetails: React.FC = () => {
         return;
       }
 
-      // Debug logs removed for production
-
       setShift(shiftData);
-      // Handle paginated API responses - extract results array
       setFireChecks(fireData?.results || []);
       setCapacityChecks(capacityData?.results || []);
       setToiletChecks(toiletData?.results || []);
@@ -104,37 +91,19 @@ const ShiftDetails: React.FC = () => {
     });
   };
 
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString('en-GB', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const getConditionColor = (condition: ConditionRating) => {
+  const getConditionType = (condition: ConditionRating): 'success' | 'warning' | 'error' | 'info' => {
     switch (condition) {
       case ConditionRating.EXCELLENT:
-        return { background: '#d4edda', text: '#155724' };
       case ConditionRating.GOOD:
-        return { background: '#d1ecf1', text: '#0c5460' };
+        return 'success';
       case ConditionRating.FAIR:
-        return { background: '#fff3cd', text: '#856404' };
+        return 'warning';
       case ConditionRating.POOR:
-        return { background: '#f8d7da', text: '#721c24' };
       case ConditionRating.CRITICAL:
-        return { background: '#f5c6cb', text: '#721c24' };
+        return 'error';
       default:
-        return { background: '#e2e3e5', text: '#383d41' };
+        return 'info';
     }
-  };
-
-  const cardStyle = {
-    padding: '20px',
-    border: '1px solid #e1e1e1',
-    borderRadius: '8px',
-    backgroundColor: '#ffffff',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    marginBottom: '16px'
   };
 
   // Ensure arrays are properly initialized
@@ -143,345 +112,246 @@ const ShiftDetails: React.FC = () => {
   const safeToiletChecks = Array.isArray(toiletChecks) ? toiletChecks : [];
 
   const totalChecks = safeFireChecks.length + safeCapacityChecks.length + safeToiletChecks.length;
-  const criticalIssues = safeFireChecks.filter(c => !c.isPassed).length + 
-                        safeCapacityChecks.filter(c => c.count >= 100).length + // Assuming 100 is capacity limit
+  const criticalIssues = safeFireChecks.filter(c => !c.isPassed).length +
+                        safeCapacityChecks.filter(c => c.count >= 100).length +
                         safeToiletChecks.filter(c => c.condition === ConditionRating.POOR || c.condition === ConditionRating.CRITICAL).length;
 
   if (isLoading) {
     return (
-      <MainLayout>
-        <Stack horizontalAlign="center" tokens={{ childrenGap: 20 }} style={{ padding: '40px' }}>
-          <Spinner size={SpinnerSize.large} />
-          <Text variant="large">Loading shift details...</Text>
-        </Stack>
-      </MainLayout>
+      <div className="flex items-center justify-center py-16">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-4 border-gray-200 border-t-red-600 rounded-full animate-spin" />
+          <p className="text-sm text-gray-500">Loading shift details...</p>
+        </div>
+      </div>
     );
   }
 
   if (error || !shift) {
     return (
-      <MainLayout>
-        <Stack tokens={{ childrenGap: 20 }}>
-          <MessageBar messageBarType={MessageBarType.error}>
-            {error || 'Shift not found'}
-          </MessageBar>
-          <DefaultButton
-            text="Back to Shifts"
-            onClick={() => navigate('/shifts')}
-          />
-        </Stack>
-      </MainLayout>
+      <SpaceBetween size="l">
+        <Alert type="error">{error || 'Shift not found'}</Alert>
+        <button
+          onClick={() => navigate('/shifts')}
+          className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          Back to Shifts
+        </button>
+      </SpaceBetween>
     );
   }
 
+  const getStatusType = (status: string): 'success' | 'warning' | 'info' | 'pending' | 'in-progress' => {
+    switch (status) {
+      case 'completed': return 'success';
+      case 'active':
+      case 'in_progress': return 'in-progress';
+      case 'scheduled': return 'pending';
+      default: return 'info';
+    }
+  };
+
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 24 }}>
-        {/* Header */}
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge" style={{ fontWeight: '600' }}>
-            📋 Shift Details
-          </Text>
-          <DefaultButton
-            text="Back to Shifts"
-            iconProps={{ iconName: 'Back' }}
+    <SpaceBetween size="l">
+      <Header
+        variant="h1"
+        actions={
+          <button
             onClick={() => navigate('/shifts')}
-          />
-        </Stack>
+            className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Back to Shifts
+          </button>
+        }
+      >
+        Shift Details
+      </Header>
 
-        {/* Shift Information */}
-        <div style={cardStyle}>
-          <Stack tokens={{ childrenGap: 16 }}>
-            <Text variant="xLarge" style={{ fontWeight: '600', marginBottom: '8px' }}>
-              Shift Information
-            </Text>
-            
-            <Stack horizontal tokens={{ childrenGap: 40 }} wrap>
-              <Stack tokens={{ childrenGap: 8 }} style={{ minWidth: '200px' }}>
-                <Text variant="medium" style={{ fontWeight: '600' }}>Staff</Text>
-                <Text variant="medium">
-                  {shift.staff_details?.first_name || 'Unknown'} {shift.staff_details?.last_name || 'Staff'}
-                </Text>
-                <Text variant="small" style={{ color: '#666' }}>
-                  {shift.staff_details?.email || 'No email'}
-                </Text>
-              </Stack>
-
-              <Stack tokens={{ childrenGap: 8 }} style={{ minWidth: '200px' }}>
-                <Text variant="medium" style={{ fontWeight: '600' }}>Venue</Text>
-                <Text variant="medium">{shift.venue_details?.name || 'Unknown Venue'}</Text>
-                {shift.venue_details?.address && (
-                  <Text variant="small" style={{ color: '#666' }}>{shift.venue_details.address}</Text>
-                )}
-              </Stack>
-
-              <Stack tokens={{ childrenGap: 8 }} style={{ minWidth: '200px' }}>
-                <Text variant="medium" style={{ fontWeight: '600' }}>Timing</Text>
-                <Text variant="small">
-                  <strong>Scheduled:</strong> {formatDateTime(shift.start_time)}
-                </Text>
-                {shift.check_in_time && (
-                  <Text variant="small">
-                    <strong>Checked In:</strong> {formatDateTime(shift.check_in_time)}
-                  </Text>
-                )}
-                {shift.check_out_time && (
-                  <Text variant="small">
-                    <strong>Checked Out:</strong> {formatDateTime(shift.check_out_time)}
-                  </Text>
-                )}
-              </Stack>
-
-              <Stack tokens={{ childrenGap: 8 }} style={{ minWidth: '200px' }}>
-                <Text variant="medium" style={{ fontWeight: '600' }}>Status</Text>
-                <div style={{
-                  padding: '4px 12px',
-                  borderRadius: '12px',
-                  backgroundColor: shift.status === 'completed' ? '#d4edda' : '#fff3cd',
-                  color: shift.status === 'completed' ? '#155724' : '#856404',
-                  display: 'inline-block',
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  textTransform: 'uppercase'
-                }}>
-                  {shift.status}
+      {/* Shift Information */}
+      <Container header={<Header variant="h2">Shift Information</Header>}>
+        <KeyValuePairs
+          columns={4}
+          items={[
+            {
+              label: 'Staff',
+              value: (
+                <div>
+                  <p className="font-medium">{shift.staff_details?.first_name || 'Unknown'} {shift.staff_details?.last_name || 'Staff'}</p>
+                  <p className="text-xs text-gray-500">{shift.staff_details?.email || 'No email'}</p>
                 </div>
-                <Text variant="small">
-                  <strong>Manager Approved:</strong> {shift.managerApproved ? '✅ Yes' : '⏳ Pending'}
-                </Text>
-              </Stack>
-            </Stack>
-          </Stack>
-        </div>
+              )
+            },
+            {
+              label: 'Venue',
+              value: (
+                <div>
+                  <p className="font-medium">{shift.venue_details?.name || 'Unknown Venue'}</p>
+                  {shift.venue_details?.address && (
+                    <p className="text-xs text-gray-500">{shift.venue_details.address}</p>
+                  )}
+                </div>
+              )
+            },
+            {
+              label: 'Timing',
+              value: (
+                <div className="space-y-1">
+                  <p className="text-xs"><span className="font-medium">Scheduled:</span> {formatDateTime(shift.start_time)}</p>
+                  {shift.check_in_time && (
+                    <p className="text-xs"><span className="font-medium">Checked In:</span> {formatDateTime(shift.check_in_time)}</p>
+                  )}
+                  {shift.check_out_time && (
+                    <p className="text-xs"><span className="font-medium">Checked Out:</span> {formatDateTime(shift.check_out_time)}</p>
+                  )}
+                </div>
+              )
+            },
+            {
+              label: 'Status',
+              value: (
+                <div className="space-y-2">
+                  <StatusIndicator type={getStatusType(shift.status)}>
+                    {shift.status.replace('_', ' ')}
+                  </StatusIndicator>
+                  <p className="text-xs">
+                    <span className="font-medium">Approved:</span> {shift.managerApproved ? 'Yes' : 'Pending'}
+                  </p>
+                </div>
+              )
+            }
+          ]}
+        />
+      </Container>
 
-        {/* Venue Requirements */}
-        <div style={cardStyle}>
-          <Stack tokens={{ childrenGap: 16 }}>
-            <Text variant="xLarge" style={{ fontWeight: '600', marginBottom: '8px' }}>
-              Venue Requirements
-            </Text>
-            
-            <Stack horizontal tokens={{ childrenGap: 30 }}>
-              <Text variant="medium">
-                🔥 Fire Safety: {shift.venue_details?.requires_fire_safety_checks ? '✅ Required' : '⭕ Not Required'}
-              </Text>
-              <Text variant="medium">
-                👥 Capacity: {shift.venue_details?.requires_capacity_monitoring ? '✅ Required' : '⭕ Not Required'}
-              </Text>
-              <Text variant="medium">
-                🚻 Toilets: {shift.venue_details?.requires_toilet_checks ? '✅ Required' : '⭕ Not Required'}
-              </Text>
-            </Stack>
-            
-            {shift.venue_details?.capacity && (
-              <Text variant="medium">
-                <strong>Maximum Capacity:</strong> {shift.venue_details.capacity} people
-              </Text>
+      {/* Venue Requirements */}
+      <Container header={<Header variant="h2">Venue Requirements</Header>}>
+        <div className="flex flex-wrap gap-6">
+          <StatusIndicator type={shift.venue_details?.requires_fire_safety_checks ? 'success' : 'stopped'}>
+            Fire Safety: {shift.venue_details?.requires_fire_safety_checks ? 'Required' : 'Not Required'}
+          </StatusIndicator>
+          <StatusIndicator type={shift.venue_details?.requires_capacity_monitoring ? 'success' : 'stopped'}>
+            Capacity: {shift.venue_details?.requires_capacity_monitoring ? 'Required' : 'Not Required'}
+          </StatusIndicator>
+          <StatusIndicator type={shift.venue_details?.requires_toilet_checks ? 'success' : 'stopped'}>
+            Toilets: {shift.venue_details?.requires_toilet_checks ? 'Required' : 'Not Required'}
+          </StatusIndicator>
+        </div>
+        {shift.venue_details?.capacity && (
+          <p className="mt-3 text-sm text-gray-600">
+            <span className="font-medium">Maximum Capacity:</span> {shift.venue_details.capacity} people
+          </p>
+        )}
+      </Container>
+
+      {/* Venue Check Summary */}
+      <Container
+        header={
+          <Header
+            variant="h2"
+            info={
+              criticalIssues > 0 ? (
+                <StatusIndicator type="error">
+                  {criticalIssues} Critical Issue{criticalIssues !== 1 ? 's' : ''}
+                </StatusIndicator>
+              ) : undefined
+            }
+          >
+            Venue Check Summary
+          </Header>
+        }
+      >
+        <KeyValuePairs
+          columns={4}
+          items={[
+            { label: 'Total Checks', value: totalChecks },
+            { label: 'Fire Exit Checks', value: safeFireChecks.length },
+            { label: 'Capacity Checks', value: safeCapacityChecks.length },
+            { label: 'Toilet Checks', value: safeToiletChecks.length },
+          ]}
+        />
+      </Container>
+
+      {/* Detailed Check History */}
+      {totalChecks > 0 && (
+        <Container header={<Header variant="h2">Detailed Check History</Header>}>
+          <SpaceBetween size="l">
+            {/* Fire Exit Checks */}
+            {safeFireChecks.length > 0 && (
+              <SpaceBetween size="s">
+                <h3 className="text-sm font-semibold text-gray-900">Fire Safety Checks ({safeFireChecks.length})</h3>
+                <div className="space-y-2">
+                  {safeFireChecks.map((check) => (
+                    <div key={check.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-gray-900">{check.exitName}</p>
+                        <p className="text-xs text-gray-500">{formatDateTime(check.timestamp)}</p>
+                        {check.comments && <p className="text-xs text-gray-500">{check.comments}</p>}
+                      </div>
+                      <StatusIndicator type={check.isPassed ? 'success' : 'error'}>
+                        {check.isPassed ? 'Clear' : 'Blocked'}
+                      </StatusIndicator>
+                    </div>
+                  ))}
+                </div>
+              </SpaceBetween>
             )}
-          </Stack>
-        </div>
 
-        {/* Venue Check Summary */}
-        <div style={cardStyle}>
-          <Stack tokens={{ childrenGap: 16 }}>
-            <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-              <Text variant="xLarge" style={{ fontWeight: '600' }}>
-                Venue Check Summary
-              </Text>
-              {criticalIssues > 0 && (
-                <div style={{
-                  padding: '4px 12px',
-                  borderRadius: '12px',
-                  backgroundColor: '#f8d7da',
-                  color: '#721c24',
-                  fontSize: '12px',
-                  fontWeight: '600'
-                }}>
-                  ⚠️ {criticalIssues} Critical Issue{criticalIssues !== 1 ? 's' : ''}
+            {/* Capacity Checks */}
+            {safeCapacityChecks.length > 0 && (
+              <SpaceBetween size="s">
+                <h3 className="text-sm font-semibold text-gray-900">Capacity Checks ({safeCapacityChecks.length})</h3>
+                <div className="space-y-2">
+                  {safeCapacityChecks.map((check) => (
+                    <div key={check.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-gray-900">Count: {check.count} people</p>
+                        <p className="text-xs text-gray-500">{formatDateTime(check.timestamp)}</p>
+                        {check.comments && <p className="text-xs text-gray-500">{check.comments}</p>}
+                      </div>
+                      <StatusIndicator type={check.count >= 100 ? 'error' : 'success'}>
+                        {check.count >= 100 ? 'At Capacity' : 'Normal'}
+                      </StatusIndicator>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </Stack>
-            
-            <Stack horizontal tokens={{ childrenGap: 40 }}>
-              <Text variant="medium">
-                <strong>Total Checks:</strong> {totalChecks}
-              </Text>
-              <Text variant="medium">
-                <strong>Fire Exit Checks:</strong> {safeFireChecks.length}
-              </Text>
-              <Text variant="medium">
-                <strong>Capacity Checks:</strong> {safeCapacityChecks.length}
-              </Text>
-              <Text variant="medium">
-                <strong>Toilet Checks:</strong> {safeToiletChecks.length}
-              </Text>
-            </Stack>
-          </Stack>
-        </div>
+              </SpaceBetween>
+            )}
 
-        {/* Detailed Check History */}
-        {totalChecks > 0 && (
-          <div style={cardStyle}>
-            <Stack tokens={{ childrenGap: 20 }}>
-              <Text variant="xLarge" style={{ fontWeight: '600' }}>
-                📝 Detailed Check History
-              </Text>
-
-              {/* Fire Exit Checks */}
-              {safeFireChecks.length > 0 && (
-                <Stack tokens={{ childrenGap: 12 }}>
-                  <Text variant="large" style={{ fontWeight: '600', color: '#ff6b6b' }}>
-                    🔥 Fire Safety Checks ({safeFireChecks.length})
-                  </Text>
-                  <Stack tokens={{ childrenGap: 8 }}>
-                    {safeFireChecks.map((check, index) => (
-                      <div key={check.id} style={{
-                        border: '1px solid #e1e5e9',
-                        borderRadius: '6px',
-                        padding: '12px',
-                        backgroundColor: '#f8f9fa'
-                      }}>
-                        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                          <Stack tokens={{ childrenGap: 4 }}>
-                            <Text variant="medium" style={{ fontWeight: '600' }}>
-                              {check.exitName}
-                            </Text>
-                            <Text variant="small">
-                              {formatDateTime(check.timestamp)}
-                            </Text>
-                            {check.comments && (
-                              <Text variant="small" style={{ color: '#666' }}>
-                                {check.comments}
-                              </Text>
-                            )}
-                          </Stack>
-                          <div style={{
-                            padding: '4px 8px',
-                            borderRadius: '12px',
-                            backgroundColor: check.isPassed ? '#d4edda' : '#f8d7da',
-                            color: check.isPassed ? '#155724' : '#721c24',
-                            fontSize: '12px',
-                            fontWeight: '600'
-                          }}>
-                            {check.isPassed ? '✅ Clear' : '❌ Blocked'}
-                          </div>
-                        </Stack>
+            {/* Toilet Checks */}
+            {safeToiletChecks.length > 0 && (
+              <SpaceBetween size="s">
+                <h3 className="text-sm font-semibold text-gray-900">Toilet Checks ({safeToiletChecks.length})</h3>
+                <div className="space-y-2">
+                  {safeToiletChecks.map((check) => (
+                    <div key={check.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-gray-900">{check.location}</p>
+                        <p className="text-xs text-gray-500">{formatDateTime(check.timestamp)}</p>
+                        {check.comments && <p className="text-xs text-gray-500">{check.comments}</p>}
                       </div>
-                    ))}
-                  </Stack>
-                </Stack>
-              )}
+                      <StatusIndicator type={getConditionType(check.condition)}>
+                        {check.condition}
+                      </StatusIndicator>
+                    </div>
+                  ))}
+                </div>
+              </SpaceBetween>
+            )}
+          </SpaceBetween>
+        </Container>
+      )}
 
-              {/* Capacity Checks */}
-              {safeCapacityChecks.length > 0 && (
-                <Stack tokens={{ childrenGap: 12 }}>
-                  <Text variant="large" style={{ fontWeight: '600', color: '#4ecdc4' }}>
-                    👥 Capacity Checks ({safeCapacityChecks.length})
-                  </Text>
-                  <Stack tokens={{ childrenGap: 8 }}>
-                    {safeCapacityChecks.map((check, index) => (
-                      <div key={check.id} style={{
-                        border: '1px solid #e1e5e9',
-                        borderRadius: '6px',
-                        padding: '12px',
-                        backgroundColor: '#f8f9fa'
-                      }}>
-                        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                          <Stack tokens={{ childrenGap: 4 }}>
-                            <Text variant="medium" style={{ fontWeight: '600' }}>
-                              Count: {check.count} people
-                            </Text>
-                            <Text variant="small">
-                              {formatDateTime(check.timestamp)}
-                            </Text>
-                            {check.comments && (
-                              <Text variant="small" style={{ color: '#666' }}>
-                                {check.comments}
-                              </Text>
-                            )}
-                          </Stack>
-                          <div style={{
-                            padding: '4px 8px',
-                            borderRadius: '12px',
-                            backgroundColor: check.count >= 100 ? '#f8d7da' : '#d4edda',
-                            color: check.count >= 100 ? '#721c24' : '#155724',
-                            fontSize: '12px',
-                            fontWeight: '600'
-                          }}>
-                            {check.count >= 100 ? '⚠️ At Capacity' : '✅ Normal'}
-                          </div>
-                        </Stack>
-                      </div>
-                    ))}
-                  </Stack>
-                </Stack>
-              )}
-
-              {/* Toilet Checks */}
-              {safeToiletChecks.length > 0 && (
-                <Stack tokens={{ childrenGap: 12 }}>
-                  <Text variant="large" style={{ fontWeight: '600', color: '#95e1d3' }}>
-                    🚻 Toilet Checks ({safeToiletChecks.length})
-                  </Text>
-                  <Stack tokens={{ childrenGap: 8 }}>
-                    {safeToiletChecks.map((check, index) => (
-                      <div key={check.id} style={{
-                        border: '1px solid #e1e5e9',
-                        borderRadius: '6px',
-                        padding: '12px',
-                        backgroundColor: '#f8f9fa'
-                      }}>
-                        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                          <Stack tokens={{ childrenGap: 4 }}>
-                            <Text variant="medium" style={{ fontWeight: '600' }}>
-                              {check.location}
-                            </Text>
-                            <Text variant="small">
-                              {formatDateTime(check.timestamp)}
-                            </Text>
-                            {check.comments && (
-                              <Text variant="small" style={{ color: '#666' }}>
-                                {check.comments}
-                              </Text>
-                            )}
-                          </Stack>
-                          <div style={{
-                            padding: '4px 8px',
-                            borderRadius: '12px',
-                            backgroundColor: getConditionColor(check.condition).background,
-                            color: getConditionColor(check.condition).text,
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            textTransform: 'capitalize'
-                          }}>
-                            {check.condition}
-                          </div>
-                        </Stack>
-                      </div>
-                    ))}
-                  </Stack>
-                </Stack>
-              )}
-            </Stack>
-          </div>
-        )}
-
-        {/* No checks message */}
-        {totalChecks === 0 && (
-          <div style={cardStyle}>
-            <Stack horizontalAlign="center" tokens={{ childrenGap: 16 }} style={{ padding: '40px' }}>
-              <Text variant="large" style={{ color: '#666' }}>
-                📝 No venue checks logged yet
-              </Text>
-              <Text variant="medium" style={{ color: '#666' }}>
-                Staff can log venue checks during their shift using the active shift widget
-              </Text>
-            </Stack>
-          </div>
-        )}
-      </Stack>
-    </MainLayout>
+      {/* No checks message */}
+      {totalChecks === 0 && (
+        <Container>
+          <EmptyState
+            title="No venue checks logged yet"
+            description="Staff can log venue checks during their shift using the active shift widget"
+          />
+        </Container>
+      )}
+    </SpaceBetween>
   );
 };
 
-export default ShiftDetails;
+export default ShiftDetailsPage;

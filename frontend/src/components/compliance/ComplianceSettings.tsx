@@ -163,27 +163,28 @@ export const ComplianceSettings: React.FC<ComplianceSettingsProps> = ({
   // Initialize form data when settings load
   React.useEffect(() => {
     if (settingsData?.data) {
+      const d = settingsData.data;
       setFormData({
-        dailyOvertimeThreshold: settingsData.data.daily_overtime_threshold,
-        weeklyOvertimeThreshold: settingsData.data.weekly_overtime_threshold,
-        overtimeCalculationMethod: settingsData.data.overtime_calculation_method,
-        breakRequiredAfterHours: settingsData.data.break_required_after_hours,
-        minimumBreakDuration: settingsData.data.minimum_break_duration,
-        unpaidBreakThreshold: settingsData.data.unpaid_break_threshold,
-        enableRealTimeMonitoring: settingsData.data.enable_real_time_monitoring,
-        violationNotifications: settingsData.data.violation_notifications,
-        autoResolutionEnabled: settingsData.data.auto_resolution_enabled,
-        escalationThresholdMinutes: settingsData.data.escalation_threshold_minutes,
-        maxConsecutiveHours: settingsData.data.max_consecutive_hours,
-        maxWeeklyHours: settingsData.data.max_weekly_hours,
-        minimumRestBetweenShifts: settingsData.data.minimum_rest_between_shifts,
-        notifyManagers: settingsData.data.notify_managers,
-        notifyStaff: settingsData.data.notify_staff,
-        emailNotifications: settingsData.data.email_notifications,
-        smsNotifications: settingsData.data.sms_notifications,
-        clockInGracePeriod: settingsData.data.clock_in_grace_period,
-        clockOutGracePeriod: settingsData.data.clock_out_grace_period,
-        lateArrivalThreshold: settingsData.data.late_arrival_threshold
+        dailyOvertimeThreshold: d.daily_overtime_threshold ?? 8,
+        weeklyOvertimeThreshold: d.weekly_overtime_threshold ?? 40,
+        overtimeCalculationMethod: d.overtime_calculation_method ?? 'both',
+        breakRequiredAfterHours: d.break_required_after_hours ?? 6,
+        minimumBreakDuration: d.minimum_break_duration ?? 30,
+        unpaidBreakThreshold: d.unpaid_break_threshold ?? 20,
+        enableRealTimeMonitoring: d.enable_real_time_monitoring ?? true,
+        violationNotifications: d.violation_notifications ?? true,
+        autoResolutionEnabled: d.auto_resolution_enabled ?? false,
+        escalationThresholdMinutes: d.escalation_threshold_minutes ?? 30,
+        maxConsecutiveHours: d.max_consecutive_hours ?? 12,
+        maxWeeklyHours: d.max_weekly_hours ?? 48,
+        minimumRestBetweenShifts: d.minimum_rest_between_shifts ?? 11,
+        notifyManagers: d.notify_managers ?? true,
+        notifyStaff: d.notify_staff ?? false,
+        emailNotifications: d.email_notifications ?? true,
+        smsNotifications: d.sms_notifications ?? false,
+        clockInGracePeriod: d.clock_in_grace_period ?? 5,
+        clockOutGracePeriod: d.clock_out_grace_period ?? 5,
+        lateArrivalThreshold: d.late_arrival_threshold ?? 15
       });
     }
   }, [settingsData]);

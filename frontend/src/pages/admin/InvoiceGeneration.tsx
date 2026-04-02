@@ -1,35 +1,13 @@
 import type React from 'react';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Stack,
-  Text,
-  PrimaryButton,
-  DefaultButton,
-  TextField,
-  DatePicker,
-  Label,
-  ComboBox,
-  type IComboBoxOption,
-  MessageBar,
-  MessageBarType,
-  Spinner,
-  SpinnerSize,
-  Pivot,
-  PivotItem,
-  DetailsList,
-  DetailsListLayoutMode,
-  SelectionMode,
-  type IColumn,
-  Link,
-  Dialog,
-  DialogType,
-  DialogFooter
-} from '@fluentui/react';
+import type { IComboBoxOption } from '@fluentui/react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { MainLayout } from '../../layouts';
-import { Card, BulkPayrollGeneration } from '../../components';
+import { Header, Container, CloudscapeTable, StatusIndicator, EmptyState, ConfirmationModal, SpaceBetween, Alert } from '../../components/cloudscape';
+import Flashbar, { useFlashbar } from '../../components/cloudscape/Flashbar';
+import type { ColumnDefinition } from '../../components/cloudscape/CloudscapeTable';
+import { BulkPayrollGeneration } from '../../components';
 import { invoiceService, shiftService, userService, financeIntegrationsService } from '../../services';
 import { type Invoice, InvoiceStatus } from '../../types';
 import type { ProviderConnection } from '../../services/financeIntegrationsService';
@@ -39,20 +17,22 @@ const InvoiceGeneration: React.FC = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [staffOptions, setStaffOptions] = useState<IComboBoxOption[]>([]);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
-  
+  const { items: flashItems, addFlash, removeFlash } = useFlashbar();
+
   // Finance integrations state
   const [financeConnections, setFinanceConnections] = useState<ProviderConnection[]>([]);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [selectedInvoicesForExport, setSelectedInvoicesForExport] = useState<number[]>([]);
   const [selectedConnection, setSelectedConnection] = useState<number | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Tabs
+  const [activeTab, setActiveTab] = useState<'generate' | 'list' | 'bulk' | 'integrations'>('generate');
 
   // Load initial data
   useEffect(() => {
@@ -66,12 +46,12 @@ const InvoiceGeneration: React.FC = () => {
 
         // Get staff users for dropdown
         const staffUsers = await userService.getStaffUsers();
-        const staffOptions = staffUsers.map(user => ({
+        const staffOpts = staffUsers.map(user => ({
           key: user.id,
           text: user.full_name || user.username,
           data: user
         }));
-        setStaffOptions(staffOptions);
+        setStaffOptions(staffOpts);
 
         // Load finance connections
         try {
@@ -83,7 +63,7 @@ const InvoiceGeneration: React.FC = () => {
 
       } catch (error) {
         console.error('Failed to load data:', error);
-        setError('Failed to load data. Please try again later.');
+        addFlash({ type: 'error', content: 'Failed to load data. Please try again later.' });
       } finally {
         setIsLoading(false);
       }
@@ -124,23 +104,22 @@ const InvoiceGeneration: React.FC = () => {
   const showPreview = async (values: typeof formik.values) => {
     try {
       setIsSaving(true);
-      setError(null);
-      
+
       const formattedStartDate = values.startDate.toISOString().split('T')[0];
       const formattedEndDate = values.endDate.toISOString().split('T')[0];
-      
+
       const preview = await invoiceService.previewInvoiceGeneration({
         staffUserId: values.staffUserId,
         startDate: formattedStartDate,
         endDate: formattedEndDate
       });
-      
+
       setPreviewData(preview);
       setShowGenerateDialog(true);
-      
+
     } catch (error: any) {
       console.error('Failed to preview invoice:', error);
-      setError(error.response?.data?.error || 'Failed to preview invoice generation');
+      addFlash({ type: 'error', content: error.response?.data?.error || 'Failed to preview invoice generation' });
     } finally {
       setIsSaving(false);
     }
@@ -150,8 +129,6 @@ const InvoiceGeneration: React.FC = () => {
   const handleGenerateInvoice = async () => {
     try {
       setIsSaving(true);
-      setError(null);
-      setSuccess(null);
 
       // Format dates for API
       const formattedStartDate = formik.values.startDate.toISOString().split('T')[0];
@@ -168,7 +145,7 @@ const InvoiceGeneration: React.FC = () => {
       setInvoices(prev => [newInvoice, ...prev]);
 
       // Show success message
-      setSuccess('Invoice generated successfully.');
+      addFlash({ type: 'success', content: 'Invoice generated successfully.' });
 
       // Close dialog
       setShowGenerateDialog(false);
@@ -176,7 +153,7 @@ const InvoiceGeneration: React.FC = () => {
 
     } catch (error: any) {
       console.error('Failed to generate invoice:', error);
-      
+
       // Get specific error message from backend
       let errorMessage = 'Failed to generate invoice. Please try again.';
       if (error.response?.data?.error) {
@@ -184,8 +161,8 @@ const InvoiceGeneration: React.FC = () => {
       } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       }
-      
-      setError(errorMessage);
+
+      addFlash({ type: 'error', content: errorMessage });
       setShowGenerateDialog(false);
       setPreviewData(null);
     } finally {
@@ -216,7 +193,7 @@ const InvoiceGeneration: React.FC = () => {
 
     } catch (error) {
       console.error('Failed to generate PDF:', error);
-      setError('Failed to generate PDF. Please try again.');
+      addFlash({ type: 'error', content: 'Failed to generate PDF. Please try again.' });
     } finally {
       setSelectedInvoiceId(null);
       setIsSaving(false);
@@ -231,24 +208,24 @@ const InvoiceGeneration: React.FC = () => {
 
       // Use the invoice service which has proper authentication and token refresh
       const blob = await invoiceService.getInvoicePdf(invoice.id);
-      
+
       // Create blob and object URL
       const blobUrl = URL.createObjectURL(blob);
-      
+
       // Open in new tab
       window.open(blobUrl, '_blank');
-      
+
       // Clean up the object URL after a delay
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 
     } catch (error: any) {
       console.error('Failed to view PDF:', error);
-      
+
       // Provide specific error message for authentication issues
       if (error.response?.status === 401 || error.message?.includes('token')) {
-        setError('Your session has expired. Please log in again.');
+        addFlash({ type: 'error', content: 'Your session has expired. Please log in again.' });
       } else {
-        setError('Failed to view PDF. Please try again.');
+        addFlash({ type: 'error', content: 'Failed to view PDF. Please try again.' });
       }
     } finally {
       setSelectedInvoiceId(null);
@@ -271,11 +248,11 @@ const InvoiceGeneration: React.FC = () => {
         )
       );
 
-      setSuccess(`Invoice status updated to ${status}.`);
+      addFlash({ type: 'success', content: `Invoice status updated to ${status}.` });
 
     } catch (error) {
       console.error('Failed to update status:', error);
-      setError('Failed to update invoice status. Please try again.');
+      addFlash({ type: 'error', content: 'Failed to update invoice status. Please try again.' });
     } finally {
       setSelectedInvoiceId(null);
       setIsSaving(false);
@@ -291,12 +268,12 @@ const InvoiceGeneration: React.FC = () => {
 
   // Handle bulk export to accounting
   const handleBulkExportToAccounting = () => {
-    const approvedInvoices = invoices.filter(invoice => 
+    const approvedInvoices = invoices.filter(invoice =>
       invoice.status === InvoiceStatus.PAID
     ).map(invoice => invoice.id);
-    
+
     if (approvedInvoices.length === 0) {
-      setError('No approved invoices available for export.');
+      addFlash({ type: 'error', content: 'No approved invoices available for export.' });
       return;
     }
 
@@ -313,7 +290,6 @@ const InvoiceGeneration: React.FC = () => {
 
     try {
       setIsExporting(true);
-      setError(null);
 
       const result = await financeIntegrationsService.exportInvoices({
         connection_id: selectedConnection,
@@ -324,10 +300,10 @@ const InvoiceGeneration: React.FC = () => {
       const failCount = result.exports.filter(exp => exp.status === 'failed').length;
 
       if (successCount > 0) {
-        setSuccess(`Successfully exported ${successCount} invoice(s) to accounting.`);
+        addFlash({ type: 'success', content: `Successfully exported ${successCount} invoice(s) to accounting.` });
       }
       if (failCount > 0) {
-        setError(`Failed to export ${failCount} invoice(s). Check export history for details.`);
+        addFlash({ type: 'error', content: `Failed to export ${failCount} invoice(s). Check export history for details.` });
       }
 
       setShowExportDialog(false);
@@ -336,484 +312,482 @@ const InvoiceGeneration: React.FC = () => {
 
     } catch (error) {
       console.error('Export failed:', error);
-      setError('Failed to export invoices. Please try again.');
+      addFlash({ type: 'error', content: 'Failed to export invoices. Please try again.' });
     } finally {
       setIsExporting(false);
     }
   };
 
-  // Column definitions for invoices
-  const invoiceColumns: IColumn[] = [
+  // Column definitions for invoices table
+  const invoiceColumns: ColumnDefinition<Invoice>[] = [
     {
-      key: 'id',
-      name: 'Invoice #',
-      fieldName: 'id',
-      minWidth: 70,
-      isResizable: true
+      id: 'id',
+      header: 'Invoice #',
+      cell: (item) => `#${item.id}`,
+      width: 90,
     },
     {
-      key: 'staffName',
-      name: 'Staff Name',
-      fieldName: 'staffName',
-      minWidth: 150,
-      isResizable: true,
-      onRender: (item: Invoice) => {
+      id: 'staffName',
+      header: 'Staff name',
+      cell: (item) => {
         if (item.staff_user_details) {
           return `${item.staff_user_details.first_name} ${item.staff_user_details.last_name}`.trim() || item.staff_user_details.username;
         }
         return item.staffName || 'Unknown';
-      }
+      },
     },
     {
-      key: 'dateRange',
-      name: 'Period',
-      minWidth: 200,
-      isResizable: true,
-      onRender: (item: Invoice) => {
+      id: 'period',
+      header: 'Period',
+      cell: (item) => {
         const startDate = new Date(item.start_date || item.startDate).toLocaleDateString();
         const endDate = new Date(item.end_date || item.endDate).toLocaleDateString();
         return `${startDate} - ${endDate}`;
-      }
+      },
     },
     {
-      key: 'totalHours',
-      name: 'Hours',
-      fieldName: 'totalHours',
-      minWidth: 70,
-      isResizable: true,
-      onRender: (item: Invoice) => {
+      id: 'hours',
+      header: 'Hours',
+      cell: (item) => {
         const hours = item.total_hours || item.totalHours || 0;
         return typeof hours === 'number' ? hours.toFixed(2) : parseFloat(hours || '0').toFixed(2);
-      }
+      },
+      width: 80,
     },
     {
-      key: 'hourlyRate',
-      name: 'Rate',
-      fieldName: 'hourlyRate',
-      minWidth: 70,
-      isResizable: true,
-      onRender: (item: Invoice) => {
-        const rate = item.hourly_rate || item.hourlyRate || 0;
+      id: 'rate',
+      header: 'Rate',
+      cell: (item) => {
+        const rate = item.hourly_rate || (item as any).hourlyRate || 0;
         return `£${typeof rate === 'number' ? rate.toFixed(2) : parseFloat(rate || '0').toFixed(2)}`;
-      }
+      },
+      width: 80,
     },
     {
-      key: 'totalAmount',
-      name: 'Total',
-      fieldName: 'totalAmount',
-      minWidth: 90,
-      isResizable: true,
-      onRender: (item: Invoice) => {
+      id: 'total',
+      header: 'Total',
+      cell: (item) => {
         const amount = item.total_amount || item.totalAmount || 0;
-        return `£${typeof amount === 'number' ? amount.toFixed(2) : parseFloat(amount || '0').toFixed(2)}`;
-      }
+        return (
+          <span className="font-medium">
+            £{typeof amount === 'number' ? amount.toFixed(2) : parseFloat(amount || '0').toFixed(2)}
+          </span>
+        );
+      },
+      width: 100,
     },
     {
-      key: 'status',
-      name: 'Status',
-      fieldName: 'status',
-      minWidth: 100,
-      isResizable: true,
-      onRender: (item: Invoice) => {
-        let statusClass = 'text-gray-600';
-
+      id: 'status',
+      header: 'Status',
+      cell: (item) => {
         switch (item.status) {
           case InvoiceStatus.PENDING:
-            statusClass = 'text-yellow-600 font-semibold';
-            break;
+            return <StatusIndicator type="pending">Pending</StatusIndicator>;
           case InvoiceStatus.PAID:
-            statusClass = 'text-green-600 font-semibold';
-            break;
+            return <StatusIndicator type="success">Paid</StatusIndicator>;
           case InvoiceStatus.REJECTED:
-            statusClass = 'text-red-600 font-semibold';
-            break;
+            return <StatusIndicator type="error">Rejected</StatusIndicator>;
+          default:
+            return <StatusIndicator type="info">{item.status}</StatusIndicator>;
         }
-
-        return <span className={statusClass}>{item.status.toUpperCase()}</span>;
-      }
+      },
+      width: 120,
     },
     {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 280,
-      isResizable: true,
-      onRender: (item: Invoice) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
-          {/* Generate/View PDF */}
+      id: 'actions',
+      header: 'Actions',
+      cell: (item) => (
+        <div className="flex items-center gap-2 flex-wrap">
           {(item.pdf_url || item.pdfUrl) ? (
-            <Link 
+            <button
               onClick={() => handleViewPdf(item)}
               disabled={isSaving && selectedInvoiceId === item.id}
+              className="text-sm text-red-600 hover:text-red-800 hover:underline disabled:opacity-50 transition-colors"
             >
-              View PDF
-              {isSaving && selectedInvoiceId === item.id && (
-                <Spinner size={SpinnerSize.xSmall} className="ml-2" />
-              )}
-            </Link>
+              {isSaving && selectedInvoiceId === item.id ? 'Loading...' : 'View PDF'}
+            </button>
           ) : (
-            <Link
+            <button
               onClick={() => handleGeneratePdf(item.id)}
               disabled={isSaving && selectedInvoiceId === item.id}
+              className="text-sm text-red-600 hover:text-red-800 hover:underline disabled:opacity-50 transition-colors"
             >
-              Generate PDF
-              {isSaving && selectedInvoiceId === item.id && (
-                <Spinner size={SpinnerSize.xSmall} className="ml-2" />
-              )}
-            </Link>
+              {isSaving && selectedInvoiceId === item.id ? 'Generating...' : 'Generate PDF'}
+            </button>
           )}
 
-          {/* Finance Integration Actions */}
           {financeConnections.length > 0 && item.status === InvoiceStatus.PAID && (
             <>
               <span className="text-gray-300">|</span>
-              <Link
+              <button
                 onClick={() => handleExportToAccounting(item.id)}
                 disabled={isSaving && selectedInvoiceId === item.id}
-                style={{ color: '#0078d4' }}
+                className="text-sm text-red-600 hover:text-red-800 hover:underline disabled:opacity-50 transition-colors"
               >
-                Send to Accounting
-              </Link>
+                Send to accounting
+              </button>
             </>
           )}
 
-          {/* Status actions */}
           {item.status === InvoiceStatus.PENDING && (
             <>
               <span className="text-gray-300">|</span>
-              <Link
+              <button
                 onClick={() => handleUpdateStatus(item.id, InvoiceStatus.PAID)}
                 disabled={isSaving && selectedInvoiceId === item.id}
+                className="text-sm text-green-600 hover:text-green-800 hover:underline disabled:opacity-50 transition-colors"
               >
-                Mark Paid
-              </Link>
+                Mark paid
+              </button>
               <span className="text-gray-300">|</span>
-              <Link
+              <button
                 onClick={() => handleUpdateStatus(item.id, InvoiceStatus.REJECTED)}
                 disabled={isSaving && selectedInvoiceId === item.id}
-                className="text-red-600"
+                className="text-sm text-red-600 hover:text-red-800 hover:underline disabled:opacity-50 transition-colors"
               >
                 Reject
-              </Link>
+              </button>
             </>
           )}
-        </Stack>
-      )
-    }
+        </div>
+      ),
+      minWidth: 280,
+    },
+  ];
+
+  const tabs = [
+    { key: 'generate' as const, label: 'Generate invoice' },
+    { key: 'list' as const, label: 'Invoice list' },
+    { key: 'bulk' as const, label: 'Bulk payroll' },
+    { key: 'integrations' as const, label: 'Finance integrations' },
   ];
 
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">Invoice Management</Text>
-        </Stack>
+    <SpaceBetween size="l">
+      <Header
+        variant="h1"
+        description="Generate, manage, and export invoices for staff members"
+      >
+        Invoice management
+      </Header>
 
-        {error && (
-          <MessageBar
-            messageBarType={MessageBarType.error}
-            isMultiline={false}
-            dismissButtonAriaLabel="Close"
-            onDismiss={() => setError(null)}
-          >
-            {error}
-          </MessageBar>
-        )}
+      <Flashbar items={flashItems} onDismiss={removeFlash} />
 
-        {success && (
-          <MessageBar
-            messageBarType={MessageBarType.success}
-            isMultiline={false}
-            dismissButtonAriaLabel="Close"
-            onDismiss={() => setSuccess(null)}
-          >
-            {success}
-          </MessageBar>
-        )}
+      {/* Tab navigation */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-0 -mb-px">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={
+                activeTab === tab.key
+                  ? 'px-4 py-2 text-sm font-medium text-red-600 border-b-2 border-red-600'
+                  : 'px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent'
+              }
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
 
-        <Pivot>
-          <PivotItem headerText="Generate Invoice">
-            <Card>
-              <form onSubmit={formik.handleSubmit}>
-                <Stack tokens={{ childrenGap: 16 }}>
-                  <Text variant="large" className="mb-4">Generate a new invoice for a staff member</Text>
-                  <Text className="text-gray-600 mb-4">
-                    Note: Only staff members with approved shifts that have actual hours worked will be able to generate invoices.
-                  </Text>
-
-                  {/* Staff selection */}
-                  <Stack>
-                    <Label required>Staff Member</Label>
-                    <ComboBox
-                      placeholder="Select staff member"
-                      options={staffOptions}
-                      selectedKey={formik.values.staffUserId || undefined}
-                      onChange={(_, option) => {
-                        formik.setFieldValue('staffUserId', option?.key || 0);
-                      }}
-                      errorMessage={
-                        formik.touched.staffUserId && formik.errors.staffUserId
-                          ? formik.errors.staffUserId
-                          : undefined
-                      }
-                      required
-                    />
-                  </Stack>
-
-                  {/* Date range */}
-                  <Stack horizontal tokens={{ childrenGap: 16 }}>
-                    <Stack grow>
-                      <Label required>Start Date</Label>
-                      <DatePicker
-                        value={formik.values.startDate}
-                        onSelectDate={(date) => {
-                          if (date) formik.setFieldValue('startDate', date);
-                        }}
-                        formatDate={(date?: Date) => date ? date.toLocaleDateString() : ''}
-                        isRequired
-                        showMonthPickerAsOverlay
-                        placeholder="Select a date..."
-                        ariaLabel="Select start date"
-                      />
-                      {formik.touched.startDate && formik.errors.startDate && (
-                        <Text className="text-red-600 text-sm mt-1">{String(formik.errors.startDate)}</Text>
-                      )}
-                    </Stack>
-
-                    <Stack grow>
-                      <Label required>End Date</Label>
-                      <DatePicker
-                        value={formik.values.endDate}
-                        onSelectDate={(date) => {
-                          if (date) formik.setFieldValue('endDate', date);
-                        }}
-                        formatDate={(date?: Date) => date ? date.toLocaleDateString() : ''}
-                        isRequired
-                        minDate={formik.values.startDate}
-                        showMonthPickerAsOverlay
-                        placeholder="Select a date..."
-                        ariaLabel="Select end date"
-                      />
-                      {formik.touched.endDate && formik.errors.endDate && (
-                        <Text className="text-red-600 text-sm mt-1">{String(formik.errors.endDate)}</Text>
-                      )}
-                    </Stack>
-                  </Stack>
-
-                  {/* Submit button */}
-                  <Stack horizontalAlign="end">
-                    <PrimaryButton
-                      type="submit"
-                      text="Generate Invoice"
-                      disabled={isSaving}
-                    />
-                  </Stack>
-                </Stack>
-              </form>
-            </Card>
-          </PivotItem>
-
-          <PivotItem headerText="Invoice List">
-            <Card>
-              <Stack tokens={{ childrenGap: 16 }}>
-                <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                  <Text variant="large" className="mb-4">Manage Invoices</Text>
-                  {financeConnections.length > 0 && invoices.some(inv => inv.status === InvoiceStatus.PAID) && (
-                    <PrimaryButton
-                      text="Export All Paid to Accounting"
-                      iconProps={{ iconName: 'CloudUpload' }}
-                      onClick={handleBulkExportToAccounting}
-                      disabled={isSaving || isExporting}
-                    />
-                  )}
-                </Stack>
-
-                {financeConnections.length > 0 && (
-                  <MessageBar messageBarType={MessageBarType.info}>
-                    <Text>
-                      Finance integrations are enabled. Paid invoices can be exported to: {' '}
-                      {financeConnections.map(conn => conn.provider_name).join(', ')}
-                    </Text>
-                  </MessageBar>
+      {/* Generate invoice tab */}
+      {activeTab === 'generate' && (
+        <Container
+          header={
+            <Header variant="h2" description="Only staff members with approved shifts that have actual hours worked will generate invoices.">
+              Generate a new invoice
+            </Header>
+          }
+        >
+          <form onSubmit={formik.handleSubmit}>
+            <SpaceBetween size="m">
+              {/* Staff selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Staff member <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formik.values.staffUserId || ''}
+                  onChange={(e) => formik.setFieldValue('staffUserId', Number(e.target.value) || 0)}
+                  onBlur={() => formik.setFieldTouched('staffUserId', true)}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                >
+                  <option value="">Select staff member</option>
+                  {staffOptions.map((opt) => (
+                    <option key={String(opt.key)} value={String(opt.key)}>
+                      {opt.text}
+                    </option>
+                  ))}
+                </select>
+                {formik.touched.staffUserId && formik.errors.staffUserId && (
+                  <p className="text-red-600 text-sm mt-1">{formik.errors.staffUserId}</p>
                 )}
+              </div>
 
-                {isLoading ? (
-                  <div className="flex justify-center py-8">
-                    <Spinner size={SpinnerSize.large} label="Loading invoices..." />
-                  </div>
-                ) : invoices.length > 0 ? (
-                  <DetailsList
-                    items={invoices}
-                    columns={invoiceColumns}
-                    layoutMode={DetailsListLayoutMode.justified}
-                    selectionMode={SelectionMode.none}
-                    isHeaderVisible={true}
+              {/* Date range */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Start date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formik.values.startDate.toISOString().split('T')[0]}
+                    onChange={(e) => {
+                      if (e.target.value) formik.setFieldValue('startDate', new Date(e.target.value));
+                    }}
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   />
-                ) : (
-                  <Text className="text-gray-500 italic">No invoices found</Text>
-                )}
-              </Stack>
-            </Card>
-          </PivotItem>
+                  {formik.touched.startDate && formik.errors.startDate && (
+                    <p className="text-red-600 text-sm mt-1">{String(formik.errors.startDate)}</p>
+                  )}
+                </div>
 
-          <PivotItem headerText="Bulk Payroll">
-            <div className="mt-6">
-              <Stack tokens={{ childrenGap: 16 }}>
-                <Text variant="large" className="font-semibold">
-                  Weekly Payroll Generation
-                </Text>
-                <Text className="text-gray-600">
-                  Generate invoices for all staff members for a weekly payment period. 
-                  This will create individual invoices for each staff member with approved shifts.
-                </Text>
-                
-                <BulkPayrollGeneration />
-              </Stack>
-            </div>
-          </PivotItem>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    End date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formik.values.endDate.toISOString().split('T')[0]}
+                    min={formik.values.startDate.toISOString().split('T')[0]}
+                    onChange={(e) => {
+                      if (e.target.value) formik.setFieldValue('endDate', new Date(e.target.value));
+                    }}
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  />
+                  {formik.touched.endDate && formik.errors.endDate && (
+                    <p className="text-red-600 text-sm mt-1">{String(formik.errors.endDate)}</p>
+                  )}
+                </div>
+              </div>
 
-          <PivotItem headerText="Finance Integrations">
-            <div className="mt-6">
-              <FinanceIntegrations />
-            </div>
-          </PivotItem>
-        </Pivot>
-      </Stack>
+              {/* Submit button */}
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 transition-colors"
+                >
+                  {isSaving ? 'Generating...' : 'Generate invoice'}
+                </button>
+              </div>
+            </SpaceBetween>
+          </form>
+        </Container>
+      )}
 
-      {/* Confirmation Dialog */}
-      <Dialog
-        hidden={!showGenerateDialog}
-        onDismiss={() => {
+      {/* Invoice list tab */}
+      {activeTab === 'list' && (
+        <CloudscapeTable
+          items={invoices}
+          columnDefinitions={invoiceColumns}
+          loading={isLoading}
+          loadingText="Loading invoices"
+          trackBy="id"
+          header={
+            <Header
+              variant="h2"
+              counter={`${invoices.length}`}
+              actions={
+                financeConnections.length > 0 && invoices.some(inv => inv.status === InvoiceStatus.PAID) ? (
+                  <button
+                    onClick={handleBulkExportToAccounting}
+                    disabled={isSaving || isExporting}
+                    className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 transition-colors"
+                  >
+                    Export all paid to accounting
+                  </button>
+                ) : undefined
+              }
+            >
+              Invoices
+            </Header>
+          }
+          empty={
+            <EmptyState
+              title="No invoices"
+              description="No invoices have been generated yet. Use the generate invoice tab to create one."
+            />
+          }
+          filter={
+            financeConnections.length > 0 ? (
+              <Alert type="info">
+                Finance integrations are enabled. Paid invoices can be exported to:{' '}
+                {financeConnections.map(conn => conn.provider_name).join(', ')}
+              </Alert>
+            ) : undefined
+          }
+        />
+      )}
+
+      {/* Bulk payroll tab */}
+      {activeTab === 'bulk' && (
+        <Container
+          header={
+            <Header
+              variant="h2"
+              description="Generate invoices for all staff members for a weekly payment period. This will create individual invoices for each staff member with approved shifts."
+            >
+              Weekly payroll generation
+            </Header>
+          }
+        >
+          <BulkPayrollGeneration />
+        </Container>
+      )}
+
+      {/* Finance integrations tab */}
+      {activeTab === 'integrations' && (
+        <FinanceIntegrations />
+      )}
+
+      {/* Invoice preview / confirmation modal */}
+      <ConfirmationModal
+        visible={showGenerateDialog}
+        header="Invoice generation preview"
+        confirmLabel="Generate invoice"
+        cancelLabel="Cancel"
+        onConfirm={handleGenerateInvoice}
+        onCancel={() => {
           setShowGenerateDialog(false);
           setPreviewData(null);
         }}
-        dialogContentProps={{
-          type: DialogType.normal,
-          title: 'Invoice Generation Preview',
-          subText: previewData ? `Preview for ${previewData.staff_user} (${previewData.date_range})` : 'Loading preview...'
-        }}
+        loading={isSaving}
       >
         {previewData && (
-          <Stack tokens={{ childrenGap: 16 }}>
-            <Stack horizontal tokens={{ childrenGap: 20 }}>
-              <Text><strong>Total Shifts:</strong> {previewData.total_shifts}</Text>
-              <Text><strong>Eligible Shifts:</strong> {previewData.eligible_shifts}</Text>
-            </Stack>
-            
+          <SpaceBetween size="m">
+            <p className="text-sm text-gray-600">
+              Preview for {previewData.staff_user} ({previewData.date_range})
+            </p>
+
+            <div className="flex gap-6">
+              <p className="text-sm"><span className="font-medium">Total shifts:</span> {previewData.total_shifts}</p>
+              <p className="text-sm"><span className="font-medium">Eligible shifts:</span> {previewData.eligible_shifts}</p>
+            </div>
+
             {previewData.can_generate_invoice ? (
-              <Text className="text-green-600">
-                ✓ This staff member has {previewData.eligible_shifts} approved shifts with actual hours worked. Invoice can be generated.
-              </Text>
+              <Alert type="success">
+                This staff member has {previewData.eligible_shifts} approved shifts with actual hours worked. Invoice can be generated.
+              </Alert>
             ) : (
-              <Text className="text-red-600">
-                ✗ This staff member has no approved shifts with actual hours worked for this period. Invoice cannot be generated.
-              </Text>
+              <Alert type="error">
+                This staff member has no approved shifts with actual hours worked for this period. Invoice cannot be generated.
+              </Alert>
             )}
-            
+
             {previewData.shifts && previewData.shifts.length > 0 && (
-              <Stack>
-                <Text variant="mediumPlus">Shifts in this period:</Text>
-                {previewData.shifts.map((shift: any, index: number) => (
-                  <Text key={index} className={shift.is_eligible ? 'text-green-600' : 'text-gray-600'}>
-                    {shift.is_eligible ? '✓' : '✗'} {new Date(shift.start_time).toLocaleDateString()} - {shift.venue} ({shift.status})
-                    {shift.actual_hours_worked ? ` - ${shift.actual_hours_worked} hours` : ' - No hours recorded'}
-                  </Text>
-                ))}
-              </Stack>
+              <div>
+                <p className="text-sm font-medium text-gray-900 mb-2">Shifts in this period:</p>
+                <div className="flex flex-col gap-1">
+                  {previewData.shifts.map((shift: any, index: number) => (
+                    <p key={index} className={`text-sm ${shift.is_eligible ? 'text-green-700' : 'text-gray-500'}`}>
+                      {shift.is_eligible ? '✓' : '✗'} {new Date(shift.start_time).toLocaleDateString()} - {shift.venue} ({shift.status})
+                      {shift.actual_hours_worked ? ` - ${shift.actual_hours_worked} hours` : ' - No hours recorded'}
+                    </p>
+                  ))}
+                </div>
+              </div>
             )}
-          </Stack>
+          </SpaceBetween>
         )}
-        
-        <DialogFooter>
-          <PrimaryButton
-            onClick={handleGenerateInvoice}
-            text="Generate Invoice"
-            disabled={isSaving || !previewData?.can_generate_invoice}
-          />
-          <DefaultButton
-            onClick={() => {
-              setShowGenerateDialog(false);
-              setPreviewData(null);
-            }}
-            text="Cancel"
-            disabled={isSaving}
-          />
-        </DialogFooter>
-      </Dialog>
+      </ConfirmationModal>
 
-      {/* Export to Accounting Dialog */}
-      <Dialog
-        hidden={!showExportDialog}
-        onDismiss={() => {
-          setShowExportDialog(false);
-          setSelectedInvoicesForExport([]);
-          setSelectedConnection(null);
-        }}
-        dialogContentProps={{
-          type: DialogType.normal,
-          title: 'Export to Accounting Software',
-          subText: `Export ${selectedInvoicesForExport.length} invoice(s) to your accounting software`
-        }}
-        minWidth={500}
-      >
-        <Stack tokens={{ childrenGap: 16 }}>
-          {financeConnections.length > 1 ? (
-            <Dropdown
-              label="Accounting Connection"
-              options={financeConnections.map(conn => ({
-                key: conn.id,
-                text: `${conn.provider_name} - ${conn.company_name}${conn.is_sandbox ? ' (Sandbox)' : ''}`
-              }))}
-              selectedKey={selectedConnection}
-              onChange={(_, option) => setSelectedConnection(option?.key as number || null)}
-              required
-            />
-          ) : financeConnections.length === 1 ? (
-            <div>
-              <Label>Accounting Connection</Label>
-              <Text>
-                {financeConnections[0].provider_name} - {financeConnections[0].company_name}
-                {financeConnections[0].is_sandbox && ' (Sandbox)'}
-              </Text>
-            </div>
-          ) : (
-            <MessageBar messageBarType={MessageBarType.warning}>
-              No accounting connections configured. Please set up a connection in the Finance Integrations tab first.
-            </MessageBar>
-          )}
-
-          <MessageBar messageBarType={MessageBarType.info}>
-            <Text>
-              This will create invoices in your accounting software for the selected staff invoices. 
-              The invoices will include all shift details and PDF attachments where available.
-            </Text>
-          </MessageBar>
-
-          {isExporting && (
-            <div className="flex items-center">
-              <Spinner size={SpinnerSize.small} style={{ marginRight: 8 }} />
-              <Text>Exporting invoices...</Text>
-            </div>
-          )}
-        </Stack>
-
-        <DialogFooter>
-          <PrimaryButton
-            onClick={handleConfirmExport}
-            text={`Export ${selectedInvoicesForExport.length} Invoice(s)`}
-            disabled={!selectedConnection || isExporting || financeConnections.length === 0}
-          />
-          <DefaultButton
+      {/* Export to accounting modal */}
+      {showExportDialog && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
             onClick={() => {
               setShowExportDialog(false);
               setSelectedInvoicesForExport([]);
               setSelectedConnection(null);
             }}
-            text="Cancel"
-            disabled={isExporting}
+            aria-hidden="true"
           />
-        </DialogFooter>
-      </Dialog>
-    </MainLayout>
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-lg w-full animate-scale-in" role="dialog" aria-modal="true">
+            <div className="px-6 pt-6 pb-0">
+              <h2 className="text-lg font-semibold text-gray-900">Export to accounting software</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Export {selectedInvoicesForExport.length} invoice(s) to your accounting software
+              </p>
+            </div>
+
+            <div className="px-6 py-4">
+              <SpaceBetween size="m">
+                {financeConnections.length > 1 ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Accounting connection</label>
+                    <select
+                      value={selectedConnection || ''}
+                      onChange={(e) => setSelectedConnection(Number(e.target.value) || null)}
+                      className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    >
+                      <option value="">Select a connection</option>
+                      {financeConnections.map(conn => (
+                        <option key={conn.id} value={conn.id}>
+                          {conn.provider_name} - {conn.company_name}{conn.is_sandbox ? ' (Sandbox)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : financeConnections.length === 1 ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Accounting connection</label>
+                    <p className="text-sm text-gray-900">
+                      {financeConnections[0].provider_name} - {financeConnections[0].company_name}
+                      {financeConnections[0].is_sandbox && ' (Sandbox)'}
+                    </p>
+                  </div>
+                ) : (
+                  <Alert type="warning">
+                    No accounting connections configured. Please set up a connection in the finance integrations tab first.
+                  </Alert>
+                )}
+
+                <Alert type="info">
+                  This will create invoices in your accounting software for the selected staff invoices.
+                  The invoices will include all shift details and PDF attachments where available.
+                </Alert>
+
+                {isExporting && (
+                  <div className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <p className="text-sm text-gray-600">Exporting invoices...</p>
+                  </div>
+                )}
+              </SpaceBetween>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-6 pb-6 pt-2">
+              <button
+                onClick={() => {
+                  setShowExportDialog(false);
+                  setSelectedInvoicesForExport([]);
+                  setSelectedConnection(null);
+                }}
+                disabled={isExporting}
+                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmExport}
+                disabled={!selectedConnection || isExporting || financeConnections.length === 0}
+                className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Export {selectedInvoicesForExport.length} invoice(s)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </SpaceBetween>
   );
 };
 

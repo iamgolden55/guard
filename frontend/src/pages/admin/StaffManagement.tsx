@@ -1,58 +1,16 @@
 import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
-import {
-  DetailsList,
-  DetailsListLayoutMode,
-  SelectionMode,
-  type IColumn,
-  CommandBar,
-  type ICommandBarItemProps,
-  SearchBox,
-  Dropdown,
-  type IDropdownOption,
-  Stack,
-  Text,
-  StackItem,
-  Spinner,
-  SpinnerSize,
-  MessageBar,
-  MessageBarType,
-  Link,
-  Dialog,
-  DialogType,
-  TextField,
-  DialogFooter,
-  PrimaryButton,
-  DefaultButton,
-  Toggle,
-  CompoundButton,
-  Pivot,
-  PivotItem,
-  IconButton,
-  type IIconProps,
-  Panel,
-  PanelType,
-  Label,
-  Persona,
-  PersonaSize,
-  ActionButton,
-  TooltipHost
-} from '@fluentui/react';
 import { useNavigate } from 'react-router-dom';
-import { MainLayout } from '../../layouts';
 import { UserRole } from '../../types';
 import api from '../../services/api';
 import profileService from '../../services/profileService';
 import { employmentTypeService, type EmploymentType } from '../../services/employmentTypeService';
 import { useToast } from '../../components/shared/ToastNotificationSystem';
+import { Header, Container, CloudscapeTable, StatusIndicator, EmptyState, ConfirmationModal, SpaceBetween, FormSection } from '../../components/cloudscape';
+import Flashbar, { useFlashbar } from '../../components/cloudscape/Flashbar';
+import type { ColumnDefinition } from '../../components/cloudscape/CloudscapeTable';
 
-// Icons
-const addIcon: IIconProps = { iconName: 'PersonAdd' };
-const filterIcon: IIconProps = { iconName: 'Filter' };
-const refreshIcon: IIconProps = { iconName: 'Refresh' };
-const reviewIcon: IIconProps = { iconName: 'View' };
-
-// Interface to match backend User response 
+// Interface to match backend User response
 interface User {
   id: number;
   username: string;
@@ -131,32 +89,100 @@ const SIA_LICENSE_TYPE_DISPLAY: { [key: string]: string } = {
 };
 
 // SIA License dropdown options for editing
-const SIA_LICENSE_TYPE_OPTIONS: IDropdownOption[] = [
-  { key: 'ds', text: 'Door Supervisor' },
-  { key: 'sg', text: 'Security Guard' },
-  { key: 'cctv', text: 'CCTV Operator' },
-  { key: 'cp', text: 'Close Protection' },
-  { key: 'k9', text: 'Dog Handler' },
-  { key: 'vs', text: 'Vehicle Security' },
-  { key: 'key', text: 'Key Holding' },
+const SIA_LICENSE_TYPE_OPTIONS = [
+  { value: 'ds', label: 'Door Supervisor' },
+  { value: 'sg', label: 'Security Guard' },
+  { value: 'cctv', label: 'CCTV Operator' },
+  { value: 'cp', label: 'Close Protection' },
+  { value: 'k9', label: 'Dog Handler' },
+  { value: 'vs', label: 'Vehicle Security' },
+  { value: 'key', label: 'Key Holding' },
 ];
 
-const SIA_LICENSE_LEVEL_OPTIONS: IDropdownOption[] = [
-  { key: 'trainee', text: 'Trainee' },
-  { key: 'qualified', text: 'Qualified' },
-  { key: 'advanced', text: 'Advanced' },
-  { key: 'instructor', text: 'Instructor' },
+const SIA_LICENSE_LEVEL_OPTIONS = [
+  { value: 'trainee', label: 'Trainee' },
+  { value: 'qualified', label: 'Qualified' },
+  { value: 'advanced', label: 'Advanced' },
+  { value: 'instructor', label: 'Instructor' },
 ];
 
-const SIA_LICENSE_STATUS_OPTIONS: IDropdownOption[] = [
-  { key: 'valid', text: 'Valid' },
-  { key: 'expired', text: 'Expired' },
-  { key: 'pending', text: 'Pending' },
+const SIA_LICENSE_STATUS_OPTIONS = [
+  { value: 'valid', label: 'Valid' },
+  { value: 'expired', label: 'Expired' },
+  { value: 'pending', label: 'Pending' },
 ];
+
+// ─── Reusable Tailwind class constants ───────────────────────────────────────
+const INPUT_CLASS = "w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent";
+const SELECT_CLASS = "w-full h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent";
+const LABEL_CLASS = "block text-sm font-medium text-gray-700 mb-1";
+const BTN_PRIMARY = "px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 transition-colors";
+const BTN_SECONDARY = "px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-50 transition-colors";
+
+// ─── Slide-over panel component ──────────────────────────────────────────────
+const SlidePanel: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  wide?: boolean;
+  children: React.ReactNode;
+}> = ({ open, onClose, title, wide = false, children }) => {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[1000] overflow-hidden">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="absolute inset-y-0 right-0 flex">
+        <div className={`relative bg-white shadow-xl ${wide ? 'w-[700px] max-w-[90vw]' : 'w-[480px] max-w-[90vw]'} flex flex-col`}>
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+              aria-label="Close"
+            >
+              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Tab component ───────────────────────────────────────────────────────────
+const Tabs: React.FC<{
+  tabs: { id: string; label: string }[];
+  activeTab: string;
+  onChange: (id: string) => void;
+}> = ({ tabs, activeTab, onChange }) => (
+  <div className="flex border-b border-gray-200 mb-4">
+    {tabs.map((tab) => (
+      <button
+        key={tab.id}
+        onClick={() => onChange(tab.id)}
+        className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+          activeTab === tab.id
+            ? 'border-red-600 text-red-600'
+            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+        }`}
+      >
+        {tab.label}
+      </button>
+    ))}
+  </div>
+);
 
 const StaffManagement: React.FC = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const flash = useFlashbar();
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [filteredStaff, setFilteredStaff] = useState<Staff[]>([]);
   const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
@@ -218,165 +244,19 @@ const StaffManagement: React.FC = () => {
     country: '',
   });
 
-  // Set up columns for the DetailsList
-  const columns: IColumn[] = [
-    {
-      key: 'fullName',
-      name: 'Name',
-      minWidth: 120,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: Staff) => <Text>{`${item.firstName} ${item.lastName}`}</Text>,
-    },
-    {
-      key: 'email',
-      name: 'Email',
-      fieldName: 'email',
-      minWidth: 150,
-      maxWidth: 200,
-      isResizable: true,
-    },
-    {
-      key: 'phone',
-      name: 'Phone',
-      fieldName: 'phone',
-      minWidth: 120,
-      maxWidth: 150,
-      isResizable: true,
-    },
-    {
-      key: 'role',
-      name: 'Role',
-      fieldName: 'role',
-      minWidth: 100,
-      maxWidth: 120,
-      isResizable: true,
-      onRender: (item: Staff) => {
-        const roleLabels = {
-          [UserRole.STAFF]: 'Staff',
-          [UserRole.MANAGER]: 'Manager',
-          [UserRole.ADMIN]: 'Admin',
-        };
-        return <Text>{roleLabels[item.role]}</Text>;
-      }
-    },
-    {
-      key: 'employmentType',
-      name: 'Employment Type',
-      minWidth: 150,
-      maxWidth: 200,
-      isResizable: true,
-      onRender: (item: Staff) => (
-        <Stack>
-          <Text variant="medium">
-            {item.employmentType?.name || 'Not Set'}
-          </Text>
-          {!item.employmentType && (
-            <Text variant="small" style={{ color: '#F59E0B' }}>
-              ⚠ Needs Assignment
-            </Text>
-          )}
-        </Stack>
-      ),
-    },
-    {
-      key: 'status',
-      name: 'Status',
-      fieldName: 'isActive',
-      minWidth: 80,
-      maxWidth: 80,
-      isResizable: true,
-      onRender: (item: Staff) => (
-        <div
-          style={{
-            backgroundColor: item.isActive ? '#10B981' : '#9CA3AF',
-            color: 'white',
-            padding: '4px 8px',
-            borderRadius: '12px',
-            display: 'inline-block',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            textTransform: 'uppercase'
-          }}
-        >
-          {item.isActive ? 'Active' : 'Inactive'}
-        </div>
-      ),
-    },
+  // Tab state for form panels
+  const [addFormTab, setAddFormTab] = useState('basic');
+  const [editFormTab, setEditFormTab] = useState('basic');
 
+  // Sorting state
+  const [sortingColumn, setSortingColumn] = useState<{ sortingField: string } | undefined>(undefined);
+  const [sortingDescending, setSortingDescending] = useState(false);
 
-
-    {
-      key: 'dateJoined',
-      name: 'Date Joined',
-      fieldName: 'dateJoined',
-      minWidth: 120,
-      maxWidth: 120,
-      isResizable: true,
-      onRender: (item: Staff) => <Text>{new Date(item.dateJoined).toLocaleDateString()}</Text>,
-    },
-
-    {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 450,
-      maxWidth: 500,
-      isResizable: true,
-      onRender: (item: Staff) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
-          <ActionButton
-            iconProps={{ iconName: 'View' }}
-            onClick={() => handleViewStaffDetails(item)}
-            text="Details"
-          />
-          <ActionButton
-            iconProps={{ iconName: 'Edit' }}
-            onClick={() => handleEditStaff(item)}
-            text="Edit"
-          />
-          <ActionButton
-            iconProps={{ iconName: 'Work' }}
-            onClick={() => handleAssignEmploymentType(item)}
-            styles={{ root: { color: item.employmentType ? undefined : '#F59E0B' } }}
-            text={item.employmentType ? 'Change Type' : 'Assign Type'}
-          />
-          <ActionButton
-            iconProps={{ iconName: item.isActive ? 'BlockContact' : 'Contact' }}
-            onClick={() => handleToggleStatus(item)}
-            styles={{ root: { color: item.isActive ? '#EF4444' : '#10B981' } }}
-            text={item.isActive ? 'Deactivate' : 'Activate'}
-          />
-          <ActionButton
-            iconProps={{ iconName: 'Delete' }}
-            onClick={() => handleDeleteStaff(item)}
-            styles={{ rootHovered: { color: '#EF4444' } }}
-            text="Delete"
-          />
-        </Stack>
-      ),
-    },
-  ];
-
-  // Filter options
-  const roleOptions: IDropdownOption[] = [
-    { key: '', text: 'All Roles' },
-    { key: UserRole.STAFF, text: 'Staff' },
-    { key: UserRole.MANAGER, text: 'Manager' },
-    { key: UserRole.ADMIN, text: 'Admin' },
-  ];
-
-  const statusOptions: IDropdownOption[] = [
-    { key: '', text: 'All Statuses' },
-    { key: 'active', text: 'Active' },
-    { key: 'inactive', text: 'Inactive' },
-  ];
-
-  // Load staff from API - using useCallback to avoid dependency issues in useEffect
+  // Load staff from API
   const loadStaff = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Fetch users and employment types in parallel
       const [usersResponse, employmentTypesResponse] = await Promise.all([
         api.get<User[]>('/api/v1/users/'),
         employmentTypeService.getEmploymentTypes().catch(err => {
@@ -385,32 +265,25 @@ const StaffManagement: React.FC = () => {
         })
       ]);
 
-      // Handle paginated response - extract results array
-      const employmentTypesArray = Array.isArray(employmentTypesResponse) ? employmentTypesResponse : (employmentTypesResponse?.results || []);
-
+      const employmentTypesArray = Array.isArray(employmentTypesResponse) ? employmentTypesResponse : ((employmentTypesResponse as any)?.results || []);
       setEmploymentTypes(employmentTypesArray);
 
-      // For each user, fetch their profile to get employment type
       const staffWithProfiles = await Promise.all(
         usersResponse.data.map(async (user) => {
           let employmentType: EmploymentType | null = null;
           let phone = '';
 
           try {
-            // Sprint 3: Use /api/v1/ prefix for cookie authentication
             const profileResponse = await api.get(`/api/v1/staff-profiles/?user=${user.id}`);
             const profileData = profileResponse.data.results || profileResponse.data;
             if (profileData && profileData.length > 0) {
               const profile = profileData[0];
               phone = profile.phone_number || '';
-
-              // Find employment type if it exists
               if (profile.employment_type_details) {
                 employmentType = profile.employment_type_details;
               }
             }
           } catch (profileError) {
-            // Profile doesn't exist or error fetching it, that's OK
             console.warn(`No profile found for user ${user.id}:`, profileError);
           }
 
@@ -436,7 +309,7 @@ const StaffManagement: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []); // Empty dependency array - runs once on mount
+  }, []);
 
   const loadPendingStaff = useCallback(async () => {
     setPendingLoading(true);
@@ -446,7 +319,7 @@ const StaffManagement: React.FC = () => {
 
         if (data && Array.isArray(data.results)) {
           pendingStaffData = data.results;
-        } else if (Array.isArray(data)) { // Fallback if API doesn't paginate
+        } else if (Array.isArray(data)) {
           pendingStaffData = data;
         } else {
           console.error('Pending staff data is not an array or paginated object:', data);
@@ -456,7 +329,6 @@ const StaffManagement: React.FC = () => {
           return;
         }
 
-        // Additional frontend filter: only include staff with SIA licenses
         const filteredPendingStaff = pendingStaffData.filter((staff: StaffProfileDetail) =>
           staff.sia_licenses &&
           staff.sia_licenses.length > 0 &&
@@ -474,13 +346,12 @@ const StaffManagement: React.FC = () => {
       .finally(() => setPendingLoading(false));
   }, []);
 
-  // Effect to load staff on component mount
   useEffect(() => {
     loadStaff();
     loadPendingStaff();
   }, [loadStaff, loadPendingStaff]);
 
-  // Effect to apply filters when search/filter changes
+  // Apply filters
   useEffect(() => {
     if (!staffList.length) {
       setFilteredStaff([]);
@@ -489,7 +360,6 @@ const StaffManagement: React.FC = () => {
 
     let filtered = [...staffList];
 
-    // Apply text search
     if (searchText) {
       const lowerCaseSearchText = searchText.toLowerCase();
       filtered = filtered.filter(
@@ -501,12 +371,10 @@ const StaffManagement: React.FC = () => {
       );
     }
 
-    // Apply role filter
     if (roleFilter) {
       filtered = filtered.filter(staff => staff.role === roleFilter);
     }
 
-    // Apply status filter
     if (statusFilter) {
       filtered = filtered.filter(staff =>
         (statusFilter === 'active' && staff.isActive) ||
@@ -514,10 +382,42 @@ const StaffManagement: React.FC = () => {
       );
     }
 
-    setFilteredStaff(filtered);
-  }, [staffList, searchText, roleFilter, statusFilter]);
+    // Apply sorting
+    if (sortingColumn) {
+      filtered.sort((a, b) => {
+        let aVal: any;
+        let bVal: any;
+        switch (sortingColumn.sortingField) {
+          case 'name':
+            aVal = `${a.firstName} ${a.lastName}`.toLowerCase();
+            bVal = `${b.firstName} ${b.lastName}`.toLowerCase();
+            break;
+          case 'email':
+            aVal = a.email.toLowerCase();
+            bVal = b.email.toLowerCase();
+            break;
+          case 'role':
+            aVal = a.role;
+            bVal = b.role;
+            break;
+          case 'dateJoined':
+            aVal = a.dateJoined;
+            bVal = b.dateJoined;
+            break;
+          default:
+            return 0;
+        }
+        if (aVal < bVal) return sortingDescending ? 1 : -1;
+        if (aVal > bVal) return sortingDescending ? -1 : 1;
+        return 0;
+      });
+    }
 
-  // Handler functions
+    setFilteredStaff(filtered);
+  }, [staffList, searchText, roleFilter, statusFilter, sortingColumn, sortingDescending]);
+
+  // ─── Handler functions (all business logic preserved exactly) ───────────────
+
   const handleEditStaff = useCallback((staff: Staff) => {
     setSelectedStaff(staff);
     setFormData({
@@ -532,25 +432,23 @@ const StaffManagement: React.FC = () => {
       postalCode: staff.address?.postalCode || '',
       country: staff.address?.country || '',
     });
+    setEditFormTab('basic');
     setShowEditStaffPanel(true);
   }, []);
 
   const handleToggleStatus = useCallback(async (staff: Staff) => {
     try {
-      // Call the API to update the user's active status
       await api.patch(`/api/v1/users/${staff.id}/`, {
         is_active: !staff.isActive
       });
 
       try {
-        // If API call was successful, update the local state
         const updatedStaff = staffList.map(s =>
           s.id === staff.id ? { ...s, isActive: !s.isActive } : s
         );
         setStaffList(updatedStaff);
         setFilteredStaff(updatedStaff);
 
-        // Show success toast
         setError(null);
         const newStatus = !staff.isActive;
         if (newStatus) {
@@ -560,7 +458,6 @@ const StaffManagement: React.FC = () => {
         }
       } catch (stateError) {
         console.error('Error updating UI state after status toggle:', stateError);
-        // Reload the page as fallback
         window.location.reload();
       }
     } catch (err) {
@@ -579,7 +476,6 @@ const StaffManagement: React.FC = () => {
     setShowDetailsPanel(true);
 
     try {
-      // Fetch detailed staff profile information
       const response = await api.get(`/api/v1/staff-profiles/?user=${staff.id}`);
       const profileData = response.data.results?.[0] || response.data[0];
 
@@ -614,7 +510,6 @@ const StaffManagement: React.FC = () => {
         status: 'valid'
       });
 
-      // Refresh the detailed staff data
       if (detailedStaff) {
         const updatedLicenses = detailedStaff.sia_licenses.map((license: any) =>
           license.id === licenseId ? { ...license, status: 'valid' } : license
@@ -625,7 +520,6 @@ const StaffManagement: React.FC = () => {
         });
       }
 
-      // Show success message
       alert('SIA License approved successfully!');
     } catch (error) {
       console.error('Error approving license:', error);
@@ -643,7 +537,6 @@ const StaffManagement: React.FC = () => {
         status: 'expired'
       });
 
-      // Refresh the detailed staff data
       if (detailedStaff) {
         const updatedLicenses = detailedStaff.sia_licenses.map((license: any) =>
           license.id === licenseId ? { ...license, status: 'expired' } : license
@@ -654,7 +547,6 @@ const StaffManagement: React.FC = () => {
         });
       }
 
-      // Show success message
       alert('SIA License marked as expired.');
     } catch (error) {
       console.error('Error updating license status:', error);
@@ -662,7 +554,6 @@ const StaffManagement: React.FC = () => {
     }
   }, [detailedStaff]);
 
-  // SIA License editing handlers
   const handleEditLicense = useCallback((license: any) => {
     setEditingLicense(license);
     setLicenseFormData({
@@ -684,7 +575,6 @@ const StaffManagement: React.FC = () => {
     try {
       await api.patch(`/api/v1/sia-licenses/${editingLicense.id}/`, licenseFormData);
 
-      // Update local state
       if (detailedStaff) {
         const updatedLicenses = detailedStaff.sia_licenses.map((license: any) =>
           license.id === editingLicense.id ? { ...license, ...licenseFormData } : license
@@ -730,7 +620,6 @@ const StaffManagement: React.FC = () => {
         staff_profile: createLicenseForProfileId
       });
 
-      // Update local state with the new license
       if (detailedStaff) {
         setDetailedStaff({
           ...detailedStaff,
@@ -762,11 +651,9 @@ const StaffManagement: React.FC = () => {
     const staffName = `${selectedStaff.firstName} ${selectedStaff.lastName}`;
 
     try {
-      // Call the API to delete the user
       await api.delete(`/api/v1/users/${selectedStaff.id}/`);
 
       try {
-        // If API call was successful, update the local state
         const updatedStaff = staffList.filter(s => s.id !== selectedStaff.id);
         setStaffList(updatedStaff);
         setFilteredStaff(filteredStaff.filter(s => s.id !== selectedStaff.id));
@@ -775,25 +662,21 @@ const StaffManagement: React.FC = () => {
         setConfirmationPhrase('');
         setSelectedStaff(null);
 
-        // Show success toast
         setError(null);
         toast.showSuccess('Staff Member Deleted', `${staffName} has been permanently removed.`);
       } catch (stateError) {
         console.error('Error updating UI state after staff deletion:', stateError);
-        // Still close dialogs even if state update fails
         setShowDeleteDialog(false);
         setShowPhraseConfirmDialog(false);
         setConfirmationPhrase('');
         setSelectedStaff(null);
         toast.showSuccess('Staff Member Deleted', `${staffName} has been permanently removed.`);
-        // Reload the page as fallback
         window.location.reload();
       }
     } catch (err) {
       console.error('Failed to delete staff:', err);
       setError('Failed to delete staff. Please try again.');
       toast.showError('Delete Failed', 'Failed to delete staff member. Please try again.');
-      // Close the phrase confirmation dialog on error so user can retry
       setShowPhraseConfirmDialog(false);
       setConfirmationPhrase('');
     }
@@ -812,27 +695,25 @@ const StaffManagement: React.FC = () => {
       postalCode: '',
       country: '',
     });
+    setAddFormTab('basic');
     setShowAddStaffPanel(true);
   }, []);
 
   const handleSubmitNewStaff = useCallback(async () => {
     try {
-      // Prepare data for API call in the format expected by the backend
       const userData = {
-        username: formData.email.split('@')[0], // Create username from email
+        username: formData.email.split('@')[0],
         email: formData.email,
-        password: 'temppassword123', // Set a temporary password that user will need to change
+        password: 'temppassword123',
         first_name: formData.firstName,
         last_name: formData.lastName,
-        role: formData.role.toLowerCase(), // Backend expects lowercase roles
+        role: formData.role.toLowerCase(),
         is_active: formData.isActive
       };
 
-      // Call the API to create a new user
       const response = await api.post('/api/v1/users/', userData);
 
       try {
-        // Map the response to our Staff interface
         const newStaff: Staff = {
           id: response.data.id,
           firstName: response.data.first_name,
@@ -845,25 +726,17 @@ const StaffManagement: React.FC = () => {
           lastLogin: null
         };
 
-        // Update local state with the new staff member
         const updatedStaff = [...staffList, newStaff];
         setStaffList(updatedStaff);
-        setFilteredStaff(updatedStaff); // Make sure filtered list is also updated
+        setFilteredStaff(updatedStaff);
 
-        // Close the panel
         setShowAddStaffPanel(false);
-
-        // Show success message
         setError(null);
 
-        // Force refresh page to prevent blank screen issue
-        // This is a temporary workaround - ideally, the state updates above would be sufficient
         window.location.reload();
       } catch (stateError) {
         console.error('Error updating UI state after staff creation:', stateError);
-        // Still close the panel even if state update fails
         setShowAddStaffPanel(false);
-        // Reload the page as fallback to show the updated data
         window.location.reload();
       }
     } catch (err) {
@@ -876,20 +749,17 @@ const StaffManagement: React.FC = () => {
     if (!selectedStaff) return;
 
     try {
-      // Prepare data for API call in the format expected by the backend
       const userData = {
         first_name: formData.firstName,
         last_name: formData.lastName,
         email: formData.email,
-        role: formData.role.toLowerCase(), // Backend expects lowercase roles
+        role: formData.role.toLowerCase(),
         is_active: formData.isActive
       };
 
-      // Call the API to update the user
       await api.patch(`/api/v1/users/${selectedStaff.id}/`, userData);
 
       try {
-        // If API call was successful, update the local state
         const updatedStaff = staffList.map(s =>
           s.id === selectedStaff.id
             ? {
@@ -911,19 +781,16 @@ const StaffManagement: React.FC = () => {
         );
 
         setStaffList(updatedStaff);
-        setFilteredStaff(updatedStaff); // Make sure filtered list is also updated
+        setFilteredStaff(updatedStaff);
         setShowEditStaffPanel(false);
         setSelectedStaff(null);
 
-        // Show success toast
         setError(null);
         toast.showSuccess('Staff Updated', `${formData.firstName} ${formData.lastName}'s profile has been updated.`);
       } catch (stateError) {
         console.error('Error updating UI state after staff update:', stateError);
-        // Still close the panel even if state update fails
         setShowEditStaffPanel(false);
         setSelectedStaff(null);
-        // Reload the page as fallback to show the updated data
         window.location.reload();
       }
     } catch (err) {
@@ -934,7 +801,7 @@ const StaffManagement: React.FC = () => {
 
   const handleRefresh = useCallback(() => {
     loadStaff();
-    return false; // Return false to prevent default behavior
+    return false;
   }, [loadStaff]);
 
   const handleFormInputChange = useCallback((field: string, value: string | UserRole | boolean) => {
@@ -946,11 +813,10 @@ const StaffManagement: React.FC = () => {
 
   const handleOpenReviewPanel = useCallback(async (staffListItem: StaffProfileDetail) => {
     setShowReviewPanel(true);
-    setReviewingStaff(null); // Clear previous data
+    setReviewingStaff(null);
     setReviewLoading(true);
     setReviewError(null);
     try {
-      // Fetch full profile details using the ID from the list item
       const response = await api.get<StaffProfileDetail>(`/api/v1/staff-profiles/${staffListItem.id}/`);
       setReviewingStaff(response.data);
     } catch (err) {
@@ -963,8 +829,6 @@ const StaffManagement: React.FC = () => {
 
   const handleApproveStaff = useCallback(async (profileId: number) => {
     if (!reviewingStaff || reviewingStaff.id !== profileId) return;
-    // No need for separate loading state here, can use panel loading
-    // setReviewLoading(true); // Remove this if approval is quick
     try {
       await profileService.approveStaffProfile(profileId);
       setPendingStaff(prev => prev.filter(p => p.id !== profileId));
@@ -972,8 +836,6 @@ const StaffManagement: React.FC = () => {
       setReviewingStaff(null);
     } catch (err) {
       alert('Failed to approve staff.');
-    } finally {
-      // setReviewLoading(false); // Remove this if approval is quick
     }
   }, [reviewingStaff]);
 
@@ -988,7 +850,6 @@ const StaffManagement: React.FC = () => {
 
     setAssignmentLoading(true);
     try {
-      // First, get the staff profile ID for this user
       const profileResponse = await api.get(`/api/v1/staff-profiles/?user=${selectedStaff.id}`);
       const staffProfile = profileResponse.data.results?.[0] || profileResponse.data[0];
 
@@ -996,12 +857,10 @@ const StaffManagement: React.FC = () => {
         throw new Error('Staff profile not found');
       }
 
-      // Update the staff profile with the selected employment type
       await api.patch(`/api/v1/staff-profiles/${staffProfile.id}/`, {
         employmentType: selectedEmploymentType
       });
 
-      // Update the local state
       const updatedStaff = staffList.map(staff =>
         staff.id === selectedStaff.id
           ? {
@@ -1013,16 +872,12 @@ const StaffManagement: React.FC = () => {
       setStaffList(updatedStaff);
       setFilteredStaff(updatedStaff);
 
-      // Show success toast
       const employmentTypeName = employmentTypes.find(et => et.id === selectedEmploymentType)?.name || 'Employment type';
       toast.showSuccess('Employment Type Assigned', `${selectedStaff.firstName} ${selectedStaff.lastName} is now assigned as ${employmentTypeName}.`);
 
-      // Close the panel
       setShowAssignEmploymentTypePanel(false);
       setSelectedStaff(null);
       setSelectedEmploymentType(null);
-
-      // Clear any errors
       setError(null);
     } catch (err) {
       console.error('Failed to assign employment type:', err);
@@ -1032,656 +887,742 @@ const StaffManagement: React.FC = () => {
     }
   }, [selectedStaff, selectedEmploymentType, staffList, employmentTypes, toast]);
 
-  // Command bar items
-  const commandBarItems: ICommandBarItemProps[] = [
-    {
-      key: 'addStaff',
-      text: 'Add Staff',
-      iconProps: addIcon,
-      onClick: handleAddStaff,
-    },
-    {
-      key: 'filter',
-      text: 'Filter',
-      iconProps: filterIcon,
-      subMenuProps: {
-        items: [
-          {
-            key: 'filterActive',
-            text: 'Show Active Only',
-            onClick: () => setStatusFilter('active'),
-            canCheck: true,
-            checked: statusFilter === 'active',
-          },
-          {
-            key: 'filterInactive',
-            text: 'Show Inactive Only',
-            onClick: () => setStatusFilter('inactive'),
-            canCheck: true,
-            checked: statusFilter === 'inactive',
-          },
-          {
-            key: 'filterAll',
-            text: 'Show All',
-            onClick: () => setStatusFilter(''),
-            canCheck: true,
-            checked: statusFilter === '',
-          },
-          {
-            key: 'divider',
-            itemType: 1, // Divider
-          },
-          {
-            key: 'filterStaff',
-            text: 'Staff Only',
-            onClick: () => setRoleFilter(UserRole.STAFF),
-            canCheck: true,
-            checked: roleFilter === UserRole.STAFF,
-          },
-          {
-            key: 'filterManagers',
-            text: 'Managers Only',
-            onClick: () => setRoleFilter(UserRole.MANAGER),
-            canCheck: true,
-            checked: roleFilter === UserRole.MANAGER,
-          },
-          {
-            key: 'filterAdmins',
-            text: 'Admins Only',
-            onClick: () => setRoleFilter(UserRole.ADMIN),
-            canCheck: true,
-            checked: roleFilter === UserRole.ADMIN,
-          },
-          {
-            key: 'filterAllRoles',
-            text: 'All Roles',
-            onClick: () => setRoleFilter(''),
-            canCheck: true,
-            checked: roleFilter === '',
-          },
-        ],
-      },
-    },
-    {
-      key: 'refresh',
-      text: 'Refresh',
-      iconProps: refreshIcon,
-      onClick: handleRefresh,
-    },
-  ];
-
-  // Validate form
   const isFormValid = () => {
     return formData.firstName.trim() !== '' &&
       formData.lastName.trim() !== '' &&
       formData.email.trim() !== '';
-    // Phone is now optional
   };
 
-  return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">Staff Management</Text>
-        </Stack>
+  // ─── Column definitions for CloudscapeTable ────────────────────────────────
 
-        {/* Pending Staff Approval Section - Simplified List */}
-        <Stack tokens={{ childrenGap: 12 }} style={{ background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 8, padding: 16 }}>
-          <Text variant="xLarge">Only Staff Pending Approval with Valid Submitted Credentials ({pendingStaff.length})</Text>
-          {pendingLoading ? (
-            <Spinner size={SpinnerSize.medium} label="Loading pending staff..." />
-          ) : pendingError ? (
-            <MessageBar messageBarType={MessageBarType.error}>{pendingError}</MessageBar>
-          ) : pendingStaff.length === 0 ? (
-            <Stack tokens={{ childrenGap: 8 }}>
-              <Text>No staff with submitted credentials are pending approval.</Text>
-              <MessageBar messageBarType={MessageBarType.info}>
-                Staff members must submit valid SIA license information before they will appear here for approval.
-              </MessageBar>
-            </Stack>
-          ) : (
-            <DetailsList
-              items={pendingStaff}
-              columns={[
-                {
-                  key: 'pendingName', name: 'Name', minWidth: 150, isResizable: true,
-                  onRender: (item: StaffProfileDetail) => (
-                    <Text>{item.user ? `${item.user.first_name} ${item.user.last_name}` : `Profile ID: ${item.id}`}</Text>
-                  )
-                },
-                {
-                  key: 'pendingEmail', name: 'Email', minWidth: 200, isResizable: true,
-                  onRender: (item: StaffProfileDetail) => <Text>{item.user?.email || 'N/A'}</Text>
-                },
-                {
-                  key: 'pendingActions', name: 'Actions', minWidth: 100,
-                  onRender: (item: StaffProfileDetail) => (
-                    <ActionButton iconProps={reviewIcon} onClick={() => handleOpenReviewPanel(item)}>
-                      Review
-                    </ActionButton>
-                  )
-                }
-              ]}
-              layoutMode={DetailsListLayoutMode.justified}
-              selectionMode={SelectionMode.none}
-              compact={true}
-            />
+  const roleLabels: Record<string, string> = {
+    [UserRole.STAFF]: 'Staff',
+    [UserRole.MANAGER]: 'Manager',
+    [UserRole.ADMIN]: 'Admin',
+  };
+
+  const columnDefinitions: ColumnDefinition<Staff>[] = [
+    {
+      id: 'name',
+      header: 'Name',
+      sortingField: 'name',
+      cell: (item) => (
+        <span className="font-medium text-gray-900">{item.firstName} {item.lastName}</span>
+      ),
+    },
+    {
+      id: 'email',
+      header: 'Email',
+      sortingField: 'email',
+      cell: (item) => item.email,
+    },
+    {
+      id: 'phone',
+      header: 'Phone',
+      cell: (item) => item.phone || <span className="text-gray-400">--</span>,
+    },
+    {
+      id: 'role',
+      header: 'Role',
+      sortingField: 'role',
+      cell: (item) => roleLabels[item.role] || item.role,
+    },
+    {
+      id: 'employmentType',
+      header: 'Employment type',
+      cell: (item) => (
+        <div>
+          <span className="text-sm">{item.employmentType?.name || 'Not set'}</span>
+          {!item.employmentType && (
+            <div>
+              <StatusIndicator type="warning">Needs assignment</StatusIndicator>
+            </div>
           )}
-        </Stack>
-
-        {/* Pending SIA Licenses Section */}
-        <Stack tokens={{ childrenGap: 12 }} style={{ background: '#fff3cd', border: '1px solid #ffeaa7', borderRadius: 8, padding: 16 }}>
-          <Text variant="xLarge">Pending SIA License Approvals</Text>
-          <Text variant="medium">
-            Review and approve submitted SIA licenses by clicking "View Details" on staff members with licenses requiring approval.
-          </Text>
-          <MessageBar messageBarType={MessageBarType.info}>
-            SIA licenses with status "pending" require admin verification. Use the "View Details" action to approve or reject individual licenses.
-          </MessageBar>
-        </Stack>
-
-        <CommandBar items={commandBarItems} />
-
-        <Stack horizontal tokens={{ childrenGap: 10 }}>
-          <StackItem grow={3}>
-            <SearchBox
-              placeholder="Search by name, email, or phone"
-              onChange={(_, newValue) => setSearchText(newValue || '')}
-              onClear={() => setSearchText('')}
-              value={searchText}
-            />
-          </StackItem>
-          <StackItem grow={1}>
-            <Dropdown
-              placeholder="Filter by role"
-              options={roleOptions}
-              selectedKey={roleFilter}
-              onChange={(_, option) => setRoleFilter(option?.key as string)}
-            />
-          </StackItem>
-        </Stack>
-
-        {/* Active filters display */}
-        {(roleFilter || statusFilter) && (
-          <Stack horizontal tokens={{ childrenGap: 8 }} verticalAlign="center">
-            <Text>Active filters:</Text>
-            {roleFilter && (
-              <div className="px-2 py-1 bg-gray-100 rounded-md text-sm">
-                Role: {roleOptions.find(option => option.key === roleFilter)?.text}
-              </div>
-            )}
-            {statusFilter && (
-              <div className="px-2 py-1 bg-gray-100 rounded-md text-sm">
-                Status: {statusOptions.find(option => option.key === statusFilter)?.text}
-              </div>
-            )}
-            <Link onClick={() => {
-              setRoleFilter('');
-              setStatusFilter('');
-            }}>
-              Clear all
-            </Link>
-          </Stack>
-        )}
-
-        {error && (
-          <MessageBar
-            messageBarType={MessageBarType.error}
-            isMultiline={false}
-            dismissButtonAriaLabel="Close"
+        </div>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      cell: (item) => (
+        <StatusIndicator type={item.isActive ? 'success' : 'stopped'}>
+          {item.isActive ? 'Active' : 'Inactive'}
+        </StatusIndicator>
+      ),
+    },
+    {
+      id: 'dateJoined',
+      header: 'Date joined',
+      sortingField: 'dateJoined',
+      cell: (item) => new Date(item.dateJoined).toLocaleDateString(),
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      minWidth: 420,
+      cell: (item) => (
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => handleViewStaffDetails(item)}
+            className="px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
           >
-            {error}
-          </MessageBar>
-        )}
+            View details
+          </button>
+          <button
+            onClick={() => handleEditStaff(item)}
+            className="px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => handleAssignEmploymentType(item)}
+            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+              item.employmentType ? 'text-gray-700 hover:bg-gray-100' : 'text-amber-600 hover:bg-amber-50'
+            }`}
+          >
+            {item.employmentType ? 'Change type' : 'Assign type'}
+          </button>
+          <button
+            onClick={() => handleToggleStatus(item)}
+            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+              item.isActive ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'
+            }`}
+          >
+            {item.isActive ? 'Deactivate' : 'Activate'}
+          </button>
+          <button
+            onClick={() => handleDeleteStaff(item)}
+            className="px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 rounded-md transition-colors"
+          >
+            Delete
+          </button>
+        </div>
+      ),
+    },
+  ];
 
-        {isLoading ? (
-          <div className="flex justify-center py-12">
-            <Spinner size={SpinnerSize.large} label="Loading staff..." />
+  // ─── Pending staff column definitions ──────────────────────────────────────
+
+  const pendingColumnDefinitions: ColumnDefinition<StaffProfileDetail>[] = [
+    {
+      id: 'pendingName',
+      header: 'Name',
+      cell: (item) => (
+        <span className="font-medium text-gray-900">
+          {item.user ? `${item.user.first_name} ${item.user.last_name}` : `Profile ID: ${item.id}`}
+        </span>
+      ),
+    },
+    {
+      id: 'pendingEmail',
+      header: 'Email',
+      cell: (item) => item.user?.email || 'N/A',
+    },
+    {
+      id: 'pendingActions',
+      header: 'Actions',
+      cell: (item) => (
+        <button
+          onClick={() => handleOpenReviewPanel(item)}
+          className="px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-md transition-colors"
+        >
+          Review
+        </button>
+      ),
+    },
+  ];
+
+  // ─── License form (shared between edit and create) ─────────────────────────
+
+  const renderLicenseForm = () => (
+    <div className="flex flex-col gap-4">
+      <div>
+        <label className={LABEL_CLASS}>License number <span className="text-red-500">*</span></label>
+        <input
+          type="text"
+          className={INPUT_CLASS}
+          value={licenseFormData.license_number}
+          onChange={(e) => handleLicenseFormChange('license_number', e.target.value)}
+          placeholder="e.g., 1234567890123456"
+        />
+      </div>
+      <div>
+        <label className={LABEL_CLASS}>License type <span className="text-red-500">*</span></label>
+        <select
+          className={SELECT_CLASS}
+          value={licenseFormData.license_type}
+          onChange={(e) => handleLicenseFormChange('license_type', e.target.value)}
+        >
+          {SIA_LICENSE_TYPE_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className={LABEL_CLASS}>Level</label>
+        <select
+          className={SELECT_CLASS}
+          value={licenseFormData.level}
+          onChange={(e) => handleLicenseFormChange('level', e.target.value)}
+        >
+          {SIA_LICENSE_LEVEL_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={LABEL_CLASS}>Issue date <span className="text-red-500">*</span></label>
+          <input
+            type="date"
+            className={INPUT_CLASS}
+            value={licenseFormData.issue_date}
+            onChange={(e) => handleLicenseFormChange('issue_date', e.target.value)}
+          />
+        </div>
+        <div>
+          <label className={LABEL_CLASS}>Expiry date <span className="text-red-500">*</span></label>
+          <input
+            type="date"
+            className={INPUT_CLASS}
+            value={licenseFormData.expiry_date}
+            onChange={(e) => handleLicenseFormChange('expiry_date', e.target.value)}
+          />
+        </div>
+      </div>
+      <div>
+        <label className={LABEL_CLASS}>Status <span className="text-red-500">*</span></label>
+        <select
+          className={SELECT_CLASS}
+          value={licenseFormData.status}
+          onChange={(e) => handleLicenseFormChange('status', e.target.value)}
+        >
+          {SIA_LICENSE_STATUS_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className={LABEL_CLASS}>Document URL</label>
+        <input
+          type="url"
+          className={INPUT_CLASS}
+          value={licenseFormData.document_url}
+          onChange={(e) => handleLicenseFormChange('document_url', e.target.value)}
+          placeholder="https://..."
+        />
+      </div>
+    </div>
+  );
+
+  // ─── Staff form (shared between add and edit) ──────────────────────────────
+
+  const renderStaffForm = (activeTab: string, onTabChange: (tab: string) => void) => (
+    <>
+      <Tabs
+        tabs={[
+          { id: 'basic', label: 'Basic information' },
+          { id: 'address', label: 'Address' },
+        ]}
+        activeTab={activeTab}
+        onChange={onTabChange}
+      />
+
+      {activeTab === 'basic' && (
+        <FormSection header="Basic information">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={LABEL_CLASS}>First name <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                className={INPUT_CLASS}
+                value={formData.firstName}
+                onChange={(e) => handleFormInputChange('firstName', e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={LABEL_CLASS}>Last name <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                className={INPUT_CLASS}
+                value={formData.lastName}
+                onChange={(e) => handleFormInputChange('lastName', e.target.value)}
+              />
+            </div>
           </div>
-        ) : filteredStaff.length === 0 ? (
-          <div className="bg-gray-50 rounded-lg p-8 text-center">
-            <Text variant="large">No staff found</Text>
-            <Text>Adjust your search criteria or add a new staff member.</Text>
+          <div>
+            <label className={LABEL_CLASS}>Email <span className="text-red-500">*</span></label>
+            <input
+              type="email"
+              className={INPUT_CLASS}
+              value={formData.email}
+              onChange={(e) => handleFormInputChange('email', e.target.value)}
+            />
           </div>
+          <div>
+            <label className={LABEL_CLASS}>Phone</label>
+            <input
+              type="tel"
+              className={INPUT_CLASS}
+              value={formData.phone}
+              onChange={(e) => handleFormInputChange('phone', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={LABEL_CLASS}>Role <span className="text-red-500">*</span></label>
+            <select
+              className={SELECT_CLASS}
+              value={formData.role}
+              onChange={(e) => handleFormInputChange('role', e.target.value as UserRole)}
+            >
+              <option value={UserRole.STAFF}>Staff</option>
+              <option value={UserRole.MANAGER}>Manager</option>
+              <option value={UserRole.ADMIN}>Admin</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.isActive}
+                onChange={(e) => handleFormInputChange('isActive', e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-red-500 rounded-full peer peer-checked:bg-red-600 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
+            </label>
+            <span className="text-sm text-gray-700">{formData.isActive ? 'Active' : 'Inactive'}</span>
+          </div>
+        </FormSection>
+      )}
+
+      {activeTab === 'address' && (
+        <FormSection header="Address">
+          <div>
+            <label className={LABEL_CLASS}>Street</label>
+            <input
+              type="text"
+              className={INPUT_CLASS}
+              value={formData.street}
+              onChange={(e) => handleFormInputChange('street', e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={LABEL_CLASS}>City</label>
+              <input
+                type="text"
+                className={INPUT_CLASS}
+                value={formData.city}
+                onChange={(e) => handleFormInputChange('city', e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={LABEL_CLASS}>Postal code</label>
+              <input
+                type="text"
+                className={INPUT_CLASS}
+                value={formData.postalCode}
+                onChange={(e) => handleFormInputChange('postalCode', e.target.value)}
+              />
+            </div>
+          </div>
+          <div>
+            <label className={LABEL_CLASS}>Country</label>
+            <input
+              type="text"
+              className={INPUT_CLASS}
+              value={formData.country}
+              onChange={(e) => handleFormInputChange('country', e.target.value)}
+            />
+          </div>
+        </FormSection>
+      )}
+    </>
+  );
+
+  // ─── RENDER ────────────────────────────────────────────────────────────────
+
+  return (
+    <SpaceBetween size="l">
+      <Flashbar items={flash.items} onDismiss={flash.removeFlash} />
+
+      {error && (
+        <Flashbar
+          items={[{
+            id: 'page-error',
+            type: 'error',
+            content: error,
+            dismissible: true,
+          }]}
+          onDismiss={() => setError(null)}
+        />
+      )}
+
+      {/* Page header */}
+      <Header
+        variant="h1"
+        counter={String(filteredStaff.length)}
+        description="Manage staff members, approve pending registrations, and assign employment types."
+        actions={
+          <div className="flex items-center gap-2">
+            <button onClick={handleRefresh} className={BTN_SECONDARY}>
+              Refresh
+            </button>
+            <button onClick={handleAddStaff} className={BTN_PRIMARY}>
+              Create staff member
+            </button>
+          </div>
+        }
+      >
+        Staff
+      </Header>
+
+      {/* Pending staff approval section */}
+      <Container
+        header={
+          <Header variant="h2" counter={String(pendingStaff.length)}>
+            Pending approval with submitted credentials
+          </Header>
+        }
+      >
+        {pendingLoading ? (
+          <div className="flex items-center gap-2 py-4 text-sm text-gray-500">
+            <svg className="animate-spin h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            Loading pending staff...
+          </div>
+        ) : pendingError ? (
+          <Flashbar
+            items={[{ id: 'pending-error', type: 'error', content: pendingError, dismissible: false }]}
+          />
+        ) : pendingStaff.length === 0 ? (
+          <EmptyState
+            title="No pending approvals"
+            description="Staff members must submit valid SIA license information before they will appear here for approval."
+          />
         ) : (
-          <DetailsList
-            items={filteredStaff}
-            columns={columns}
-            layoutMode={DetailsListLayoutMode.justified}
-            selectionMode={SelectionMode.none}
+          <CloudscapeTable
+            items={pendingStaff}
+            columnDefinitions={pendingColumnDefinitions}
+            trackBy="id"
+            variant="embedded"
           />
         )}
-      </Stack>
+      </Container>
 
-      {/* Add Staff Panel */}
-      <Panel
-        isOpen={showAddStaffPanel}
-        onDismiss={() => setShowAddStaffPanel(false)}
-        headerText="Add New Staff Member"
-        closeButtonAriaLabel="Close"
-        type={PanelType.medium}
+      {/* Pending SIA license approvals info */}
+      <Container
+        header={
+          <Header variant="h2">Pending SIA license approvals</Header>
+        }
       >
-        <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
-          <Pivot>
-            <PivotItem headerText="Basic Information">
-              <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
-                <TextField
-                  label="First Name"
-                  required
-                  value={formData.firstName}
-                  onChange={(_, newValue) => handleFormInputChange('firstName', newValue || '')}
-                />
-                <TextField
-                  label="Last Name"
-                  required
-                  value={formData.lastName}
-                  onChange={(_, newValue) => handleFormInputChange('lastName', newValue || '')}
-                />
-                <TextField
-                  label="Email"
-                  required
-                  type="email"
-                  value={formData.email}
-                  onChange={(_, newValue) => handleFormInputChange('email', newValue || '')}
-                />
-                <TextField
-                  label="Phone"
-                  required
-                  value={formData.phone}
-                  onChange={(_, newValue) => handleFormInputChange('phone', newValue || '')}
-                />
-                <Dropdown
-                  label="Role"
-                  required
-                  options={[
-                    { key: UserRole.STAFF, text: 'Staff' },
-                    { key: UserRole.MANAGER, text: 'Manager' },
-                    { key: UserRole.ADMIN, text: 'Admin' },
-                  ]}
-                  selectedKey={formData.role}
-                  onChange={(_, option) => handleFormInputChange('role', option?.key as UserRole)}
-                />
-                <Toggle
-                  label="Active"
-                  checked={formData.isActive}
-                  onChange={(_, checked) => handleFormInputChange('isActive', checked || false)}
-                  onText="Yes"
-                  offText="No"
-                />
-              </Stack>
-            </PivotItem>
-            <PivotItem headerText="Address">
-              <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
-                <TextField
-                  label="Street"
-                  value={formData.street}
-                  onChange={(_, newValue) => handleFormInputChange('street', newValue || '')}
-                />
-                <TextField
-                  label="City"
-                  value={formData.city}
-                  onChange={(_, newValue) => handleFormInputChange('city', newValue || '')}
-                />
-                <TextField
-                  label="Postal Code"
-                  value={formData.postalCode}
-                  onChange={(_, newValue) => handleFormInputChange('postalCode', newValue || '')}
-                />
-                <TextField
-                  label="Country"
-                  value={formData.country}
-                  onChange={(_, newValue) => handleFormInputChange('country', newValue || '')}
-                />
-              </Stack>
-            </PivotItem>
-          </Pivot>
+        <p className="text-sm text-gray-600 mb-2">
+          Review and approve submitted SIA licenses by clicking "View details" on staff members with licenses requiring approval.
+        </p>
+        <Flashbar
+          items={[{
+            id: 'sia-info',
+            type: 'info',
+            content: 'SIA licenses with status "pending" require admin verification. Use the "View details" action to approve or reject individual licenses.',
+            dismissible: false,
+            autoDismiss: false,
+          }]}
+        />
+      </Container>
 
-          <Stack horizontal tokens={{ childrenGap: 10 }} horizontalAlign="end" style={{ marginTop: 20 }}>
-            <DefaultButton
-              text="Cancel"
-              onClick={() => setShowAddStaffPanel(false)}
-            />
-            <PrimaryButton
-              text="Add Staff Member"
-              onClick={handleSubmitNewStaff}
-              disabled={!isFormValid()}
-            />
-          </Stack>
-        </Stack>
-      </Panel>
-
-      {/* Edit Staff Panel */}
-      <Panel
-        isOpen={showEditStaffPanel}
-        onDismiss={() => {
-          setShowEditStaffPanel(false);
-          setSelectedStaff(null);
+      {/* Main staff table */}
+      <CloudscapeTable
+        items={filteredStaff}
+        columnDefinitions={columnDefinitions}
+        loading={isLoading}
+        loadingText="Loading staff..."
+        trackBy="id"
+        variant="container"
+        stickyHeader
+        wrapLines
+        sortingColumn={sortingColumn}
+        sortingDescending={sortingDescending}
+        onSortingChange={(detail) => {
+          setSortingColumn(detail.sortingColumn);
+          setSortingDescending(detail.isDescending);
         }}
-        headerText="Edit Staff Member"
-        closeButtonAriaLabel="Close"
-        type={PanelType.medium}
+        header={
+          <Header variant="h2" counter={String(filteredStaff.length)}>
+            All staff members
+          </Header>
+        }
+        filter={
+          <div className="flex flex-col sm:flex-row gap-3 w-full">
+            <div className="flex-1 min-w-0">
+              <input
+                type="text"
+                className={INPUT_CLASS}
+                placeholder="Search by name, email, or phone"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+              />
+            </div>
+            <select
+              className={`${SELECT_CLASS} sm:w-40`}
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+            >
+              <option value="">All roles</option>
+              <option value={UserRole.STAFF}>Staff</option>
+              <option value={UserRole.MANAGER}>Manager</option>
+              <option value={UserRole.ADMIN}>Admin</option>
+            </select>
+            <select
+              className={`${SELECT_CLASS} sm:w-40`}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            {(roleFilter || statusFilter) && (
+              <button
+                onClick={() => { setRoleFilter(''); setStatusFilter(''); }}
+                className="text-sm text-red-600 hover:text-red-700 font-medium whitespace-nowrap"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        }
+        empty={
+          <EmptyState
+            title="No staff found"
+            description="Adjust your search criteria or create a new staff member."
+            variant="no-match"
+            action={
+              <button onClick={handleAddStaff} className={BTN_PRIMARY}>
+                Create staff member
+              </button>
+            }
+          />
+        }
+      />
+
+      {/* ─── Add staff panel ─────────────────────────────────────────────── */}
+      <SlidePanel
+        open={showAddStaffPanel}
+        onClose={() => setShowAddStaffPanel(false)}
+        title="Create staff member"
       >
-        <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
-          <Pivot>
-            <PivotItem headerText="Basic Information">
-              <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
-                <TextField
-                  label="First Name"
-                  required
-                  value={formData.firstName}
-                  onChange={(_, newValue) => handleFormInputChange('firstName', newValue || '')}
-                />
-                <TextField
-                  label="Last Name"
-                  required
-                  value={formData.lastName}
-                  onChange={(_, newValue) => handleFormInputChange('lastName', newValue || '')}
-                />
-                <TextField
-                  label="Email"
-                  required
-                  type="email"
-                  value={formData.email}
-                  onChange={(_, newValue) => handleFormInputChange('email', newValue || '')}
-                />
-                <TextField
-                  label="Phone"
-                  required
-                  value={formData.phone}
-                  onChange={(_, newValue) => handleFormInputChange('phone', newValue || '')}
-                />
-                <Dropdown
-                  label="Role"
-                  required
-                  options={[
-                    { key: UserRole.STAFF, text: 'Staff' },
-                    { key: UserRole.MANAGER, text: 'Manager' },
-                    { key: UserRole.ADMIN, text: 'Admin' },
-                  ]}
-                  selectedKey={formData.role}
-                  onChange={(_, option) => handleFormInputChange('role', option?.key as UserRole)}
-                />
-                <Toggle
-                  label="Active"
-                  checked={formData.isActive}
-                  onChange={(_, checked) => handleFormInputChange('isActive', checked || false)}
-                  onText="Yes"
-                  offText="No"
-                />
-              </Stack>
-            </PivotItem>
-            <PivotItem headerText="Address">
-              <Stack tokens={{ childrenGap: 15 }} style={{ padding: '20px 0' }}>
-                <TextField
-                  label="Street"
-                  value={formData.street}
-                  onChange={(_, newValue) => handleFormInputChange('street', newValue || '')}
-                />
-                <TextField
-                  label="City"
-                  value={formData.city}
-                  onChange={(_, newValue) => handleFormInputChange('city', newValue || '')}
-                />
-                <TextField
-                  label="Postal Code"
-                  value={formData.postalCode}
-                  onChange={(_, newValue) => handleFormInputChange('postalCode', newValue || '')}
-                />
-                <TextField
-                  label="Country"
-                  value={formData.country}
-                  onChange={(_, newValue) => handleFormInputChange('country', newValue || '')}
-                />
-              </Stack>
-            </PivotItem>
-          </Pivot>
-
-          <Stack horizontal tokens={{ childrenGap: 10 }} horizontalAlign="end" style={{ marginTop: 20 }}>
-            <DefaultButton
-              text="Cancel"
-              onClick={() => {
-                setShowEditStaffPanel(false);
-                setSelectedStaff(null);
-              }}
-            />
-            <PrimaryButton
-              text="Update Staff Member"
-              onClick={handleUpdateStaff}
-              disabled={!isFormValid()}
-            />
-          </Stack>
-        </Stack>
-      </Panel>
-
-      {/* Delete Confirmation Modal - Step 1 */}
-      {showDeleteDialog && selectedStaff && (
-        <div className="fixed inset-0 z-[1000] overflow-y-auto animate-in fade-in duration-200">
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
-            onClick={() => setShowDeleteDialog(false)}
-          />
-          <div className="relative min-h-screen flex items-center justify-center p-4">
-            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
-              <div className="text-center">
-                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-bold text-gray-900 mb-2">Confirm Deletion</h3>
-                <p className="text-gray-600 mb-6">
-                  Are you sure you want to delete <strong>{selectedStaff.firstName} {selectedStaff.lastName}</strong>? This action cannot be undone.
-                </p>
-                <div className="flex items-center justify-center gap-3">
-                  <button
-                    onClick={() => setShowDeleteDialog(false)}
-                    className="px-5 py-2.5 border-2 border-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-all duration-200 active:scale-95"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowDeleteDialog(false);
-                      setShowPhraseConfirmDialog(true);
-                    }}
-                    className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-all duration-200 active:scale-95"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+        {renderStaffForm(addFormTab, setAddFormTab)}
+        <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-200">
+          <button className={BTN_SECONDARY} onClick={() => setShowAddStaffPanel(false)}>
+            Cancel
+          </button>
+          <button
+            className={BTN_PRIMARY}
+            onClick={handleSubmitNewStaff}
+            disabled={!isFormValid()}
+          >
+            Create staff member
+          </button>
         </div>
-      )}
+      </SlidePanel>
 
-      {/* Phrase Confirmation Modal - Step 2 */}
-      {showPhraseConfirmDialog && selectedStaff && (
-        <div className="fixed inset-0 z-[1000] overflow-y-auto animate-in fade-in duration-200">
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
-            onClick={() => {
-              setShowPhraseConfirmDialog(false);
-              setConfirmationPhrase('');
-            }}
-          />
-          <div className="relative min-h-screen flex items-center justify-center p-4">
-            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
-              <div className="text-center">
-                <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-bold text-gray-900 mb-2">Final Confirmation</h3>
-                <p className="text-gray-600 mb-4">
-                  To permanently delete <strong>{selectedStaff.firstName} {selectedStaff.lastName}</strong>, type <strong className="text-red-600">DELETE</strong> below.
-                </p>
-                <input
-                  type="text"
-                  value={confirmationPhrase}
-                  onChange={(e) => setConfirmationPhrase(e.target.value)}
-                  placeholder="Type DELETE to confirm"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg text-center font-mono text-lg uppercase tracking-wider focus:border-red-500 focus:ring-2 focus:ring-red-200 focus:outline-none transition-all duration-200 mb-6"
-                  autoFocus
-                />
-                <div className="flex items-center justify-center gap-3">
-                  <button
-                    onClick={() => {
-                      setShowPhraseConfirmDialog(false);
-                      setConfirmationPhrase('');
-                    }}
-                    className="px-5 py-2.5 border-2 border-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-all duration-200 active:scale-95"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmDeleteStaff}
-                    disabled={confirmationPhrase.toLowerCase() !== 'delete'}
-                    className={`px-5 py-2.5 rounded-lg font-semibold transition-all duration-200 ${
-                      confirmationPhrase.toLowerCase() === 'delete'
-                        ? 'bg-red-600 text-white hover:bg-red-700 active:scale-95'
-                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    Delete Permanently
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+      {/* ─── Edit staff panel ────────────────────────────────────────────── */}
+      <SlidePanel
+        open={showEditStaffPanel}
+        onClose={() => { setShowEditStaffPanel(false); setSelectedStaff(null); }}
+        title="Edit staff member"
+      >
+        {renderStaffForm(editFormTab, setEditFormTab)}
+        <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-200">
+          <button className={BTN_SECONDARY} onClick={() => { setShowEditStaffPanel(false); setSelectedStaff(null); }}>
+            Cancel
+          </button>
+          <button
+            className={BTN_PRIMARY}
+            onClick={handleUpdateStaff}
+            disabled={!isFormValid()}
+          >
+            Save changes
+          </button>
         </div>
-      )}
+      </SlidePanel>
 
-      {/* Staff Review Panel - Updated */}
-      <Panel
-        isOpen={showReviewPanel}
-        onDismiss={() => {
-          setShowReviewPanel(false);
-          setReviewingStaff(null);
-          setReviewError(null); // Clear error on dismiss
+      {/* ─── Delete confirmation - step 1 ────────────────────────────────── */}
+      <ConfirmationModal
+        visible={showDeleteDialog && !!selectedStaff}
+        header="Delete staff member"
+        variant="destructive"
+        confirmLabel="Delete"
+        onConfirm={() => {
+          setShowDeleteDialog(false);
+          setShowPhraseConfirmDialog(true);
         }}
-        // Use optional chaining and provide defaults for header before data loads
-        headerText={`Review Staff: ${reviewingStaff?.user?.first_name || 'Loading...'} ${reviewingStaff?.user?.last_name || ''}`}
-        closeButtonAriaLabel="Close"
-        type={PanelType.large}
-        isLightDismiss
+        onCancel={() => setShowDeleteDialog(false)}
+      >
+        <p>
+          Are you sure you want to delete <strong>{selectedStaff?.firstName} {selectedStaff?.lastName}</strong>? This action cannot be undone.
+        </p>
+      </ConfirmationModal>
+
+      {/* ─── Delete confirmation - step 2 (phrase) ───────────────────────── */}
+      <ConfirmationModal
+        visible={showPhraseConfirmDialog && !!selectedStaff}
+        header="Final confirmation"
+        variant="destructive"
+        confirmLabel="Delete permanently"
+        confirmationText="DELETE"
+        onConfirm={confirmDeleteStaff}
+        onCancel={() => {
+          setShowPhraseConfirmDialog(false);
+          setConfirmationPhrase('');
+        }}
+      >
+        <p>
+          To permanently delete <strong>{selectedStaff?.firstName} {selectedStaff?.lastName}</strong>, type <strong className="text-red-600">DELETE</strong> below.
+        </p>
+      </ConfirmationModal>
+
+      {/* ─── Staff review panel ──────────────────────────────────────────── */}
+      <SlidePanel
+        open={showReviewPanel}
+        onClose={() => { setShowReviewPanel(false); setReviewingStaff(null); setReviewError(null); }}
+        title={`Review staff: ${reviewingStaff?.user?.first_name || 'Loading...'} ${reviewingStaff?.user?.last_name || ''}`}
+        wide
       >
         {reviewLoading ? (
-          <Spinner label="Loading details..." style={{ padding: '20px' }} />
+          <div className="flex items-center gap-2 py-8 text-sm text-gray-500">
+            <svg className="animate-spin h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            Loading details...
+          </div>
         ) : reviewError ? (
-          <MessageBar messageBarType={MessageBarType.error} style={{ margin: '20px' }}>{reviewError}</MessageBar>
+          <Flashbar items={[{ id: 'review-error', type: 'error', content: reviewError, dismissible: false }]} />
         ) : reviewingStaff ? (
-          <Stack tokens={{ childrenGap: 20 }} style={{ padding: '20px' }}>
-            {/* Use optional chaining for user details */}
-            <Persona
-              imageUrl={reviewingStaff.profile_image_url}
-              text={`${reviewingStaff.user?.first_name || ''} ${reviewingStaff.user?.last_name || ''}`}
-              secondaryText={reviewingStaff.user?.email || 'N/A'}
-              tertiaryText={`Role: ${reviewingStaff.user?.role || 'N/A'}`}
-              size={PersonaSize.size72}
-            />
-            {/* Other sections remain similar, ensure they use reviewingStaff fields */}
-            <Stack tokens={{ childrenGap: 10 }}>
-              <Label>Contact Info</Label>
-              <Text>Phone: {reviewingStaff.phone_number || 'N/A'}</Text>
-            </Stack>
-            <Stack tokens={{ childrenGap: 10 }}>
-              <Label>Address</Label>
-              <Text>{reviewingStaff.street || 'N/A'}</Text>
-              <Text>{reviewingStaff.city || 'N/A'}, {reviewingStaff.postal_code || 'N/A'}</Text>
-              <Text>{reviewingStaff.country || 'N/A'}</Text>
-            </Stack>
-            <Stack tokens={{ childrenGap: 10 }}>
-              <Label>Personal Details</Label>
-              <Text>DOB: {reviewingStaff.date_of_birth || 'N/A'}</Text>
-              <Text>NI Number: {reviewingStaff.national_insurance_number || 'N/A'}</Text>
-            </Stack>
-            <Stack tokens={{ childrenGap: 10 }}>
-              <Label>Security Roles</Label>
-              {/* Check if security_roles exists and is an array */}
-              <Text>{Array.isArray(reviewingStaff.security_roles) && reviewingStaff.security_roles.length > 0 ? reviewingStaff.security_roles.join(', ') : 'None specified'}</Text>
-            </Stack>
-            <Stack tokens={{ childrenGap: 10 }}>
-              <Label>SIA License(s)</Label>
-              {reviewingStaff.sia_licenses && reviewingStaff.sia_licenses.length > 0 ? (
-                reviewingStaff.sia_licenses.map((lic, idx) => (
-                  <Stack key={idx} tokens={{ childrenGap: 4 }} style={{ borderBottom: '1px solid #eee', paddingBottom: 8, marginBottom: 8 }}>
-                    <Text>Number: {lic.license_number}</Text>
-                    {/* Use the display mapping for type */}
-                    <Text>Type: {SIA_LICENSE_TYPE_DISPLAY[lic.license_type] || lic.license_type}</Text>
-                    <Text>Status: {lic.status}</Text>
-                    <Text>Issue Date: {lic.issue_date}</Text>
-                    <Text>Expiry Date: {lic.expiry_date}</Text>
-                    {lic.document_url && (
-                      <Link href={lic.document_url} target="_blank" rel="noopener noreferrer">View Submitted Document</Link>
-                    )}
-                  </Stack>
-                ))
+          <SpaceBetween size="l">
+            {/* Profile header */}
+            <div className="flex items-center gap-4">
+              {reviewingStaff.profile_image_url ? (
+                <img src={reviewingStaff.profile_image_url} alt="" className="w-16 h-16 rounded-full object-cover" />
               ) : (
-                <Text>No SIA license details found.</Text>
+                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-red-600 text-xl font-bold">
+                  {reviewingStaff.user?.first_name?.charAt(0) || 'S'}{reviewingStaff.user?.last_name?.charAt(0) || 'M'}
+                </div>
               )}
-            </Stack>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {reviewingStaff.user?.first_name || ''} {reviewingStaff.user?.last_name || ''}
+                </h3>
+                <p className="text-sm text-gray-500">{reviewingStaff.user?.email || 'N/A'}</p>
+                <p className="text-sm text-gray-500">Role: {reviewingStaff.user?.role || 'N/A'}</p>
+              </div>
+            </div>
 
-            <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }} style={{ marginTop: 30 }}>
-              <PrimaryButton
-                text="Approve Staff Member"
-                iconProps={{ iconName: 'CheckMark' }}
+            <FormSection header="Contact information">
+              <p className="text-sm text-gray-700">Phone: {reviewingStaff.phone_number || 'N/A'}</p>
+            </FormSection>
+
+            <FormSection header="Address">
+              <p className="text-sm text-gray-700">{reviewingStaff.street || 'N/A'}</p>
+              <p className="text-sm text-gray-700">{reviewingStaff.city || 'N/A'}, {reviewingStaff.postal_code || 'N/A'}</p>
+              <p className="text-sm text-gray-700">{reviewingStaff.country || 'N/A'}</p>
+            </FormSection>
+
+            <FormSection header="Personal details">
+              <p className="text-sm text-gray-700">DOB: {reviewingStaff.date_of_birth || 'N/A'}</p>
+              <p className="text-sm text-gray-700">NI Number: {reviewingStaff.national_insurance_number || 'N/A'}</p>
+            </FormSection>
+
+            <FormSection header="Security roles">
+              <p className="text-sm text-gray-700">
+                {Array.isArray(reviewingStaff.security_roles) && reviewingStaff.security_roles.length > 0
+                  ? reviewingStaff.security_roles.join(', ')
+                  : 'None specified'}
+              </p>
+            </FormSection>
+
+            <FormSection header="SIA licenses">
+              {reviewingStaff.sia_licenses && reviewingStaff.sia_licenses.length > 0 ? (
+                <div className="flex flex-col gap-3">
+                  {reviewingStaff.sia_licenses.map((lic, idx) => (
+                    <div key={idx} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-sm font-medium text-gray-900">Number: {lic.license_number}</p>
+                      <p className="text-sm text-gray-600">Type: {SIA_LICENSE_TYPE_DISPLAY[lic.license_type] || lic.license_type}</p>
+                      <p className="text-sm text-gray-600">
+                        Status: <StatusIndicator type={lic.status === 'valid' ? 'success' : lic.status === 'expired' ? 'error' : 'pending'}>{lic.status}</StatusIndicator>
+                      </p>
+                      <p className="text-sm text-gray-600">Issue date: {lic.issue_date}</p>
+                      <p className="text-sm text-gray-600">Expiry date: {lic.expiry_date}</p>
+                      {lic.document_url && (
+                        <a href={lic.document_url} target="_blank" rel="noopener noreferrer" className="text-sm text-red-600 hover:text-red-700 font-medium">
+                          View submitted document
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No SIA license details found.</p>
+              )}
+            </FormSection>
+
+            <div className="flex justify-end pt-4 border-t border-gray-200">
+              <button
+                className={BTN_PRIMARY}
                 onClick={() => handleApproveStaff(reviewingStaff.id)}
-                // Disable button while loading review details or if already approved
                 disabled={reviewLoading || reviewingStaff.is_approved}
-              />
-            </Stack>
-          </Stack>
+              >
+                Approve staff member
+              </button>
+            </div>
+          </SpaceBetween>
         ) : (
-          <Text style={{ padding: '20px' }}>No staff selected or failed to load details.</Text>
+          <p className="text-sm text-gray-500 py-4">No staff selected or failed to load details.</p>
         )}
-      </Panel>
+      </SlidePanel>
 
-      {/* Staff Details Modal - Modern Design */}
+      {/* ─── Staff details modal ─────────────────────────────────────────── */}
       {showDetailsPanel && (
         <div className="fixed inset-0 z-[1000] overflow-y-auto">
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowDetailsPanel(false)} />
           <div className="relative min-h-screen flex items-center justify-center p-4">
             <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
               {/* Header */}
-              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 rounded-t-2xl">
                 <button
                   onClick={() => setShowDetailsPanel(false)}
-                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors text-sm font-medium"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                   </svg>
-                  <span className="font-medium">Back to Staff</span>
+                  Back to staff
                 </button>
                 {detailedStaff && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        if (detailedStaff?.user) {
-                          const staffItem: Staff = {
-                            id: detailedStaff.user.id,
-                            firstName: detailedStaff.user.first_name,
-                            lastName: detailedStaff.user.last_name,
-                            email: detailedStaff.user.email,
-                            role: detailedStaff.user.role as UserRole,
-                            isActive: detailedStaff.user.is_active,
-                            dateJoined: new Date().toISOString(),
-                            phone: detailedStaff.phone_number
-                          };
-                          handleEditStaff(staffItem);
-                          setShowDetailsPanel(false);
-                        }
-                      }}
-                      className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg font-semibold hover:bg-gray-800 transition-colors"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                      Edit
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => {
+                      if (detailedStaff?.user) {
+                        const staffItem: Staff = {
+                          id: detailedStaff.user.id,
+                          firstName: detailedStaff.user.first_name,
+                          lastName: detailedStaff.user.last_name,
+                          email: detailedStaff.user.email,
+                          role: detailedStaff.user.role as UserRole,
+                          isActive: detailedStaff.user.is_active,
+                          dateJoined: new Date().toISOString(),
+                          phone: detailedStaff.phone_number
+                        };
+                        handleEditStaff(staffItem);
+                        setShowDetailsPanel(false);
+                      }
+                    }}
+                    className={BTN_SECONDARY}
+                  >
+                    Edit
+                  </button>
                 )}
               </div>
 
@@ -1690,52 +1631,47 @@ const StaffManagement: React.FC = () => {
                 {detailsLoading ? (
                   <div className="flex flex-col items-center justify-center py-16">
                     <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
-                    <p className="mt-4 text-gray-600 font-medium">Loading staff details...</p>
+                    <p className="mt-4 text-gray-600 font-medium text-sm">Loading staff details...</p>
                   </div>
                 ) : detailedStaff ? (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Left Column */}
+                    {/* Left column */}
                     <div>
-                      {/* Profile Header */}
+                      {/* Profile header */}
                       <div className="flex items-start gap-4 mb-6">
-                        <div className="w-16 h-16 bg-gradient-to-br from-red-500 to-red-600 rounded-2xl flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+                        <div className="w-14 h-14 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center text-white text-xl font-bold">
                           {detailedStaff.user?.first_name?.charAt(0) || 'S'}{detailedStaff.user?.last_name?.charAt(0) || 'M'}
                         </div>
                         <div className="flex-1">
-                          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+                          <h2 className="text-xl font-semibold text-gray-900">
                             {detailedStaff.user?.first_name} {detailedStaff.user?.last_name}
-                          </h1>
-                          <p className="text-gray-500">{detailedStaff.user?.email}</p>
+                          </h2>
+                          <p className="text-sm text-gray-500">{detailedStaff.user?.email}</p>
                           <div className="flex items-center gap-2 mt-2">
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                              detailedStaff.user?.is_active ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-700'
-                            }`}>
-                              <span className={`w-2 h-2 rounded-full ${detailedStaff.user?.is_active ? 'bg-white animate-pulse' : 'bg-gray-500'}`} />
+                            <StatusIndicator type={detailedStaff.user?.is_active ? 'success' : 'stopped'}>
                               {detailedStaff.user?.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                              detailedStaff.is_approved ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
-                            }`}>
-                              {detailedStaff.is_approved ? 'Approved' : 'Pending Approval'}
-                            </span>
+                            </StatusIndicator>
+                            <StatusIndicator type={detailedStaff.is_approved ? 'success' : 'warning'}>
+                              {detailedStaff.is_approved ? 'Approved' : 'Pending approval'}
+                            </StatusIndicator>
                           </div>
                         </div>
                       </div>
 
-                      {/* Contact Information */}
-                      <div className="p-4 bg-gray-50 rounded-xl mb-6">
-                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Contact Information</h3>
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-3 text-gray-600">
-                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      {/* Contact information */}
+                      <div className="p-4 bg-gray-50 rounded-xl mb-4">
+                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Contact information</h3>
+                        <div className="space-y-2.5 text-sm">
+                          <div className="flex items-center gap-2.5 text-gray-600">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                             </svg>
                             <a href={`mailto:${detailedStaff.user?.email}`} className="hover:text-red-600 transition-colors">
                               {detailedStaff.user?.email}
                             </a>
                           </div>
-                          <div className="flex items-center gap-3 text-gray-600">
-                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <div className="flex items-center gap-2.5 text-gray-600">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                             </svg>
                             {detailedStaff.phone_number ? (
@@ -1746,8 +1682,8 @@ const StaffManagement: React.FC = () => {
                               <span className="text-gray-400">Not provided</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-3 text-gray-600">
-                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <div className="flex items-center gap-2.5 text-gray-600">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                             </svg>
                             <span className="capitalize">{detailedStaff.user?.role || 'Staff'}</span>
@@ -1755,30 +1691,30 @@ const StaffManagement: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Personal Details */}
+                      {/* Personal details */}
                       {(detailedStaff.date_of_birth || detailedStaff.national_insurance_number || detailedStaff.street || detailedStaff.city) && (
-                        <div className="p-4 bg-gray-50 rounded-xl mb-6">
-                          <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Personal Details</h3>
-                          <div className="space-y-3">
+                        <div className="p-4 bg-gray-50 rounded-xl mb-4">
+                          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Personal details</h3>
+                          <div className="space-y-2.5 text-sm">
                             {detailedStaff.date_of_birth && (
-                              <div className="flex items-center gap-3">
-                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <div className="flex items-center gap-2.5">
+                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                 </svg>
                                 <span className="text-gray-600">Born: <strong className="text-gray-900">{detailedStaff.date_of_birth}</strong></span>
                               </div>
                             )}
                             {detailedStaff.national_insurance_number && (
-                              <div className="flex items-center gap-3">
-                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <div className="flex items-center gap-2.5">
+                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                                 <span className="text-gray-600">NI: <strong className="text-gray-900 font-mono">{detailedStaff.national_insurance_number}</strong></span>
                               </div>
                             )}
                             {(detailedStaff.street || detailedStaff.city) && (
-                              <div className="flex items-start gap-3">
-                                <svg className="w-5 h-5 text-gray-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <div className="flex items-start gap-2.5">
+                                <svg className="w-4 h-4 text-gray-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
@@ -1793,13 +1729,13 @@ const StaffManagement: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Security Roles */}
+                      {/* Security roles */}
                       <div className="p-4 bg-gray-50 rounded-xl">
-                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Security Roles</h3>
+                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Security roles</h3>
                         {detailedStaff.security_roles?.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
                             {detailedStaff.security_roles.map((role: string, index: number) => {
-                              const roleLabels: { [key: string]: string } = {
+                              const roleLabelsMap: { [key: string]: string } = {
                                 'ds': 'Door Supervisor',
                                 'sg': 'Security Guard',
                                 'cctv': 'CCTV Operator',
@@ -1814,9 +1750,9 @@ const StaffManagement: React.FC = () => {
                               return (
                                 <span
                                   key={index}
-                                  className="inline-flex items-center px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm font-medium"
+                                  className="inline-flex items-center px-2.5 py-1 bg-red-100 text-red-700 rounded-lg text-xs font-medium"
                                 >
-                                  {roleLabels[role] || role}
+                                  {roleLabelsMap[role] || role}
                                 </span>
                               );
                             })}
@@ -1827,20 +1763,17 @@ const StaffManagement: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Right Column - SIA Licenses */}
+                    {/* Right column - SIA Licenses */}
                     <div>
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-                          SIA Licenses ({detailedStaff.sia_licenses?.length || 0})
+                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          SIA licenses ({detailedStaff.sia_licenses?.length || 0})
                         </h3>
                         <button
                           onClick={() => handleCreateLicense(detailedStaff.id)}
-                          className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="text-sm font-medium text-red-600 hover:text-red-700 transition-colors"
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
-                          Add License
+                          + Add license
                         </button>
                       </div>
 
@@ -1849,85 +1782,69 @@ const StaffManagement: React.FC = () => {
                           {detailedStaff.sia_licenses.map((license: any, index: number) => (
                             <div
                               key={index}
-                              className="border-2 border-gray-200 rounded-xl p-4 hover:border-red-300 transition-colors"
+                              className="border border-gray-200 rounded-xl p-4 hover:border-gray-300 transition-colors"
                             >
-                              {/* License Header */}
                               <div className="flex items-start justify-between mb-3">
                                 <div>
-                                  <p className="font-mono text-lg font-bold text-gray-900">{license.license_number}</p>
+                                  <p className="font-mono text-base font-semibold text-gray-900">{license.license_number}</p>
                                   <p className="text-sm text-gray-500">{SIA_LICENSE_TYPE_DISPLAY[license.license_type] || license.license_type}</p>
                                 </div>
-                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                                  license.status === 'valid' ? 'bg-emerald-600 text-white' :
-                                  license.status === 'expired' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'
-                                }`}>
-                                  <span className={`w-1.5 h-1.5 rounded-full ${
-                                    license.status === 'valid' ? 'bg-white animate-pulse' : 'bg-white/50'
-                                  }`} />
+                                <StatusIndicator
+                                  type={license.status === 'valid' ? 'success' : license.status === 'expired' ? 'error' : 'pending'}
+                                >
                                   {license.status}
-                                </span>
+                                </StatusIndicator>
                               </div>
 
-                              {/* License Details */}
-                              <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
+                              <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
                                 <div>
-                                  <p className="text-gray-500">Issue Date</p>
+                                  <p className="text-gray-500 text-xs">Issue date</p>
                                   <p className="font-medium text-gray-900">{license.issue_date}</p>
                                 </div>
                                 <div>
-                                  <p className="text-gray-500">Expiry Date</p>
+                                  <p className="text-gray-500 text-xs">Expiry date</p>
                                   <p className="font-medium text-gray-900">{license.expiry_date}</p>
                                 </div>
                                 {license.level && (
                                   <div>
-                                    <p className="text-gray-500">Level</p>
+                                    <p className="text-gray-500 text-xs">Level</p>
                                     <p className="font-medium text-gray-900 capitalize">{license.level}</p>
                                   </div>
                                 )}
                                 {license.document_url && (
                                   <div>
-                                    <p className="text-gray-500">Document</p>
+                                    <p className="text-gray-500 text-xs">Document</p>
                                     <a
                                       href={license.document_url}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="font-medium text-red-600 hover:text-red-700 transition-colors"
+                                      className="font-medium text-red-600 hover:text-red-700 transition-colors text-sm"
                                     >
-                                      View Document
+                                      View document
                                     </a>
                                   </div>
                                 )}
                               </div>
 
-                              {/* License Actions */}
                               <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
                                 <button
                                   onClick={() => handleEditLicense(license)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                                  className="px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
                                 >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                  </svg>
                                   Edit
                                 </button>
                                 {license.status === 'pending' && (
                                   <>
                                     <button
                                       onClick={() => handleApproveLicense(license.id)}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors"
+                                      className="px-2.5 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors"
                                     >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                      </svg>
                                       Approve
                                     </button>
                                     <button
                                       onClick={() => handleRejectLicense(license.id)}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                                      className="px-2.5 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-colors"
                                     >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                      </svg>
                                       Reject
                                     </button>
                                   </>
@@ -1937,28 +1854,26 @@ const StaffManagement: React.FC = () => {
                           ))}
                         </div>
                       ) : (
-                        <div className="text-center py-12 bg-gray-50 rounded-xl">
-                          <svg className="w-12 h-12 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          <p className="text-gray-500 mb-4">No SIA licenses on file</p>
-                          <button
-                            onClick={() => handleCreateLicense(detailedStaff.id)}
-                            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                            </svg>
-                            Add First License
-                          </button>
-                        </div>
+                        <EmptyState
+                          title="No SIA licenses on file"
+                          description="Add a license to get started."
+                          action={
+                            <button
+                              onClick={() => handleCreateLicense(detailedStaff.id)}
+                              className={BTN_PRIMARY}
+                            >
+                              Add first license
+                            </button>
+                          }
+                        />
                       )}
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-16">
-                    <p className="text-gray-500">Unable to load staff details</p>
-                  </div>
+                  <EmptyState
+                    title="Unable to load staff details"
+                    variant="error"
+                  />
                 )}
               </div>
             </div>
@@ -1966,238 +1881,123 @@ const StaffManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Employment Type Assignment Panel */}
-      <Panel
-        isOpen={showAssignEmploymentTypePanel}
-        onDismiss={() => {
-          setShowAssignEmploymentTypePanel(false);
-          setSelectedStaff(null);
-          setSelectedEmploymentType(null);
-        }}
-        headerText={selectedStaff ? `Assign Employment Type - ${selectedStaff.firstName} ${selectedStaff.lastName}` : 'Assign Employment Type'}
-        closeButtonAriaLabel="Close"
-        type={PanelType.medium}
-        isLightDismiss
+      {/* ─── Employment type assignment panel ────────────────────────────── */}
+      <SlidePanel
+        open={showAssignEmploymentTypePanel}
+        onClose={() => { setShowAssignEmploymentTypePanel(false); setSelectedStaff(null); setSelectedEmploymentType(null); }}
+        title={selectedStaff ? `Assign employment type - ${selectedStaff.firstName} ${selectedStaff.lastName}` : 'Assign employment type'}
       >
-        <Stack tokens={{ childrenGap: 20 }} style={{ padding: '20px' }}>
-          {selectedStaff && (
-            <Stack tokens={{ childrenGap: 10 }}>
-              <Text variant="mediumPlus">Staff Member:</Text>
-              <Persona
-                text={`${selectedStaff.firstName} ${selectedStaff.lastName}`}
-                secondaryText={selectedStaff.email}
-                tertiaryText={`Current: ${selectedStaff.employmentType?.name || 'Not Set'}`}
-                size={PersonaSize.size48}
-              />
-            </Stack>
-          )}
+        {selectedStaff && (
+          <div className="flex items-center gap-3 mb-6 p-3 bg-gray-50 rounded-lg">
+            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-600 text-sm font-bold">
+              {selectedStaff.firstName.charAt(0)}{selectedStaff.lastName.charAt(0)}
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">{selectedStaff.firstName} {selectedStaff.lastName}</p>
+              <p className="text-xs text-gray-500">{selectedStaff.email}</p>
+              <p className="text-xs text-gray-500">Current: {selectedStaff.employmentType?.name || 'Not set'}</p>
+            </div>
+          </div>
+        )}
 
-          <Stack tokens={{ childrenGap: 10 }}>
-            <Label required>Employment Type</Label>
-            <Dropdown
-              placeholder="Select employment type"
-              options={Array.isArray(employmentTypes) ? employmentTypes.map(et => ({
-                key: et.id,
-                text: et.name,
-                data: et
-              })) : []}
-              selectedKey={selectedEmploymentType}
-              onChange={(event, option) => {
-                setSelectedEmploymentType(option?.key as number);
-              }}
-            />
+        <FormSection header="Employment type">
+          <div>
+            <label className={LABEL_CLASS}>Select employment type <span className="text-red-500">*</span></label>
+            <select
+              className={SELECT_CLASS}
+              value={selectedEmploymentType ?? ''}
+              onChange={(e) => setSelectedEmploymentType(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">Select employment type</option>
+              {Array.isArray(employmentTypes) && employmentTypes.map(et => (
+                <option key={et.id} value={et.id}>{et.name}</option>
+              ))}
+            </select>
             {employmentTypes.length === 0 && (
-              <Text variant="small" style={{ color: '#d13438' }}>
-                No employment types available. Please create some in Settings first.
-              </Text>
+              <p className="text-xs text-red-600 mt-1">No employment types available. Please create some in Settings first.</p>
             )}
-          </Stack>
+          </div>
+        </FormSection>
 
-          <Stack horizontal tokens={{ childrenGap: 10 }} horizontalAlign="end" style={{ marginTop: 20 }}>
-            <DefaultButton
-              text="Cancel"
-              onClick={() => {
-                setShowAssignEmploymentTypePanel(false);
-                setSelectedStaff(null);
-                setSelectedEmploymentType(null);
-              }}
-            />
-            <PrimaryButton
-              text="Assign Employment Type"
-              onClick={handleSubmitEmploymentTypeAssignment}
-              disabled={!selectedEmploymentType || assignmentLoading}
-            />
-          </Stack>
+        <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-200">
+          <button
+            className={BTN_SECONDARY}
+            onClick={() => { setShowAssignEmploymentTypePanel(false); setSelectedStaff(null); setSelectedEmploymentType(null); }}
+          >
+            Cancel
+          </button>
+          <button
+            className={BTN_PRIMARY}
+            onClick={handleSubmitEmploymentTypeAssignment}
+            disabled={!selectedEmploymentType || assignmentLoading}
+          >
+            {assignmentLoading ? 'Assigning...' : 'Assign employment type'}
+          </button>
+        </div>
+      </SlidePanel>
 
-          {assignmentLoading && (
-            <Spinner label="Assigning employment type..." />
-          )}
-        </Stack>
-      </Panel>
+      {/* ─── Edit license modal ──────────────────────────────────────────── */}
+      {showEditLicenseDialog && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={() => { setShowEditLicenseDialog(false); setEditingLicense(null); }} />
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-md w-full">
+            <div className="px-6 pt-6 pb-0">
+              <h2 className="text-lg font-semibold text-gray-900">Edit SIA license</h2>
+              <p className="text-sm text-gray-500 mt-1">Update the license details below.</p>
+            </div>
+            <div className="px-6 py-4">
+              {renderLicenseForm()}
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 pb-6 pt-2">
+              <button
+                className={BTN_SECONDARY}
+                onClick={() => { setShowEditLicenseDialog(false); setEditingLicense(null); }}
+              >
+                Cancel
+              </button>
+              <button
+                className={BTN_PRIMARY}
+                onClick={handleSaveLicense}
+                disabled={savingLicense || !licenseFormData.license_number || !licenseFormData.issue_date || !licenseFormData.expiry_date}
+              >
+                {savingLicense ? 'Saving...' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Edit License Dialog */}
-      <Dialog
-        hidden={!showEditLicenseDialog}
-        onDismiss={() => {
-          setShowEditLicenseDialog(false);
-          setEditingLicense(null);
-        }}
-        dialogContentProps={{
-          type: DialogType.normal,
-          title: 'Edit SIA License',
-          subText: 'Update the license details below.'
-        }}
-        modalProps={{
-          isBlocking: true,
-          styles: { main: { maxWidth: 500 } }
-        }}
-      >
-        <Stack tokens={{ childrenGap: 15 }} style={{ padding: '10px 0' }}>
-          <TextField
-            label="License Number"
-            required
-            value={licenseFormData.license_number}
-            onChange={(_, newValue) => handleLicenseFormChange('license_number', newValue || '')}
-          />
-          <Dropdown
-            label="License Type"
-            required
-            options={SIA_LICENSE_TYPE_OPTIONS}
-            selectedKey={licenseFormData.license_type}
-            onChange={(_, option) => handleLicenseFormChange('license_type', option?.key as string)}
-          />
-          <Dropdown
-            label="Level"
-            options={SIA_LICENSE_LEVEL_OPTIONS}
-            selectedKey={licenseFormData.level}
-            onChange={(_, option) => handleLicenseFormChange('level', option?.key as string)}
-          />
-          <TextField
-            label="Issue Date"
-            required
-            type="date"
-            value={licenseFormData.issue_date}
-            onChange={(_, newValue) => handleLicenseFormChange('issue_date', newValue || '')}
-          />
-          <TextField
-            label="Expiry Date"
-            required
-            type="date"
-            value={licenseFormData.expiry_date}
-            onChange={(_, newValue) => handleLicenseFormChange('expiry_date', newValue || '')}
-          />
-          <Dropdown
-            label="Status"
-            required
-            options={SIA_LICENSE_STATUS_OPTIONS}
-            selectedKey={licenseFormData.status}
-            onChange={(_, option) => handleLicenseFormChange('status', option?.key as string)}
-          />
-          <TextField
-            label="Document URL"
-            value={licenseFormData.document_url}
-            onChange={(_, newValue) => handleLicenseFormChange('document_url', newValue || '')}
-            placeholder="https://..."
-          />
-        </Stack>
-        <DialogFooter>
-          <DefaultButton
-            text="Cancel"
-            onClick={() => {
-              setShowEditLicenseDialog(false);
-              setEditingLicense(null);
-            }}
-          />
-          <PrimaryButton
-            text={savingLicense ? 'Saving...' : 'Save Changes'}
-            onClick={handleSaveLicense}
-            disabled={savingLicense || !licenseFormData.license_number || !licenseFormData.issue_date || !licenseFormData.expiry_date}
-          />
-        </DialogFooter>
-      </Dialog>
-
-      {/* Create License Dialog */}
-      <Dialog
-        hidden={!showCreateLicenseDialog}
-        onDismiss={() => {
-          setShowCreateLicenseDialog(false);
-          setCreateLicenseForProfileId(null);
-        }}
-        dialogContentProps={{
-          type: DialogType.normal,
-          title: 'Add New SIA License',
-          subText: 'Enter the license details below.'
-        }}
-        modalProps={{
-          isBlocking: true,
-          styles: { main: { maxWidth: 500 } }
-        }}
-      >
-        <Stack tokens={{ childrenGap: 15 }} style={{ padding: '10px 0' }}>
-          <TextField
-            label="License Number"
-            required
-            value={licenseFormData.license_number}
-            onChange={(_, newValue) => handleLicenseFormChange('license_number', newValue || '')}
-            placeholder="e.g., 1234567890123456"
-          />
-          <Dropdown
-            label="License Type"
-            required
-            options={SIA_LICENSE_TYPE_OPTIONS}
-            selectedKey={licenseFormData.license_type}
-            onChange={(_, option) => handleLicenseFormChange('license_type', option?.key as string)}
-          />
-          <Dropdown
-            label="Level"
-            options={SIA_LICENSE_LEVEL_OPTIONS}
-            selectedKey={licenseFormData.level}
-            onChange={(_, option) => handleLicenseFormChange('level', option?.key as string)}
-          />
-          <TextField
-            label="Issue Date"
-            required
-            type="date"
-            value={licenseFormData.issue_date}
-            onChange={(_, newValue) => handleLicenseFormChange('issue_date', newValue || '')}
-          />
-          <TextField
-            label="Expiry Date"
-            required
-            type="date"
-            value={licenseFormData.expiry_date}
-            onChange={(_, newValue) => handleLicenseFormChange('expiry_date', newValue || '')}
-          />
-          <Dropdown
-            label="Status"
-            required
-            options={SIA_LICENSE_STATUS_OPTIONS}
-            selectedKey={licenseFormData.status}
-            onChange={(_, option) => handleLicenseFormChange('status', option?.key as string)}
-          />
-          <TextField
-            label="Document URL"
-            value={licenseFormData.document_url}
-            onChange={(_, newValue) => handleLicenseFormChange('document_url', newValue || '')}
-            placeholder="https://..."
-          />
-        </Stack>
-        <DialogFooter>
-          <DefaultButton
-            text="Cancel"
-            onClick={() => {
-              setShowCreateLicenseDialog(false);
-              setCreateLicenseForProfileId(null);
-            }}
-          />
-          <PrimaryButton
-            text={savingLicense ? 'Creating...' : 'Create License'}
-            onClick={handleSubmitNewLicense}
-            disabled={savingLicense || !licenseFormData.license_number || !licenseFormData.issue_date || !licenseFormData.expiry_date}
-          />
-        </DialogFooter>
-      </Dialog>
-    </MainLayout>
+      {/* ─── Create license modal ────────────────────────────────────────── */}
+      {showCreateLicenseDialog && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={() => { setShowCreateLicenseDialog(false); setCreateLicenseForProfileId(null); }} />
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-md w-full">
+            <div className="px-6 pt-6 pb-0">
+              <h2 className="text-lg font-semibold text-gray-900">Add new SIA license</h2>
+              <p className="text-sm text-gray-500 mt-1">Enter the license details below.</p>
+            </div>
+            <div className="px-6 py-4">
+              {renderLicenseForm()}
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 pb-6 pt-2">
+              <button
+                className={BTN_SECONDARY}
+                onClick={() => { setShowCreateLicenseDialog(false); setCreateLicenseForProfileId(null); }}
+              >
+                Cancel
+              </button>
+              <button
+                className={BTN_PRIMARY}
+                onClick={handleSubmitNewLicense}
+                disabled={savingLicense || !licenseFormData.license_number || !licenseFormData.issue_date || !licenseFormData.expiry_date}
+              >
+                {savingLicense ? 'Creating...' : 'Create license'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </SpaceBetween>
   );
 };
 

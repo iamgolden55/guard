@@ -12,12 +12,14 @@ MODE=${1:-local}
 # Detect IP address (works on Mac/Linux)
 detect_ip() {
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS - Get the active IP address
-        IP=$(ipconfig getifaddr $(route get default | grep interface | awk '{print $2}') 2>/dev/null)
+        # macOS - Prioritize en0 (Wi-Fi) since route can pick up VPN tunnels
+        IP=$(ipconfig getifaddr en0 2>/dev/null)
 
-        # Fallback: try common interfaces
-        [ -z "$IP" ] && IP=$(ipconfig getifaddr en0)
-        [ -z "$IP" ] && IP=$(ipconfig getifaddr en1)
+        # Fallback: try en1 (some Macs use this for Wi-Fi)
+        [ -z "$IP" ] && IP=$(ipconfig getifaddr en1 2>/dev/null)
+
+        # Last resort: try the default route interface
+        [ -z "$IP" ] && IP=$(ipconfig getifaddr $(route get default 2>/dev/null | grep interface | awk '{print $2}') 2>/dev/null)
     else
         # Linux
         IP=$(hostname -I | awk '{print $1}')

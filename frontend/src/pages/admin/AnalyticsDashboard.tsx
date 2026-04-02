@@ -1,16 +1,7 @@
 import type React from 'react';
 import { useState, useEffect } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
-import {
-  Pivot,
-  PivotItem,
-  Text,
-  PrimaryButton,
-  MessageBar,
-  MessageBarType,
-  DefaultButton
-} from '@fluentui/react';
-import { AdminLayout } from '../../layouts';
+import { Header, Container, SpaceBetween, Alert } from '../../components/cloudscape';
 import MetricCard from '../../components/MetricCard';
 import { BulkPayrollGeneration, Card, SwipeableTabs } from '../../components';
 import IncompleteShiftsWidget from '../../components/IncompleteShiftsWidget';
@@ -36,6 +27,7 @@ const AnalyticsDashboard: React.FC = () => {
   const [deputyStatus, setDeputyStatus] = useState<DeputyStatus | null>(null);
   const [employmentTypes, setEmploymentTypes] = useState<any[]>([]);
   const [showEmploymentTypePrompt, setShowEmploymentTypePrompt] = useState(false);
+  const [activeTab, setActiveTab] = useState('quickActions');
 
   // CRITICAL: Verify user is actually admin before rendering
   useEffect(() => {
@@ -187,237 +179,158 @@ const AnalyticsDashboard: React.FC = () => {
     });
   };
 
+  const desktopTabs = [
+    { id: 'quickActions', label: 'Quick Actions' },
+    { id: 'deputyIntegration', label: 'Deputy Integration' },
+    { id: 'systemSettings', label: 'System Settings' },
+    { id: 'payroll', label: 'Payroll' },
+  ];
+
   return (
-    <AdminLayout>
-      <div className="space-y-6 pb-20 lg:pb-0">
-        {/* Page Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
-            <p className="text-sm text-gray-500 mt-1">Welcome back. Here's what's happening today.</p>
+    <div className="space-y-6 pb-20 lg:pb-0">
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
+          <p className="text-sm text-gray-500 mt-1">Welcome back. Here's what's happening today.</p>
+        </div>
+      </div>
+
+      {/* Metric Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard
+          title="Active Shifts"
+          value={stats.activeShifts}
+          icon="Clock"
+          iconColor="#0078D4"
+          isLoading={isLoading}
+          onClick={() => navigate('/staff-shifts')}
+        />
+        <MetricCard
+          title="Pending Approvals"
+          value={stats.pendingApprovals}
+          icon="Permissions"
+          iconColor="#107C10"
+          isLoading={isLoading}
+          onClick={() => navigate('/approvals')}
+        />
+        <MetricCard
+          title="Total Staff"
+          value={stats.totalStaff}
+          icon="People"
+          iconColor="#5C2D91"
+          isLoading={isLoading}
+          onClick={() => navigate('/admin/staff')}
+        />
+        <MetricCard
+          title="On-time Rate"
+          value={`${stats.onTimePercentage.toFixed(0)}%`}
+          icon="Timer"
+          iconColor="#10B981"
+          isLoading={isLoading}
+          onClick={() => navigate('/admin/attendance')}
+          trend={stats.onTimePercentage >= 90 ? 'Good' : stats.onTimePercentage >= 75 ? 'Fair' : 'Needs attention'}
+          trendDirection={stats.onTimePercentage >= 90 ? 'up' : stats.onTimePercentage >= 75 ? 'neutral' : 'down'}
+        />
+      </div>
+
+      {/* Secondary Metrics */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <MetricCard
+          title="Pending Invoices"
+          value={stats.pendingInvoices}
+          icon="PaymentCard"
+          iconColor="#D83B01"
+          isLoading={isLoading}
+          onClick={() => navigate('/admin/invoices')}
+        />
+        <MetricCard
+          title="Total Venues"
+          value={stats.venueCount}
+          icon="POI"
+          iconColor="#008272"
+          isLoading={isLoading}
+          onClick={() => navigate('/admin/venues')}
+        />
+      </div>
+
+      {/* Employment Type Setup Prompt */}
+      {showEmploymentTypePrompt && (
+        <Alert type="warning">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <span><strong>Employment Types Required:</strong> Before generating recruitment links, you need to set up employment types for your company.</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => navigate('/admin/employment-types')}
+                className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Setup Employment Types
+              </button>
+              <button
+                onClick={() => setShowEmploymentTypePrompt(false)}
+                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
-        </div>
+        </Alert>
+      )}
 
-        {/* Metric Cards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard
-            title="Active Shifts"
-            value={stats.activeShifts}
-            icon="Clock"
-            iconColor="#0078D4"
-            isLoading={isLoading}
-            onClick={() => navigate('/staff-shifts')}
-          />
-          <MetricCard
-            title="Pending Approvals"
-            value={stats.pendingApprovals}
-            icon="Permissions"
-            iconColor="#107C10"
-            isLoading={isLoading}
-            onClick={() => navigate('/approvals')}
-          />
-          <MetricCard
-            title="Total Staff"
-            value={stats.totalStaff}
-            icon="People"
-            iconColor="#5C2D91"
-            isLoading={isLoading}
-            onClick={() => navigate('/admin/staff')}
-          />
-          <MetricCard
-            title="On-time Rate"
-            value={`${stats.onTimePercentage.toFixed(0)}%`}
-            icon="Timer"
-            iconColor="#10B981"
-            isLoading={isLoading}
-            onClick={() => navigate('/admin/attendance')}
-            trend={stats.onTimePercentage >= 90 ? 'Good' : stats.onTimePercentage >= 75 ? 'Fair' : 'Needs attention'}
-            trendDirection={stats.onTimePercentage >= 90 ? 'up' : stats.onTimePercentage >= 75 ? 'neutral' : 'down'}
-          />
-        </div>
+      {/* Incomplete Shifts Widget */}
+      <IncompleteShiftsWidget />
 
-        {/* Secondary Metrics */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <MetricCard
-            title="Pending Invoices"
-            value={stats.pendingInvoices}
-            icon="PaymentCard"
-            iconColor="#D83B01"
-            isLoading={isLoading}
-            onClick={() => navigate('/admin/invoices')}
-          />
-          <MetricCard
-            title="Total Venues"
-            value={stats.venueCount}
-            icon="POI"
-            iconColor="#008272"
-            isLoading={isLoading}
-            onClick={() => navigate('/admin/venues')}
-          />
-        </div>
-
-        {/* Employment Type Setup Prompt */}
-        {showEmploymentTypePrompt && (
-          <MessageBar
-            messageBarType={MessageBarType.warning}
-            actions={
-              <div className="flex gap-2">
-                <PrimaryButton
-                  text="Setup Employment Types"
-                  onClick={() => navigate('/admin/employment-types')}
-                />
-                <DefaultButton
-                  text="Dismiss"
-                  onClick={() => setShowEmploymentTypePrompt(false)}
-                />
-              </div>
-            }
-          >
-            <strong>Employment Types Required:</strong> Before generating recruitment links, you need to set up employment types for your company.
-          </MessageBar>
-        )}
-
-        {/* Incomplete Shifts Widget */}
-        <IncompleteShiftsWidget />
-
-        {/* Tabbed Content */}
-        {isMobile ? (
-          <SwipeableTabs
-            tabs={[
-              {
-                key: 'quickActions',
-                headerText: 'Quick Actions',
-                content: (
-                  <div className="space-y-4 p-4">
-                    <h3 className="text-lg font-medium text-gray-900">Common Tasks</h3>
-                    <div className="grid grid-cols-1 gap-4">
-                      <Card className="flex flex-col">
-                        <Text variant="medium" className="font-semibold mb-2">Staff Management</Text>
-                        <Text className="mb-4 text-gray-600">Add, edit, or deactivate staff members.</Text>
-                        <PrimaryButton text="Manage Staff" onClick={() => navigate('/admin/staff')} />
-                      </Card>
-                      <Card className="flex flex-col">
-                        <Text variant="medium" className="font-semibold mb-2">Venue Management</Text>
-                        <Text className="mb-4 text-gray-600">Manage venues and locations.</Text>
-                        <PrimaryButton text="Manage Venues" onClick={() => navigate('/admin/venues')} />
-                      </Card>
-                      <Card className="flex flex-col">
-                        <Text variant="medium" className="font-semibold mb-2">Approve Shifts</Text>
-                        <Text className="mb-4 text-gray-600">Review and approve pending shifts.</Text>
-                        <PrimaryButton text="Shift Approvals" onClick={() => navigate('/approvals')} />
-                      </Card>
-                      <Card className="flex flex-col">
-                        <Text variant="medium" className="font-semibold mb-2">Generate Invoices</Text>
-                        <Text className="mb-4 text-gray-600">Create and manage staff invoices.</Text>
-                        <PrimaryButton text="Invoice Management" onClick={() => navigate('/admin/invoices')} />
-                      </Card>
-                    </div>
-                  </div>
-                )
-              },
-              {
-                key: 'deputyIntegration',
-                headerText: 'Deputy',
-                content: (
-                  <div className="p-4">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Deputy Integration Status</h3>
-                    <Card>
-                      {isLoading ? (
-                        <div className="flex justify-center py-8">
-                          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <div className="flex justify-between">
-                            <span className="font-medium text-gray-700">Connection Status:</span>
-                            <span className={deputyStatus?.isConnected ? 'text-green-600' : 'text-red-600'}>
-                              {deputyStatus?.isConnected ? 'Connected' : 'Disconnected'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="font-medium text-gray-700">Last Sync:</span>
-                            <span className="text-gray-600">{deputyStatus?.lastSyncDate ? formatDate(deputyStatus.lastSyncDate) : 'Never'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="font-medium text-gray-700">Employees Synced:</span>
-                            <span className="text-gray-600">{deputyStatus?.employeeCount || 0}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="font-medium text-gray-700">Timesheets Synced:</span>
-                            <span className="text-gray-600">{deputyStatus?.timesheetCount || 0}</span>
-                          </div>
-                          {deputyStatus?.errorMessage && (
-                            <p className="text-red-600 text-sm">Error: {deputyStatus.errorMessage}</p>
-                          )}
-                          <div className="flex gap-2 pt-2">
-                            <PrimaryButton text="Configure Deputy" onClick={() => navigate('/admin/deputy')} />
-                            <PrimaryButton text="Sync Now" disabled={!deputyStatus?.isConnected} onClick={() => navigate('/admin/deputy/sync')} />
-                          </div>
-                        </div>
-                      )}
-                    </Card>
-                  </div>
-                )
-              },
-              {
-                key: 'payroll',
-                headerText: 'Payroll',
-                content: (
-                  <div className="p-4">
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Weekly Payroll Management</h3>
-                    <p className="text-gray-600 mb-4">Generate invoices for all staff members for weekly payment periods (Monday-Sunday).</p>
-                    <BulkPayrollGeneration />
-                  </div>
-                )
-              }
-            ]}
-            defaultSelectedKey="quickActions"
-            isMobile={true}
-          />
-        ) : (
-          <div className="bg-white border border-[#F0F0F0] rounded-lg overflow-hidden">
-            <Pivot>
-              <PivotItem headerText="Quick Actions">
-                <div className="p-6">
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">Common Tasks</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Tabbed Content */}
+      {isMobile ? (
+        <SwipeableTabs
+          tabs={[
+            {
+              key: 'quickActions',
+              headerText: 'Quick Actions',
+              content: (
+                <div className="space-y-4 p-4">
+                  <h3 className="text-lg font-medium text-gray-900">Common Tasks</h3>
+                  <div className="grid grid-cols-1 gap-4">
                     <Card className="flex flex-col">
-                      <Text variant="medium" className="font-semibold mb-2">Staff Management</Text>
-                      <Text className="mb-4 text-gray-600">Add, edit, or deactivate staff members.</Text>
-                      <PrimaryButton text="Manage Staff" onClick={() => navigate('/admin/staff')} />
+                      <p className="text-sm font-semibold mb-2">Staff Management</p>
+                      <p className="mb-4 text-gray-600 text-sm">Add, edit, or deactivate staff members.</p>
+                      <button onClick={() => navigate('/admin/staff')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors self-start">Manage Staff</button>
                     </Card>
                     <Card className="flex flex-col">
-                      <Text variant="medium" className="font-semibold mb-2">Venue Management</Text>
-                      <Text className="mb-4 text-gray-600">Manage venues and locations.</Text>
-                      <PrimaryButton text="Manage Venues" onClick={() => navigate('/admin/venues')} />
+                      <p className="text-sm font-semibold mb-2">Venue Management</p>
+                      <p className="mb-4 text-gray-600 text-sm">Manage venues and locations.</p>
+                      <button onClick={() => navigate('/admin/venues')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors self-start">Manage Venues</button>
                     </Card>
                     <Card className="flex flex-col">
-                      <Text variant="medium" className="font-semibold mb-2">Approve Shifts</Text>
-                      <Text className="mb-4 text-gray-600">Review and approve pending shifts.</Text>
-                      <PrimaryButton text="Shift Approvals" onClick={() => navigate('/approvals')} />
+                      <p className="text-sm font-semibold mb-2">Approve Shifts</p>
+                      <p className="mb-4 text-gray-600 text-sm">Review and approve pending shifts.</p>
+                      <button onClick={() => navigate('/approvals')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors self-start">Shift Approvals</button>
                     </Card>
                     <Card className="flex flex-col">
-                      <Text variant="medium" className="font-semibold mb-2">Generate Invoices</Text>
-                      <Text className="mb-4 text-gray-600">Create and manage staff invoices.</Text>
-                      <PrimaryButton text="Invoice Management" onClick={() => navigate('/admin/invoices')} />
+                      <p className="text-sm font-semibold mb-2">Generate Invoices</p>
+                      <p className="mb-4 text-gray-600 text-sm">Create and manage staff invoices.</p>
+                      <button onClick={() => navigate('/admin/invoices')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors self-start">Invoice Management</button>
                     </Card>
                   </div>
                 </div>
-              </PivotItem>
-
-              <PivotItem headerText="Deputy Integration">
-                <div className="p-6">
+              )
+            },
+            {
+              key: 'deputyIntegration',
+              headerText: 'Deputy',
+              content: (
+                <div className="p-4">
                   <h3 className="text-lg font-medium text-gray-900 mb-4">Deputy Integration Status</h3>
-                  <Card className="max-w-lg">
+                  <Card>
                     {isLoading ? (
                       <div className="flex justify-center py-8">
-                        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
                       </div>
                     ) : (
                       <div className="space-y-3">
                         <div className="flex justify-between">
                           <span className="font-medium text-gray-700">Connection Status:</span>
-                          <span className={deputyStatus?.isConnected ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                          <span className={deputyStatus?.isConnected ? 'text-green-600' : 'text-red-600'}>
                             {deputyStatus?.isConnected ? 'Connected' : 'Disconnected'}
                           </span>
                         </div>
@@ -434,51 +347,153 @@ const AnalyticsDashboard: React.FC = () => {
                           <span className="text-gray-600">{deputyStatus?.timesheetCount || 0}</span>
                         </div>
                         {deputyStatus?.errorMessage && (
-                          <p className="text-red-600 text-sm mt-2">Error: {deputyStatus.errorMessage}</p>
+                          <p className="text-red-600 text-sm">Error: {deputyStatus.errorMessage}</p>
                         )}
-                        <div className="flex gap-3 pt-3">
-                          <PrimaryButton text="Configure Deputy" onClick={() => navigate('/admin/deputy')} />
-                          <PrimaryButton text="Sync Now" disabled={!deputyStatus?.isConnected} onClick={() => navigate('/admin/deputy/sync')} />
+                        <div className="flex gap-2 pt-2">
+                          <button onClick={() => navigate('/admin/deputy')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">Configure Deputy</button>
+                          <button onClick={() => navigate('/admin/deputy/sync')} disabled={!deputyStatus?.isConnected} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">Sync Now</button>
                         </div>
                       </div>
                     )}
                   </Card>
                 </div>
-              </PivotItem>
-
-              <PivotItem headerText="System Settings">
-                <div className="p-6">
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">Global Settings</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Card className="flex flex-col">
-                      <Text variant="medium" className="font-semibold mb-2">System Configuration</Text>
-                      <Text className="mb-4 text-gray-600">Manage system-wide settings and defaults.</Text>
-                      <PrimaryButton text="System Settings" onClick={() => navigate('/admin/settings')} />
-                    </Card>
-                    <Card className="flex flex-col">
-                      <Text variant="medium" className="font-semibold mb-2">Pay Rates</Text>
-                      <Text className="mb-4 text-gray-600">Configure default and venue-specific pay rates.</Text>
-                      <PrimaryButton text="Manage Pay Rates" onClick={() => navigate('/admin/payrates')} />
-                    </Card>
-                  </div>
-                </div>
-              </PivotItem>
-
-              <PivotItem headerText="Payroll">
-                <div className="p-6">
+              )
+            },
+            {
+              key: 'payroll',
+              headerText: 'Payroll',
+              content: (
+                <div className="p-4">
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Weekly Payroll Management</h3>
-                  <p className="text-gray-600 mb-6">
-                    Generate invoices for all staff members for weekly payment periods (Monday-Sunday).
-                    Staff will receive their payments on Mondays.
-                  </p>
+                  <p className="text-gray-600 mb-4">Generate invoices for all staff members for weekly payment periods (Monday-Sunday).</p>
                   <BulkPayrollGeneration />
                 </div>
-              </PivotItem>
-            </Pivot>
+              )
+            }
+          ]}
+          defaultSelectedKey="quickActions"
+          isMobile={true}
+        />
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          {/* Tabs */}
+          <div className="border-b border-gray-200">
+            <nav className="flex gap-0 -mb-px">
+              {desktopTabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={activeTab === tab.id
+                    ? 'px-4 py-2.5 text-sm font-medium text-red-600 border-b-2 border-red-600'
+                    : 'px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent'
+                  }
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
           </div>
-        )}
-      </div>
-    </AdminLayout>
+
+          {activeTab === 'quickActions' && (
+            <div className="p-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Common Tasks</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card className="flex flex-col">
+                  <p className="text-sm font-semibold mb-2">Staff Management</p>
+                  <p className="mb-4 text-gray-600 text-sm">Add, edit, or deactivate staff members.</p>
+                  <button onClick={() => navigate('/admin/staff')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors self-start">Manage Staff</button>
+                </Card>
+                <Card className="flex flex-col">
+                  <p className="text-sm font-semibold mb-2">Venue Management</p>
+                  <p className="mb-4 text-gray-600 text-sm">Manage venues and locations.</p>
+                  <button onClick={() => navigate('/admin/venues')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors self-start">Manage Venues</button>
+                </Card>
+                <Card className="flex flex-col">
+                  <p className="text-sm font-semibold mb-2">Approve Shifts</p>
+                  <p className="mb-4 text-gray-600 text-sm">Review and approve pending shifts.</p>
+                  <button onClick={() => navigate('/approvals')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors self-start">Shift Approvals</button>
+                </Card>
+                <Card className="flex flex-col">
+                  <p className="text-sm font-semibold mb-2">Generate Invoices</p>
+                  <p className="mb-4 text-gray-600 text-sm">Create and manage staff invoices.</p>
+                  <button onClick={() => navigate('/admin/invoices')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors self-start">Invoice Management</button>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'deputyIntegration' && (
+            <div className="p-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Deputy Integration Status</h3>
+              <Card className="max-w-lg">
+                {isLoading ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Connection Status:</span>
+                      <span className={deputyStatus?.isConnected ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                        {deputyStatus?.isConnected ? 'Connected' : 'Disconnected'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Last Sync:</span>
+                      <span className="text-gray-600">{deputyStatus?.lastSyncDate ? formatDate(deputyStatus.lastSyncDate) : 'Never'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Employees Synced:</span>
+                      <span className="text-gray-600">{deputyStatus?.employeeCount || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-700">Timesheets Synced:</span>
+                      <span className="text-gray-600">{deputyStatus?.timesheetCount || 0}</span>
+                    </div>
+                    {deputyStatus?.errorMessage && (
+                      <p className="text-red-600 text-sm mt-2">Error: {deputyStatus.errorMessage}</p>
+                    )}
+                    <div className="flex gap-3 pt-3">
+                      <button onClick={() => navigate('/admin/deputy')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">Configure Deputy</button>
+                      <button onClick={() => navigate('/admin/deputy/sync')} disabled={!deputyStatus?.isConnected} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">Sync Now</button>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            </div>
+          )}
+
+          {activeTab === 'systemSettings' && (
+            <div className="p-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Global Settings</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card className="flex flex-col">
+                  <p className="text-sm font-semibold mb-2">System Configuration</p>
+                  <p className="mb-4 text-gray-600 text-sm">Manage system-wide settings and defaults.</p>
+                  <button onClick={() => navigate('/admin/settings')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors self-start">System Settings</button>
+                </Card>
+                <Card className="flex flex-col">
+                  <p className="text-sm font-semibold mb-2">Pay Rates</p>
+                  <p className="mb-4 text-gray-600 text-sm">Configure default and venue-specific pay rates.</p>
+                  <button onClick={() => navigate('/admin/payrates')} className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors self-start">Manage Pay Rates</button>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'payroll' && (
+            <div className="p-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Weekly Payroll Management</h3>
+              <p className="text-gray-600 mb-6">
+                Generate invoices for all staff members for weekly payment periods (Monday-Sunday).
+                Staff will receive their payments on Mondays.
+              </p>
+              <BulkPayrollGeneration />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
 

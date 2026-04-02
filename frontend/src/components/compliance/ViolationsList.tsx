@@ -104,13 +104,14 @@ export const ViolationsList: React.FC<ViolationsListProps> = ({
 
   // Filter violations by search term
   const filteredViolations = useMemo(() => {
-    if (!searchTerm) return violations;
+    const safeViolations = (violations || []).filter(Boolean);
+    if (!searchTerm) return safeViolations;
 
     const term = searchTerm.toLowerCase();
-    return violations.filter(violation =>
-      violation.description.toLowerCase().includes(term) ||
-      violation.user_data.full_name.toLowerCase().includes(term) ||
-      violation.violation_type_display.toLowerCase().includes(term) ||
+    return safeViolations.filter(violation =>
+      violation.description?.toLowerCase().includes(term) ||
+      violation.user_data?.full_name?.toLowerCase().includes(term) ||
+      violation.violation_type_display?.toLowerCase().includes(term) ||
       (violation.shift_data?.venue_name?.toLowerCase().includes(term))
     );
   }, [violations, searchTerm]);
@@ -507,7 +508,7 @@ export const ViolationsList: React.FC<ViolationsListProps> = ({
               items={filteredViolations}
               columns={columns}
               sortable
-              getRowId={(item) => item.id}
+              getRowId={(item) => item?.id ?? ''}
             >
               <DataGridHeader>
                 <DataGridRow>

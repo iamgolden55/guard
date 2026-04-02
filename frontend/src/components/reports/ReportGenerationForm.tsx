@@ -504,7 +504,7 @@ const ReportGenerationForm: React.FC<ReportGenerationFormProps> = ({
 
             <div style={{ display: 'flex', gap: '8px' }}>
               <Button
-                appearance="primary"
+                appearance="primary" style={{ backgroundColor: "#d13438", borderColor: "#d13438" }}
                 onClick={() => {
                   setGeneratedJobId(null);
                   onCancel?.();
@@ -604,7 +604,7 @@ const ReportGenerationForm: React.FC<ReportGenerationFormProps> = ({
 
                     <Button
                       type="submit"
-                      appearance="primary"
+                      appearance="primary" style={{ backgroundColor: "#d13438", borderColor: "#d13438" }}
                       icon={isGenerating ? <Spinner size="tiny" /> : <PlayRegular />}
                       disabled={isGenerating || !formik.isValid}
                     >

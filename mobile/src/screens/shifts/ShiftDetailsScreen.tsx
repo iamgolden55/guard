@@ -272,6 +272,13 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
           text: 'ACTIVE',
           icon: 'checkmark-circle' as const,
         };
+      case 'no_show':
+        return {
+          color: colors.error,
+          bgColor: `${colors.error}15`,
+          text: 'NO SHOW',
+          icon: 'close-circle' as const,
+        };
       case 'completed':
       case 'approved':
         return {
@@ -322,7 +329,8 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
     const width = 600;
     const height = 400;
 
-    const url = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s-l+0074D9(${longitude},${latitude})/${longitude},${latitude},${zoom},0/${width}x${height}@2x?access_token=pk.eyJ1IjoiaWFtZ29sZGVuOTUiLCJhIjoiY21nbWc3ZXZnMDIwdzJpcXdrZ3phdG83dyJ9.2IZGnIFbjKTWhjtvz3C1Lg`;
+    const mapboxToken = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || '';
+    const url = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s-l+0074D9(${longitude},${latitude})/${longitude},${latitude},${zoom},0/${width}x${height}@2x?access_token=${mapboxToken}`;
 
     console.log('[ShiftDetails] Generated map URL:', url);
 
@@ -1170,7 +1178,7 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
           />
         )}
 
-        {(shift.status === 'completed' || shift.status === 'cancelled' || shift.status === 'approved') && (
+        {(shift.status === 'completed' || shift.status === 'cancelled' || shift.status === 'approved' || shift.status === 'no_show') && (
           <Button
             title="Close"
             variant="secondary"

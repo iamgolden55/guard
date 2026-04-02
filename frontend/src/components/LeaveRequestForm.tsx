@@ -1,23 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Formik, Form, Field, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
-import {
-  PrimaryButton,
-  DefaultButton,
-  TextField,
-  Dropdown,
-  IDropdownOption,
-  DatePicker,
-  Text,
-  MessageBar,
-  MessageBarType,
-  Spinner,
-  SpinnerSize,
-  Icon,
-  Stack,
-  Label,
-  ProgressIndicator
-} from '@fluentui/react';
 import { useAuth } from '../contexts/AuthContext';
 import { leaveService } from '../services';
 import type {
@@ -26,6 +9,7 @@ import type {
   LeaveRequestFormErrors,
   LeaveBalanceSummary
 } from '../types/leave';
+import { Container, SpaceBetween, Alert } from './cloudscape';
 
 interface LeaveRequestFormProps {
   onSuccess?: (request: any) => void;
@@ -98,9 +82,6 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({
           leaveService.getMyBalances()
         ]);
 
-        console.log('Leave types result:', typesResult, Array.isArray(typesResult));
-        console.log('Balances result:', balancesResult);
-
         setLeaveTypes(Array.isArray(typesResult) ? typesResult : []);
         setBalances(balancesResult?.balances || []);
 
@@ -162,21 +143,15 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({
   // Validate leave request in real-time
   const validateRequest = useCallback(async (formData: LeaveRequestFormData) => {
     // Skip validation - not implemented in backend yet
-    // The backend will validate on submission
     setValidationWarnings([]);
     setBalanceAfter('');
   }, []);
 
   // Handle leave type selection
-  const handleLeaveTypeChange = (option: IDropdownOption | undefined, setFieldValue: any) => {
-    if (option) {
-      const leaveTypeId = option.key as number;
-      setFieldValue('leave_type_id', leaveTypeId);
-
-      // Find and set the corresponding balance
-      const balance = balances.find(b => b.leave_type.id === leaveTypeId);
-      setSelectedLeaveBalance(balance || null);
-    }
+  const handleLeaveTypeChange = (leaveTypeId: number, setFieldValue: any) => {
+    setFieldValue('leave_type_id', leaveTypeId);
+    const balance = balances.find(b => b.leave_type.id === leaveTypeId);
+    setSelectedLeaveBalance(balance || null);
   };
 
   // Handle form submission
@@ -237,283 +212,290 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({
     }
   };
 
-  // Prepare dropdown options
-  const leaveTypeOptions: IDropdownOption[] = (leaveTypes || []).map(type => ({
-    key: type.id,
-    text: `${type.name} (${type.code})`,
-    data: type
-  }));
-
   if (isLoading) {
     return (
       <div className={`flex items-center justify-center p-8 ${className}`}>
-        <Spinner size={SpinnerSize.large} label="Loading leave request form..." />
+        <div className="flex items-center gap-3 text-gray-500">
+          <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm">Loading leave request form...</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={`max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md ${className}`}>
-      <div className="mb-6">
-        <Text variant="xLarge" className="font-semibold text-gray-900">
-          {editMode ? 'Edit Leave Request' : 'Request Time Off'}
-        </Text>
-        <Text variant="medium" className="text-gray-600 mt-1">
-          {editMode
-            ? 'Update your leave request details below'
-            : 'Please fill out the form below to request time off'
-          }
-        </Text>
-      </div>
-
-      {submitSuccess && (
-        <MessageBar
-          messageBarType={MessageBarType.success}
-          isMultiline
-          className="mb-4"
-          onDismiss={() => setSubmitSuccess('')}
-        >
-          {submitSuccess}
-        </MessageBar>
-      )}
-
-      {submitError && (
-        <MessageBar
-          messageBarType={MessageBarType.error}
-          isMultiline
-          className="mb-4"
-          onDismiss={() => setSubmitError('')}
-        >
-          {submitError}
-        </MessageBar>
-      )}
-
-      {validationWarnings.length > 0 && (
-        <MessageBar
-          messageBarType={MessageBarType.warning}
-          isMultiline
-          className="mb-4"
-        >
+    <div className={`max-w-2xl mx-auto ${className}`}>
+      <Container>
+        <SpaceBetween size="l">
           <div>
-            <strong>Please note:</strong>
-            <ul className="mt-1">
-              {validationWarnings.map((warning, index) => (
-                <li key={index} className="ml-4">• {warning}</li>
-              ))}
-            </ul>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {editMode ? 'Edit Leave Request' : 'Request Time Off'}
+            </h2>
+            <p className="text-sm text-gray-600 mt-1">
+              {editMode
+                ? 'Update your leave request details below'
+                : 'Please fill out the form below to request time off'
+              }
+            </p>
           </div>
-        </MessageBar>
-      )}
 
-      <Formik
-        initialValues={initialValues}
-        validationSchema={validationSchema}
-        onSubmit={handleSubmit}
-        enableReinitialize
-      >
-        {({ values, setFieldValue, errors, touched }) => {
-          // Watch for date changes to calculate working days
-          React.useEffect(() => {
-            if (values.start_date && values.end_date) {
-              calculateWorkingDays(values.start_date, values.end_date);
-              validateRequest(values);
-            }
-          }, [values.start_date, values.end_date, values.leave_type_id]);
+          {submitSuccess && (
+            <Alert type="success" dismissible onDismiss={() => setSubmitSuccess('')}>
+              {submitSuccess}
+            </Alert>
+          )}
 
-          return (
-            <Form>
-              <Stack tokens={{ childrenGap: 20 }}>
-                {/* Leave Type Selection */}
-                <div>
-                  <Label required htmlFor="leave_type_id">
-                    Leave Type
-                  </Label>
-                  <Dropdown
-                    id="leave_type_id"
-                    placeholder="Select leave type"
-                    options={leaveTypeOptions}
-                    selectedKey={values.leave_type_id || undefined}
-                    onChange={(_, option) => handleLeaveTypeChange(option, setFieldValue)}
-                    errorMessage={touched.leave_type_id && errors.leave_type_id ? errors.leave_type_id : undefined}
-                    required
-                    disabled={isSubmitting}
-                    ariaLabel="Select the type of leave you are requesting"
-                  />
-                </div>
+          {submitError && (
+            <Alert type="error" dismissible onDismiss={() => setSubmitError('')}>
+              {submitError}
+            </Alert>
+          )}
 
-                {/* Current Balance Display */}
-                {selectedLeaveBalance && (
-                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <Text variant="medium" className="font-semibold text-blue-900">
-                      Current Balance: {selectedLeaveBalance.leave_type.name}
-                    </Text>
-                    <div className="mt-2 space-y-1">
-                      <div className="flex justify-between">
-                        <Text variant="small" className="text-blue-800">Available Balance:</Text>
-                        <Text variant="small" className="font-medium text-blue-900">
-                          {selectedLeaveBalance.available_balance} days
-                        </Text>
-                      </div>
-                      {selectedLeaveBalance.pending_balance !== '0' && (
-                        <div className="flex justify-between">
-                          <Text variant="small" className="text-orange-600">Pending Requests:</Text>
-                          <Text variant="small" className="font-medium text-orange-700">
-                            {selectedLeaveBalance.pending_balance} days
-                          </Text>
-                        </div>
-                      )}
-                    </div>
-                    <ProgressIndicator
-                      percentComplete={
-                        parseFloat(selectedLeaveBalance.entitlement.used_to_date) /
-                        parseFloat(selectedLeaveBalance.entitlement.total_entitlement)
-                      }
-                      className="mt-2"
-                      description={`${selectedLeaveBalance.entitlement.used_to_date} of ${selectedLeaveBalance.entitlement.total_entitlement} days used this year`}
-                    />
-                  </div>
-                )}
+          {validationWarnings.length > 0 && (
+            <Alert type="warning">
+              <div>
+                <strong>Please note:</strong>
+                <ul className="mt-1">
+                  {validationWarnings.map((warning, index) => (
+                    <li key={index} className="ml-4">- {warning}</li>
+                  ))}
+                </ul>
+              </div>
+            </Alert>
+          )}
 
-                {/* Date Selection */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label required htmlFor="start_date">
-                      Start Date
-                    </Label>
-                    <Field name="start_date">
-                      {({ field, meta }: any) => (
-                        <DatePicker
-                          id="start_date"
-                          value={field.value ? new Date(field.value) : undefined}
-                          onSelectDate={(date) => {
-                            setFieldValue('start_date', date ? date.toISOString().split('T')[0] : '');
-                          }}
-                          placeholder="Select start date"
-                          isRequired
-                          disabled={isSubmitting}
-                          minDate={new Date()}
-                          ariaLabel="Select the start date of your leave"
-                        />
-                      )}
-                    </Field>
-                    <ErrorMessage name="start_date" component="div" className="text-red-600 text-sm mt-1" />
-                  </div>
+          <Formik
+            initialValues={initialValues}
+            validationSchema={validationSchema}
+            onSubmit={handleSubmit}
+            enableReinitialize
+          >
+            {({ values, setFieldValue, errors, touched }) => {
+              // Watch for date changes to calculate working days
+              React.useEffect(() => {
+                if (values.start_date && values.end_date) {
+                  calculateWorkingDays(values.start_date, values.end_date);
+                  validateRequest(values);
+                }
+              }, [values.start_date, values.end_date, values.leave_type_id]);
 
-                  <div>
-                    <Label required htmlFor="end_date">
-                      End Date
-                    </Label>
-                    <Field name="end_date">
-                      {({ field, meta }: any) => (
-                        <DatePicker
-                          id="end_date"
-                          value={field.value ? new Date(field.value) : undefined}
-                          onSelectDate={(date) => {
-                            setFieldValue('end_date', date ? date.toISOString().split('T')[0] : '');
-                          }}
-                          placeholder="Select end date"
-                          isRequired
-                          disabled={isSubmitting}
-                          minDate={values.start_date ? new Date(values.start_date) : new Date()}
-                          ariaLabel="Select the end date of your leave"
-                        />
-                      )}
-                    </Field>
-                    <ErrorMessage name="end_date" component="div" className="text-red-600 text-sm mt-1" />
-                  </div>
-                </div>
-
-                {/* Working Days Display */}
-                {workingDays > 0 && (
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Icon iconName="Calendar" className="text-gray-600" />
-                      <Text variant="medium" className="font-medium">
-                        Working Days: {workingDays}
-                      </Text>
-                      {balanceAfter && (
-                        <Text variant="small" className="text-gray-600">
-                          (Balance after: {balanceAfter} days)
-                        </Text>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Reason */}
-                <div>
-                  <Label required htmlFor="reason">
-                    Reason for Leave
-                  </Label>
-                  <Field name="reason">
-                    {({ field, meta }: any) => (
-                      <TextField
-                        id="reason"
-                        multiline
-                        rows={4}
-                        {...field}
-                        placeholder="Please provide a detailed reason for your leave request..."
-                        required
+              return (
+                <Form>
+                  <SpaceBetween size="m">
+                    {/* Leave Type Selection */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Leave Type <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={values.leave_type_id || ''}
+                        onChange={(e) => handleLeaveTypeChange(Number(e.target.value), setFieldValue)}
                         disabled={isSubmitting}
-                        errorMessage={meta.touched && meta.error ? meta.error : undefined}
-                        maxLength={500}
-                        description={`${field.value?.length || 0}/500 characters`}
-                        ariaLabel="Provide a detailed reason for your leave request"
-                      />
+                        className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white"
+                        aria-label="Select the type of leave you are requesting"
+                      >
+                        <option value="">Select leave type</option>
+                        {(leaveTypes || []).map(type => (
+                          <option key={type.id} value={type.id}>
+                            {type.name} ({type.code})
+                          </option>
+                        ))}
+                      </select>
+                      {touched.leave_type_id && errors.leave_type_id && (
+                        <p className="text-red-500 text-xs mt-1">{errors.leave_type_id}</p>
+                      )}
+                    </div>
+
+                    {/* Current Balance Display */}
+                    {selectedLeaveBalance && (
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <p className="text-sm font-semibold text-gray-900">
+                          Current Balance: {selectedLeaveBalance.leave_type.name}
+                        </p>
+                        <div className="mt-2 space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-xs text-gray-600">Available Balance:</span>
+                            <span className="text-xs font-medium text-gray-900">
+                              {selectedLeaveBalance.available_balance} days
+                            </span>
+                          </div>
+                          {selectedLeaveBalance.pending_balance !== '0' && (
+                            <div className="flex justify-between">
+                              <span className="text-xs text-orange-600">Pending Requests:</span>
+                              <span className="text-xs font-medium text-orange-700">
+                                {selectedLeaveBalance.pending_balance} days
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        {/* Progress bar */}
+                        <div className="mt-2">
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-red-500 h-2 rounded-full transition-all duration-300"
+                              style={{
+                                width: `${Math.min(
+                                  (parseFloat(selectedLeaveBalance.entitlement.used_to_date) /
+                                  parseFloat(selectedLeaveBalance.entitlement.total_entitlement)) * 100,
+                                  100
+                                )}%`
+                              }}
+                            />
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {selectedLeaveBalance.entitlement.used_to_date} of {selectedLeaveBalance.entitlement.total_entitlement} days used this year
+                          </p>
+                        </div>
+                      </div>
                     )}
-                  </Field>
-                </div>
 
-                {/* Supporting Documents */}
-                <div>
-                  <Label htmlFor="supporting_documents">
-                    Supporting Documents (Optional)
-                  </Label>
-                  <input
-                    id="supporting_documents"
-                    name="supporting_documents"
-                    type="file"
-                    multiple
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                    onChange={(event) => {
-                      setFieldValue('supporting_documents', event.currentTarget.files);
-                    }}
-                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                    disabled={isSubmitting}
-                    aria-describedby="file-help"
-                  />
-                  <Text variant="small" id="file-help" className="text-gray-600 mt-1">
-                    You can upload multiple files (PDF, Word documents, or images). Maximum 10MB per file.
-                  </Text>
-                </div>
+                    {/* Date Selection */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Start Date <span className="text-red-500">*</span>
+                        </label>
+                        <Field name="start_date">
+                          {({ field }: any) => (
+                            <input
+                              type="date"
+                              id="start_date"
+                              value={field.value || ''}
+                              onChange={(e) => setFieldValue('start_date', e.target.value)}
+                              min={new Date().toISOString().split('T')[0]}
+                              disabled={isSubmitting}
+                              className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                              aria-label="Select the start date of your leave"
+                            />
+                          )}
+                        </Field>
+                        <ErrorMessage name="start_date" component="div" className="text-red-600 text-xs mt-1" />
+                      </div>
 
-                {/* Form Actions */}
-                <div className="flex gap-3 pt-4 border-t border-gray-200">
-                  <PrimaryButton
-                    type="submit"
-                    disabled={isSubmitting}
-                    text={isSubmitting
-                      ? (editMode ? 'Updating...' : 'Submitting...')
-                      : (editMode ? 'Update Request' : 'Submit Request')
-                    }
-                    iconProps={isSubmitting ? { iconName: 'Clock' } : { iconName: 'Send' }}
-                    className="flex-1"
-                    ariaLabel={editMode ? 'Update leave request' : 'Submit leave request'}
-                  />
-                  <DefaultButton
-                    text="Cancel"
-                    onClick={onCancel}
-                    disabled={isSubmitting}
-                    iconProps={{ iconName: 'Cancel' }}
-                    className="flex-1"
-                    ariaLabel="Cancel and close form"
-                  />
-                </div>
-              </Stack>
-            </Form>
-          );
-        }}
-      </Formik>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          End Date <span className="text-red-500">*</span>
+                        </label>
+                        <Field name="end_date">
+                          {({ field }: any) => (
+                            <input
+                              type="date"
+                              id="end_date"
+                              value={field.value || ''}
+                              onChange={(e) => setFieldValue('end_date', e.target.value)}
+                              min={values.start_date || new Date().toISOString().split('T')[0]}
+                              disabled={isSubmitting}
+                              className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                              aria-label="Select the end date of your leave"
+                            />
+                          )}
+                        </Field>
+                        <ErrorMessage name="end_date" component="div" className="text-red-600 text-xs mt-1" />
+                      </div>
+                    </div>
+
+                    {/* Working Days Display */}
+                    {workingDays > 0 && (
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span className="text-sm font-medium">Working Days: {workingDays}</span>
+                          {balanceAfter && (
+                            <span className="text-xs text-gray-600">(Balance after: {balanceAfter} days)</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Reason */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Reason for Leave <span className="text-red-500">*</span>
+                      </label>
+                      <Field name="reason">
+                        {({ field, meta }: any) => (
+                          <div>
+                            <textarea
+                              id="reason"
+                              rows={4}
+                              {...field}
+                              placeholder="Please provide a detailed reason for your leave request..."
+                              disabled={isSubmitting}
+                              maxLength={500}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+                              aria-label="Provide a detailed reason for your leave request"
+                            />
+                            <div className="flex justify-between mt-1">
+                              {meta.touched && meta.error && (
+                                <p className="text-red-500 text-xs">{meta.error}</p>
+                              )}
+                              <p className="text-xs text-gray-500 ml-auto">{field.value?.length || 0}/500 characters</p>
+                            </div>
+                          </div>
+                        )}
+                      </Field>
+                    </div>
+
+                    {/* Supporting Documents */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Supporting Documents (Optional)
+                      </label>
+                      <input
+                        id="supporting_documents"
+                        name="supporting_documents"
+                        type="file"
+                        multiple
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                        onChange={(event) => {
+                          setFieldValue('supporting_documents', event.currentTarget.files);
+                        }}
+                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                        disabled={isSubmitting}
+                        aria-describedby="file-help"
+                      />
+                      <p id="file-help" className="text-xs text-gray-500 mt-1">
+                        You can upload multiple files (PDF, Word documents, or images). Maximum 10MB per file.
+                      </p>
+                    </div>
+
+                    {/* Form Actions */}
+                    <div className="flex gap-3 pt-4 border-t border-gray-200">
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="flex-1 px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                        aria-label={editMode ? 'Update leave request' : 'Submit leave request'}
+                      >
+                        {isSubmitting
+                          ? (editMode ? 'Updating...' : 'Submitting...')
+                          : (editMode ? 'Update Request' : 'Submit Request')
+                        }
+                      </button>
+                      {onCancel && (
+                        <button
+                          type="button"
+                          onClick={onCancel}
+                          disabled={isSubmitting}
+                          className="flex-1 px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                          aria-label="Cancel and close form"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </SpaceBetween>
+                </Form>
+              );
+            }}
+          </Formik>
+        </SpaceBetween>
+      </Container>
     </div>
   );
 };

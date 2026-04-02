@@ -25,7 +25,7 @@ const ComplianceManagement: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="flex -mx-5 lg:-mx-6 -mt-4">
       {/* Sidebar */}
       <div className="w-64 flex-shrink-0">
         <ComplianceSidebar />

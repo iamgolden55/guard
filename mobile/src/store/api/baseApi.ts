@@ -5,7 +5,7 @@ import * as SecureStore from 'expo-secure-store';
 // API Base URL - Update this based on your backend
 const API_BASE_URL = __DEV__
   ? 'http://localhost:8000/api/v1/'
-  : 'https://your-production-api.com/api/v1/';
+  : 'https://mead-security-api.onrender.com/api/v1/';
 
 // Base query with authentication
 const baseQuery = fetchBaseQuery({

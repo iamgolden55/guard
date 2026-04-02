@@ -2,12 +2,6 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-// Debug: Log environment variables
-console.log('DEBUG app.config.js - Environment variables:');
-console.log('  API_BASE_URL:', process.env.API_BASE_URL);
-console.log('  EXPO_PROJECT_ID:', process.env.EXPO_PROJECT_ID);
-console.log('  NODE_ENV:', process.env.NODE_ENV);
-
 module.exports = {
   expo: {
     name: "Security Staff Portal",
@@ -30,7 +24,7 @@ module.exports = {
       backgroundColor: "#007AFF"
     },
     ios: {
-      supportsTablet: false,
+      supportsTablet: true,
       bundleIdentifier: "com.meadsecurity.staffapp",
       buildNumber: "1",
       infoPlist: {

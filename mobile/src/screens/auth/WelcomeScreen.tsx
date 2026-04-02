@@ -37,7 +37,7 @@ export const WelcomeScreen = () => {
       <View style={styles.textContainer}>
         <Text style={styles.title}>Security Staff Portal</Text>
         <Text style={styles.subtitle}>
-          Manage your shifts, check in to venues, and track your work all in one place
+          The workforce management platform for security companies. Sign up free to manage shifts, staff, and compliance.
         </Text>
       </View>
 

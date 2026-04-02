@@ -1,49 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  DetailsList,
-  DetailsListLayoutMode,
-  IColumn,
-  Selection,
-  SelectionMode,
-  CommandBar,
-  ICommandBarItemProps,
-  SearchBox,
-  Dropdown,
-  IDropdownOption,
-  DatePicker,
-  PrimaryButton,
-  DefaultButton,
-  Panel,
-  PanelType,
-  Text,
-  MessageBar,
-  MessageBarType,
-  Spinner,
-  SpinnerSize,
-  Stack,
-  Icon,
-  Persona,
-  PersonaSize,
-  Modal,
-  Pivot,
-  PivotItem,
-  TooltipHost,
-  DirectionalHint,
-  Checkbox,
-  Label,
-  Link,
-  ProgressIndicator
-} from '@fluentui/react';
 import { useAuth } from '../contexts/AuthContext';
 import { leaveService } from '../services';
 import { LeaveRequestStatus } from '../types/leave';
 import type {
   LeaveRequest,
-  LeaveRequestResponse,
   LeaveType,
   LeaveRequestFilterOptions,
-  User
 } from '../types/leave';
+import { Container, SpaceBetween, StatusIndicator, Alert, EmptyState, ConfirmationModal } from './cloudscape';
 
 interface LeaveHistoryTableProps {
   userId?: number;
@@ -54,365 +18,6 @@ interface LeaveHistoryTableProps {
   defaultFilters?: LeaveRequestFilterOptions;
   onRequestSelect?: (request: LeaveRequest) => void;
 }
-
-interface RequestDetailsProps {
-  request: LeaveRequest | null;
-  isOpen: boolean;
-  onClose: () => void;
-  canEdit: boolean;
-  onEdit?: (request: LeaveRequest) => void;
-  onCancel?: (request: LeaveRequest) => void;
-}
-
-// Request details panel component
-const RequestDetailsPanel: React.FC<RequestDetailsProps> = ({
-  request,
-  isOpen,
-  onClose,
-  canEdit,
-  onEdit,
-  onCancel
-}) => {
-  const [isCancelling, setIsCancelling] = useState(false);
-
-  const handleCancel = async () => {
-    if (!request || !onCancel) return;
-
-    setIsCancelling(true);
-    try {
-      await onCancel(request);
-    } catch (error) {
-      console.error('Error cancelling request:', error);
-    } finally {
-      setIsCancelling(false);
-    }
-  };
-
-  const getStatusColor = (status: LeaveRequestStatus) => {
-    switch (status) {
-      case LeaveRequestStatus.APPROVED:
-        return '#107C10';
-      case LeaveRequestStatus.PENDING:
-        return '#FF8C00';
-      case LeaveRequestStatus.REJECTED:
-        return '#D13438';
-      case LeaveRequestStatus.CANCELLED:
-        return '#605E5C';
-      case LeaveRequestStatus.WITHDRAWN:
-        return '#8A8886';
-      default:
-        return '#323130';
-    }
-  };
-
-  const getStatusIcon = (status: LeaveRequestStatus) => {
-    switch (status) {
-      case LeaveRequestStatus.APPROVED:
-        return 'Accept';
-      case LeaveRequestStatus.PENDING:
-        return 'Clock';
-      case LeaveRequestStatus.REJECTED:
-        return 'Cancel';
-      case LeaveRequestStatus.CANCELLED:
-        return 'StatusCircleBlock';
-      case LeaveRequestStatus.WITHDRAWN:
-        return 'Undo';
-      default:
-        return 'Info';
-    }
-  };
-
-  if (!request) return null;
-
-  const statusColor = getStatusColor(request.status);
-  const statusIcon = getStatusIcon(request.status);
-  const canCancelRequest = request.status === LeaveRequestStatus.PENDING &&
-                          new Date(request.start_date) > new Date();
-
-  return (
-    <Panel
-      headerText="Leave Request Details"
-      isOpen={isOpen}
-      onDismiss={onClose}
-      type={PanelType.medium}
-      closeButtonAriaLabel="Close request details panel"
-    >
-      <Stack tokens={{ childrenGap: 20 }}>
-        {/* Request Header */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-all duration-300 ease-out">
-          <Stack tokens={{ childrenGap: 12 }} className="p-4">
-            <div className="flex items-start justify-between">
-              <Persona
-                text={request.user ? `${request.user.first_name} ${request.user.last_name}` : 'Unknown User'}
-                secondaryText={request.user?.email || ''}
-                size={PersonaSize.size48}
-              />
-              <div className="text-right">
-                <div className="flex items-center gap-2">
-                  <Icon iconName={statusIcon} style={{ color: statusColor }} />
-                  <Text variant="medium" style={{ color: statusColor }} className="font-medium">
-                    {request.status}
-                  </Text>
-                </div>
-                {request.reviewed_at && request.reviewed_by && (
-                  <Text variant="small" className="text-gray-600 mt-1">
-                    Reviewed by {request.reviewed_by.first_name} {request.reviewed_by.last_name}
-                  </Text>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 mt-4">
-              <div>
-                <Text variant="small" className="text-gray-600">Leave Type:</Text>
-                <div className="flex items-center gap-2 mt-1">
-                  {request.leave_type && (
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: request.leave_type.color_code }}
-                    />
-                  )}
-                  <Text variant="medium" className="font-medium">
-                    {request.leave_type?.name || 'Unknown Leave Type'}
-                  </Text>
-                </div>
-              </div>
-
-              <div>
-                <Text variant="small" className="text-gray-600">Duration:</Text>
-                <Text variant="medium" className="font-medium mt-1">
-                  {request.days_requested} days
-                </Text>
-              </div>
-            </div>
-          </Stack>
-        </div>
-
-        {/* Leave Details */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-all duration-300 ease-out">
-          <Stack tokens={{ childrenGap: 12 }} className="p-4">
-            <Text variant="large" className="font-semibold">Leave Details</Text>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Text variant="small" className="text-gray-600">Start Date:</Text>
-                <Text variant="medium" className="font-medium mt-1">
-                  {new Date(request.start_date).toLocaleDateString('en-GB', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </Text>
-              </div>
-
-              <div>
-                <Text variant="small" className="text-gray-600">End Date:</Text>
-                <Text variant="medium" className="font-medium mt-1">
-                  {new Date(request.end_date).toLocaleDateString('en-GB', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </Text>
-              </div>
-
-              <div className="col-span-2">
-                <Text variant="small" className="text-gray-600">Submitted:</Text>
-                <Text variant="medium" className="mt-1">
-                  {new Date(request.created_at).toLocaleDateString('en-GB')} at{' '}
-                  {new Date(request.created_at).toLocaleTimeString('en-GB', {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </Text>
-              </div>
-
-              {request.reviewed_at && (
-                <div className="col-span-2">
-                  <Text variant="small" className="text-gray-600">Reviewed:</Text>
-                  <Text variant="medium" className="mt-1">
-                    {new Date(request.reviewed_at).toLocaleDateString('en-GB')} at{' '}
-                    {new Date(request.reviewed_at).toLocaleTimeString('en-GB', {
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </Text>
-                </div>
-              )}
-            </div>
-
-            {/* Reason */}
-            <div>
-              <Text variant="small" className="text-gray-600">Reason for Leave:</Text>
-              <div className="mt-2 p-3 bg-gray-50 rounded-md border">
-                <Text variant="medium">{request.reason}</Text>
-              </div>
-            </div>
-
-            {/* Manager Comments */}
-            {request.manager_comments && (
-              <div>
-                <Text variant="small" className="text-gray-600">Manager Comments:</Text>
-                <div className="mt-2 p-3 bg-blue-50 rounded-md border border-blue-200">
-                  <Text variant="medium">{request.manager_comments}</Text>
-                </div>
-              </div>
-            )}
-
-            {/* Supporting Documents */}
-            {request.supporting_documents && request.supporting_documents.length > 0 && (
-              <div>
-                <Text variant="small" className="text-gray-600">Supporting Documents:</Text>
-                <div className="mt-2 space-y-2">
-                  {request.supporting_documents.map((doc, index) => (
-                    <div key={doc.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded border">
-                      <Icon iconName="Attach" className="text-blue-600" />
-                      <Link
-                        href="#"
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          try {
-                            const blob = await leaveService.downloadSupportingDocument(request.id, doc.id);
-                            const url = window.URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.style.display = 'none';
-                            a.href = url;
-                            a.download = doc.name;
-                            document.body.appendChild(a);
-                            a.click();
-                            window.URL.revokeObjectURL(url);
-                            document.body.removeChild(a);
-                          } catch (error) {
-                            console.error('Error downloading document:', error);
-                          }
-                        }}
-                        className="flex-1"
-                      >
-                        <Text variant="small">{doc.name}</Text>
-                      </Link>
-                      <Text variant="small" className="text-gray-500">
-                        {new Date(doc.uploaded_at).toLocaleDateString()}
-                      </Text>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </Stack>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="sticky bottom-0 bg-white pt-4 border-t border-gray-200 flex gap-3">
-          {canEdit && request.status === LeaveRequestStatus.PENDING && onEdit && (
-            <DefaultButton
-              text="Edit Request"
-              iconProps={{ iconName: 'Edit' }}
-              onClick={() => onEdit(request)}
-              className="flex-1"
-            />
-          )}
-
-          {canCancelRequest && onCancel && (
-            <DefaultButton
-              text={isCancelling ? 'Cancelling...' : 'Cancel Request'}
-              iconProps={{ iconName: isCancelling ? 'Clock' : 'Cancel' }}
-              onClick={handleCancel}
-              disabled={isCancelling}
-              className="flex-1"
-              styles={{ root: { color: '#D13438', borderColor: '#D13438' } }}
-            />
-          )}
-
-          <DefaultButton
-            text="Close"
-            iconProps={{ iconName: 'ChromeClose' }}
-            onClick={onClose}
-            className="flex-1"
-          />
-        </div>
-      </Stack>
-    </Panel>
-  );
-};
-
-// Export modal component
-const ExportModal: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  onExport: (format: 'csv' | 'xlsx', filters?: LeaveRequestFilterOptions) => void;
-  filters: LeaveRequestFilterOptions;
-  totalRecords: number;
-}> = ({ isOpen, onClose, onExport, filters, totalRecords }) => {
-  const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv');
-  const [includeFilters, setIncludeFilters] = useState(true);
-  const [isExporting, setIsExporting] = useState(false);
-
-  const handleExport = async () => {
-    setIsExporting(true);
-    try {
-      await onExport(exportFormat, includeFilters ? filters : {});
-      onClose();
-    } catch (error) {
-      console.error('Export error:', error);
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const formatOptions: IDropdownOption[] = [
-    { key: 'csv', text: 'CSV (Comma Separated Values)' },
-    { key: 'xlsx', text: 'Excel (XLSX)' }
-  ];
-
-  return (
-    <Modal
-      isOpen={isOpen}
-      onDismiss={onClose}
-      isBlocking={false}
-    >
-      <div className="p-6 min-w-[400px]">
-        <Text variant="xLarge" className="font-semibold mb-4">
-          Export Leave History
-        </Text>
-
-        <Stack tokens={{ childrenGap: 16 }}>
-          <div>
-            <Label>Export Format</Label>
-            <Dropdown
-              selectedKey={exportFormat}
-              onChange={(_, option) => setExportFormat(option?.key as 'csv' | 'xlsx')}
-              options={formatOptions}
-            />
-          </div>
-
-          <Checkbox
-            label={`Apply current filters (${totalRecords} records)`}
-            checked={includeFilters}
-            onChange={(_, checked) => setIncludeFilters(checked || false)}
-          />
-
-          <div className="pt-4 border-t border-gray-200 flex gap-3">
-            <PrimaryButton
-              text={isExporting ? 'Exporting...' : 'Export'}
-              onClick={handleExport}
-              disabled={isExporting}
-              iconProps={{ iconName: isExporting ? 'Clock' : 'Download' }}
-              className="flex-1"
-            />
-            <DefaultButton
-              text="Cancel"
-              onClick={onClose}
-              disabled={isExporting}
-              className="flex-1"
-            />
-          </div>
-        </Stack>
-      </div>
-    </Modal>
-  );
-};
 
 // Main component
 const LeaveHistoryTable: React.FC<LeaveHistoryTableProps> = ({
@@ -435,23 +40,21 @@ const LeaveHistoryTable: React.FC<LeaveHistoryTableProps> = ({
   const [selectedRequest, setSelectedRequest] = useState<LeaveRequest | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
   const [hasNextPage, setHasNextPage] = useState(false);
 
   // Filtering
   const [filters, setFilters] = useState<LeaveRequestFilterOptions>(defaultFilters);
-  const [dateRange, setDateRange] = useState<{ start?: Date; end?: Date }>({});
-
-  // Selection
-  const [selection] = useState(new Selection());
+  const [dateRangeStart, setDateRangeStart] = useState('');
+  const [dateRangeEnd, setDateRangeEnd] = useState('');
 
   // Check permissions
   const canEdit = !userId || userId === authState.user?.id;
-  const canViewAll = isUserRole('manager') || isUserRole('admin');
 
   // Load data
   const loadData = useCallback(async (page: number = 1, showLoading: boolean = true) => {
@@ -459,11 +62,10 @@ const LeaveHistoryTable: React.FC<LeaveHistoryTableProps> = ({
       if (showLoading) setIsLoading(true);
       setError('');
 
-      // Combine filters with date range
       const combinedFilters: LeaveRequestFilterOptions = {
         ...filters,
-        ...(dateRange.start && { start_date: dateRange.start.toISOString().split('T')[0] }),
-        ...(dateRange.end && { end_date: dateRange.end.toISOString().split('T')[0] }),
+        ...(dateRangeStart && { start_date: dateRangeStart }),
+        ...(dateRangeEnd && { end_date: dateRangeEnd }),
         ...(userId && { user: [userId] })
       };
 
@@ -491,19 +93,17 @@ const LeaveHistoryTable: React.FC<LeaveHistoryTableProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [filters, dateRange, userId, pageSize]);
+  }, [filters, dateRangeStart, dateRangeEnd, userId, pageSize]);
 
-  // Initial load and filter changes
   useEffect(() => {
     loadData(1, true);
   }, [loadData]);
 
   // Handle request cancellation
   const handleCancelRequest = async (request: LeaveRequest) => {
+    setIsCancelling(true);
     try {
       await leaveService.cancelLeaveRequest(request.id, 'Cancelled by user');
-
-      // Update the request in the list
       setRequests(prev =>
         prev.map(r =>
           r.id === request.id
@@ -511,22 +111,20 @@ const LeaveHistoryTable: React.FC<LeaveHistoryTableProps> = ({
             : r
         )
       );
-
       setIsDetailsOpen(false);
       setSelectedRequest(null);
-
     } catch (err: any) {
       console.error('Error cancelling request:', err);
       setError('Failed to cancel request. Please try again.');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
   // Handle export
-  const handleExport = async (format: 'csv' | 'xlsx', exportFilters?: LeaveRequestFilterOptions) => {
+  const handleExport = async (format: 'csv' | 'xlsx') => {
     try {
-      const blob = await leaveService.exportLeaveRequests(format, exportFilters);
-
-      // Create download link
+      const blob = await leaveService.exportLeaveRequests(format, filters);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.style.display = 'none';
@@ -536,7 +134,7 @@ const LeaveHistoryTable: React.FC<LeaveHistoryTableProps> = ({
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-
+      setIsExportModalOpen(false);
     } catch (err: any) {
       console.error('Error exporting data:', err);
       setError('Failed to export data. Please try again.');
@@ -546,8 +144,6 @@ const LeaveHistoryTable: React.FC<LeaveHistoryTableProps> = ({
   // Filter data
   const filteredData = useMemo(() => {
     let filtered = [...(requests || [])];
-
-    // Apply search filter
     if (searchText) {
       const searchLower = searchText.toLowerCase();
       filtered = filtered.filter(request =>
@@ -557,193 +153,34 @@ const LeaveHistoryTable: React.FC<LeaveHistoryTableProps> = ({
         request.status.toLowerCase().includes(searchLower)
       );
     }
-
     return filtered;
   }, [requests, searchText]);
 
-  // Define columns
-  const columns: IColumn[] = [
-    ...(showUserColumn ? [{
-      key: 'user',
-      name: 'Employee',
-      minWidth: 180,
-      maxWidth: 220,
-      isResizable: true,
-      onRender: (item: LeaveRequest) => {
-        const displayName = item.user
-          ? `${item.user.first_name} ${item.user.last_name}`
-          : 'Unknown User';
-        const email = item.user?.email || '';
-
-        return (
-          <Persona
-            text={displayName}
-            secondaryText={email}
-            size={compact ? PersonaSize.size24 : PersonaSize.size32}
-          />
-        );
-      },
-    }] : []),
-    {
-      key: 'leaveType',
-      name: 'Leave Type',
-      minWidth: 120,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: LeaveRequest) => (
-        <div className="flex items-center gap-2">
-          {item.leave_type && (
-            <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: item.leave_type.color_code }}
-            />
-          )}
-          <Text variant={compact ? 'small' : 'medium'}>
-            {item.leave_type?.name || 'Unknown Leave Type'}
-          </Text>
-        </div>
-      ),
-    },
-    {
-      key: 'dates',
-      name: 'Dates',
-      minWidth: 180,
-      maxWidth: 220,
-      isResizable: true,
-      onRender: (item: LeaveRequest) => (
-        <div>
-          <Text variant={compact ? 'small' : 'medium'}>
-            {new Date(item.start_date).toLocaleDateString()} - {new Date(item.end_date).toLocaleDateString()}
-          </Text>
-          <Text variant="small" className="text-gray-600">
-            {item.days_requested} days
-          </Text>
-        </div>
-      ),
-    },
-    {
-      key: 'status',
-      name: 'Status',
-      minWidth: 100,
-      maxWidth: 120,
-      isResizable: true,
-      onRender: (item: LeaveRequest) => {
-        const statusColors = {
-          [LeaveRequestStatus.APPROVED]: '#107C10',
-          [LeaveRequestStatus.PENDING]: '#FF8C00',
-          [LeaveRequestStatus.REJECTED]: '#D13438',
-          [LeaveRequestStatus.CANCELLED]: '#605E5C',
-          [LeaveRequestStatus.WITHDRAWN]: '#8A8886'
-        };
-
-        const statusIcons = {
-          [LeaveRequestStatus.APPROVED]: 'Accept',
-          [LeaveRequestStatus.PENDING]: 'Clock',
-          [LeaveRequestStatus.REJECTED]: 'Cancel',
-          [LeaveRequestStatus.CANCELLED]: 'StatusCircleBlock',
-          [LeaveRequestStatus.WITHDRAWN]: 'Undo'
-        };
-
-        return (
-          <div className="flex items-center gap-2">
-            <Icon
-              iconName={statusIcons[item.status]}
-              style={{ color: statusColors[item.status] }}
-            />
-            <Text
-              variant={compact ? 'small' : 'medium'}
-              style={{ color: statusColors[item.status] }}
-              className="font-medium"
-            >
-              {item.status}
-            </Text>
-          </div>
-        );
-      },
-    },
-    {
-      key: 'submitted',
-      name: 'Submitted',
-      minWidth: 100,
-      maxWidth: 130,
-      isResizable: true,
-      onRender: (item: LeaveRequest) => (
-        <Text variant={compact ? 'small' : 'medium'}>
-          {new Date(item.created_at).toLocaleDateString()}
-        </Text>
-      ),
-    },
-    {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 80,
-      maxWidth: 100,
-      isResizable: false,
-      onRender: (item: LeaveRequest) => (
-        <TooltipHost content="View Details">
-          <DefaultButton
-            iconProps={{ iconName: 'View' }}
-            onClick={() => {
-              setSelectedRequest(item);
-              setIsDetailsOpen(true);
-              if (onRequestSelect) onRequestSelect(item);
-            }}
-            ariaLabel="View request details"
-            styles={{ root: { minWidth: '32px' } }}
-          />
-        </TooltipHost>
-      ),
-    },
-  ];
-
-  // Command bar items
-  const commandBarItems: ICommandBarItemProps[] = [
-    {
-      key: 'refresh',
-      text: 'Refresh',
-      iconProps: { iconName: 'Refresh' },
-      onClick: () => loadData(1, true),
-    },
-    {
-      key: 'export',
-      text: 'Export',
-      iconProps: { iconName: 'Download' },
-      onClick: () => setIsExportModalOpen(true),
-    },
-  ];
-
-  // Status filter options
-  const statusOptions: IDropdownOption[] = [
-    { key: 'all', text: 'All Statuses' },
-    { key: LeaveRequestStatus.APPROVED, text: 'Approved' },
-    { key: LeaveRequestStatus.PENDING, text: 'Pending' },
-    { key: LeaveRequestStatus.REJECTED, text: 'Rejected' },
-    { key: LeaveRequestStatus.CANCELLED, text: 'Cancelled' },
-    { key: LeaveRequestStatus.WITHDRAWN, text: 'Withdrawn' }
-  ];
-
-  // Leave type filter options
-  const leaveTypeOptions: IDropdownOption[] = [
-    { key: 'all', text: 'All Leave Types' },
-    ...leaveTypes.map(type => ({ key: type.id, text: type.name }))
-  ];
+  const getStatusType = (status: LeaveRequestStatus): 'success' | 'pending' | 'error' | 'stopped' | 'info' => {
+    switch (status) {
+      case LeaveRequestStatus.APPROVED: return 'success';
+      case LeaveRequestStatus.PENDING: return 'pending';
+      case LeaveRequestStatus.REJECTED: return 'error';
+      case LeaveRequestStatus.CANCELLED: return 'stopped';
+      case LeaveRequestStatus.WITHDRAWN: return 'stopped';
+      default: return 'info';
+    }
+  };
 
   if (error) {
     return (
       <div className={className}>
-        <MessageBar
-          messageBarType={MessageBarType.error}
-          onDismiss={() => setError('')}
-          actions={
-            <DefaultButton
-              text="Retry"
-              iconProps={{ iconName: 'Refresh' }}
-              onClick={() => loadData(1, true)}
-            />
-          }
-        >
-          {error}
-        </MessageBar>
+        <Alert type="error">
+          <div className="flex items-center justify-between">
+            <span>{error}</span>
+            <button
+              onClick={() => { setError(''); loadData(1, true); }}
+              className="px-4 h-8 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </Alert>
       </div>
     );
   }
@@ -754,162 +191,356 @@ const LeaveHistoryTable: React.FC<LeaveHistoryTableProps> = ({
       {!compact && (
         <div className="flex items-center justify-between">
           <div>
-            <Text variant="xLarge" className="font-semibold text-gray-900">
-              Leave History
-            </Text>
-            <Text variant="medium" className="text-gray-600 mt-1">
-              View and manage leave request history
-            </Text>
+            <h2 className="text-xl font-semibold text-gray-900">Leave History</h2>
+            <p className="text-sm text-gray-600 mt-1">View and manage leave request history</p>
           </div>
         </div>
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-all duration-300 ease-out">
-        <Stack tokens={{ childrenGap: 16 }}>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-            <div className="md:col-span-2">
-              <SearchBox
-                placeholder="Search requests..."
-                value={searchText}
-                onChange={(_, newValue) => setSearchText(newValue || '')}
-                onClear={() => setSearchText('')}
-              />
-            </div>
-
-            <Dropdown
-              placeholder="Status"
-              options={statusOptions}
-              selectedKey={filters.status?.[0] || 'all'}
-              onChange={(_, option) => {
-                if (option?.key === 'all') {
-                  setFilters(prev => ({ ...prev, status: undefined }));
-                } else {
-                  setFilters(prev => ({
-                    ...prev,
-                    status: [option?.key as LeaveRequestStatus]
-                  }));
-                }
-              }}
-            />
-
-            <Dropdown
-              placeholder="Leave Type"
-              options={leaveTypeOptions}
-              selectedKey={filters.leave_type?.[0] || 'all'}
-              onChange={(_, option) => {
-                if (option?.key === 'all') {
-                  setFilters(prev => ({ ...prev, leave_type: undefined }));
-                } else {
-                  setFilters(prev => ({
-                    ...prev,
-                    leave_type: [option?.key as number]
-                  }));
-                }
-              }}
-            />
-
-            <DatePicker
-              placeholder="From Date"
-              value={dateRange.start}
-              onSelectDate={(date) => setDateRange(prev => ({ ...prev, start: date || undefined }))}
-            />
-
-            <DatePicker
-              placeholder="To Date"
-              value={dateRange.end}
-              onSelectDate={(date) => setDateRange(prev => ({ ...prev, end: date || undefined }))}
+      <Container>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+          <div className="md:col-span-2">
+            <input
+              type="text"
+              placeholder="Search requests..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
             />
           </div>
-        </Stack>
-      </div>
 
-      {/* Command Bar */}
-      <CommandBar items={commandBarItems} />
+          <select
+            value={filters.status?.[0] || ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              setFilters(prev => ({
+                ...prev,
+                status: val ? [val as LeaveRequestStatus] : undefined
+              }));
+            }}
+            className="h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white"
+          >
+            <option value="">All Statuses</option>
+            <option value={LeaveRequestStatus.APPROVED}>Approved</option>
+            <option value={LeaveRequestStatus.PENDING}>Pending</option>
+            <option value={LeaveRequestStatus.REJECTED}>Rejected</option>
+            <option value={LeaveRequestStatus.CANCELLED}>Cancelled</option>
+            <option value={LeaveRequestStatus.WITHDRAWN}>Withdrawn</option>
+          </select>
+
+          <select
+            value={filters.leave_type?.[0] || ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              setFilters(prev => ({
+                ...prev,
+                leave_type: val ? [Number(val)] : undefined
+              }));
+            }}
+            className="h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white"
+          >
+            <option value="">All Leave Types</option>
+            {leaveTypes.map(type => (
+              <option key={type.id} value={type.id}>{type.name}</option>
+            ))}
+          </select>
+
+          <input
+            type="date"
+            placeholder="From Date"
+            value={dateRangeStart}
+            onChange={(e) => setDateRangeStart(e.target.value)}
+            className="h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+          />
+
+          <input
+            type="date"
+            placeholder="To Date"
+            value={dateRangeEnd}
+            onChange={(e) => setDateRangeEnd(e.target.value)}
+            className="h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+          />
+        </div>
+      </Container>
+
+      {/* Action Bar */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => loadData(1, true)}
+          className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          Refresh
+        </button>
+        <button
+          onClick={() => setIsExportModalOpen(true)}
+          className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          Export
+        </button>
+      </div>
 
       {/* Loading State */}
       {isLoading && (requests || []).length === 0 && (
         <div className="flex items-center justify-center p-8">
-          <Spinner size={SpinnerSize.large} label="Loading leave history..." />
+          <div className="flex items-center gap-3 text-gray-500">
+            <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-sm">Loading leave history...</span>
+          </div>
         </div>
       )}
 
       {/* Data Table */}
-      <div style={{ maxHeight: maxHeight ? `${maxHeight}px` : undefined, overflowY: 'auto' }}>
-        <DetailsList
-          items={filteredData}
-          columns={columns}
-          setKey="set"
-          layoutMode={DetailsListLayoutMode.justified}
-          selection={selection}
-          selectionMode={SelectionMode.none}
-          compact={compact}
+      {filteredData.length > 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" style={{ maxHeight: maxHeight ? `${maxHeight}px` : undefined, overflowY: maxHeight ? 'auto' : undefined }}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                {showUserColumn && <th className="text-left px-4 py-3 font-medium text-gray-700">Employee</th>}
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Leave Type</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Dates</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Status</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Submitted</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-700">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredData.map((item) => (
+                <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  {showUserColumn && (
+                    <td className="px-4 py-3">
+                      <div>
+                        <p className="font-medium text-gray-900">
+                          {item.user ? `${item.user.first_name} ${item.user.last_name}` : 'Unknown User'}
+                        </p>
+                        <p className="text-xs text-gray-500">{item.user?.email || ''}</p>
+                      </div>
+                    </td>
+                  )}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      {item.leave_type && (
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.leave_type.color_code }} />
+                      )}
+                      <span>{item.leave_type?.name || 'Unknown Leave Type'}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div>
+                      <p>{new Date(item.start_date).toLocaleDateString()} - {new Date(item.end_date).toLocaleDateString()}</p>
+                      <p className="text-xs text-gray-500">{item.days_requested} days</p>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusIndicator type={getStatusType(item.status)}>
+                      {item.status}
+                    </StatusIndicator>
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {new Date(item.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => {
+                        setSelectedRequest(item);
+                        setIsDetailsOpen(true);
+                        if (onRequestSelect) onRequestSelect(item);
+                      }}
+                      className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                      title="View Details"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : !isLoading ? (
+        <EmptyState
+          title="No leave requests found"
+          description={
+            searchText || Object.keys(filters).length > 0 || dateRangeStart || dateRangeEnd
+              ? 'Try adjusting your search criteria or filters'
+              : "You haven't submitted any leave requests yet"
+          }
+          icon={
+            <svg className="w-12 h-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          }
         />
-      </div>
+      ) : null}
 
       {/* Load More */}
       {hasNextPage && (
         <div className="text-center">
-          <DefaultButton
-            text="Load More"
-            iconProps={{ iconName: 'ChevronDown' }}
+          <button
             onClick={() => loadData(currentPage + 1, false)}
             disabled={isLoading}
-          />
-        </div>
-      )}
-
-      {/* Empty State */}
-      {filteredData.length === 0 && !isLoading && (
-        <div className="text-center py-12">
-          <Icon iconName="Calendar" className="text-6xl text-gray-400 mb-4" />
-          <Text variant="large" className="text-gray-600 mb-2">
-            No leave requests found
-          </Text>
-          <Text variant="medium" className="text-gray-500">
-            {searchText || Object.keys(filters).length > 0 || dateRange.start || dateRange.end
-              ? 'Try adjusting your search criteria or filters'
-              : 'You haven\'t submitted any leave requests yet'
-            }
-          </Text>
+            className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            Load More
+          </button>
         </div>
       )}
 
       {/* Pagination Info */}
       {totalCount > 0 && (
         <div className="flex justify-between items-center text-sm text-gray-600">
-          <Text variant="small">
-            Showing {filteredData.length} of {totalCount} requests
-          </Text>
+          <span className="text-xs">Showing {filteredData.length} of {totalCount} requests</span>
           {isLoading && (requests || []).length > 0 && (
             <div className="flex items-center gap-2">
-              <Spinner size={SpinnerSize.small} />
-              <Text variant="small">Loading more...</Text>
+              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-xs">Loading more...</span>
             </div>
           )}
         </div>
       )}
 
-      {/* Request Details Panel */}
-      <RequestDetailsPanel
-        request={selectedRequest}
-        isOpen={isDetailsOpen}
-        onClose={() => {
-          setIsDetailsOpen(false);
-          setSelectedRequest(null);
-        }}
-        canEdit={canEdit}
-        onCancel={handleCancelRequest}
-      />
+      {/* Details Slide-over Panel */}
+      {isDetailsOpen && selectedRequest && (
+        <div className="fixed inset-0 z-[2000]">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { setIsDetailsOpen(false); setSelectedRequest(null); }} />
+          <div className="absolute right-0 top-0 bottom-0 w-full max-w-lg bg-white shadow-xl overflow-y-auto">
+            <div className="p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">Leave Request Details</h2>
+                <button onClick={() => { setIsDetailsOpen(false); setSelectedRequest(null); }} className="p-1 text-gray-400 hover:text-gray-600">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <Container>
+                <SpaceBetween size="s">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {selectedRequest.user ? `${selectedRequest.user.first_name} ${selectedRequest.user.last_name}` : 'Unknown User'}
+                      </p>
+                      <p className="text-sm text-gray-500">{selectedRequest.user?.email || ''}</p>
+                    </div>
+                    <StatusIndicator type={getStatusType(selectedRequest.status)}>
+                      {selectedRequest.status}
+                    </StatusIndicator>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <p className="text-xs text-gray-500">Leave Type</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {selectedRequest.leave_type && (
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedRequest.leave_type.color_code }} />
+                        )}
+                        <span className="text-sm font-medium">{selectedRequest.leave_type?.name || 'Unknown'}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Duration</p>
+                      <p className="text-sm font-medium mt-1">{selectedRequest.days_requested} days</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Start Date</p>
+                      <p className="text-sm mt-1">{new Date(selectedRequest.start_date).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">End Date</p>
+                      <p className="text-sm mt-1">{new Date(selectedRequest.end_date).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-500">Submitted</p>
+                      <p className="text-sm mt-1">{new Date(selectedRequest.created_at).toLocaleDateString('en-GB')} at {new Date(selectedRequest.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs text-gray-500">Reason</p>
+                    <div className="mt-1 p-3 bg-gray-50 rounded-lg border">
+                      <p className="text-sm">{selectedRequest.reason}</p>
+                    </div>
+                  </div>
+
+                  {selectedRequest.manager_comments && (
+                    <div>
+                      <p className="text-xs text-gray-500">Manager Comments</p>
+                      <div className="mt-1 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <p className="text-sm">{selectedRequest.manager_comments}</p>
+                      </div>
+                    </div>
+                  )}
+                </SpaceBetween>
+              </Container>
+
+              <div className="flex gap-3 pt-4 border-t">
+                {canEdit && selectedRequest.status === LeaveRequestStatus.PENDING && new Date(selectedRequest.start_date) > new Date() && (
+                  <button
+                    onClick={() => handleCancelRequest(selectedRequest)}
+                    disabled={isCancelling}
+                    className="flex-1 px-4 h-9 text-sm font-medium text-red-600 bg-white border border-red-300 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
+                  >
+                    {isCancelling ? 'Cancelling...' : 'Cancel Request'}
+                  </button>
+                )}
+                <button
+                  onClick={() => { setIsDetailsOpen(false); setSelectedRequest(null); }}
+                  className="flex-1 px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Export Modal */}
-      <ExportModal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
-        onExport={handleExport}
-        filters={filters}
-        totalRecords={totalCount}
-      />
+      {isExportModalOpen && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setIsExportModalOpen(false)} />
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-md w-full">
+            <div className="px-6 pt-6 pb-2">
+              <h2 className="text-lg font-semibold text-gray-900">Export Leave History</h2>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <p className="text-sm text-gray-600">Choose a format to export {totalCount} records.</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleExport('csv')}
+                  className="flex-1 px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Export CSV
+                </button>
+                <button
+                  onClick={() => handleExport('xlsx')}
+                  className="flex-1 px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Export Excel
+                </button>
+              </div>
+            </div>
+            <div className="flex justify-end px-6 pb-6">
+              <button
+                onClick={() => setIsExportModalOpen(false)}
+                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

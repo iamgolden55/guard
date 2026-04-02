@@ -65,15 +65,21 @@ def verify_apple_token(identity_token, nonce=None):
         from jwt.algorithms import RSAAlgorithm
         public_key = RSAAlgorithm.from_jwk(apple_key)
 
+        # SECURITY: Always verify audience — fail closed if not configured
+        apple_client_id = getattr(settings, 'APPLE_CLIENT_ID', None)
+        if not apple_client_id:
+            logger.error("APPLE_CLIENT_ID not configured — rejecting Apple auth")
+            return None
+
         # Verify and decode the token
         decoded = jwt.decode(
             identity_token,
             public_key,
             algorithms=['RS256'],
-            audience=settings.APPLE_CLIENT_ID if hasattr(settings, 'APPLE_CLIENT_ID') else None,
+            audience=apple_client_id,
             issuer='https://appleid.apple.com',
             options={
-                'verify_aud': hasattr(settings, 'APPLE_CLIENT_ID'),
+                'verify_aud': True,
                 'verify_iss': True,
             }
         )
@@ -105,8 +111,11 @@ def verify_google_token(id_token_str):
     Returns decoded token data or None if invalid
     """
     try:
-        # Verify the token with Google
+        # SECURITY: Always verify audience — fail closed if not configured
         google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', None)
+        if not google_client_id:
+            logger.error("GOOGLE_CLIENT_ID not configured — rejecting Google auth")
+            return None
 
         idinfo = id_token.verify_oauth2_token(
             id_token_str,
@@ -131,20 +140,11 @@ def verify_google_token(id_token_str):
 
 def get_or_create_social_user(email, first_name=None, last_name=None, provider='social'):
     """
-    Get existing user by email or create a new one for social auth
+    Get existing user by email or create a new one for social auth.
+    New users are created without a company — they must go through onboarding.
     """
     try:
         user = User.objects.get(email=email)
-        # Ensure existing user has a company membership (may be missing for legacy users)
-        if not UserCompanyMembership.objects.filter(user=user).exists():
-            default_company = SecurityCompany.objects.filter(is_active=True).first()
-            if default_company:
-                UserCompanyMembership.objects.create(
-                    user=user,
-                    company=default_company,
-                    role='staff',
-                )
-                logger.info("Created missing company membership for existing user %s in company %s", email, default_company.name)
         return user, False
     except User.DoesNotExist:
         # Create new user
@@ -165,20 +165,9 @@ def get_or_create_social_user(email, first_name=None, last_name=None, provider='
         user.set_unusable_password()  # Social auth users don't have passwords
         user.save()
 
-        # Ensure the user has a company membership (required for multi-tenant system)
-        if not UserCompanyMembership.objects.filter(user=user).exists():
-            default_company = SecurityCompany.objects.filter(is_active=True).first()
-            if default_company:
-                UserCompanyMembership.objects.create(
-                    user=user,
-                    company=default_company,
-                    role='staff',
-                )
-                logger.info("Created company membership for user %s in company %s", email, default_company.name)
-            else:
-                logger.warning("No active SecurityCompany found for new social auth user %s", email)
-
-        logger.info("Created new user via %s: %s", provider, email)
+        # New social auth users must go through onboarding to create/join a company
+        # Do NOT auto-assign to an existing company
+        logger.info("Created new user via %s: %s (pending onboarding)", provider, email)
         return user, True
 
 

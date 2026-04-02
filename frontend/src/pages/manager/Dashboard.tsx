@@ -1,23 +1,8 @@
 import type React from 'react';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Stack,
-  Text,
-  PrimaryButton,
-  DetailsList,
-  DetailsListLayoutMode,
-  Selection,
-  SelectionMode,
-  type IColumn,
-  Spinner,
-  SpinnerSize,
-  SearchBox,
-  CommandBar,
-  type ICommandBarItemProps
-} from '@fluentui/react';
-import { MainLayout } from '../../layouts';
-import { Card } from '../../components';
+import { Header, Container, CloudscapeTable, StatusIndicator, SpaceBetween, EmptyState } from '../../components/cloudscape';
+import type { ColumnDefinition } from '../../components/cloudscape/CloudscapeTable';
 import { useAuth } from '../../contexts/AuthContext';
 import { shiftService } from '../../services';
 import { type Shift, ShiftStatus } from '../../types';
@@ -30,14 +15,6 @@ const ManagerDashboard: React.FC = () => {
   const [recentShifts, setRecentShifts] = useState<Shift[]>([]);
   const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
   const [searchText, setSearchText] = useState('');
-
-  // Selection object for DetailsList
-  const selection = new Selection({
-    onSelectionChanged: () => {
-      const selectedItems = selection.getSelection() as Shift[];
-      setSelectedShifts(selectedItems);
-    },
-  });
 
   // Load dashboard data
   useEffect(() => {
@@ -96,7 +73,7 @@ const ManagerDashboard: React.FC = () => {
 
   // Calculate shift duration
   const getShiftDuration = (startTime: string, endTime: string | null) => {
-    if (!endTime) return 'In Progress';
+    if (!endTime) return 'In progress';
 
     const start = new Date(startTime).getTime();
     const end = new Date(endTime).getTime();
@@ -114,212 +91,232 @@ const ManagerDashboard: React.FC = () => {
     shift.venue.name.toLowerCase().includes(searchText.toLowerCase())
   );
 
-  // Column definitions for pending approvals list
-  const approvalColumns: IColumn[] = [
+  // Column definitions for pending approvals table
+  const approvalColumns: ColumnDefinition<Shift>[] = [
     {
-      key: 'staffName',
-      name: 'Staff Name',
-      fieldName: 'staffUser',
-      minWidth: 100,
-      isResizable: true,
-      onRender: (item: Shift) => `Staff ID: ${item.staffUser}` // Would display name if full staffUser object available
+      id: 'staffName',
+      header: 'Staff',
+      cell: (item: Shift) => (
+        <span className="font-medium text-gray-900">Staff ID: {item.staffUser}</span>
+      ),
+      sortingField: 'staffUser',
     },
     {
-      key: 'venue',
-      name: 'Venue',
-      fieldName: 'venue',
-      minWidth: 100,
-      isResizable: true,
-      onRender: (item: Shift) => item.venue.name
+      id: 'venue',
+      header: 'Venue',
+      cell: (item: Shift) => item.venue.name,
+      sortingField: 'venue',
     },
     {
-      key: 'date',
-      name: 'Date',
-      fieldName: 'startTime',
-      minWidth: 90,
-      isResizable: true,
-      onRender: (item: Shift) => formatDate(item.startTime)
+      id: 'date',
+      header: 'Date',
+      cell: (item: Shift) => formatDate(item.startTime),
+      sortingField: 'startTime',
     },
     {
-      key: 'startTime',
-      name: 'Start Time',
-      fieldName: 'startTime',
-      minWidth: 80,
-      isResizable: true,
-      onRender: (item: Shift) => formatTime(item.startTime)
+      id: 'startTime',
+      header: 'Start',
+      cell: (item: Shift) => formatTime(item.startTime),
     },
     {
-      key: 'endTime',
-      name: 'End Time',
-      fieldName: 'endTime',
-      minWidth: 80,
-      isResizable: true,
-      onRender: (item: Shift) => item.endTime ? formatTime(item.endTime) : 'N/A'
+      id: 'endTime',
+      header: 'End',
+      cell: (item: Shift) => item.endTime ? formatTime(item.endTime) : 'N/A',
     },
     {
-      key: 'duration',
-      name: 'Duration',
-      minWidth: 90,
-      isResizable: true,
-      onRender: (item: Shift) => getShiftDuration(item.startTime, item.endTime)
+      id: 'duration',
+      header: 'Duration',
+      cell: (item: Shift) => getShiftDuration(item.startTime, item.endTime),
     },
     {
-      key: 'status',
-      name: 'Status',
-      fieldName: 'status',
-      minWidth: 90,
-      isResizable: true
-    }
+      id: 'status',
+      header: 'Status',
+      cell: (item: Shift) => (
+        <StatusIndicator type="pending">{item.status}</StatusIndicator>
+      ),
+    },
   ];
 
-  // Command bar items for pending approvals
-  const commandBarItems: ICommandBarItemProps[] = [
-    {
-      key: 'approve',
-      text: 'Approve',
-      iconProps: { iconName: 'Accept' },
-      disabled: selectedShifts.length === 0,
-      onClick: () => {
-        const shiftId = selectedShifts[0].id;
-        navigate(`/approvals/${shiftId}`);
+  // Column definitions for recent approvals table (extends approval columns)
+  const recentColumns: ColumnDefinition<Shift>[] = [
+    ...approvalColumns.map(col => {
+      if (col.id === 'status') {
+        return {
+          ...col,
+          cell: (item: Shift) => {
+            const statusType = item.status === ShiftStatus.APPROVED ? 'success' as const : 'error' as const;
+            return <StatusIndicator type={statusType}>{item.status}</StatusIndicator>;
+          },
+        };
       }
+      return col;
+    }),
+    {
+      id: 'approved',
+      header: 'Approved',
+      cell: (item: Shift) => (
+        <StatusIndicator type={item.managerApproved ? 'success' : 'error'}>
+          {item.managerApproved ? 'Yes' : 'No'}
+        </StatusIndicator>
+      ),
     },
-    {
-      key: 'reject',
-      text: 'Reject',
-      iconProps: { iconName: 'Cancel' },
-      disabled: selectedShifts.length === 0,
-      onClick: () => {
-        const shiftId = selectedShifts[0].id;
-        navigate(`/approvals/${shiftId}?reject=true`);
-      }
-    },
-    {
-      key: 'viewDetails',
-      text: 'View Details',
-      iconProps: { iconName: 'RedEye' },
-      disabled: selectedShifts.length !== 1,
-      onClick: () => {
-        const shiftId = selectedShifts[0].id;
-        navigate(`/shifts/${shiftId}`);
-      }
-    }
   ];
 
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        {/* Welcome section */}
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">
-            Manager Dashboard
-          </Text>
-        </Stack>
+    <SpaceBetween size="l">
+      {/* Page header */}
+      <Header
+        variant="h1"
+        description={`Welcome back, ${authState.user?.firstName || 'Manager'}. Here's your shift approval overview.`}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              onClick={() => navigate('/staff-shifts')}
+            >
+              View all staff shifts
+            </button>
+            <button
+              type="button"
+              className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              onClick={() => navigate('/approvals')}
+            >
+              Manage approvals
+            </button>
+          </div>
+        }
+      >
+        Manager dashboard
+      </Header>
 
-        {/* Pending Approvals section */}
-        <Stack tokens={{ childrenGap: 16 }}>
-          <Text variant="xLarge">Pending Approvals</Text>
-
-          <Card>
-            {isLoading ? (
-              <div className="flex justify-center p-4">
-                <Spinner size={SpinnerSize.large} label="Loading pending approvals..." />
+      {/* Pending approvals */}
+      <CloudscapeTable<Shift>
+        items={filteredApprovals}
+        columnDefinitions={approvalColumns}
+        loading={isLoading}
+        loadingText="Loading pending approvals"
+        trackBy="id"
+        selectionType="single"
+        selectedItems={selectedShifts}
+        onSelectionChange={setSelectedShifts}
+        header={
+          <Header
+            variant="h2"
+            counter={`${filteredApprovals.length}`}
+            actions={
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={selectedShifts.length === 0}
+                  onClick={() => {
+                    const shiftId = selectedShifts[0].id;
+                    navigate(`/approvals/${shiftId}`);
+                  }}
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={selectedShifts.length === 0}
+                  onClick={() => {
+                    const shiftId = selectedShifts[0].id;
+                    navigate(`/approvals/${shiftId}?reject=true`);
+                  }}
+                >
+                  Reject
+                </button>
+                <button
+                  type="button"
+                  className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={selectedShifts.length !== 1}
+                  onClick={() => {
+                    const shiftId = selectedShifts[0].id;
+                    navigate(`/shifts/${shiftId}`);
+                  }}
+                >
+                  View details
+                </button>
               </div>
-            ) : (
-              <Stack tokens={{ childrenGap: 12 }}>
-                <Stack horizontal horizontalAlign="space-between">
-                  <SearchBox
-                    placeholder="Search by venue"
-                    value={searchText}
-                    onChange={(_, newValue) => setSearchText(newValue || '')}
-                    styles={{ root: { width: 300 } }}
-                  />
-                  <Text>
-                    {filteredApprovals.length} pending approval{filteredApprovals.length !== 1 ? 's' : ''}
-                  </Text>
-                </Stack>
-
-                <CommandBar
-                  items={commandBarItems}
-                  ariaLabel="Approval actions"
-                />
-
-                {filteredApprovals.length > 0 ? (
-                  <DetailsList
-                    items={filteredApprovals}
-                    columns={approvalColumns}
-                    layoutMode={DetailsListLayoutMode.justified}
-                    selection={selection}
-                    selectionMode={SelectionMode.single}
-                    selectionPreservedOnEmptyClick
-                    isHeaderVisible
-                    compact
-                    setKey="pendingApprovals"
-                    onItemInvoked={(item) => navigate(`/approvals/${item.id}`)}
-                  />
-                ) : (
-                  <Stack horizontalAlign="center" verticalAlign="center" className="p-4">
-                    <Text>No pending approvals found.</Text>
-                  </Stack>
-                )}
-              </Stack>
-            )}
-          </Card>
-        </Stack>
-
-        {/* Staff Activity section */}
-        <Stack tokens={{ childrenGap: 16 }}>
-          <Text variant="xLarge">Recent Approvals</Text>
-
-          <Card>
-            {isLoading ? (
-              <div className="flex justify-center p-4">
-                <Spinner size={SpinnerSize.large} label="Loading recent activity..." />
-              </div>
-            ) : (
-              <Stack tokens={{ childrenGap: 16 }}>
-                {recentShifts.length > 0 ? (
-                  <DetailsList
-                    items={recentShifts}
-                    columns={[
-                      ...approvalColumns,
-                      {
-                        key: 'managerApproved',
-                        name: 'Approved',
-                        minWidth: 80,
-                        isResizable: true,
-                        onRender: (item: Shift) => item.managerApproved ? 'Yes' : 'No'
-                      }
-                    ]}
-                    layoutMode={DetailsListLayoutMode.justified}
-                    selectionMode={SelectionMode.none}
-                    isHeaderVisible
-                    compact
-                    setKey="recentApprovals"
-                  />
-                ) : (
-                  <Text>No recent approvals found.</Text>
-                )}
-              </Stack>
-            )}
-          </Card>
-        </Stack>
-
-        {/* Action buttons */}
-        <Stack horizontal tokens={{ childrenGap: 10 }}>
-          <PrimaryButton
-            text="View All Staff Shifts"
-            iconProps={{ iconName: 'Calendar' }}
-            onClick={() => navigate('/staff-shifts')}
+            }
+          >
+            Pending approvals
+          </Header>
+        }
+        filter={
+          <input
+            type="text"
+            placeholder="Search by venue"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="w-full max-w-xs px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-colors"
           />
-          <PrimaryButton
-            text="Manage Approvals"
-            iconProps={{ iconName: 'Checkmark' }}
-            onClick={() => navigate('/approvals')}
+        }
+        empty={
+          <EmptyState
+            title="No pending approvals"
+            description="All shifts have been reviewed. Check back later for new submissions."
           />
-        </Stack>
-      </Stack>
-    </MainLayout>
+        }
+        cardDefinition={{
+          header: (item: Shift) => item.venue.name,
+          sections: [
+            { id: 'staff', header: 'Staff', content: (item: Shift) => `Staff ID: ${item.staffUser}` },
+            { id: 'date', header: 'Date', content: (item: Shift) => formatDate(item.startTime) },
+            { id: 'time', header: 'Time', content: (item: Shift) => `${formatTime(item.startTime)} - ${item.endTime ? formatTime(item.endTime) : 'N/A'}` },
+            { id: 'duration', header: 'Duration', content: (item: Shift) => getShiftDuration(item.startTime, item.endTime) },
+            { id: 'status', header: 'Status', content: (item: Shift) => <StatusIndicator type="pending">{item.status}</StatusIndicator> },
+          ],
+        }}
+      />
+
+      {/* Recent approvals */}
+      <CloudscapeTable<Shift>
+        items={recentShifts}
+        columnDefinitions={recentColumns}
+        loading={isLoading}
+        loadingText="Loading recent activity"
+        trackBy="id"
+        header={
+          <Header variant="h2" counter={`${recentShifts.length}`}>
+            Recent approvals
+          </Header>
+        }
+        empty={
+          <EmptyState
+            title="No recent approvals"
+            description="Approved and rejected shifts will appear here."
+          />
+        }
+        cardDefinition={{
+          header: (item: Shift) => item.venue.name,
+          sections: [
+            { id: 'staff', header: 'Staff', content: (item: Shift) => `Staff ID: ${item.staffUser}` },
+            { id: 'date', header: 'Date', content: (item: Shift) => formatDate(item.startTime) },
+            { id: 'time', header: 'Time', content: (item: Shift) => `${formatTime(item.startTime)} - ${item.endTime ? formatTime(item.endTime) : 'N/A'}` },
+            {
+              id: 'status',
+              header: 'Status',
+              content: (item: Shift) => {
+                const statusType = item.status === ShiftStatus.APPROVED ? 'success' as const : 'error' as const;
+                return <StatusIndicator type={statusType}>{item.status}</StatusIndicator>;
+              },
+            },
+            {
+              id: 'approved',
+              header: 'Approved',
+              content: (item: Shift) => (
+                <StatusIndicator type={item.managerApproved ? 'success' : 'error'}>
+                  {item.managerApproved ? 'Yes' : 'No'}
+                </StatusIndicator>
+              ),
+            },
+          ],
+        }}
+      />
+    </SpaceBetween>
   );
 };
 

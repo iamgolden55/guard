@@ -300,7 +300,7 @@ const AsyncProgressTracker: React.FC<AsyncProgressTrackerProps> = ({
 
               {showRetry && progress.status === ReportJobStatus.FAILED && (
                 <Button
-                  appearance="primary"
+                  appearance="primary" style={{ backgroundColor: "#d13438", borderColor: "#d13438" }}
                   icon={<PlayRegular />}
                   onClick={handleRetry}
                   disabled={retrying}

@@ -67,6 +67,13 @@ export const ShiftCard: React.FC<ShiftCardProps> = ({ shift, onPress }) => {
           text: 'ACTIVE',
           icon: 'checkmark-circle' as const,
         };
+      case 'no_show':
+        return {
+          color: colors.error,
+          bgColor: `${colors.error}15`,
+          text: 'NO SHOW',
+          icon: 'close-circle' as const,
+        };
       case 'completed':
         return {
           color: colors.gray[600],

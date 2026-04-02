@@ -1,7 +1,7 @@
 /**
  * Register Screen - Account Creation
  * Matches the clean modern design of the Login Screen
- * With Apple Sign-In and Google Sign-In support
+ * With Apple Sign-In support
  */
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -21,29 +21,27 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { AntDesign, FontAwesome, Ionicons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
-import Constants from 'expo-constants';
+import { FontAwesome, Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 
 import { Logo } from '@components/Logo';
+import { useAppDispatch } from '../../hooks/useRedux';
+import { setCredentials } from '../../store/slices/authSlice';
 import { logger } from '../../utils/logger';
 import { API_ENDPOINTS, API_BASE_URL } from '../../config/api.config';
 import type { AuthStackParamList } from '../../types/navigation';
 import socialAuthService from '../../services/socialAuthService';
 import authService from '../../services/authService';
-
-// Required for Google auth to complete properly
-WebBrowser.maybeCompleteAuthSession();
+import notificationService from '../../services/notificationService';
 
 type RegisterScreenNavigationProp = NativeStackNavigationProp<AuthStackParamList, 'Register'>;
 
-// Get Google OAuth client IDs from expo config
-const googleConfig = Constants.expoConfig?.extra?.google || {};
+// Google Sign-In is not configured yet
+const isGoogleConfigured = false;
 
 export const RegisterScreen = () => {
   const navigation = useNavigation<RegisterScreenNavigationProp>();
+  const dispatch = useAppDispatch();
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -52,7 +50,6 @@ export const RegisterScreen = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isAppleLoading, setIsAppleLoading] = useState(false);
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isAppleAvailable, setIsAppleAvailable] = useState(false);
@@ -63,15 +60,6 @@ export const RegisterScreen = () => {
   const passwordInputRef = useRef<TextInput>(null);
   const confirmPasswordInputRef = useRef<TextInput>(null);
 
-  // Google Auth Session hook
-  const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
-    expoClientId: googleConfig.expoClientId,
-    iosClientId: googleConfig.iosClientId,
-    androidClientId: googleConfig.androidClientId,
-    webClientId: googleConfig.webClientId,
-    scopes: ['profile', 'email'],
-  });
-
   // Check if Apple Sign-In is available on mount
   useEffect(() => {
     const checkAvailability = async () => {
@@ -80,44 +68,6 @@ export const RegisterScreen = () => {
     };
     checkAvailability();
   }, []);
-
-  // Handle Google auth response
-  useEffect(() => {
-    const handleGoogleResponse = async () => {
-      if (googleResponse?.type === 'success') {
-        setIsGoogleLoading(true);
-        try {
-          const { authentication } = googleResponse;
-          if (authentication?.idToken && authentication?.accessToken) {
-            const result = await socialAuthService.exchangeGoogleToken(
-              authentication.idToken,
-              authentication.accessToken
-            );
-
-            if (result.success && result.tokens) {
-              // Store tokens and update auth state
-              await authService.storeTokens(result.tokens);
-              const userProfile = await authService.fetchUserProfile(result.tokens.access);
-
-              logger.logAuth('google_signup', userProfile?.id);
-              // Navigation will happen automatically via Redux state change
-            } else {
-              Alert.alert('Sign Up Failed', result.error || 'Unable to sign up with Google');
-            }
-          }
-        } catch (error: any) {
-          logger.error('Google Sign-Up error', error);
-          Alert.alert('Error', 'Unable to complete Google sign up. Please try again.');
-        } finally {
-          setIsGoogleLoading(false);
-        }
-      } else if (googleResponse?.type === 'error') {
-        Alert.alert('Error', 'Google sign up failed. Please try again.');
-      }
-    };
-
-    handleGoogleResponse();
-  }, [googleResponse]);
 
   const validateEmail = (email: string) => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -166,11 +116,11 @@ export const RegisterScreen = () => {
     try {
       // Call registration API
       await axios.post(`${API_BASE_URL}${API_ENDPOINTS.AUTH.REGISTER}`, {
+        username: email.trim().toLowerCase(),
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         email: email.trim().toLowerCase(),
         password: password,
-        password_confirm: confirmPassword,
       });
 
       Alert.alert(
@@ -213,6 +163,20 @@ export const RegisterScreen = () => {
         // Fetch user profile to complete auth
         const userProfile = await authService.fetchUserProfile(result.tokens.access);
 
+        // Update Redux state - THIS triggers automatic navigation
+        dispatch(
+          setCredentials({
+            user: userProfile,
+            accessToken: result.tokens.access,
+            refreshToken: result.tokens.refresh,
+          })
+        );
+
+        // Register push notification token (non-blocking)
+        notificationService.registerPushToken().catch((error) => {
+          console.log('[RegisterScreen] Push token registration failed (non-critical):', error);
+        });
+
         logger.logAuth('apple_signup', userProfile?.id);
         // Navigation will happen automatically via Redux state change
       } else {
@@ -228,28 +192,7 @@ export const RegisterScreen = () => {
     }
   };
 
-  const handleGoogleSignUp = async () => {
-    if (!googleRequest) {
-      Alert.alert(
-        'Configuration Required',
-        'Google Sign-Up is not configured. Please contact support.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    setIsGoogleLoading(true);
-    try {
-      await googlePromptAsync();
-      // Response will be handled by the useEffect above
-    } catch (error: any) {
-      logger.error('Google Sign-Up prompt error', error);
-      Alert.alert('Error', 'Unable to start Google sign up. Please try again.');
-      setIsGoogleLoading(false);
-    }
-  };
-
-  const isAnyLoading = isLoading || isAppleLoading || isGoogleLoading;
+  const isAnyLoading = isLoading || isAppleLoading;
 
   return (
     <KeyboardAvoidingView
@@ -286,22 +229,6 @@ export const RegisterScreen = () => {
             )}
           </TouchableOpacity>
         )}
-
-        <TouchableOpacity
-          style={[styles.googleButton, isGoogleLoading && styles.buttonDisabled]}
-          onPress={handleGoogleSignUp}
-          disabled={isAnyLoading}
-          activeOpacity={0.8}
-        >
-          {isGoogleLoading ? (
-            <ActivityIndicator color="#4285F4" size="small" />
-          ) : (
-            <>
-              <AntDesign name="google" size={20} color="#4285F4" style={styles.buttonIcon} />
-              <Text style={styles.googleButtonText}>Sign up with Google</Text>
-            </>
-          )}
-        </TouchableOpacity>
 
         {/* Divider */}
         <View style={styles.dividerContainer}>
@@ -500,24 +427,6 @@ const styles = StyleSheet.create({
   },
   appleButtonText: {
     color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '600',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-  },
-  googleButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#DDDDDD',
-    borderRadius: 8,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-    minHeight: 54,
-  },
-  googleButtonText: {
-    color: '#000000',
     fontSize: 18,
     fontWeight: '600',
     fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',

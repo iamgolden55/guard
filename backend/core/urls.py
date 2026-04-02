@@ -51,10 +51,13 @@ urlpatterns = [
     path('api/v1/finance/', include('finance_integrations.urls')),  # Add finance integrations under v1 API
     path('api/v1/leave/', include('leave_management.urls')),  # Add leave management
     path('api/v1/health/', health_check, name='health-check'),  # Health check for Render/load balancers
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]
 
 if settings.DEBUG:
+    # Only expose API docs in development
+    urlpatterns += [
+        path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+        path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    ]
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

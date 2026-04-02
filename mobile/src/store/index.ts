@@ -29,7 +29,7 @@ const persistConfig = {
   key: 'root',
   version: 2, // Incremented from 1 to 2 to force data migration
   storage: AsyncStorage,
-  whitelist: ['auth', 'shifts', 'incidents', 'sync', 'leave', 'onboarding'], // Only persist these reducers
+  whitelist: ['shifts', 'incidents', 'sync', 'leave', 'onboarding'], // SECURITY: auth excluded — tokens stored in SecureStore only
   migrate: (state: any) => {
     // Migration from version 1 to version 2
     // Fix: Clear corrupted auth data where user.id was set to StaffProfile ID instead of User ID

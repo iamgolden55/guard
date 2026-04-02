@@ -1,34 +1,8 @@
 import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
-import {
-  DetailsList,
-  DetailsListLayoutMode,
-  SelectionMode,
-  type IColumn,
-  CommandBar,
-  type ICommandBarItemProps,
-  SearchBox,
-  Dropdown,
-  type IDropdownOption,
-  Stack,
-  Text,
-  StackItem,
-  Spinner,
-  SpinnerSize,
-  MessageBar,
-  MessageBarType,
-  PrimaryButton,
-  Link,
-  Dialog,
-  DialogType,
-  ContextualMenu,
-  DialogFooter,
-  DefaultButton,
-  Icon,
-  Separator
-} from '@fluentui/react';
 import { useNavigate } from 'react-router-dom';
-import { MainLayout } from '../../layouts';
+import { Header, Container, SpaceBetween, CloudscapeTable, StatusIndicator, Alert, EmptyState, ConfirmationModal, KeyValuePairs } from '../../components/cloudscape';
+import type { ColumnDefinition } from '../../components/cloudscape/CloudscapeTable';
 import { invoiceService } from '../../services';
 import type { Invoice, InvoiceItem, PaymentBreakdown } from '../../types';
 
@@ -51,44 +25,6 @@ interface InvoiceDisplay {
   items?: InvoiceItem[];
 }
 
-// Status indicator pill component
-const StatusPill: React.FC<{status: InvoiceStatus}> = ({ status }) => {
-  let backgroundColor = '';
-  let color = 'white';
-
-  switch(status) {
-    case InvoiceStatus.PENDING:
-      backgroundColor = '#F59E0B'; // Yellow
-      color = 'black';
-      break;
-    case InvoiceStatus.PAID:
-      backgroundColor = '#10B981'; // Green
-      break;
-    case InvoiceStatus.OVERDUE:
-      backgroundColor = '#EF4444'; // Red
-      break;
-    default:
-      backgroundColor = '#9CA3AF'; // Gray
-  }
-
-  return (
-    <div
-      style={{
-        backgroundColor,
-        color,
-        padding: '4px 8px',
-        borderRadius: '12px',
-        display: 'inline-block',
-        fontSize: '12px',
-        fontWeight: 'bold',
-        textTransform: 'uppercase'
-      }}
-    >
-      {status}
-    </div>
-  );
-};
-
 const MyInvoices: React.FC = () => {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState<InvoiceDisplay[]>([]);
@@ -100,108 +36,88 @@ const MyInvoices: React.FC = () => {
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceDisplay | null>(null);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
 
-  // Set up columns for the DetailsList
-  const columns: IColumn[] = [
+  const getStatusType = (status: InvoiceStatus): 'success' | 'warning' | 'error' => {
+    switch (status) {
+      case InvoiceStatus.PAID: return 'success';
+      case InvoiceStatus.PENDING: return 'warning';
+      case InvoiceStatus.OVERDUE: return 'error';
+    }
+  };
+
+  // Column definitions for CloudscapeTable
+  const columns: ColumnDefinition<InvoiceDisplay>[] = [
     {
-      key: 'id',
-      name: 'ID',
-      fieldName: 'id',
-      minWidth: 50,
-      maxWidth: 50,
-      isResizable: true,
+      id: 'id',
+      header: 'ID',
+      cell: (item) => item.id,
+      width: 60,
+      sortingField: 'id',
     },
     {
-      key: 'period',
-      name: 'Period',
-      fieldName: 'period',
-      minWidth: 120,
-      maxWidth: 150,
-      isResizable: true,
+      id: 'period',
+      header: 'Period',
+      cell: (item) => item.period,
+      sortingField: 'period',
     },
     {
-      key: 'dateRange',
-      name: 'Date Range',
-      fieldName: 'startDate',
-      minWidth: 150,
-      maxWidth: 200,
-      isResizable: true,
-      onRender: (item: InvoiceDisplay) => (
-        <Text>
-          {new Date(item.startDate).toLocaleDateString()} - {new Date(item.endDate).toLocaleDateString()}
-        </Text>
+      id: 'dateRange',
+      header: 'Date Range',
+      cell: (item) => `${new Date(item.startDate).toLocaleDateString()} - ${new Date(item.endDate).toLocaleDateString()}`,
+    },
+    {
+      id: 'amount',
+      header: 'Amount',
+      cell: (item) => `\u00A3${item.amount.toFixed(2)}`,
+      sortingField: 'amount',
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      cell: (item) => (
+        <StatusIndicator type={getStatusType(item.status)}>
+          {item.status}
+        </StatusIndicator>
       ),
     },
     {
-      key: 'amount',
-      name: 'Amount',
-      fieldName: 'amount',
-      minWidth: 80,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: InvoiceDisplay) => <Text>£{item.amount.toFixed(2)}</Text>,
+      id: 'paidDate',
+      header: 'Paid Date',
+      cell: (item) => item.paidDate ? new Date(item.paidDate).toLocaleDateString() : '-',
     },
     {
-      key: 'status',
-      name: 'Status',
-      fieldName: 'status',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: InvoiceDisplay) => <StatusPill status={item.status} />,
-    },
-    {
-      key: 'paidDate',
-      name: 'Paid Date',
-      fieldName: 'paidDate',
-      minWidth: 100,
-      maxWidth: 120,
-      isResizable: true,
-      onRender: (item: InvoiceDisplay) => (
-        <Text>{item.paidDate ? new Date(item.paidDate).toLocaleDateString() : '-'}</Text>
-      ),
-    },
-    {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: InvoiceDisplay) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
-          <Link onClick={() => handleViewInvoice(item)}>
-            <Icon iconName="View" /> View
-          </Link>
+      id: 'actions',
+      header: 'Actions',
+      cell: (item) => (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => handleViewInvoice(item)}
+            className="text-sm text-red-600 hover:text-red-800 font-medium"
+          >
+            View
+          </button>
           {item.pdfUrl && (
-            <Link href={item.pdfUrl} target="_blank">
-              <Icon iconName="PDF" /> PDF
-            </Link>
+            <a
+              href={item.pdfUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-red-600 hover:text-red-800 font-medium"
+            >
+              PDF
+            </a>
           )}
-        </Stack>
+        </div>
       ),
     },
   ];
 
-  // Status filter options
-  const statusOptions: IDropdownOption[] = [
-    { key: '', text: 'All Statuses' },
-    { key: InvoiceStatus.PENDING, text: 'Pending' },
-    { key: InvoiceStatus.PAID, text: 'Paid' },
-    { key: InvoiceStatus.OVERDUE, text: 'Overdue' },
-  ];
-
-  // Load invoices from API - using useCallback to avoid dependency issues in useEffect
+  // Load invoices from API
   const loadInvoices = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Fetch real invoices from API
       const response = await invoiceService.getInvoices();
-      
-      // Handle paginated response from DRF
       const invoiceData = Array.isArray(response) ? response : (response as any).results || [];
-      
-      
-      // Transform API response to match our display format
+
       const displayInvoices: InvoiceDisplay[] = invoiceData.map((invoice: any) => ({
         id: invoice.id,
         period: formatPeriod(invoice.start_date, invoice.end_date),
@@ -248,22 +164,19 @@ const MyInvoices: React.FC = () => {
     }
   }, []);
 
-  // Helper function to format period from dates
   const formatPeriod = (startDate: string, endDate: string): string => {
     const start = new Date(startDate);
     const end = new Date(endDate);
-    
+
     if (start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()) {
       return start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     }
-    
+
     return `${start.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
   };
 
-  // Handler functions
   const handleRefresh = useCallback(() => {
     loadInvoices();
-    return false; // Return false to prevent default behavior
   }, [loadInvoices]);
 
   const handleViewInvoice = useCallback((invoice: InvoiceDisplay) => {
@@ -271,21 +184,10 @@ const MyInvoices: React.FC = () => {
     setShowPreviewDialog(true);
   }, []);
 
-  // Command bar items
-  const commandBarItems: ICommandBarItemProps[] = [
-    {
-      key: 'refresh',
-      text: 'Refresh',
-      iconProps: { iconName: 'Refresh' },
-      onClick: handleRefresh,
-    }
-  ];
-
-  // Apply filters when search text or status filter changes
+  // Apply filters
   useEffect(() => {
     let result = invoices;
 
-    // Apply search filter
     if (searchText) {
       const lowerCaseSearch = searchText.toLowerCase();
       result = result.filter(invoice =>
@@ -294,7 +196,6 @@ const MyInvoices: React.FC = () => {
       );
     }
 
-    // Apply status filter
     if (statusFilter) {
       result = result.filter(invoice => invoice.status === statusFilter);
     }
@@ -302,249 +203,243 @@ const MyInvoices: React.FC = () => {
     setFilteredInvoices(result);
   }, [searchText, statusFilter, invoices]);
 
-  // Load invoices when component mounts
   useEffect(() => {
     loadInvoices();
   }, [loadInvoices]);
 
-  // Handle closing the preview dialog
   const closePreviewDialog = useCallback(() => {
     setShowPreviewDialog(false);
     setSelectedInvoice(null);
   }, []);
 
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">My Invoices</Text>
-        </Stack>
-
-        <CommandBar items={commandBarItems} />
-
-        <Stack horizontal tokens={{ childrenGap: 10 }}>
-          <StackItem grow={3}>
-            <SearchBox
-              placeholder="Search by period or invoice ID"
-              onChange={(_, newValue) => setSearchText(newValue || '')}
-              onClear={() => setSearchText('')}
-            />
-          </StackItem>
-          <StackItem grow={1}>
-            <Dropdown
-              placeholder="Filter by status"
-              options={statusOptions}
-              selectedKey={statusFilter}
-              onChange={(_, option) => setStatusFilter(option?.key as string)}
-            />
-          </StackItem>
-        </Stack>
-
-        {error && (
-          <MessageBar
-            messageBarType={MessageBarType.error}
-            isMultiline={false}
-            dismissButtonAriaLabel="Close"
+    <SpaceBetween size="l">
+      <Header
+        variant="h1"
+        actions={
+          <button
+            onClick={handleRefresh}
+            className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
-            {error}
-          </MessageBar>
-        )}
+            Refresh
+          </button>
+        }
+      >
+        My Invoices
+      </Header>
 
-        {isLoading ? (
-          <div className="flex justify-center py-12">
-            <Spinner size={SpinnerSize.large} label="Loading invoices..." />
+      {/* Filters */}
+      <Container>
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex-1">
+            <input
+              type="text"
+              placeholder="Search by period or invoice ID"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            />
           </div>
-        ) : filteredInvoices.length === 0 ? (
-          <div className="bg-gray-50 rounded-lg p-8 text-center">
-            <Text variant="large">No invoices found</Text>
-            <Text>Adjust your search criteria or check back later.</Text>
+          <div className="w-full md:w-48">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            >
+              <option value="">All Statuses</option>
+              <option value={InvoiceStatus.PENDING}>Pending</option>
+              <option value={InvoiceStatus.PAID}>Paid</option>
+              <option value={InvoiceStatus.OVERDUE}>Overdue</option>
+            </select>
           </div>
-        ) : (
-          <DetailsList
-            items={filteredInvoices}
-            columns={columns}
-            layoutMode={DetailsListLayoutMode.justified}
-            selectionMode={SelectionMode.none}
+        </div>
+      </Container>
+
+      {error && (
+        <Alert type="error" dismissible>
+          {error}
+        </Alert>
+      )}
+
+      {isLoading ? (
+        <div className="flex justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-4 border-gray-200 border-t-red-600 rounded-full animate-spin" />
+            <p className="text-sm text-gray-500">Loading invoices...</p>
+          </div>
+        </div>
+      ) : filteredInvoices.length === 0 ? (
+        <Container>
+          <EmptyState
+            title="No invoices found"
+            description="Adjust your search criteria or check back later."
+            variant="no-match"
           />
-        )}
-      </Stack>
+        </Container>
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div className="hidden md:block">
+            <CloudscapeTable
+              items={filteredInvoices}
+              columnDefinitions={columns}
+              variant="container"
+            />
+          </div>
 
+          {/* Mobile cards */}
+          <div className="block md:hidden space-y-3">
+            {filteredInvoices.map((invoice) => (
+              <Container key={invoice.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900">Invoice #{invoice.id}</p>
+                    <p className="text-xs text-gray-500">{invoice.period}</p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(invoice.startDate).toLocaleDateString()} - {new Date(invoice.endDate).toLocaleDateString()}
+                    </p>
+                    <p className="text-sm font-semibold text-gray-900">{'\u00A3'}{invoice.amount.toFixed(2)}</p>
+                  </div>
+                  <StatusIndicator type={getStatusType(invoice.status)}>
+                    {invoice.status}
+                  </StatusIndicator>
+                </div>
+                <div className="flex gap-3 mt-3">
+                  <button
+                    onClick={() => handleViewInvoice(invoice)}
+                    className="text-sm text-red-600 hover:text-red-800 font-medium"
+                  >
+                    View Details
+                  </button>
+                  {invoice.pdfUrl && (
+                    <a
+                      href={invoice.pdfUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm text-red-600 hover:text-red-800 font-medium"
+                    >
+                      Download PDF
+                    </a>
+                  )}
+                </div>
+              </Container>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Invoice Preview Modal */}
       {selectedInvoice && (
-        <Dialog
-          hidden={!showPreviewDialog}
-          onDismiss={closePreviewDialog}
-          dialogContentProps={{
-            type: DialogType.largeHeader,
-            title: `Invoice #${selectedInvoice.id} - ${selectedInvoice.period}`,
+        <ConfirmationModal
+          visible={showPreviewDialog}
+          header={`Invoice #${selectedInvoice.id} - ${selectedInvoice.period}`}
+          confirmLabel={selectedInvoice.pdfUrl ? 'Download PDF' : 'Close'}
+          cancelLabel="Close"
+          onConfirm={() => {
+            if (selectedInvoice.pdfUrl) {
+              window.open(selectedInvoice.pdfUrl, '_blank');
+            }
+            closePreviewDialog();
           }}
-          minWidth={600}
+          onCancel={closePreviewDialog}
         >
-          <Stack tokens={{ childrenGap: 15 }} styles={{ root: { padding: '0 0 20px 0' } }}>
-            <Stack horizontal horizontalAlign="space-between">
-              <Stack>
-                <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>Period</Text>
-                <Text>{selectedInvoice.period}</Text>
-              </Stack>
-              <Stack>
-                <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>Status</Text>
-                <StatusPill status={selectedInvoice.status} />
-              </Stack>
-            </Stack>
-
-            <Stack horizontal horizontalAlign="space-between">
-              <Stack>
-                <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>Date Range</Text>
-                <Text>
-                  {new Date(selectedInvoice.startDate).toLocaleDateString()} - {new Date(selectedInvoice.endDate).toLocaleDateString()}
-                </Text>
-              </Stack>
-              <Stack>
-                <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>Amount</Text>
-                <Text styles={{ root: { fontWeight: 700, fontSize: '1.1em' } }}>£{selectedInvoice.amount.toFixed(2)}</Text>
-              </Stack>
-            </Stack>
+          <SpaceBetween size="m">
+            <KeyValuePairs
+              columns={2}
+              items={[
+                { label: 'Period', value: selectedInvoice.period },
+                { label: 'Status', value: <StatusIndicator type={getStatusType(selectedInvoice.status)}>{selectedInvoice.status}</StatusIndicator> },
+                { label: 'Date Range', value: `${new Date(selectedInvoice.startDate).toLocaleDateString()} - ${new Date(selectedInvoice.endDate).toLocaleDateString()}` },
+                { label: 'Amount', value: <span className="font-bold">{'\u00A3'}{selectedInvoice.amount.toFixed(2)}</span> },
+              ]}
+            />
 
             {selectedInvoice.paidDate && (
-              <Stack>
-                <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>Paid on</Text>
-                <Text>{new Date(selectedInvoice.paidDate).toLocaleDateString()}</Text>
-              </Stack>
+              <p className="text-sm"><span className="font-medium">Paid on:</span> {new Date(selectedInvoice.paidDate).toLocaleDateString()}</p>
             )}
 
             {selectedInvoice.payment_breakdown && (
-              <>
-                <Separator />
-                <Stack>
-                  <Text variant="medium" styles={{ root: { fontWeight: 600, marginBottom: '10px' } }}>Payment Breakdown</Text>
-                  
-                  {/* Regular Shifts */}
-                  {selectedInvoice.payment_breakdown.regular_shifts.count > 0 && (
-                    <Stack horizontal horizontalAlign="space-between" styles={{ root: { padding: '8px 0', backgroundColor: '#f8f9fa', paddingLeft: '12px', paddingRight: '12px', borderRadius: '4px', marginBottom: '8px' } }}>
-                      <Stack>
-                        <Text variant="small" styles={{ root: { fontWeight: 600 } }}>Regular Shifts</Text>
-                        <Text variant="small">
-                          {selectedInvoice.payment_breakdown.regular_shifts.count} shifts • {selectedInvoice.payment_breakdown.regular_shifts.hours} hours
-                        </Text>
-                      </Stack>
-                      <Stack horizontalAlign="end">
-                        <Text variant="small" styles={{ root: { fontWeight: 600 } }}>£{selectedInvoice.payment_breakdown.regular_shifts.amount.toFixed(2)}</Text>
-                        <Text variant="small">@£{selectedInvoice.payment_breakdown.regular_shifts.average_rate.toFixed(2)}/hr</Text>
-                      </Stack>
-                    </Stack>
-                  )}
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-gray-900">Payment Breakdown</p>
 
-                  {/* Special Event Shifts */}
-                  {selectedInvoice.payment_breakdown.special_event_shifts.count > 0 && (
-                    <Stack horizontal horizontalAlign="space-between" styles={{ root: { padding: '8px 0', backgroundColor: '#fff4e6', paddingLeft: '12px', paddingRight: '12px', borderRadius: '4px', marginBottom: '8px', border: '1px solid #ffa726' } }}>
-                      <Stack>
-                        <Text variant="small" styles={{ root: { fontWeight: 600, color: '#e65100' } }}>
-                          <Icon iconName="Event" style={{ marginRight: '4px' }} />
-                          Special Event Shifts
-                        </Text>
-                        <Text variant="small">
-                          {selectedInvoice.payment_breakdown.special_event_shifts.count} shifts • {selectedInvoice.payment_breakdown.special_event_shifts.hours} hours
-                        </Text>
-                      </Stack>
-                      <Stack horizontalAlign="end">
-                        <Text variant="small" styles={{ root: { fontWeight: 600, color: '#e65100' } }}>£{selectedInvoice.payment_breakdown.special_event_shifts.amount.toFixed(2)}</Text>
-                        <Text variant="small">@£{selectedInvoice.payment_breakdown.special_event_shifts.average_rate.toFixed(2)}/hr</Text>
-                      </Stack>
-                    </Stack>
-                  )}
+                {selectedInvoice.payment_breakdown.regular_shifts.count > 0 && (
+                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg text-sm">
+                    <div>
+                      <p className="font-medium">Regular Shifts</p>
+                      <p className="text-xs text-gray-500">
+                        {selectedInvoice.payment_breakdown.regular_shifts.count} shifts {'\u2022'} {selectedInvoice.payment_breakdown.regular_shifts.hours} hours
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium">{'\u00A3'}{selectedInvoice.payment_breakdown.regular_shifts.amount.toFixed(2)}</p>
+                      <p className="text-xs text-gray-500">@{'\u00A3'}{selectedInvoice.payment_breakdown.regular_shifts.average_rate.toFixed(2)}/hr</p>
+                    </div>
+                  </div>
+                )}
 
-                  {/* Total */}
-                  <Stack horizontal horizontalAlign="space-between" styles={{ root: { padding: '12px 0', borderTop: '2px solid #ddd', marginTop: '8px' } }}>
-                    <Stack>
-                      <Text variant="medium" styles={{ root: { fontWeight: 700 } }}>Total</Text>
-                      <Text variant="small">
-                        {selectedInvoice.payment_breakdown.total.count} total shifts • {selectedInvoice.payment_breakdown.total.hours} total hours
-                      </Text>
-                    </Stack>
-                    <Stack horizontalAlign="end">
-                      <Text variant="medium" styles={{ root: { fontWeight: 700, fontSize: '1.2em' } }}>£{selectedInvoice.payment_breakdown.total.amount.toFixed(2)}</Text>
-                    </Stack>
-                  </Stack>
-                </Stack>
-              </>
+                {selectedInvoice.payment_breakdown.special_event_shifts.count > 0 && (
+                  <div className="flex justify-between items-center p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+                    <div>
+                      <p className="font-medium text-amber-800">Special Event Shifts</p>
+                      <p className="text-xs text-amber-600">
+                        {selectedInvoice.payment_breakdown.special_event_shifts.count} shifts {'\u2022'} {selectedInvoice.payment_breakdown.special_event_shifts.hours} hours
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium text-amber-800">{'\u00A3'}{selectedInvoice.payment_breakdown.special_event_shifts.amount.toFixed(2)}</p>
+                      <p className="text-xs text-amber-600">@{'\u00A3'}{selectedInvoice.payment_breakdown.special_event_shifts.average_rate.toFixed(2)}/hr</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-3 border-t-2 border-gray-200">
+                  <div>
+                    <p className="font-bold text-sm">Total</p>
+                    <p className="text-xs text-gray-500">
+                      {selectedInvoice.payment_breakdown.total.count} shifts {'\u2022'} {selectedInvoice.payment_breakdown.total.hours} hours
+                    </p>
+                  </div>
+                  <p className="font-bold text-base">{'\u00A3'}{selectedInvoice.payment_breakdown.total.amount.toFixed(2)}</p>
+                </div>
+              </div>
             )}
 
             {selectedInvoice.items && selectedInvoice.items.length > 0 && (
-              <>
-                <Separator />
-                <Stack>
-                  <Text variant="medium" styles={{ root: { fontWeight: 600, marginBottom: '10px' } }}>Shift Details</Text>
-                  
-                  {/* Shift-by-shift table */}
-                  <div style={{ border: '1px solid #ddd', borderRadius: '4px', overflow: 'hidden' }}>
-                    {/* Table header */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 80px 100px', backgroundColor: '#f5f5f5', padding: '8px', borderBottom: '1px solid #ddd' }}>
-                      <Text variant="small" styles={{ root: { fontWeight: 600 } }}>Date</Text>
-                      <Text variant="small" styles={{ root: { fontWeight: 600 } }}>Venue</Text>
-                      <Text variant="small" styles={{ root: { fontWeight: 600, textAlign: 'center' } }}>Hours</Text>
-                      <Text variant="small" styles={{ root: { fontWeight: 600, textAlign: 'center' } }}>Rate</Text>
-                      <Text variant="small" styles={{ root: { fontWeight: 600, textAlign: 'right' } }}>Amount</Text>
-                    </div>
-                    
-                    {/* Table rows */}
-                    {selectedInvoice.items.map((item, index) => (
-                      <div 
-                        key={item.id} 
-                        style={{ 
-                          display: 'grid', 
-                          gridTemplateColumns: '1fr 1fr 80px 80px 100px', 
-                          padding: '8px', 
-                          borderBottom: index < selectedInvoice.items!.length - 1 ? '1px solid #eee' : 'none',
-                          backgroundColor: item.shift_details?.is_special_event ? '#fff4e6' : 'white'
-                        }}
-                      >
-                        <Text variant="small">
-                          {new Date(item.date).toLocaleDateString()}
-                          {item.shift_details?.is_special_event && (
-                            <Icon iconName="Event" style={{ marginLeft: '4px', color: '#e65100', fontSize: '12px' }} />
-                          )}
-                        </Text>
-                        <Text variant="small">{item.venue_details?.name || item.venue}</Text>
-                        <Text variant="small" style={{ textAlign: 'center' }}>{item.hoursWorked}</Text>
-                        <Text variant="small" style={{ textAlign: 'center' }}>£{item.rate.toFixed(2)}</Text>
-                        <Text variant="small" style={{ textAlign: 'right', fontWeight: '600' }}>£{item.amount.toFixed(2)}</Text>
-                      </div>
-                    ))}
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-gray-900">Shift Details</p>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="grid grid-cols-5 gap-2 p-2 bg-gray-50 text-xs font-medium text-gray-600 border-b border-gray-200">
+                    <span>Date</span>
+                    <span>Venue</span>
+                    <span className="text-center">Hours</span>
+                    <span className="text-center">Rate</span>
+                    <span className="text-right">Amount</span>
                   </div>
-                  
-                  {/* Legend */}
-                  <Stack horizontal tokens={{ childrenGap: 20 }} styles={{ root: { marginTop: '8px' } }}>
-                    <Stack horizontal tokens={{ childrenGap: 4 }}>
-                      <div style={{ width: '12px', height: '12px', backgroundColor: '#f8f9fa', border: '1px solid #ddd', borderRadius: '2px' }}></div>
-                      <Text variant="small">Regular Shifts</Text>
-                    </Stack>
-                    <Stack horizontal tokens={{ childrenGap: 4 }}>
-                      <div style={{ width: '12px', height: '12px', backgroundColor: '#fff4e6', border: '1px solid #ffa726', borderRadius: '2px' }}></div>
-                      <Text variant="small">Special Event Shifts</Text>
-                    </Stack>
-                  </Stack>
-                </Stack>
-              </>
+                  {selectedInvoice.items.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className={`grid grid-cols-5 gap-2 p-2 text-xs ${
+                        item.shift_details?.is_special_event ? 'bg-amber-50' : 'bg-white'
+                      } ${index < selectedInvoice.items!.length - 1 ? 'border-b border-gray-100' : ''}`}
+                    >
+                      <span>{new Date(item.date).toLocaleDateString()}</span>
+                      <span>{item.venue_details?.name || item.venue}</span>
+                      <span className="text-center">{item.hoursWorked}</span>
+                      <span className="text-center">{'\u00A3'}{item.rate.toFixed(2)}</span>
+                      <span className="text-right font-medium">{'\u00A3'}{item.amount.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
 
-            <Stack>
-              <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>Payment Information</Text>
-              <Text>If you have any questions regarding this invoice, please contact accounts@securitystaff.com</Text>
-            </Stack>
-          </Stack>
-          <DialogFooter>
-            {selectedInvoice.pdfUrl && (
-              <PrimaryButton
-                text="Download PDF"
-                iconProps={{ iconName: 'PDF' }}
-                href={selectedInvoice.pdfUrl}
-                target="_blank"
-              />
-            )}
-            <DefaultButton text="Close" onClick={closePreviewDialog} />
-          </DialogFooter>
-        </Dialog>
+            <p className="text-xs text-gray-400">
+              If you have any questions regarding this invoice, please contact accounts@securitystaff.com
+            </p>
+          </SpaceBetween>
+        </ConfirmationModal>
       )}
-    </MainLayout>
+    </SpaceBetween>
   );
 };
 

@@ -1,15 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Stack,
-  Text,
-  MessageBar,
-  MessageBarType,
-  Spinner,
-  SpinnerSize,
-  IStackTokens,
-  DefaultButton,
-  IconButton
-} from '@fluentui/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { leaveService } from '../../services';
 import api from '../../services/api';
@@ -20,11 +9,8 @@ import {
 } from '../../types/leave';
 import PolicyListTable from '../../components/leave/PolicyListTable';
 import PolicyDetailsForm from '../../components/leave/PolicyDetailsForm';
-
-const stackTokens: IStackTokens = {
-  childrenGap: 24,
-  padding: 16,
-};
+import { Header, Container, SpaceBetween, StatusIndicator } from '../../components/cloudscape';
+import Flashbar, { useFlashbar } from '../../components/cloudscape/Flashbar';
 
 const LeavePolicies: React.FC = () => {
   const { authState } = useAuth();
@@ -35,10 +21,7 @@ const LeavePolicies: React.FC = () => {
   const [selectedPolicy, setSelectedPolicy] = useState<LeavePolicy | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isFormLoading, setIsFormLoading] = useState(false);
-  const [notification, setNotification] = useState<{
-    type: MessageBarType;
-    message: string;
-  } | null>(null);
+  const { items: flashItems, addFlash, removeFlash } = useFlashbar();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Fetch all data
@@ -84,10 +67,7 @@ const LeavePolicies: React.FC = () => {
       setPolicies([]);
       setLeaveTypes([]);
       setEmploymentTypes([]);
-      setNotification({
-        type: MessageBarType.error,
-        message: 'Failed to load policies data. Please try again.'
-      });
+      addFlash({ type: 'error', content: 'Failed to load policies data. Please try again.' });
     } finally {
       setIsLoading(false);
     }
@@ -121,17 +101,11 @@ const LeavePolicies: React.FC = () => {
       if (selectedPolicy) {
         // Update existing policy
         await updatePolicy(selectedPolicy.id, policyData);
-        setNotification({
-          type: MessageBarType.success,
-          message: 'Policy updated successfully!'
-        });
+        addFlash({ type: 'success', content: 'Policy updated successfully!' });
       } else {
         // Create new policy
         await createPolicy(policyData);
-        setNotification({
-          type: MessageBarType.success,
-          message: 'Policy created successfully!'
-        });
+        addFlash({ type: 'success', content: 'Policy created successfully!' });
       }
 
       setIsFormOpen(false);
@@ -139,10 +113,7 @@ const LeavePolicies: React.FC = () => {
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Error saving policy:', error);
-      setNotification({
-        type: MessageBarType.error,
-        message: `Failed to ${selectedPolicy ? 'update' : 'create'} policy. Please try again.`
-      });
+      addFlash({ type: 'error', content: `Failed to ${selectedPolicy ? 'update' : 'create'} policy. Please try again.` });
     } finally {
       setIsFormLoading(false);
     }
@@ -204,19 +175,11 @@ const LeavePolicies: React.FC = () => {
   const handleDeletePolicy = useCallback(async (policyId: number) => {
     try {
       await api.delete(`/api/v1/leave-policies/${policyId}/`);
-
-      setNotification({
-        type: MessageBarType.success,
-        message: 'Policy deleted successfully!'
-      });
-
+      addFlash({ type: 'success', content: 'Policy deleted successfully!' });
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Error deleting policy:', error);
-      setNotification({
-        type: MessageBarType.error,
-        message: 'Failed to delete policy. Please try again.'
-      });
+      addFlash({ type: 'error', content: 'Failed to delete policy. Please try again.' });
     }
   }, []);
 
@@ -224,19 +187,11 @@ const LeavePolicies: React.FC = () => {
   const handleActivatePolicy = useCallback(async (policyId: number, isActive: boolean) => {
     try {
       await api.post(`/api/v1/leave-policies/${policyId}/${isActive ? 'activate' : 'deactivate'}/`);
-
-      setNotification({
-        type: MessageBarType.success,
-        message: `Policy ${isActive ? 'activated' : 'deactivated'} successfully!`
-      });
-
+      addFlash({ type: 'success', content: `Policy ${isActive ? 'activated' : 'deactivated'} successfully!` });
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
       console.error(`Error ${isActive ? 'activating' : 'deactivating'} policy:`, error);
-      setNotification({
-        type: MessageBarType.error,
-        message: `Failed to ${isActive ? 'activate' : 'deactivate'} policy. Please try again.`
-      });
+      addFlash({ type: 'error', content: `Failed to ${isActive ? 'activate' : 'deactivate'} policy. Please try again.` });
     }
   }, []);
 
@@ -246,103 +201,82 @@ const LeavePolicies: React.FC = () => {
     setSelectedPolicy(null);
   }, []);
 
-  // Clear notification after 5 seconds
-  useEffect(() => {
-    if (notification) {
-      const timer = setTimeout(() => setNotification(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [notification]);
-
   if (isLoading) {
     return (
-      <div className="leave-policies-page">
-        <Stack horizontal horizontalAlign="center" verticalAlign="center" tokens={{ padding: 40 }}>
-          <Spinner size={SpinnerSize.large} label="Loading leave policies..." />
-        </Stack>
+      <div className="flex items-center justify-center py-16">
+        <div className="flex items-center gap-3 text-gray-500">
+          <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm">Loading leave policies...</span>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="max-w-7xl">
-      <Stack tokens={stackTokens}>
+      <SpaceBetween size="l">
         {/* Page Header */}
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Stack>
-            <Text variant="xxLarge" styles={{ root: { fontWeight: 600 } }}>
-              Leave Policies
-            </Text>
-            <Text variant="medium" styles={{ root: { color: '#666' } }}>
-              Configure leave policies for different employment types and leave categories
-            </Text>
-          </Stack>
+        <Header
+          variant="h1"
+          description="Configure leave policies for different employment types and leave categories"
+          actions={
+            <div className="flex items-center gap-2">
+              <button
+                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Import Policies
+              </button>
+              <button
+                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Export Policies
+              </button>
+              <button
+                onClick={() => setRefreshTrigger(prev => prev + 1)}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Refresh data"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
+          }
+        >
+          Leave Policies
+        </Header>
 
-          <Stack horizontal tokens={{ childrenGap: 8 }}>
-            <DefaultButton
-              text="Import Policies"
-              iconProps={{ iconName: 'Upload' }}
-            />
-            <DefaultButton
-              text="Export Policies"
-              iconProps={{ iconName: 'Download' }}
-            />
-            <IconButton
-              iconProps={{ iconName: 'Refresh' }}
-              onClick={() => setRefreshTrigger(prev => prev + 1)}
-              title="Refresh data"
-            />
-          </Stack>
-        </Stack>
-
-        {/* Notification */}
-        {notification && (
-          <MessageBar
-            messageBarType={notification.type}
-            onDismiss={() => setNotification(null)}
-            dismissButtonAriaLabel="Close"
-          >
-            {notification.message}
-          </MessageBar>
-        )}
+        <Flashbar items={flashItems} onDismiss={removeFlash} />
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <Stack tokens={{ childrenGap: 4 }}>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#0078d4' } }}>
-                {policies.length}
-              </Text>
-              <Text variant="medium">Total Policies</Text>
-            </Stack>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <Stack tokens={{ childrenGap: 4 }}>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#107c10' } }}>
-                {policies.filter(p => p.is_active).length}
-              </Text>
-              <Text variant="medium">Active Policies</Text>
-            </Stack>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <Stack tokens={{ childrenGap: 4 }}>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#ff8c00' } }}>
-                {leaveTypes.length}
-              </Text>
-              <Text variant="medium">Leave Types</Text>
-            </Stack>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <Stack tokens={{ childrenGap: 4 }}>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#8a8886' } }}>
-                {employmentTypes.length}
-              </Text>
-              <Text variant="medium">Employment Types</Text>
-            </Stack>
-          </div>
+          <Container>
+            <div className="space-y-1">
+              <p className="text-2xl font-bold text-red-600">{policies.length}</p>
+              <p className="text-sm text-gray-600">Total Policies</p>
+            </div>
+          </Container>
+          <Container>
+            <div className="space-y-1">
+              <p className="text-2xl font-bold text-green-600">{policies.filter(p => p.is_active).length}</p>
+              <p className="text-sm text-gray-600">Active Policies</p>
+            </div>
+          </Container>
+          <Container>
+            <div className="space-y-1">
+              <p className="text-2xl font-bold text-orange-600">{leaveTypes.length}</p>
+              <p className="text-sm text-gray-600">Leave Types</p>
+            </div>
+          </Container>
+          <Container>
+            <div className="space-y-1">
+              <p className="text-2xl font-bold text-gray-600">{employmentTypes.length}</p>
+              <p className="text-sm text-gray-600">Employment Types</p>
+            </div>
+          </Container>
         </div>
 
         {/* Policies Table */}
@@ -366,7 +300,7 @@ const LeavePolicies: React.FC = () => {
           onSave={handleSavePolicy}
           onCancel={handleCancelForm}
         />
-      </Stack>
+      </SpaceBetween>
     </div>
   );
 };

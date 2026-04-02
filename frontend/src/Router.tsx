@@ -54,11 +54,21 @@ import LeaveCalendar from './components/LeaveCalendar';
 // Compliance Management Components
 import { ComplianceManagement } from './pages/compliance';
 
+// Cloudscape App Layout
+import AppLayout from './components/cloudscape/AppLayout';
+
+// Suspense fallback for lazy-loaded components
+const LazyFallback: React.FC<{ label?: string }> = ({ label = 'Loading...' }) => (
+  <div className="p-4 flex justify-center">
+    <span className="text-gray-600">{label}</span>
+  </div>
+);
+
 // Main Router component
 const Router: React.FC = () => {
   return (
     <Routes>
-      {/* Public Routes */}
+      {/* Public Routes - NO layout */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/reset-password" element={<PasswordResetRequestPage />} />
@@ -67,7 +77,7 @@ const Router: React.FC = () => {
       <Route path="/recruitment" element={<RecruitmentApplication />} />
       <Route path="/apply/:companySlug" element={<RecruitmentApplication />} />
 
-      {/* Onboarding Routes - Protected but bypassed by OnboardingGuard */}
+      {/* Onboarding Routes - Protected but bypassed by OnboardingGuard, NO layout */}
       <Route
         path="/onboarding/*"
         element={
@@ -82,15 +92,19 @@ const Router: React.FC = () => {
         }
       />
 
-      {/* Company Setup Page - For users without company membership */}
+      {/* Company Setup Page - For users without company membership, NO layout */}
       <Route path="/company-setup" element={<CompanySetupPage />} />
 
-      {/* Dashboard redirect */}
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/dashboard" element={<AuthGuard requireOnboarding={true}><DashboardRouter /></AuthGuard>} />
+      {/* ============================================================
+          ALL AUTHENTICATED ROUTES - wrapped in AppLayout
+          AuthGuard checks auth + onboarding, AppLayout renders shell
+          ============================================================ */}
+      <Route element={<AuthGuard requireOnboarding={true}><AppLayout /></AuthGuard>}>
+        {/* Dashboard redirect */}
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<DashboardRouter />} />
 
-      {/* Staff Routes - Accessible by all authenticated users with completed onboarding */}
-      <Route element={<AuthGuard requireOnboarding={true} />}>
+        {/* Staff Routes - Accessible by all authenticated users */}
         <Route path="/shifts" element={<MyShifts />} />
         <Route path="/shifts/new" element={<StartShift />} />
         <Route path="/shifts/:id" element={<ShiftDetails />} />
@@ -100,157 +114,156 @@ const Router: React.FC = () => {
         <Route path="/shifts/:id/checks" element={<ShiftChecks />} />
         <Route path="/shifts/exchange" element={<ShiftExchange />} />
         <Route path="/invoices" element={<MyInvoices />} />
-        {/* TODO: Build InvoiceDetails page — redirecting to list for now */}
+        {/* TODO: Build InvoiceDetails page -- redirecting to list for now */}
         <Route path="/invoices/:id" element={<MyInvoices />} />
         <Route path="/profile" element={<ProfilePage />} />
 
         {/* Leave Management - Consolidated Routes */}
         <Route path="/leave/*" element={<LeaveManagement />} />
-      </Route>
 
-      {/* Manager Routes - Accessible by Managers and Admins with completed onboarding */}
-      <Route element={<AuthGuard requireOnboarding={true} allowedRoles={[UserRole.MANAGER, UserRole.ADMIN]} />}>
-        <Route
-          path="/staff-shifts"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading staff shifts...</span></div>}>
-              <StaffShifts />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/approvals"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading approvals...</span></div>}>
-              <Approvals />
-            </Suspense>
-          }
-        />
-        <Route path="/approvals/:id" element={<ShiftApproval />} />
+        {/* Manager Routes - Accessible by Managers and Admins */}
+        <Route element={<AuthGuard requireOnboarding={true} allowedRoles={[UserRole.MANAGER, UserRole.ADMIN]} />}>
+          <Route
+            path="/staff-shifts"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading staff shifts..." />}>
+                <StaffShifts />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/approvals"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading approvals..." />}>
+                <Approvals />
+              </Suspense>
+            }
+          />
+          <Route path="/approvals/:id" element={<ShiftApproval />} />
 
-        {/* Compliance Management - Consolidated Routes */}
-        <Route path="/compliance/*" element={<ComplianceManagement />} />
+          {/* Compliance Management - Consolidated Routes */}
+          <Route path="/compliance/*" element={<ComplianceManagement />} />
+        </Route>
 
-      </Route>
+        {/* Admin Routes - Only accessible by Admins */}
+        <Route element={<AuthGuard requireOnboarding={true} allowedRoles={[UserRole.ADMIN]} />}>
+          <Route
+            path="/admin/staff"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading staff management..." />}>
+                <StaffManagement />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/venues"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading venues..." />}>
+                <VenueManagement />
+              </Suspense>
+            }
+          />
+          <Route path="/admin/scheduling" element={<ShiftScheduling />} />
+          <Route path="/admin/invoices" element={<InvoiceGeneration />} />
+          {/* TODO: Build dedicated PayRates page -- redirecting to invoices for now */}
+          <Route path="/admin/payrates" element={<InvoiceGeneration />} />
+          <Route
+            path="/admin/deputy"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading deputy integration..." />}>
+                <DeputyIntegration />
+              </Suspense>
+            }
+          />
+          {/* TODO: Build dedicated Deputy Sync page -- redirecting to deputy for now */}
+          <Route path="/admin/deputy/sync" element={<DeputyIntegration />} />
+          <Route
+            path="/admin/recruitment"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading recruitment..." />}>
+                <RecruitmentManagement />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/employment-types"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading employment types..." />}>
+                <EmploymentTypesManagement />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/bank-holidays"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading bank holidays..." />}>
+                <BankHolidayManagement />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/attendance"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading attendance analytics..." />}>
+                <Attendance />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/reports"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading reports..." />}>
+                <ReportsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/leave-reports"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading leave reports..." />}>
+                <LeaveReports />
+              </Suspense>
+            }
+          />
+          <Route path="/admin/finance-integrations" element={<FinanceIntegrations />} />
+          <Route path="/admin/finance-integrations/oauth-callback" element={<FinanceIntegrationsOAuthCallback />} />
 
-      {/* Admin Routes - Only accessible by Admins with completed onboarding */}
-      <Route element={<AuthGuard requireOnboarding={true} allowedRoles={[UserRole.ADMIN]} />}>
-        <Route
-          path="/admin/staff"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading staff management...</span></div>}>
-              <StaffManagement />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/admin/venues"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading venues...</span></div>}>
-              <VenueManagement />
-            </Suspense>
-          }
-        />
-        <Route path="/admin/scheduling" element={<ShiftScheduling />} />
-        <Route path="/admin/invoices" element={<InvoiceGeneration />} />
-        {/* TODO: Build dedicated PayRates page — redirecting to invoices for now */}
-        <Route path="/admin/payrates" element={<InvoiceGeneration />} />
-        <Route
-          path="/admin/deputy"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading deputy integration...</span></div>}>
-              <DeputyIntegration />
-            </Suspense>
-          }
-        />
-        {/* TODO: Build dedicated Deputy Sync page — redirecting to deputy for now */}
-        <Route path="/admin/deputy/sync" element={<DeputyIntegration />} />
-        <Route
-          path="/admin/recruitment"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading recruitment...</span></div>}>
-              <RecruitmentManagement />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/admin/employment-types"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading employment types...</span></div>}>
-              <EmploymentTypesManagement />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/admin/bank-holidays"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading bank holidays...</span></div>}>
-              <BankHolidayManagement />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/admin/attendance"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading attendance analytics...</span></div>}>
-              <Attendance />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/admin/reports"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading reports...</span></div>}>
-              <ReportsPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/admin/leave-reports"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading leave reports...</span></div>}>
-              <LeaveReports />
-            </Suspense>
-          }
-        />
-        <Route path="/admin/finance-integrations" element={<FinanceIntegrations />} />
-        <Route path="/admin/finance-integrations/oauth-callback" element={<FinanceIntegrationsOAuthCallback />} />
+          {/* Compliance Settings - Admin Access */}
+          <Route
+            path="/admin/compliance-settings"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading compliance settings..." />}>
+                <ComplianceSettings level="global" canEdit={true} />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/compliance-settings/venue/:venueId"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading venue compliance settings..." />}>
+                <ComplianceSettings level="venue" canEdit={true} />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/compliance-settings/staff/:staffId"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading staff compliance settings..." />}>
+                <ComplianceSettings level="staff" canEdit={true} />
+              </Suspense>
+            }
+          />
 
-        {/* Compliance Settings - Admin Access */}
-        <Route
-          path="/admin/compliance-settings"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading compliance settings...</span></div>}>
-              <ComplianceSettings level="global" canEdit={true} />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/admin/compliance-settings/venue/:venueId"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading venue compliance settings...</span></div>}>
-              <ComplianceSettings level="venue" canEdit={true} />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/admin/compliance-settings/staff/:staffId"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading staff compliance settings...</span></div>}>
-              <ComplianceSettings level="staff" canEdit={true} />
-            </Suspense>
-          }
-        />
-
-        <Route path="/admin/settings" element={<Settings />} />
-        <Route
-          path="/admin/analytics"
-          element={
-            <Suspense fallback={<div className="p-4 flex justify-center"><span className="text-gray-600">Loading analytics dashboard...</span></div>}>
-              <AnalyticsDashboard />
-            </Suspense>
-          }
-        />
+          <Route path="/admin/settings" element={<Settings />} />
+          <Route
+            path="/admin/analytics"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading analytics dashboard..." />}>
+                <AnalyticsDashboard />
+              </Suspense>
+            }
+          />
+        </Route>
       </Route>
 
       {/* 404 Not Found */}

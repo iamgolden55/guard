@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { MessageBar, MessageBarType } from '@fluentui/react';
-import { MainLayout } from '../../../layouts';
+import { Alert } from '../../../components/cloudscape';
 import venueService from '../../../services/venueService';
 import shiftService from '../../../services/shiftService';
 import settingsService from '../../../services/settingsService';
@@ -413,7 +412,6 @@ export const ShiftSchedulingPage: React.FC = () => {
   }, []);
 
   return (
-    <MainLayout>
       <div className="p-6 max-w-[1400px] mx-auto">
         {/* Header */}
         <SchedulerHeader
@@ -455,16 +453,18 @@ export const ShiftSchedulingPage: React.FC = () => {
 
         {/* Error message */}
         {(dataError || shiftsHook.error) && (
-          <MessageBar
-            messageBarType={MessageBarType.error}
-            onDismiss={() => {
-              setDataError(null);
-              shiftsHook.setError(null);
-            }}
-            styles={{ root: { marginTop: '16px' } }}
-          >
-            {dataError || shiftsHook.error}
-          </MessageBar>
+          <div className="mt-4">
+            <Alert
+              type="error"
+              dismissible
+              onDismiss={() => {
+                setDataError(null);
+                shiftsHook.setError(null);
+              }}
+            >
+              {dataError || shiftsHook.error}
+            </Alert>
+          </div>
         )}
 
         {/* Calendar views */}
@@ -559,7 +559,6 @@ export const ShiftSchedulingPage: React.FC = () => {
           error={shiftsHook.error}
         />
       </div>
-    </MainLayout>
   );
 };
 

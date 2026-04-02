@@ -383,7 +383,7 @@ const ReportJobMonitor: React.FC<ReportJobMonitorProps> = ({
                     <Button appearance="secondary" onClick={() => setShowDeleteDialog(false)}>
                       Cancel
                     </Button>
-                    <Button appearance="primary" onClick={handleBulkDelete}>
+                    <Button appearance="primary" style={{ backgroundColor: "#d13438", borderColor: "#d13438" }} onClick={handleBulkDelete}>
                       Delete
                     </Button>
                   </DialogActions>

@@ -1,13 +1,5 @@
 import type React from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Stack,
-  Text,
-  PrimaryButton,
-  DefaultButton,
-  FontIcon
-} from '@fluentui/react';
-import { MainLayout } from '../../layouts';
 import { useAuth } from '../../contexts/AuthContext';
 
 const UnauthorizedPage: React.FC = () => {
@@ -20,41 +12,31 @@ const UnauthorizedPage: React.FC = () => {
   };
 
   return (
-    <MainLayout>
-      <div className="flex flex-col items-center justify-center min-h-[70vh]">
-        <Stack
-          horizontalAlign="center"
-          tokens={{ childrenGap: 20 }}
-          className="max-w-lg p-8 bg-white rounded-lg shadow-md"
-        >
-          <FontIcon
-            iconName="SecurityError"
-            className="text-red-500"
-            style={{ fontSize: 64 }}
-          />
-
-          <Text variant="xxLarge" className="font-bold text-center">
-            Access Denied
-          </Text>
-
-          <Text variant="medium" className="text-center mb-4">
-            You don't have permission to access this page. Please contact your
-            administrator if you believe you should have access.
-          </Text>
-
-          <Stack horizontal tokens={{ childrenGap: 10 }}>
-            <PrimaryButton
-              text="Go to Dashboard"
-              onClick={() => navigate('/')}
-            />
-            <DefaultButton
-              text="Logout"
-              onClick={handleLogout}
-            />
-          </Stack>
-        </Stack>
+    <div className="flex flex-col items-center justify-center min-h-[70vh]">
+      <div className="max-w-lg p-8 bg-white rounded-xl shadow-sm border border-gray-200 text-center space-y-5">
+        <svg className="w-16 h-16 text-red-300 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+        <h2 className="text-xl font-semibold text-gray-900">Access denied</h2>
+        <p className="text-sm text-gray-500">
+          You do not have permission to access this page. Contact your administrator if you believe you should have access.
+        </p>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={() => navigate('/')}
+            className="px-5 h-10 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Go to dashboard
+          </button>
+          <button
+            onClick={handleLogout}
+            className="px-5 h-10 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
       </div>
-    </MainLayout>
+    </div>
   );
 };
 

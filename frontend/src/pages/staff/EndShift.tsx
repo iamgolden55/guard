@@ -1,21 +1,8 @@
 import type React from 'react';
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  Stack,
-  Text,
-  PrimaryButton,
-  DefaultButton,
-  MessageBar,
-  MessageBarType,
-  Spinner,
-  SpinnerSize,
-  Dialog,
-  DialogType,
-  DialogFooter
-} from '@fluentui/react';
-import { MainLayout } from '../../layouts';
-import { Card, SignatureCanvas } from '../../components';
+import { Header, Container, SpaceBetween, KeyValuePairs, Alert, ConfirmationModal, FormSection } from '../../components/cloudscape';
+import { SignatureCanvas } from '../../components';
 import { shiftService } from '../../services';
 import type { Shift } from '../../types';
 
@@ -45,7 +32,6 @@ const EndShift: React.FC = () => {
         const shiftData = await shiftService.getShiftById(shiftId);
         setShift(shiftData);
 
-        // Check if shift is active
         if (shiftData.status !== 'active') {
           setError('This shift is not active and cannot be ended.');
         }
@@ -75,10 +61,8 @@ const EndShift: React.FC = () => {
       setIsSaving(true);
       setError(null);
 
-      // End the shift
       await shiftService.endShift(shiftId, signature);
 
-      // Close dialog and navigate back to dashboard
       setShowConfirmDialog(false);
       navigate('/');
     } catch (error) {
@@ -89,7 +73,6 @@ const EndShift: React.FC = () => {
     }
   };
 
-  // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-GB', {
@@ -99,7 +82,6 @@ const EndShift: React.FC = () => {
     });
   };
 
-  // Format time for display
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleTimeString('en-GB', {
@@ -109,126 +91,89 @@ const EndShift: React.FC = () => {
   };
 
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">End Shift</Text>
-        </Stack>
+    <SpaceBetween size="l">
+      <Header variant="h1">End Shift</Header>
 
-        <Card>
-          {isLoading ? (
-            <div className="flex justify-center py-8">
-              <Spinner size={SpinnerSize.large} label="Loading shift details..." />
+      <Container>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-4 border-gray-200 border-t-red-600 rounded-full animate-spin" />
+              <p className="text-sm text-gray-500">Loading shift details...</p>
             </div>
-          ) : error && !shift ? (
-            <MessageBar
-              messageBarType={MessageBarType.error}
-              isMultiline={false}
-              dismissButtonAriaLabel="Close"
+          </div>
+        ) : error && !shift ? (
+          <Alert type="error">{error}</Alert>
+        ) : shift ? (
+          <SpaceBetween size="l">
+            {error && (
+              <Alert type="error">{error}</Alert>
+            )}
+
+            <FormSection header="Shift Details">
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <KeyValuePairs
+                  columns={2}
+                  items={[
+                    { label: 'Venue', value: shift.venue.name },
+                    { label: 'Start Date', value: formatDate(shift.startTime) },
+                    { label: 'Start Time', value: formatTime(shift.startTime) },
+                    { label: 'Status', value: <span className="capitalize">{shift.status}</span> },
+                  ]}
+                />
+              </div>
+            </FormSection>
+
+            <FormSection
+              header="End Shift Confirmation"
+              description="By signing below, you confirm that all required checks and duties for this shift have been completed."
             >
-              {error}
-            </MessageBar>
-          ) : shift ? (
-            <Stack tokens={{ childrenGap: 16 }}>
-              {error && (
-                <MessageBar
-                  messageBarType={MessageBarType.error}
-                  isMultiline={false}
-                  dismissButtonAriaLabel="Close"
-                >
-                  {error}
-                </MessageBar>
-              )}
+              <SignatureCanvas
+                onSave={handleSignatureSave}
+                width={500}
+                height={200}
+                label="Your Signature"
+                required
+                errorMessage={!signature && error ? 'Signature is required' : undefined}
+              />
+            </FormSection>
 
-              <Stack>
-                <Text variant="large" className="mb-2">Shift Details:</Text>
-                <div className="p-4 bg-gray-50 rounded-md">
-                  <Stack tokens={{ childrenGap: 8 }}>
-                    <Stack horizontal horizontalAlign="space-between">
-                      <Text className="font-semibold">Venue:</Text>
-                      <Text>{shift.venue.name}</Text>
-                    </Stack>
-                    <Stack horizontal horizontalAlign="space-between">
-                      <Text className="font-semibold">Start Date:</Text>
-                      <Text>{formatDate(shift.startTime)}</Text>
-                    </Stack>
-                    <Stack horizontal horizontalAlign="space-between">
-                      <Text className="font-semibold">Start Time:</Text>
-                      <Text>{formatTime(shift.startTime)}</Text>
-                    </Stack>
-                    <Stack horizontal horizontalAlign="space-between">
-                      <Text className="font-semibold">Status:</Text>
-                      <Text className="capitalize">{shift.status}</Text>
-                    </Stack>
-                  </Stack>
-                </div>
-              </Stack>
-
-              {/* End Shift Instructions */}
-              <Stack className="mt-6">
-                <Text variant="large">Please sign to confirm end of shift:</Text>
-                <Text variant="medium" className="text-gray-600 mb-4">
-                  By signing below, you confirm that all required checks and duties for this shift have been completed.
-                </Text>
-
-                {/* Signature Canvas */}
-                <div className="mt-2">
-                  <SignatureCanvas
-                    onSave={handleSignatureSave}
-                    width={500}
-                    height={200}
-                    label="Your Signature"
-                    required
-                    errorMessage={!signature && error ? 'Signature is required' : undefined}
-                  />
-                </div>
-              </Stack>
-
-              {/* Submit Button */}
-              <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }}>
-                <DefaultButton
-                  text="Cancel"
-                  onClick={() => navigate('/')}
-                  disabled={isSaving}
-                />
-                <PrimaryButton
-                  text="End Shift"
-                  disabled={!signature || isSaving}
-                  iconProps={{ iconName: 'Stop' }}
-                  onClick={() => setShowConfirmDialog(true)}
-                />
-              </Stack>
-            </Stack>
-          ) : (
-            <Text>Shift not found.</Text>
-          )}
-        </Card>
-      </Stack>
+            {/* Actions */}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => navigate('/')}
+                disabled={isSaving}
+                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setShowConfirmDialog(true)}
+                disabled={!signature || isSaving}
+                className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                End Shift
+              </button>
+            </div>
+          </SpaceBetween>
+        ) : (
+          <p className="text-sm text-gray-500 py-8 text-center">Shift not found.</p>
+        )}
+      </Container>
 
       {/* Confirmation Dialog */}
-      <Dialog
-        hidden={!showConfirmDialog}
-        onDismiss={() => setShowConfirmDialog(false)}
-        dialogContentProps={{
-          type: DialogType.normal,
-          title: 'Confirm End Shift',
-          subText: 'Are you sure you want to end this shift? This action cannot be undone.'
-        }}
+      <ConfirmationModal
+        visible={showConfirmDialog}
+        header="Confirm End Shift"
+        confirmLabel="End Shift"
+        variant="destructive"
+        onConfirm={handleConfirmEnd}
+        onCancel={() => setShowConfirmDialog(false)}
+        loading={isSaving}
       >
-        <DialogFooter>
-          <PrimaryButton
-            onClick={handleConfirmEnd}
-            text="End Shift"
-            disabled={isSaving}
-          />
-          <DefaultButton
-            onClick={() => setShowConfirmDialog(false)}
-            text="Cancel"
-            disabled={isSaving}
-          />
-        </DialogFooter>
-      </Dialog>
-    </MainLayout>
+        <p>Are you sure you want to end this shift? This action cannot be undone.</p>
+      </ConfirmationModal>
+    </SpaceBetween>
   );
 };
 

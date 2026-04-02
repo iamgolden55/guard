@@ -82,33 +82,33 @@ const AccountFinalizationStep: React.FC<AccountFinalizationStepProps> = ({
     { key: AdminRole.FINANCE_ADMIN, text: 'Finance Administrator', data: { description: 'Financial operations' } }
   ];
 
-  // Plan type options - All include 30-day free trial
+  // Plan type options - All include 14-day free trial
   const planTypeOptions: IDropdownOption[] = [
     {
       key: PlanType.STARTER,
-      text: 'Starter Plan - FREE for 30 days',
+      text: 'Starter Plan - FREE for 14 days',
       data: {
         price: 'Then £29/month',
         description: 'Up to 25 staff',
-        trial: '30-day free trial included'
+        trial: '14-day free trial included'
       }
     },
     {
       key: PlanType.PROFESSIONAL,
-      text: 'Professional Plan - FREE for 30 days',
+      text: 'Professional Plan - FREE for 14 days',
       data: {
         price: 'Then £79/month',
         description: 'Up to 100 staff • Recommended',
-        trial: '30-day free trial included'
+        trial: '14-day free trial included'
       }
     },
     {
       key: PlanType.ENTERPRISE,
-      text: 'Enterprise Plan - FREE for 30 days',
+      text: 'Enterprise Plan - FREE for 14 days',
       data: {
         price: 'Then £199/month',
         description: 'Unlimited staff',
-        trial: '30-day free trial included'
+        trial: '14-day free trial included'
       }
     },
     {
@@ -443,7 +443,7 @@ const AccountFinalizationStep: React.FC<AccountFinalizationStepProps> = ({
             }}
           >
             <Text style={{ color: '#4f46e5', fontSize: '13px', fontWeight: 600 }}>
-              🎉 30 days free trial • No credit card required
+              🎉 14 days free trial • No credit card required
             </Text>
           </div>
           <Text
@@ -524,7 +524,7 @@ const AccountFinalizationStep: React.FC<AccountFinalizationStepProps> = ({
                 }}
               >
                 <Text style={{ fontSize: '12px', color: '#059669', fontWeight: 500 }}>
-                  ✓ 30-day free trial
+                  ✓ 14-day free trial
                 </Text>
               </div>
             </div>
@@ -592,7 +592,7 @@ const AccountFinalizationStep: React.FC<AccountFinalizationStepProps> = ({
                 }}
               >
                 <Text style={{ fontSize: '12px', color: '#059669', fontWeight: 500 }}>
-                  ✓ 30-day free trial
+                  ✓ 14-day free trial
                 </Text>
               </div>
             </div>
@@ -642,7 +642,7 @@ const AccountFinalizationStep: React.FC<AccountFinalizationStepProps> = ({
                 }}
               >
                 <Text style={{ fontSize: '12px', color: '#059669', fontWeight: 500 }}>
-                  ✓ 30-day free trial
+                  ✓ 14-day free trial
                 </Text>
               </div>
             </div>

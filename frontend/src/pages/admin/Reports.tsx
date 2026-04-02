@@ -1,26 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Stack,
-  Text,
-  PrimaryButton,
-  DefaultButton,
-  Pivot,
-  PivotItem,
-  CommandBar,
-  type ICommandBarItemProps,
-  DatePicker,
-  Dropdown,
-  type IDropdownOption,
-  SearchBox,
-  Spinner,
-  SpinnerSize,
-  MessageBar,
-  MessageBarType,
-  Dialog,
-  DialogType,
-  DialogFooter
-} from '@fluentui/react';
-import { MainLayout } from '../../layouts';
+import { Header, Container, SpaceBetween, StatusIndicator, Alert, ConfirmationModal } from '../../components/cloudscape';
+import Flashbar, { useFlashbar } from '../../components/cloudscape/Flashbar';
 import { shiftService } from '../../services';
 
 // Report Types
@@ -59,29 +39,27 @@ interface StaffPerformanceReport {
 
 const Reports: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState<string>('compliance');
-  const [startDate, setStartDate] = useState<Date>(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)); // 30 days ago
+  const [startDate, setStartDate] = useState<Date>(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
   const [endDate, setEndDate] = useState<Date>(new Date());
   const [selectedVenue, setSelectedVenue] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
+
   // Report Data
   const [complianceReports, setComplianceReports] = useState<ComplianceReport[]>([]);
   const [safetyReports, setSafetyReports] = useState<VenueSafetyReport[]>([]);
   const [performanceReports, setPerformanceReports] = useState<StaffPerformanceReport[]>([]);
-  
+
   // UI State
-  const [venueOptions, setVenueOptions] = useState<IDropdownOption[]>([]);
+  const [venueOptions, setVenueOptions] = useState<Array<{key: string; text: string}>>([]);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportFormat, setExportFormat] = useState<string>('excel');
+  const { items: flashItems, addFlash, removeFlash } = useFlashbar();
 
-  // Load initial data
   useEffect(() => {
     loadVenueOptions();
     loadReports();
   }, []);
 
-  // Reload reports when filters change
   useEffect(() => {
     loadReports();
   }, [selectedTab, startDate, endDate, selectedVenue]);
@@ -101,7 +79,6 @@ const Reports: React.FC = () => {
 
   const loadReports = useCallback(async () => {
     setIsLoading(true);
-    setError(null);
 
     try {
       const params = {
@@ -123,7 +100,7 @@ const Reports: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to load reports:', error);
-      setError('Failed to load reports. Please try again.');
+      addFlash({ type: 'error', content: 'Failed to load reports. Please try again.' });
     } finally {
       setIsLoading(false);
     }
@@ -159,10 +136,6 @@ const Reports: React.FC = () => {
     }
   };
 
-  const handleExport = useCallback(() => {
-    setShowExportDialog(true);
-  }, []);
-
   const doExport = useCallback(() => {
     try {
       let data: any[] = [];
@@ -184,15 +157,14 @@ const Reports: React.FC = () => {
       }
 
       if (data.length === 0) {
-        setError('No data to export');
+        addFlash({ type: 'error', content: 'No data to export' });
         return;
       }
 
-      // Create CSV content
       const headers = Object.keys(data[0]);
       const csvContent = [
         headers.join(','),
-        ...data.map(row => 
+        ...data.map(row =>
           headers.map(header => {
             const value = row[header];
             if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
@@ -212,183 +184,9 @@ const Reports: React.FC = () => {
       setShowExportDialog(false);
     } catch (error) {
       console.error('Export failed:', error);
-      setError('Export failed. Please try again.');
+      addFlash({ type: 'error', content: 'Export failed. Please try again.' });
     }
   }, [selectedTab, complianceReports, safetyReports, performanceReports, startDate, endDate]);
-
-  const commandBarItems: ICommandBarItemProps[] = [
-    {
-      key: 'refresh',
-      text: 'Refresh',
-      iconProps: { iconName: 'Refresh' },
-      onClick: () => {
-        loadReports();
-        return false;
-      },
-    },
-    {
-      key: 'export',
-      text: 'Export',
-      iconProps: { iconName: 'ExcelDocument' },
-      onClick: () => {
-        handleExport();
-        return false;
-      },
-    },
-  ];
-
-  const cardStyle = {
-    padding: '16px',
-    border: '1px solid #e1e1e1',
-    borderRadius: '4px',
-    backgroundColor: '#ffffff',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    marginBottom: '12px'
-  };
-
-  const getComplianceColor = (rate: number) => {
-    if (rate >= 95) return '#10B981'; // Green
-    if (rate >= 85) return '#F59E0B'; // Yellow
-    return '#EF4444'; // Red
-  };
-
-  const getSafetyScoreColor = (score: number) => {
-    if (score >= 90) return '#10B981'; // Green
-    if (score >= 75) return '#F59E0B'; // Yellow
-    return '#EF4444'; // Red
-  };
-
-  return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Text variant="xxLarge" style={{ fontWeight: '600' }}>
-          📊 Security Reports & Analytics
-        </Text>
-
-        <CommandBar items={commandBarItems} />
-
-        {/* Filters */}
-        <div style={cardStyle}>
-          <Stack tokens={{ childrenGap: 16 }}>
-            <Text variant="large" style={{ fontWeight: '600' }}>Filters</Text>
-            
-            <Stack horizontal tokens={{ childrenGap: 20 }} wrap>
-              <Stack tokens={{ childrenGap: 8 }}>
-                <Text variant="medium">Date Range</Text>
-                <Stack horizontal tokens={{ childrenGap: 12 }}>
-                  <DatePicker
-                    label="From"
-                    value={startDate}
-                    onSelectDate={(date) => setStartDate(date || new Date())}
-                    formatDate={(date?: Date) => date?.toLocaleDateString() || ''}
-                  />
-                  <DatePicker
-                    label="To"
-                    value={endDate}
-                    onSelectDate={(date) => setEndDate(date || new Date())}
-                    formatDate={(date?: Date) => date?.toLocaleDateString() || ''}
-                    minDate={startDate}
-                  />
-                </Stack>
-              </Stack>
-
-              <Stack style={{ minWidth: '200px' }}>
-                <Dropdown
-                  label="Venue"
-                  options={venueOptions}
-                  selectedKey={selectedVenue}
-                  onChange={(_, option) => setSelectedVenue(option?.key as string || '')}
-                />
-              </Stack>
-            </Stack>
-          </Stack>
-        </div>
-
-        {error && (
-          <MessageBar messageBarType={MessageBarType.error}>
-            {error}
-          </MessageBar>
-        )}
-
-        {/* Report Tabs */}
-        <Pivot selectedKey={selectedTab} onLinkClick={(item) => setSelectedTab(item?.props.itemKey || 'compliance')}>
-          <PivotItem headerText="📋 Shift Compliance" itemKey="compliance">
-            {isLoading ? (
-              <Stack horizontalAlign="center" style={{ padding: '40px' }}>
-                <Spinner size={SpinnerSize.large} label="Loading compliance reports..." />
-              </Stack>
-            ) : (
-              <ComplianceReportsView reports={complianceReports} />
-            )}
-          </PivotItem>
-
-          <PivotItem headerText="🛡️ Venue Safety" itemKey="safety">
-            {isLoading ? (
-              <Stack horizontalAlign="center" style={{ padding: '40px' }}>
-                <Spinner size={SpinnerSize.large} label="Loading safety reports..." />
-              </Stack>
-            ) : (
-              <SafetyReportsView reports={safetyReports} />
-            )}
-          </PivotItem>
-
-          <PivotItem headerText="👥 Staff Performance" itemKey="performance">
-            {isLoading ? (
-              <Stack horizontalAlign="center" style={{ padding: '40px' }}>
-                <Spinner size={SpinnerSize.large} label="Loading performance reports..." />
-              </Stack>
-            ) : (
-              <PerformanceReportsView reports={performanceReports} />
-            )}
-          </PivotItem>
-        </Pivot>
-
-        {/* Export Dialog */}
-        <Dialog
-          hidden={!showExportDialog}
-          dialogContentProps={{
-            type: DialogType.normal,
-            title: 'Export Report Data',
-          }}
-          onDismiss={() => setShowExportDialog(false)}
-          minWidth={400}
-        >
-          <Stack tokens={{ childrenGap: 15 }}>
-            <Text>Export current report data for external analysis</Text>
-            <Dropdown
-              label="Export Format"
-              options={[
-                { key: 'excel', text: 'Excel/CSV (.csv)' },
-                { key: 'csv', text: 'CSV (.csv)' }
-              ]}
-              selectedKey={exportFormat}
-              onChange={(_, option) => setExportFormat(option?.key as string)}
-            />
-          </Stack>
-          <DialogFooter>
-            <PrimaryButton text="Export" onClick={doExport} />
-            <DefaultButton text="Cancel" onClick={() => setShowExportDialog(false)} />
-          </DialogFooter>
-        </Dialog>
-      </Stack>
-    </MainLayout>
-  );
-};
-
-// Compliance Reports Component
-interface ComplianceReportsViewProps {
-  reports: ComplianceReport[];
-}
-
-const ComplianceReportsView: React.FC<ComplianceReportsViewProps> = ({ reports }) => {
-  const cardStyle = {
-    padding: '16px',
-    border: '1px solid #e1e1e1',
-    borderRadius: '4px',
-    backgroundColor: '#ffffff',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    marginBottom: '12px'
-  };
 
   const getComplianceColor = (rate: number) => {
     if (rate >= 95) return '#10B981';
@@ -396,171 +194,10 @@ const ComplianceReportsView: React.FC<ComplianceReportsViewProps> = ({ reports }
     return '#EF4444';
   };
 
-  return (
-    <Stack tokens={{ childrenGap: 20 }}>
-      <Text variant="large" style={{ fontWeight: '600' }}>
-        Venue Check Compliance Overview
-      </Text>
-
-      {reports.length === 0 ? (
-        <div style={cardStyle}>
-          <Text>No compliance data available for the selected period.</Text>
-        </div>
-      ) : (
-        <Stack tokens={{ childrenGap: 12 }}>
-          {reports.map(report => (
-            <div key={report.venueId} style={cardStyle}>
-              <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                <Stack tokens={{ childrenGap: 8 }}>
-                  <Text variant="mediumPlus" style={{ fontWeight: '600' }}>
-                    {report.venueName}
-                  </Text>
-                  <Stack horizontal tokens={{ childrenGap: 20 }}>
-                    <Text variant="small">
-                      <strong>Total Shifts:</strong> {report.totalShifts}
-                    </Text>
-                    <Text variant="small">
-                      <strong>Shifts with Checks:</strong> {report.shiftsWithChecks}
-                    </Text>
-                    <Text variant="small">
-                      <strong>Critical Issues:</strong> {report.criticalIssues}
-                    </Text>
-                    {report.lastIncident && (
-                      <Text variant="small">
-                        <strong>Last Incident:</strong> {new Date(report.lastIncident).toLocaleDateString()}
-                      </Text>
-                    )}
-                  </Stack>
-                </Stack>
-                
-                <Stack horizontalAlign="center" tokens={{ childrenGap: 4 }}>
-                  <Text 
-                    variant="xxLarge" 
-                    style={{ 
-                      fontWeight: '700',
-                      color: getComplianceColor(report.complianceRate)
-                    }}
-                  >
-                    {report.complianceRate.toFixed(1)}%
-                  </Text>
-                  <Text variant="small" style={{ color: '#666' }}>Compliance Rate</Text>
-                </Stack>
-              </Stack>
-            </div>
-          ))}
-        </Stack>
-      )}
-    </Stack>
-  );
-};
-
-// Safety Reports Component
-interface SafetyReportsViewProps {
-  reports: VenueSafetyReport[];
-}
-
-const SafetyReportsView: React.FC<SafetyReportsViewProps> = ({ reports }) => {
-  const cardStyle = {
-    padding: '16px',
-    border: '1px solid #e1e1e1',
-    borderRadius: '4px',
-    backgroundColor: '#ffffff',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    marginBottom: '12px'
-  };
-
   const getSafetyScoreColor = (score: number) => {
     if (score >= 90) return '#10B981';
     if (score >= 75) return '#F59E0B';
     return '#EF4444';
-  };
-
-  return (
-    <Stack tokens={{ childrenGap: 20 }}>
-      <Text variant="large" style={{ fontWeight: '600' }}>
-        Venue Safety Analytics
-      </Text>
-
-      {reports.length === 0 ? (
-        <div style={cardStyle}>
-          <Text>No safety data available for the selected period.</Text>
-        </div>
-      ) : (
-        <Stack tokens={{ childrenGap: 12 }}>
-          {reports.map(report => (
-            <div key={report.venueId} style={cardStyle}>
-              <Stack tokens={{ childrenGap: 16 }}>
-                <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                  <Text variant="mediumPlus" style={{ fontWeight: '600' }}>
-                    {report.venueName}
-                  </Text>
-                  <Stack horizontalAlign="center" tokens={{ childrenGap: 4 }}>
-                    <Text 
-                      variant="xLarge" 
-                      style={{ 
-                        fontWeight: '700',
-                        color: getSafetyScoreColor(report.overallSafetyScore)
-                      }}
-                    >
-                      {report.overallSafetyScore.toFixed(1)}
-                    </Text>
-                    <Text variant="small" style={{ color: '#666' }}>Safety Score</Text>
-                  </Stack>
-                </Stack>
-
-                <Stack horizontal tokens={{ childrenGap: 40 }}>
-                  <Stack tokens={{ childrenGap: 4 }}>
-                    <Text variant="medium" style={{ color: '#ff6b6b', fontWeight: '600' }}>
-                      🔥 Fire Safety
-                    </Text>
-                    <Text variant="small">Checks: {report.fireExitChecks}</Text>
-                    <Text variant="small" style={{ color: report.fireExitFailures > 0 ? '#EF4444' : '#10B981' }}>
-                      Failures: {report.fireExitFailures}
-                    </Text>
-                  </Stack>
-
-                  <Stack tokens={{ childrenGap: 4 }}>
-                    <Text variant="medium" style={{ color: '#4ecdc4', fontWeight: '600' }}>
-                      👥 Capacity
-                    </Text>
-                    <Text variant="small">Checks: {report.capacityChecks}</Text>
-                    <Text variant="small" style={{ color: report.capacityBreaches > 0 ? '#EF4444' : '#10B981' }}>
-                      Breaches: {report.capacityBreaches}
-                    </Text>
-                  </Stack>
-
-                  <Stack tokens={{ childrenGap: 4 }}>
-                    <Text variant="medium" style={{ color: '#95e1d3', fontWeight: '600' }}>
-                      🚻 Facilities
-                    </Text>
-                    <Text variant="small">Checks: {report.toiletChecks}</Text>
-                    <Text variant="small" style={{ color: report.toiletIssues > 0 ? '#EF4444' : '#10B981' }}>
-                      Issues: {report.toiletIssues}
-                    </Text>
-                  </Stack>
-                </Stack>
-              </Stack>
-            </div>
-          ))}
-        </Stack>
-      )}
-    </Stack>
-  );
-};
-
-// Performance Reports Component
-interface PerformanceReportsViewProps {
-  reports: StaffPerformanceReport[];
-}
-
-const PerformanceReportsView: React.FC<PerformanceReportsViewProps> = ({ reports }) => {
-  const cardStyle = {
-    padding: '16px',
-    border: '1px solid #e1e1e1',
-    borderRadius: '4px',
-    backgroundColor: '#ffffff',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    marginBottom: '12px'
   };
 
   const getPerformanceColor = (score: number) => {
@@ -569,62 +206,253 @@ const PerformanceReportsView: React.FC<PerformanceReportsViewProps> = ({ reports
     return '#EF4444';
   };
 
-  return (
-    <Stack tokens={{ childrenGap: 20 }}>
-      <Text variant="large" style={{ fontWeight: '600' }}>
-        Staff Performance Analytics
-      </Text>
+  const tabs = [
+    { id: 'compliance', label: 'Shift Compliance' },
+    { id: 'safety', label: 'Venue Safety' },
+    { id: 'performance', label: 'Staff Performance' },
+  ];
 
-      {reports.length === 0 ? (
-        <div style={cardStyle}>
-          <Text>No performance data available for the selected period.</Text>
+  return (
+    <SpaceBetween size="l">
+      <Header
+        actions={
+          <div className="flex gap-2">
+            <button
+              onClick={() => loadReports()}
+              className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Refresh
+            </button>
+            <button
+              onClick={() => setShowExportDialog(true)}
+              className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Export
+            </button>
+          </div>
+        }
+      >
+        Security Reports & Analytics
+      </Header>
+
+      <Flashbar items={flashItems} onDismiss={removeFlash} />
+
+      {/* Filters */}
+      <Container header={<Header variant="h2">Filters</Header>}>
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+            <input
+              type="date"
+              value={startDate.toISOString().split('T')[0]}
+              onChange={(e) => setStartDate(new Date(e.target.value))}
+              className="h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+            <input
+              type="date"
+              value={endDate.toISOString().split('T')[0]}
+              onChange={(e) => setEndDate(new Date(e.target.value))}
+              min={startDate.toISOString().split('T')[0]}
+              className="h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
+            <select
+              value={selectedVenue}
+              onChange={(e) => setSelectedVenue(e.target.value)}
+              className="h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent min-w-[200px]"
+            >
+              {venueOptions.map(opt => (
+                <option key={opt.key} value={opt.key}>{opt.text}</option>
+              ))}
+            </select>
+          </div>
         </div>
-      ) : (
-        <Stack tokens={{ childrenGap: 12 }}>
-          {reports.map(report => (
-            <div key={report.staffId} style={cardStyle}>
-              <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                <Stack tokens={{ childrenGap: 8 }}>
-                  <Text variant="mediumPlus" style={{ fontWeight: '600' }}>
-                    {report.staffName}
-                  </Text>
-                  <Stack horizontal tokens={{ childrenGap: 30 }}>
-                    <Text variant="small">
-                      <strong>Shifts:</strong> {report.totalShifts}
-                    </Text>
-                    <Text variant="small">
-                      <strong>Checks:</strong> {report.checksCompleted}
-                    </Text>
-                    <Text variant="small">
-                      <strong>Completion Rate:</strong> {report.checkCompletionRate.toFixed(1)}%
-                    </Text>
-                    <Text variant="small">
-                      <strong>Issues Found:</strong> {report.criticalIssuesFound}
-                    </Text>
-                    <Text variant="small">
-                      <strong>Avg Response:</strong> {report.avgResponseTime.toFixed(1)}h
-                    </Text>
-                  </Stack>
-                </Stack>
-                
-                <Stack horizontalAlign="center" tokens={{ childrenGap: 4 }}>
-                  <Text 
-                    variant="xLarge" 
-                    style={{ 
-                      fontWeight: '700',
-                      color: getPerformanceColor(report.performanceScore)
-                    }}
-                  >
-                    {report.performanceScore.toFixed(1)}
-                  </Text>
-                  <Text variant="small" style={{ color: '#666' }}>Performance Score</Text>
-                </Stack>
-              </Stack>
-            </div>
+      </Container>
+
+      {/* Report Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-0 -mb-px">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setSelectedTab(tab.id)}
+              className={selectedTab === tab.id
+                ? 'px-4 py-2.5 text-sm font-medium text-red-600 border-b-2 border-red-600'
+                : 'px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent'
+              }
+            >
+              {tab.label}
+            </button>
           ))}
-        </Stack>
+        </nav>
+      </div>
+
+      {isLoading ? (
+        <Container>
+          <div className="flex justify-center py-12">
+            <svg className="animate-spin h-8 w-8 text-red-600" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          </div>
+        </Container>
+      ) : (
+        <>
+          {/* Compliance Reports */}
+          {selectedTab === 'compliance' && (
+            <SpaceBetween size="m">
+              <h3 className="text-lg font-semibold text-gray-900">Venue Check Compliance Overview</h3>
+
+              {complianceReports.length === 0 ? (
+                <Container>
+                  <p className="text-sm text-gray-500">No compliance data available for the selected period.</p>
+                </Container>
+              ) : (
+                complianceReports.map(report => (
+                  <Container key={report.venueId}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-base font-semibold text-gray-900 mb-2">{report.venueName}</p>
+                        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600">
+                          <span><strong>Total Shifts:</strong> {report.totalShifts}</span>
+                          <span><strong>Shifts with Checks:</strong> {report.shiftsWithChecks}</span>
+                          <span><strong>Critical Issues:</strong> {report.criticalIssues}</span>
+                          {report.lastIncident && (
+                            <span><strong>Last Incident:</strong> {new Date(report.lastIncident).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-3xl font-bold" style={{ color: getComplianceColor(report.complianceRate) }}>
+                          {report.complianceRate.toFixed(1)}%
+                        </p>
+                        <p className="text-xs text-gray-500">Compliance Rate</p>
+                      </div>
+                    </div>
+                  </Container>
+                ))
+              )}
+            </SpaceBetween>
+          )}
+
+          {/* Safety Reports */}
+          {selectedTab === 'safety' && (
+            <SpaceBetween size="m">
+              <h3 className="text-lg font-semibold text-gray-900">Venue Safety Analytics</h3>
+
+              {safetyReports.length === 0 ? (
+                <Container>
+                  <p className="text-sm text-gray-500">No safety data available for the selected period.</p>
+                </Container>
+              ) : (
+                safetyReports.map(report => (
+                  <Container key={report.venueId}>
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-base font-semibold text-gray-900">{report.venueName}</p>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold" style={{ color: getSafetyScoreColor(report.overallSafetyScore) }}>
+                          {report.overallSafetyScore.toFixed(1)}
+                        </p>
+                        <p className="text-xs text-gray-500">Safety Score</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-6">
+                      <div>
+                        <p className="text-sm font-semibold text-red-500 mb-1">Fire Safety</p>
+                        <p className="text-sm text-gray-600">Checks: {report.fireExitChecks}</p>
+                        <p className={`text-sm ${report.fireExitFailures > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                          Failures: {report.fireExitFailures}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-teal-500 mb-1">Capacity</p>
+                        <p className="text-sm text-gray-600">Checks: {report.capacityChecks}</p>
+                        <p className={`text-sm ${report.capacityBreaches > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                          Breaches: {report.capacityBreaches}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-emerald-400 mb-1">Facilities</p>
+                        <p className="text-sm text-gray-600">Checks: {report.toiletChecks}</p>
+                        <p className={`text-sm ${report.toiletIssues > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                          Issues: {report.toiletIssues}
+                        </p>
+                      </div>
+                    </div>
+                  </Container>
+                ))
+              )}
+            </SpaceBetween>
+          )}
+
+          {/* Performance Reports */}
+          {selectedTab === 'performance' && (
+            <SpaceBetween size="m">
+              <h3 className="text-lg font-semibold text-gray-900">Staff Performance Analytics</h3>
+
+              {performanceReports.length === 0 ? (
+                <Container>
+                  <p className="text-sm text-gray-500">No performance data available for the selected period.</p>
+                </Container>
+              ) : (
+                performanceReports.map(report => (
+                  <Container key={report.staffId}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-base font-semibold text-gray-900 mb-2">{report.staffName}</p>
+                        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600">
+                          <span><strong>Shifts:</strong> {report.totalShifts}</span>
+                          <span><strong>Checks:</strong> {report.checksCompleted}</span>
+                          <span><strong>Completion Rate:</strong> {report.checkCompletionRate.toFixed(1)}%</span>
+                          <span><strong>Issues Found:</strong> {report.criticalIssuesFound}</span>
+                          <span><strong>Avg Response:</strong> {report.avgResponseTime.toFixed(1)}h</span>
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold" style={{ color: getPerformanceColor(report.performanceScore) }}>
+                          {report.performanceScore.toFixed(1)}
+                        </p>
+                        <p className="text-xs text-gray-500">Performance Score</p>
+                      </div>
+                    </div>
+                  </Container>
+                ))
+              )}
+            </SpaceBetween>
+          )}
+        </>
       )}
-    </Stack>
+
+      {/* Export Dialog */}
+      <ConfirmationModal
+        visible={showExportDialog}
+        onCancel={() => setShowExportDialog(false)}
+        onConfirm={doExport}
+        header="Export Report Data"
+        confirmLabel="Export"
+      >
+        <SpaceBetween size="m">
+          <p className="text-sm text-gray-700">Export current report data for external analysis</p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Export Format</label>
+            <select
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value)}
+              className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            >
+              <option value="excel">Excel/CSV (.csv)</option>
+              <option value="csv">CSV (.csv)</option>
+            </select>
+          </div>
+        </SpaceBetween>
+      </ConfirmationModal>
+    </SpaceBetween>
   );
 };
 

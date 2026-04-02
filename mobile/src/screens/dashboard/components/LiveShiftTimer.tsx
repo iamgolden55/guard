@@ -36,6 +36,16 @@ const formatTime = (dateString: string): string => {
   });
 };
 
+// Format overtime as "1h 30m"
+const formatOvertime = (seconds: number): string => {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (hrs > 0) {
+    return `${hrs}h ${mins}m`;
+  }
+  return `${mins}m`;
+};
+
 // Pulsing dot animation
 const PulsingDot = () => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -102,14 +112,34 @@ export const LiveShiftTimer: React.FC<LiveShiftTimerProps> = ({
 
   const isRunning = !checkOutTime && isActive;
 
+  // Detect if shift is past scheduled end time
+  const isOverdue = React.useMemo(() => {
+    if (!isRunning || !scheduledEndTime) return false;
+    const now = new Date();
+    const endTime = new Date(scheduledEndTime);
+    return now > endTime;
+  }, [isRunning, scheduledEndTime, elapsedSeconds]); // elapsedSeconds triggers re-check every second
+
+  // Calculate overtime duration for display
+  const overtimeSeconds = React.useMemo(() => {
+    if (!isOverdue || !scheduledEndTime) return 0;
+    const now = new Date();
+    const endTime = new Date(scheduledEndTime);
+    return Math.floor((now.getTime() - endTime.getTime()) / 1000);
+  }, [isOverdue, scheduledEndTime, elapsedSeconds]);
+
   // Dynamic styles based on theme and state
   const timerBoxStyle = [
     styles.timerBox,
     {
       backgroundColor: isRunning
-        ? isDark ? '#052E16' : '#F0FDF4'
+        ? isOverdue
+          ? isDark ? '#450A0A' : '#FEF2F2'  // Red tint for overdue
+          : isDark ? '#052E16' : '#F0FDF4'  // Green for normal
         : uberColors.background.surface,
-      borderColor: isRunning ? uberColors.success : uberColors.border.light,
+      borderColor: isRunning
+        ? isOverdue ? uberColors.error : uberColors.success
+        : uberColors.border.light,
     },
     uberShadows.soft,
   ];
@@ -139,26 +169,40 @@ export const LiveShiftTimer: React.FC<LiveShiftTimerProps> = ({
         <View style={styles.timerHeader}>
           <Text style={[styles.timerLabel, { color: uberColors.text.secondary }]}>SHIFT TIMER</Text>
           {isRunning && (
-            <View style={[styles.liveIndicator, { backgroundColor: uberColors.success }]}>
+            <View style={[
+              styles.liveIndicator,
+              { backgroundColor: isOverdue ? uberColors.error : uberColors.success }
+            ]}>
               <PulsingDot />
-              <Text style={styles.liveText}>LIVE</Text>
+              <Text style={styles.liveText}>{isOverdue ? 'OVERDUE' : 'LIVE'}</Text>
             </View>
           )}
         </View>
         <Text style={[
           styles.timerValue,
-          { color: isRunning ? uberColors.success : uberColors.text.primary }
+          { color: isRunning
+            ? isOverdue ? uberColors.error : uberColors.success
+            : uberColors.text.primary
+          }
         ]}>
           {formatDuration(elapsedSeconds)}
         </Text>
-        <Text style={[styles.timerSubtext, { color: uberColors.text.secondary }]}>
-          {isRunning ? 'Time on shift' : 'Shift completed'}
+        <Text style={[styles.timerSubtext, { color: isOverdue ? uberColors.error : uberColors.text.secondary }]}>
+          {isRunning
+            ? isOverdue
+              ? `${formatOvertime(overtimeSeconds)} past scheduled end`
+              : 'Time on shift'
+            : 'Shift completed'}
         </Text>
         {isRunning && scheduledEndTime && (
           <View style={styles.endTimeContainer}>
-            <Ionicons name="time-outline" size={14} color={uberColors.text.muted} />
-            <Text style={[styles.endTimeText, { color: uberColors.text.muted }]}>
-              Shift ends at {formatTime(scheduledEndTime)}
+            <Ionicons
+              name={isOverdue ? "alert-circle" : "time-outline"}
+              size={14}
+              color={isOverdue ? uberColors.error : uberColors.text.muted}
+            />
+            <Text style={[styles.endTimeText, { color: isOverdue ? uberColors.error : uberColors.text.muted }]}>
+              {isOverdue ? `Should have ended at ${formatTime(scheduledEndTime)}` : `Shift ends at ${formatTime(scheduledEndTime)}`}
             </Text>
           </View>
         )}

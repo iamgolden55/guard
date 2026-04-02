@@ -10,6 +10,8 @@ import {
   MessageBarType
 } from '@fluentui/react';
 import { shiftService, api } from '../services';
+import AdjustTimeDialog from './AdjustTimeDialog';
+import type { Shift } from '../types';
 
 interface ActiveShift {
   id: number;
@@ -88,6 +90,8 @@ export const ActiveShiftsWidget: React.FC<ActiveShiftsWidgetProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [processingShiftId, setProcessingShiftId] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [showAdjustTimeDialog, setShowAdjustTimeDialog] = useState(false);
+  const [selectedShiftForAdjustment, setSelectedShiftForAdjustment] = useState<Shift | null>(null);
 
   // Update current time every 30 seconds for elapsed time display
   useEffect(() => {
@@ -149,6 +153,25 @@ export const ActiveShiftsWidget: React.FC<ActiveShiftsWidgetProps> = ({
       setProcessingShiftId(null);
     }
   };
+
+  // Handler for adjusting shift times
+  const handleAdjustTimes = async (activeShift: ActiveShift) => {
+    try {
+      // Fetch the full shift details
+      const fullShift = await shiftService.getShiftById(activeShift.id);
+      setSelectedShiftForAdjustment(fullShift as Shift);
+      setShowAdjustTimeDialog(true);
+    } catch (err) {
+      console.error('Error fetching shift for adjustment:', err);
+      setError('Failed to load shift details. Please try again.');
+    }
+  };
+
+  const handleAdjustmentSuccess = useCallback(() => {
+    // Reload active shifts after successful adjustment
+    loadActiveShifts();
+    onActionComplete?.();
+  }, [loadActiveShifts, onActionComplete]);
 
   // Format elapsed time display
   const formatElapsedTime = (hours: number): string => {
@@ -300,25 +323,38 @@ export const ActiveShiftsWidget: React.FC<ActiveShiftsWidgetProps> = ({
                       </td>
                       {showQuickActions && (
                         <td className="py-3 px-3 text-right">
-                          <TooltipHost
-                            content="Record a manual check-out using current time"
-                            directionalHint={DirectionalHint.topCenter}
-                          >
-                            <button
-                              disabled={processingShiftId === shift.id}
-                              onClick={() => handleQuickCheckout(shift)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded transition-colors disabled:opacity-50 bg-blue-600 text-white hover:bg-blue-700"
+                          <div className="flex items-center justify-end gap-2">
+                            <TooltipHost
+                              content="Record a manual check-out using current time"
+                              directionalHint={DirectionalHint.topCenter}
                             >
-                              {processingShiftId === shift.id ? (
-                                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                <>
-                                  <Icons.Check className="w-3 h-3" />
-                                  Check Out
-                                </>
-                              )}
-                            </button>
-                          </TooltipHost>
+                              <button
+                                disabled={processingShiftId === shift.id}
+                                onClick={() => handleQuickCheckout(shift)}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded transition-colors disabled:opacity-50 bg-blue-600 text-white hover:bg-blue-700"
+                              >
+                                {processingShiftId === shift.id ? (
+                                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <>
+                                    <Icons.Check className="w-3 h-3" />
+                                    Check Out
+                                  </>
+                                )}
+                              </button>
+                            </TooltipHost>
+                            <TooltipHost
+                              content="Adjust check-in time for this shift"
+                              directionalHint={DirectionalHint.topCenter}
+                            >
+                              <button
+                                onClick={() => handleAdjustTimes(shift)}
+                                className="inline-flex items-center justify-center w-8 h-8 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded transition-colors"
+                              >
+                                <Icons.Clock className="w-4 h-4" />
+                              </button>
+                            </TooltipHost>
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -341,6 +377,19 @@ export const ActiveShiftsWidget: React.FC<ActiveShiftsWidgetProps> = ({
           </>
         )}
       </div>
+
+      {/* Time Adjustment Dialog */}
+      {selectedShiftForAdjustment && (
+        <AdjustTimeDialog
+          shift={selectedShiftForAdjustment}
+          isOpen={showAdjustTimeDialog}
+          onDismiss={() => {
+            setShowAdjustTimeDialog(false);
+            setSelectedShiftForAdjustment(null);
+          }}
+          onSuccess={handleAdjustmentSuccess}
+        />
+      )}
     </div>
   );
 };

@@ -1,28 +1,9 @@
 import type React from 'react';
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  Stack,
-  Text,
-  PrimaryButton,
-  DefaultButton,
-  TextField,
-  MessageBar,
-  MessageBarType,
-  Spinner,
-  SpinnerSize,
-  Pivot,
-  PivotItem,
-  ChoiceGroup,
-  type IChoiceGroupOption,
-  ComboBox,
-  type IComboBoxOption,
-  Label
-} from '@fluentui/react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { MainLayout } from '../../layouts';
-import { Card } from '../../components';
+import { Header, Container, SpaceBetween, KeyValuePairs, Alert, FormSection } from '../../components/cloudscape';
 import { shiftService } from '../../services';
 import { type Shift, ConditionRating } from '../../types';
 
@@ -59,7 +40,6 @@ const ShiftChecks: React.FC = () => {
         const shiftData = await shiftService.getShiftById(shiftId);
         setShift(shiftData);
 
-        // Check if shift is active or in progress
         if (shiftData.status !== 'active' && shiftData.status !== 'in_progress') {
           setError('This shift is not active. Checks can only be added to active shifts.');
         }
@@ -100,18 +80,14 @@ const ShiftChecks: React.FC = () => {
         setError(null);
         setSuccessMessage(null);
 
-        // Add fire exit check
         await shiftService.addFireExitCheck(shiftId, {
           exitName: values.exitName,
           isPassed: values.isPassed,
           comments: values.comments
         });
 
-        // Reset form and show success message
         resetForm();
         setSuccessMessage('Fire exit check saved successfully.');
-
-        // Clear success message after a delay
         setTimeout(() => setSuccessMessage(null), 5000);
       } catch (error) {
         console.error('Failed to save fire exit check:', error);
@@ -143,17 +119,13 @@ const ShiftChecks: React.FC = () => {
         setError(null);
         setSuccessMessage(null);
 
-        // Add capacity check
         await shiftService.addCapacityCheck(shiftId, {
           count: values.count,
           comments: values.comments
         });
 
-        // Reset form and show success message
         resetForm();
         setSuccessMessage('Capacity check saved successfully.');
-
-        // Clear success message after a delay
         setTimeout(() => setSuccessMessage(null), 5000);
       } catch (error) {
         console.error('Failed to save capacity check:', error);
@@ -194,18 +166,14 @@ const ShiftChecks: React.FC = () => {
         setError(null);
         setSuccessMessage(null);
 
-        // Add toilet check
         await shiftService.addToiletCheck(shiftId, {
           location: values.location,
           condition: values.condition as ConditionRating,
           comments: values.comments
         });
 
-        // Reset form and show success message
         resetForm();
         setSuccessMessage('Toilet check saved successfully.');
-
-        // Clear success message after a delay
         setTimeout(() => setSuccessMessage(null), 5000);
       } finally {
         setIsSaving(false);
@@ -237,7 +205,6 @@ const ShiftChecks: React.FC = () => {
         setError(null);
         setSuccessMessage(null);
 
-        // Add enforcement visit
         await shiftService.addEnforcementVisit(shiftId, {
           officerName: values.officerName,
           officerBadge: values.officerBadge,
@@ -246,11 +213,8 @@ const ShiftChecks: React.FC = () => {
           outcome: values.outcome
         });
 
-        // Reset form and show success message
         resetForm();
         setSuccessMessage('Enforcement visit logged successfully.');
-
-        // Clear success message after a delay
         setTimeout(() => setSuccessMessage(null), 5000);
       } catch (error) {
         console.error('Failed to log enforcement visit:', error);
@@ -261,22 +225,6 @@ const ShiftChecks: React.FC = () => {
     }
   });
 
-  // Options for fire exit check pass/fail
-  const passFailOptions: IChoiceGroupOption[] = [
-    { key: 'true', text: 'Pass' },
-    { key: 'false', text: 'Fail' }
-  ];
-
-  // Options for toilet condition
-  const conditionOptions: IComboBoxOption[] = [
-    { key: ConditionRating.EXCELLENT, text: 'Excellent' },
-    { key: ConditionRating.GOOD, text: 'Good' },
-    { key: ConditionRating.FAIR, text: 'Fair' },
-    { key: ConditionRating.POOR, text: 'Poor' },
-    { key: ConditionRating.CRITICAL, text: 'Critical' }
-  ];
-
-  // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-GB', {
@@ -286,386 +234,381 @@ const ShiftChecks: React.FC = () => {
     });
   };
 
+  const checkTabs = [
+    { key: CheckType.FIRE_EXIT, label: 'Fire Exit' },
+    { key: CheckType.CAPACITY, label: 'Capacity' },
+    { key: CheckType.TOILET, label: 'Toilet' },
+    { key: CheckType.ENFORCEMENT, label: 'Enforcement' },
+  ];
+
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">Shift Checks & Logs</Text>
-        </Stack>
+    <SpaceBetween size="l">
+      <Header variant="h1">Shift Checks & Logs</Header>
 
-        {isLoading ? (
-          <div className="flex justify-center py-8">
-            <Spinner size={SpinnerSize.large} label="Loading shift details..." />
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-4 border-gray-200 border-t-red-600 rounded-full animate-spin" />
+            <p className="text-sm text-gray-500">Loading shift details...</p>
           </div>
-        ) : error && !shift ? (
-          <MessageBar
-            messageBarType={MessageBarType.error}
-            isMultiline={false}
-            dismissButtonAriaLabel="Close"
-          >
-            {error}
-          </MessageBar>
-        ) : (
-          <Stack tokens={{ childrenGap: 16 }}>
-            {/* Shift Info Card */}
-            <Card>
-              <Stack tokens={{ childrenGap: 10 }}>
-                <Text variant="large" className="font-semibold">
-                  Shift Details
-                </Text>
-                <div className="p-4 bg-gray-50 rounded-md">
-                  <Stack tokens={{ childrenGap: 8 }}>
-                    <Stack horizontal horizontalAlign="space-between">
-                      <Text className="font-semibold">Venue:</Text>
-                      <Text>{shift?.venue.name}</Text>
-                    </Stack>
-                    <Stack horizontal horizontalAlign="space-between">
-                      <Text className="font-semibold">Date:</Text>
-                      <Text>{shift?.startTime ? formatDate(shift.startTime) : 'N/A'}</Text>
-                    </Stack>
-                    <Stack horizontal horizontalAlign="space-between">
-                      <Text className="font-semibold">Status:</Text>
-                      <Text className="capitalize">{shift?.status || 'N/A'}</Text>
-                    </Stack>
-                  </Stack>
-                </div>
-              </Stack>
-            </Card>
+        </div>
+      ) : error && !shift ? (
+        <Alert type="error">{error}</Alert>
+      ) : (
+        <SpaceBetween size="l">
+          {/* Shift Info */}
+          <Container header={<Header variant="h2">Shift Details</Header>}>
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <KeyValuePairs
+                columns={3}
+                items={[
+                  { label: 'Venue', value: shift?.venue.name },
+                  { label: 'Date', value: shift?.startTime ? formatDate(shift.startTime) : 'N/A' },
+                  { label: 'Status', value: <span className="capitalize">{shift?.status || 'N/A'}</span> },
+                ]}
+              />
+            </div>
+          </Container>
 
-            {/* Checks Pivot */}
-            <Card>
+          {/* Checks */}
+          <Container>
+            <SpaceBetween size="m">
               {successMessage && (
-                <MessageBar
-                  messageBarType={MessageBarType.success}
-                  isMultiline={false}
-                  dismissButtonAriaLabel="Close"
-                  className="mb-4"
-                >
+                <Alert type="success" dismissible onDismiss={() => setSuccessMessage(null)}>
                   {successMessage}
-                </MessageBar>
+                </Alert>
               )}
 
               {error && (
-                <MessageBar
-                  messageBarType={MessageBarType.error}
-                  isMultiline={false}
-                  dismissButtonAriaLabel="Close"
-                  className="mb-4"
-                >
+                <Alert type="error" dismissible onDismiss={() => setError(null)}>
                   {error}
-                </MessageBar>
+                </Alert>
               )}
 
-              <Pivot
-                selectedKey={activeCheckType}
-                onLinkClick={(item) => {
-                  if (item?.props.itemKey) {
-                    setActiveCheckType(item.props.itemKey as CheckType);
-                  }
-                }}
-              >
-                {/* Fire Exit Check */}
-                <PivotItem headerText="Fire Exit Check" itemKey={CheckType.FIRE_EXIT}>
-                  <div className="p-4">
-                    <form onSubmit={fireExitForm.handleSubmit}>
-                      <Stack tokens={{ childrenGap: 16 }}>
-                        <Text variant="mediumPlus">
-                          Record fire exit checks to ensure all exits are accessible and functioning correctly.
-                        </Text>
+              {/* Tab Navigation */}
+              <div className="border-b border-gray-200">
+                <nav className="flex gap-0 -mb-px overflow-x-auto">
+                  {checkTabs.map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveCheckType(tab.key)}
+                      className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                        activeCheckType === tab.key
+                          ? 'border-red-600 text-red-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </nav>
+              </div>
 
-                        <TextField
-                          label="Exit Name / Location"
-                          name="exitName"
-                          value={fireExitForm.values.exitName}
-                          onChange={fireExitForm.handleChange}
-                          onBlur={fireExitForm.handleBlur}
-                          errorMessage={
-                            fireExitForm.touched.exitName && fireExitForm.errors.exitName
-                              ? fireExitForm.errors.exitName
-                              : undefined
-                          }
-                          required
-                        />
+              {/* Fire Exit Check */}
+              {activeCheckType === CheckType.FIRE_EXIT && (
+                <form onSubmit={fireExitForm.handleSubmit}>
+                  <FormSection
+                    header="Fire Exit Check"
+                    description="Record fire exit checks to ensure all exits are accessible and functioning correctly."
+                  >
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Exit Name / Location *</label>
+                      <input
+                        name="exitName"
+                        value={fireExitForm.values.exitName}
+                        onChange={fireExitForm.handleChange}
+                        onBlur={fireExitForm.handleBlur}
+                        className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      {fireExitForm.touched.exitName && fireExitForm.errors.exitName && (
+                        <p className="text-red-600 text-xs mt-1">{fireExitForm.errors.exitName}</p>
+                      )}
+                    </div>
 
-                        <Stack>
-                          <Label required>Status</Label>
-                          <ChoiceGroup
-                            options={passFailOptions}
-                            selectedKey={fireExitForm.values.isPassed.toString()}
-                            onChange={(_, option) => {
-                              fireExitForm.setFieldValue('isPassed', option?.key === 'true');
-                            }}
-                            required
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Status *</label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="isPassed"
+                            checked={fireExitForm.values.isPassed === true}
+                            onChange={() => fireExitForm.setFieldValue('isPassed', true)}
+                            className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500"
                           />
-                          {fireExitForm.touched.isPassed && fireExitForm.errors.isPassed && (
-                            <Text className="text-red-600 text-xs mt-1">{fireExitForm.errors.isPassed}</Text>
-                          )}
-                        </Stack>
-
-                        <TextField
-                          label="Comments"
-                          name="comments"
-                          multiline
-                          rows={3}
-                          value={fireExitForm.values.comments}
-                          onChange={fireExitForm.handleChange}
-                          onBlur={fireExitForm.handleBlur}
-                          errorMessage={
-                            fireExitForm.touched.comments && fireExitForm.errors.comments
-                              ? fireExitForm.errors.comments
-                              : undefined
-                          }
-                          required={!fireExitForm.values.isPassed}
-                        />
-
-                        <Stack horizontal horizontalAlign="end">
-                          <PrimaryButton
-                            type="submit"
-                            text="Save Check"
-                            disabled={isSaving}
+                          <span className="text-sm text-gray-700">Pass</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="isPassed"
+                            checked={fireExitForm.values.isPassed === false}
+                            onChange={() => fireExitForm.setFieldValue('isPassed', false)}
+                            className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500"
                           />
-                        </Stack>
-                      </Stack>
-                    </form>
-                  </div>
-                </PivotItem>
+                          <span className="text-sm text-gray-700">Fail</span>
+                        </label>
+                      </div>
+                    </div>
 
-                {/* Capacity Check */}
-                <PivotItem headerText="Capacity Check" itemKey={CheckType.CAPACITY}>
-                  <div className="p-4">
-                    <form onSubmit={capacityForm.handleSubmit}>
-                      <Stack tokens={{ childrenGap: 16 }}>
-                        <Text variant="mediumPlus">
-                          Record the current occupancy to ensure the venue stays within safe capacity limits.
-                        </Text>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Comments {!fireExitForm.values.isPassed && '*'}
+                      </label>
+                      <textarea
+                        name="comments"
+                        rows={3}
+                        value={fireExitForm.values.comments}
+                        onChange={fireExitForm.handleChange}
+                        onBlur={fireExitForm.handleBlur}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      {fireExitForm.touched.comments && fireExitForm.errors.comments && (
+                        <p className="text-red-600 text-xs mt-1">{fireExitForm.errors.comments}</p>
+                      )}
+                    </div>
 
-                        <TextField
-                          label="Current Count"
-                          name="count"
-                          type="number"
-                          value={capacityForm.values.count.toString()}
-                          onChange={capacityForm.handleChange}
-                          onBlur={capacityForm.handleBlur}
-                          errorMessage={
-                            capacityForm.touched.count && capacityForm.errors.count
-                              ? capacityForm.errors.count
-                              : undefined
-                          }
-                          required
-                        />
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={isSaving}
+                        className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                      >
+                        Save Check
+                      </button>
+                    </div>
+                  </FormSection>
+                </form>
+              )}
 
-                        <TextField
-                          label="Comments"
-                          name="comments"
-                          multiline
-                          rows={3}
-                          value={capacityForm.values.comments}
-                          onChange={capacityForm.handleChange}
-                          onBlur={capacityForm.handleBlur}
-                          errorMessage={
-                            capacityForm.touched.comments && capacityForm.errors.comments
-                              ? capacityForm.errors.comments
-                              : undefined
-                          }
-                        />
+              {/* Capacity Check */}
+              {activeCheckType === CheckType.CAPACITY && (
+                <form onSubmit={capacityForm.handleSubmit}>
+                  <FormSection
+                    header="Capacity Check"
+                    description="Record the current occupancy to ensure the venue stays within safe capacity limits."
+                  >
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Current Count *</label>
+                      <input
+                        name="count"
+                        type="number"
+                        value={capacityForm.values.count}
+                        onChange={capacityForm.handleChange}
+                        onBlur={capacityForm.handleBlur}
+                        className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      {capacityForm.touched.count && capacityForm.errors.count && (
+                        <p className="text-red-600 text-xs mt-1">{capacityForm.errors.count}</p>
+                      )}
+                    </div>
 
-                        <Stack horizontal horizontalAlign="end">
-                          <PrimaryButton
-                            type="submit"
-                            text="Save Check"
-                            disabled={isSaving}
-                          />
-                        </Stack>
-                      </Stack>
-                    </form>
-                  </div>
-                </PivotItem>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Comments</label>
+                      <textarea
+                        name="comments"
+                        rows={3}
+                        value={capacityForm.values.comments}
+                        onChange={capacityForm.handleChange}
+                        onBlur={capacityForm.handleBlur}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                    </div>
 
-                {/* Toilet Check */}
-                <PivotItem headerText="Toilet Check" itemKey={CheckType.TOILET}>
-                  <div className="p-4">
-                    <form onSubmit={toiletForm.handleSubmit}>
-                      <Stack tokens={{ childrenGap: 16 }}>
-                        <Text variant="mediumPlus">
-                          Record toilet condition checks to ensure cleanliness and functionality.
-                        </Text>
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={isSaving}
+                        className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                      >
+                        Save Check
+                      </button>
+                    </div>
+                  </FormSection>
+                </form>
+              )}
 
-                        <TextField
-                          label="Location"
-                          name="location"
-                          value={toiletForm.values.location}
-                          onChange={toiletForm.handleChange}
-                          onBlur={toiletForm.handleBlur}
-                          errorMessage={
-                            toiletForm.touched.location && toiletForm.errors.location
-                              ? toiletForm.errors.location
-                              : undefined
-                          }
-                          required
-                        />
+              {/* Toilet Check */}
+              {activeCheckType === CheckType.TOILET && (
+                <form onSubmit={toiletForm.handleSubmit}>
+                  <FormSection
+                    header="Toilet Check"
+                    description="Record toilet condition checks to ensure cleanliness and functionality."
+                  >
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
+                      <input
+                        name="location"
+                        value={toiletForm.values.location}
+                        onChange={toiletForm.handleChange}
+                        onBlur={toiletForm.handleBlur}
+                        className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      {toiletForm.touched.location && toiletForm.errors.location && (
+                        <p className="text-red-600 text-xs mt-1">{toiletForm.errors.location}</p>
+                      )}
+                    </div>
 
-                        <Stack>
-                          <Label required>Condition</Label>
-                          <ComboBox
-                            selectedKey={toiletForm.values.condition}
-                            options={conditionOptions}
-                            onChange={(_, option) => {
-                              toiletForm.setFieldValue('condition', option?.key || ConditionRating.GOOD);
-                            }}
-                            errorMessage={
-                              toiletForm.touched.condition && toiletForm.errors.condition
-                                ? toiletForm.errors.condition
-                                : undefined
-                            }
-                          />
-                        </Stack>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Condition *</label>
+                      <select
+                        value={toiletForm.values.condition}
+                        onChange={(e) => toiletForm.setFieldValue('condition', e.target.value)}
+                        className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      >
+                        <option value={ConditionRating.EXCELLENT}>Excellent</option>
+                        <option value={ConditionRating.GOOD}>Good</option>
+                        <option value={ConditionRating.FAIR}>Fair</option>
+                        <option value={ConditionRating.POOR}>Poor</option>
+                        <option value={ConditionRating.CRITICAL}>Critical</option>
+                      </select>
+                      {toiletForm.touched.condition && toiletForm.errors.condition && (
+                        <p className="text-red-600 text-xs mt-1">{toiletForm.errors.condition}</p>
+                      )}
+                    </div>
 
-                        <TextField
-                          label="Comments"
-                          name="comments"
-                          multiline
-                          rows={3}
-                          value={toiletForm.values.comments}
-                          onChange={toiletForm.handleChange}
-                          onBlur={toiletForm.handleBlur}
-                          errorMessage={
-                            toiletForm.touched.comments && toiletForm.errors.comments
-                              ? toiletForm.errors.comments
-                              : undefined
-                          }
-                          required={
-                            toiletForm.values.condition === ConditionRating.POOR ||
-                            toiletForm.values.condition === ConditionRating.CRITICAL
-                          }
-                        />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Comments {(toiletForm.values.condition === ConditionRating.POOR || toiletForm.values.condition === ConditionRating.CRITICAL) && '*'}
+                      </label>
+                      <textarea
+                        name="comments"
+                        rows={3}
+                        value={toiletForm.values.comments}
+                        onChange={toiletForm.handleChange}
+                        onBlur={toiletForm.handleBlur}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      {toiletForm.touched.comments && toiletForm.errors.comments && (
+                        <p className="text-red-600 text-xs mt-1">{toiletForm.errors.comments}</p>
+                      )}
+                    </div>
 
-                        <Stack horizontal horizontalAlign="end">
-                          <PrimaryButton
-                            type="submit"
-                            text="Save Check"
-                            disabled={isSaving}
-                          />
-                        </Stack>
-                      </Stack>
-                    </form>
-                  </div>
-                </PivotItem>
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={isSaving}
+                        className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                      >
+                        Save Check
+                      </button>
+                    </div>
+                  </FormSection>
+                </form>
+              )}
 
-                {/* Enforcement Visit */}
-                <PivotItem headerText="Enforcement Visit" itemKey={CheckType.ENFORCEMENT}>
-                  <div className="p-4">
-                    <form onSubmit={enforcementForm.handleSubmit}>
-                      <Stack tokens={{ childrenGap: 16 }}>
-                        <Text variant="mediumPlus">
-                          Record details of enforcement officer visits to the venue.
-                        </Text>
+              {/* Enforcement Visit */}
+              {activeCheckType === CheckType.ENFORCEMENT && (
+                <form onSubmit={enforcementForm.handleSubmit}>
+                  <FormSection
+                    header="Enforcement Visit"
+                    description="Record details of enforcement officer visits to the venue."
+                  >
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Officer Name *</label>
+                      <input
+                        name="officerName"
+                        value={enforcementForm.values.officerName}
+                        onChange={enforcementForm.handleChange}
+                        onBlur={enforcementForm.handleBlur}
+                        className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      {enforcementForm.touched.officerName && enforcementForm.errors.officerName && (
+                        <p className="text-red-600 text-xs mt-1">{enforcementForm.errors.officerName}</p>
+                      )}
+                    </div>
 
-                        <TextField
-                          label="Officer Name"
-                          name="officerName"
-                          value={enforcementForm.values.officerName}
-                          onChange={enforcementForm.handleChange}
-                          onBlur={enforcementForm.handleBlur}
-                          errorMessage={
-                            enforcementForm.touched.officerName && enforcementForm.errors.officerName
-                              ? enforcementForm.errors.officerName
-                              : undefined
-                          }
-                          required
-                        />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Badge Number *</label>
+                      <input
+                        name="officerBadge"
+                        value={enforcementForm.values.officerBadge}
+                        onChange={enforcementForm.handleChange}
+                        onBlur={enforcementForm.handleBlur}
+                        className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      {enforcementForm.touched.officerBadge && enforcementForm.errors.officerBadge && (
+                        <p className="text-red-600 text-xs mt-1">{enforcementForm.errors.officerBadge}</p>
+                      )}
+                    </div>
 
-                        <TextField
-                          label="Badge Number"
-                          name="officerBadge"
-                          value={enforcementForm.values.officerBadge}
-                          onChange={enforcementForm.handleChange}
-                          onBlur={enforcementForm.handleBlur}
-                          errorMessage={
-                            enforcementForm.touched.officerBadge && enforcementForm.errors.officerBadge
-                              ? enforcementForm.errors.officerBadge
-                              : undefined
-                          }
-                          required
-                        />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Visit *</label>
+                      <input
+                        name="reasonForVisit"
+                        value={enforcementForm.values.reasonForVisit}
+                        onChange={enforcementForm.handleChange}
+                        onBlur={enforcementForm.handleBlur}
+                        className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      {enforcementForm.touched.reasonForVisit && enforcementForm.errors.reasonForVisit && (
+                        <p className="text-red-600 text-xs mt-1">{enforcementForm.errors.reasonForVisit}</p>
+                      )}
+                    </div>
 
-                        <TextField
-                          label="Reason for Visit"
-                          name="reasonForVisit"
-                          value={enforcementForm.values.reasonForVisit}
-                          onChange={enforcementForm.handleChange}
-                          onBlur={enforcementForm.handleBlur}
-                          errorMessage={
-                            enforcementForm.touched.reasonForVisit && enforcementForm.errors.reasonForVisit
-                              ? enforcementForm.errors.reasonForVisit
-                              : undefined
-                          }
-                          required
-                        />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Action Taken *</label>
+                      <textarea
+                        name="actionTaken"
+                        rows={2}
+                        value={enforcementForm.values.actionTaken}
+                        onChange={enforcementForm.handleChange}
+                        onBlur={enforcementForm.handleBlur}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      {enforcementForm.touched.actionTaken && enforcementForm.errors.actionTaken && (
+                        <p className="text-red-600 text-xs mt-1">{enforcementForm.errors.actionTaken}</p>
+                      )}
+                    </div>
 
-                        <TextField
-                          label="Action Taken"
-                          name="actionTaken"
-                          multiline
-                          rows={2}
-                          value={enforcementForm.values.actionTaken}
-                          onChange={enforcementForm.handleChange}
-                          onBlur={enforcementForm.handleBlur}
-                          errorMessage={
-                            enforcementForm.touched.actionTaken && enforcementForm.errors.actionTaken
-                              ? enforcementForm.errors.actionTaken
-                              : undefined
-                          }
-                          required
-                        />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Outcome *</label>
+                      <textarea
+                        name="outcome"
+                        rows={2}
+                        value={enforcementForm.values.outcome}
+                        onChange={enforcementForm.handleChange}
+                        onBlur={enforcementForm.handleBlur}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      {enforcementForm.touched.outcome && enforcementForm.errors.outcome && (
+                        <p className="text-red-600 text-xs mt-1">{enforcementForm.errors.outcome}</p>
+                      )}
+                    </div>
 
-                        <TextField
-                          label="Outcome"
-                          name="outcome"
-                          multiline
-                          rows={2}
-                          value={enforcementForm.values.outcome}
-                          onChange={enforcementForm.handleChange}
-                          onBlur={enforcementForm.handleBlur}
-                          errorMessage={
-                            enforcementForm.touched.outcome && enforcementForm.errors.outcome
-                              ? enforcementForm.errors.outcome
-                              : undefined
-                          }
-                          required
-                        />
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={isSaving}
+                        className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                      >
+                        Save Log
+                      </button>
+                    </div>
+                  </FormSection>
+                </form>
+              )}
+            </SpaceBetween>
+          </Container>
 
-                        <Stack horizontal horizontalAlign="end">
-                          <PrimaryButton
-                            type="submit"
-                            text="Save Log"
-                            disabled={isSaving}
-                          />
-                        </Stack>
-                      </Stack>
-                    </form>
-                  </div>
-                </PivotItem>
-              </Pivot>
-            </Card>
-
-            {/* Bottom Action Buttons */}
-            <Stack horizontal horizontalAlign="space-between">
-              <DefaultButton
-                text="Back to Dashboard"
-                onClick={() => navigate('/')}
-                iconProps={{ iconName: 'Home' }}
-              />
-
-              <DefaultButton
-                text="View Shift Details"
-                onClick={() => navigate(`/shifts/${shiftId}`)}
-                iconProps={{ iconName: 'Info' }}
-              />
-            </Stack>
-          </Stack>
-        )}
-      </Stack>
-    </MainLayout>
+          {/* Bottom Actions */}
+          <div className="flex justify-between">
+            <button
+              onClick={() => navigate('/')}
+              className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Back to Dashboard
+            </button>
+            <button
+              onClick={() => navigate(`/shifts/${shiftId}`)}
+              className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              View Shift Details
+            </button>
+          </div>
+        </SpaceBetween>
+      )}
+    </SpaceBetween>
   );
 };
 

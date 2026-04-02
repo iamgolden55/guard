@@ -1,15 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import {
-  Text,
-  Icon,
-  DefaultButton,
-  PrimaryButton,
-  Spinner,
-  SpinnerSize,
-  MessageBar,
-  MessageBarType
-} from '@fluentui/react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserRole } from '../../types';
 import { leaveService } from '../../services';
@@ -20,6 +10,7 @@ import type {
 import { LeaveRequestStatus } from '../../types/leave';
 import LeaveBalanceWidget from '../../components/leave/LeaveBalanceWidget';
 import { useStaffProfile } from '../../hooks/useStaffProfile';
+import { Header, Container, SpaceBetween, StatusIndicator, Alert, EmptyState } from '../../components/cloudscape';
 
 interface LeaveDashboardProps {
   refreshTrigger?: number;
@@ -91,7 +82,13 @@ const LeaveDashboard: React.FC<LeaveDashboardProps> = ({ refreshTrigger = 0 }) =
   if (isLoading || profileLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Spinner size={SpinnerSize.large} label="Loading dashboard..." />
+        <div className="flex items-center gap-3 text-gray-500">
+          <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm">Loading dashboard...</span>
+        </div>
       </div>
     );
   }
@@ -99,19 +96,17 @@ const LeaveDashboard: React.FC<LeaveDashboardProps> = ({ refreshTrigger = 0 }) =
   if (error) {
     return (
       <div className="max-w-4xl">
-        <MessageBar
-          messageBarType={MessageBarType.error}
-          isMultiline
-          actions={
-            <DefaultButton
-              text="Retry"
-              iconProps={{ iconName: 'Refresh' }}
+        <Alert type="error">
+          <div className="flex items-center justify-between">
+            <span>{error}</span>
+            <button
               onClick={loadDashboardData}
-            />
-          }
-        >
-          {error}
-        </MessageBar>
+              className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </Alert>
       </div>
     );
   }
@@ -120,33 +115,31 @@ const LeaveDashboard: React.FC<LeaveDashboardProps> = ({ refreshTrigger = 0 }) =
   if (!employmentCategory) {
     return (
       <div className="max-w-2xl mx-auto mt-8">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="p-3 bg-amber-100 rounded-lg">
-              <Icon iconName="Warning" className="text-amber-600" style={{ fontSize: '24px' }} />
+        <Container>
+          <SpaceBetween size="m">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-amber-100 rounded-lg">
+                <svg className="w-6 h-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Employment Type Not Set</h2>
+                <p className="text-gray-600 mt-1">Your employment type has not been configured</p>
+              </div>
             </div>
-            <div>
-              <Text variant="xLarge" className="font-bold text-gray-900 block">
-                Employment Type Not Set
-              </Text>
-              <Text variant="medium" className="text-gray-600 block mt-1">
-                Your employment type has not been configured
-              </Text>
-            </div>
-          </div>
-          <MessageBar messageBarType={MessageBarType.warning} isMultiline>
-            <strong>Action Required:</strong> Your employment type needs to be set up before you can access leave management features.
-            Please contact your administrator or HR to configure your profile.
-          </MessageBar>
-          <div className="mt-6">
-            <DefaultButton
-              text="Back to Dashboard"
-              iconProps={{ iconName: 'Home' }}
+            <Alert type="warning">
+              <strong>Action Required:</strong> Your employment type needs to be set up before you can access leave management features.
+              Please contact your administrator or HR to configure your profile.
+            </Alert>
+            <button
               onClick={() => navigate('/dashboard')}
-              styles={{ root: { borderRadius: '8px' } }}
-            />
-          </div>
-        </div>
+              className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Back to Dashboard
+            </button>
+          </SpaceBetween>
+        </Container>
       </div>
     );
   }
@@ -154,448 +147,362 @@ const LeaveDashboard: React.FC<LeaveDashboardProps> = ({ refreshTrigger = 0 }) =
   // Show contractor-specific dashboard (for contractors and temporary workers)
   if (isContractor) {
     return (
-      <div className="max-w-7xl space-y-6">
-        {/* Header */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <Text variant="xxLarge" className="font-bold text-gray-900">
-                Availability Dashboard
-              </Text><br />
-              <Text variant="large" className="text-gray-600 mt-1">
-                Manage your availability for scheduling
-              </Text>
-            </div>
-            <PrimaryButton
-              text="Manage Availability"
-              iconProps={{ iconName: 'EventDeclined' }}
-              onClick={() => navigate('/leave/unavailability')}
-              styles={{
-                root: {
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  backgroundColor: '#8764b8',
-                  borderColor: '#8764b8'
-                },
-                rootHovered: {
-                  backgroundColor: '#7356a5',
-                  borderColor: '#7356a5'
-                }
-              }}
-            />
-          </div>
-        </div>
+      <div className="max-w-7xl">
+        <SpaceBetween size="l">
+          {/* Header */}
+          <Header
+            variant="h1"
+            description="Manage your availability for scheduling"
+            actions={
+              <button
+                onClick={() => navigate('/leave/unavailability')}
+                className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Manage Availability
+              </button>
+            }
+          >
+            Availability Dashboard
+          </Header>
 
-        {/* Contractor Info */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Icon iconName="Contact" className="text-purple-600" style={{ fontSize: '20px' }} />
+          {/* Contractor Info */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Container>
+              <SpaceBetween size="s">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 rounded-lg">
+                    <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900">Your Employment Type</h3>
+                </div>
+                <div className="bg-purple-50 rounded-lg p-4">
+                  <p className="text-xl font-bold text-purple-700">
+                    {employmentTypeName || 'Contractor / Temporary'}
+                  </p>
+                  <p className="text-sm text-purple-600 mt-1">
+                    As a contractor or temporary worker, you manage your availability instead of leave balances.
+                  </p>
+                </div>
+              </SpaceBetween>
+            </Container>
+
+            <Container>
+              <SpaceBetween size="s">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gray-100 rounded-lg">
+                    <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900">How It Works</h3>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-sm text-gray-700">Mark dates when you're unavailable for shifts</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-sm text-gray-700">Scheduling will avoid assigning you during those periods</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-sm text-gray-700">No approval needed - purely informational</span>
+                  </div>
+                </div>
+              </SpaceBetween>
+            </Container>
+          </div>
+
+          {/* Quick Action */}
+          <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-2xl p-6 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xl font-bold text-white">Ready to update your availability?</p>
+                <p className="text-purple-100 mt-1">
+                  Let us know when you're not available so we can schedule around your commitments.
+                </p>
               </div>
-              <Text variant="large" className="font-semibold text-gray-900">
-                Your Employment Type
-              </Text>
-            </div>
-            <div className="bg-purple-50 rounded-lg p-4">
-              <Text variant="xLarge" className="font-bold text-purple-700 block">
-                {employmentTypeName || 'Contractor / Temporary'}
-              </Text>
-              <Text variant="medium" className="text-purple-600 mt-1">
-                As a contractor or temporary worker, you manage your availability instead of leave balances.
-              </Text>
+              <button
+                onClick={() => navigate('/leave/unavailability')}
+                className="px-4 h-9 text-sm font-medium text-purple-700 bg-white rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Go to Availability
+              </button>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Icon iconName="Info" className="text-blue-600" style={{ fontSize: '20px' }} />
-              </div>
-              <Text variant="large" className="font-semibold text-gray-900">
-                How It Works
-              </Text>
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-start gap-2">
-                <Icon iconName="CheckMark" className="text-green-500 mt-1" style={{ fontSize: '16px' }} />
-                <Text variant="medium" className="text-gray-700">
-                  Mark dates when you're unavailable for shifts
-                </Text>
-              </div>
-              <div className="flex items-start gap-2">
-                <Icon iconName="CheckMark" className="text-green-500 mt-1" style={{ fontSize: '16px' }} />
-                <Text variant="medium" className="text-gray-700">
-                  Scheduling will avoid assigning you during those periods
-                </Text>
-              </div>
-              <div className="flex items-start gap-2">
-                <Icon iconName="CheckMark" className="text-green-500 mt-1" style={{ fontSize: '16px' }} />
-                <Text variant="medium" className="text-gray-700">
-                  No approval needed - purely informational
-                </Text>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Action */}
-        <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-2xl shadow-sm p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <Text variant="xLarge" className="font-bold text-white block">
-                Ready to update your availability?
-              </Text>
-              <Text variant="medium" className="text-purple-100 mt-1">
-                Let us know when you're not available so we can schedule around your commitments.
-              </Text>
-            </div>
-            <DefaultButton
-              text="Go to Availability"
-              iconProps={{ iconName: 'Calendar' }}
-              onClick={() => navigate('/leave/unavailability')}
-              styles={{
-                root: {
-                  borderRadius: '8px',
-                  backgroundColor: 'white',
-                  color: '#8764b8',
-                  border: 'none'
-                },
-                rootHovered: {
-                  backgroundColor: '#f3f4f6',
-                  color: '#7356a5'
-                }
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Manager/Admin Actions (contractors who are also managers) */}
-        {(isUserRole(UserRole.MANAGER) || isUserRole(UserRole.ADMIN)) && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <Text variant="large" className="font-semibold text-gray-900 mb-4 block">
-              Team Management
-            </Text>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <DefaultButton
-                text="Team Approvals"
-                iconProps={{ iconName: 'CalendarReply' }}
-                onClick={() => navigate('/leave/approvals')}
-                styles={{
-                  root: {
-                    width: '100%',
-                    justifyContent: 'flex-start',
-                    borderRadius: '8px'
-                  }
-                }}
-              />
-              <DefaultButton
-                text="Team Calendar"
-                iconProps={{ iconName: 'CalendarWorkWeek' }}
-                onClick={() => navigate('/leave/calendar')}
-                styles={{
-                  root: {
-                    width: '100%',
-                    justifyContent: 'flex-start',
-                    borderRadius: '8px'
-                  }
-                }}
-              />
-              <DefaultButton
-                text="Team Overview"
-                iconProps={{ iconName: 'People' }}
-                onClick={() => navigate('/leave/team-overview')}
-                styles={{
-                  root: {
-                    width: '100%',
-                    justifyContent: 'flex-start',
-                    borderRadius: '8px'
-                  }
-                }}
-              />
-            </div>
-          </div>
-        )}
+          {/* Manager/Admin Actions (contractors who are also managers) */}
+          {(isUserRole(UserRole.MANAGER) || isUserRole(UserRole.ADMIN)) && (
+            <Container>
+              <SpaceBetween size="s">
+                <h3 className="text-lg font-semibold text-gray-900">Team Management</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <button
+                    onClick={() => navigate('/leave/approvals')}
+                    className="w-full text-left px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Team Approvals
+                  </button>
+                  <button
+                    onClick={() => navigate('/leave/calendar')}
+                    className="w-full text-left px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Team Calendar
+                  </button>
+                  <button
+                    onClick={() => navigate('/leave/team-overview')}
+                    className="w-full text-left px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Team Overview
+                  </button>
+                </div>
+              </SpaceBetween>
+            </Container>
+          )}
+        </SpaceBetween>
       </div>
     );
   }
 
   // Permanent employee dashboard (existing code)
   return (
-    <div className="max-w-7xl space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <Text variant="xxLarge" className="font-bold text-gray-900">
-              Leave Dashboard
-            </Text><br />
-            <Text variant="large" className="text-gray-600 mt-1">
-              Manage your time off and leave requests
-            </Text>
+    <div className="max-w-7xl">
+      <SpaceBetween size="l">
+        {/* Header */}
+        <Header
+          variant="h1"
+          description="Manage your time off and leave requests"
+          actions={
+            <button
+              onClick={() => navigate('/leave/request')}
+              className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Request Leave
+            </button>
+          }
+        >
+          Leave Dashboard
+        </Header>
+
+        {/* Quick Stats */}
+        {stats && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Container>
+              <div className="flex items-center">
+                <div className="p-3 bg-gray-100 rounded-lg">
+                  <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="ml-4">
+                  <p className="text-2xl font-bold text-gray-900">{stats.totalAvailable}</p>
+                  <p className="text-sm text-gray-600">Days Available</p>
+                </div>
+              </div>
+            </Container>
+
+            <Container>
+              <div className="flex items-center">
+                <div className="p-3 bg-green-100 rounded-lg">
+                  <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div className="ml-4">
+                  <p className="text-2xl font-bold text-gray-900">{stats.totalUsed}</p>
+                  <p className="text-sm text-gray-600">Days Used</p>
+                </div>
+              </div>
+            </Container>
+
+            <Container>
+              <div className="flex items-center">
+                <div className="p-3 bg-orange-100 rounded-lg">
+                  <svg className="w-5 h-5 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="ml-4">
+                  <p className="text-2xl font-bold text-gray-900">{stats.pendingRequests}</p>
+                  <p className="text-sm text-gray-600">Pending Requests</p>
+                </div>
+              </div>
+            </Container>
+
+            <Container>
+              <div className="flex items-center">
+                <div className="p-3 bg-purple-100 rounded-lg">
+                  <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div className="ml-4">
+                  <p className="text-2xl font-bold text-gray-900">{stats.upcomingLeave.length}</p>
+                  <p className="text-sm text-gray-600">Upcoming Leave</p>
+                </div>
+              </div>
+            </Container>
           </div>
-          <PrimaryButton
-            text="Request Leave"
-            iconProps={{ iconName: 'Add' }}
-            onClick={() => navigate('/leave/request')}
-            styles={{
-              root: {
-                borderRadius: '8px',
-                fontSize: '14px'
-              }
-            }}
-          />
-        </div>
-      </div>
+        )}
 
-      {/* Quick Stats */}
-      {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-all duration-300 ease-out hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5">
-            <div className="flex items-center">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <Icon iconName="Clock" className="text-blue-600" style={{ fontSize: '20px' }} />
-              </div>
-              <div className="ml-4">
-                <Text variant="xxLarge" className="font-bold text-gray-900">
-                  {stats.totalAvailable}
-                </Text>
-                <Text variant="medium" className="text-gray-600">
-                  Days Available
-                </Text>
-              </div>
-            </div>
-          </div>
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - Balance Summary */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Leave Balances Widget */}
+            {balanceData && (
+              <LeaveBalanceWidget
+                balanceData={balanceData}
+                compact={true}
+                showTitle={true}
+              />
+            )}
 
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-all duration-300 ease-out hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5">
-            <div className="flex items-center">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <Icon iconName="CheckMark" className="text-green-600" style={{ fontSize: '20px' }} />
-              </div>
-              <div className="ml-4">
-                <Text variant="xxLarge" className="font-bold text-gray-900">
-                  {stats.totalUsed}
-                </Text>
-                <Text variant="medium" className="text-gray-600">
-                  Days Used
-                </Text>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-all duration-300 ease-out hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5">
-            <div className="flex items-center">
-              <div className="p-3 bg-orange-100 rounded-lg">
-                <Icon iconName="Clock" className="text-orange-600" style={{ fontSize: '20px' }} />
-              </div>
-              <div className="ml-4">
-                <Text variant="xxLarge" className="font-bold text-gray-900">
-                  {stats.pendingRequests}
-                </Text>
-                <Text variant="medium" className="text-gray-600">
-                  Pending Requests
-                </Text>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-all duration-300 ease-out hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5">
-            <div className="flex items-center">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <Icon iconName="Calendar" className="text-purple-600" style={{ fontSize: '20px' }} />
-              </div>
-              <div className="ml-4">
-                <Text variant="xxLarge" className="font-bold text-gray-900">
-                  {stats.upcomingLeave.length}
-                </Text>
-                <Text variant="medium" className="text-gray-600">
-                  Upcoming Leave
-                </Text>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Balance Summary */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Leave Balances Widget */}
-          {balanceData && (
-            <LeaveBalanceWidget 
-              balanceData={balanceData}
-              compact={true}
-              showTitle={true}
-            />
-          )}
-
-          {/* Recent Requests */}
-          {stats?.recentRequests && stats.recentRequests.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <Text variant="xLarge" className="font-semibold text-gray-900">
-                  Recent Requests
-                </Text>
-                <DefaultButton
-                  text="View All"
-                  iconProps={{ iconName: 'ChevronRight' }}
-                  onClick={() => navigate('/leave/history')}
-                />
-              </div>
-              <div className="space-y-3">
-                {stats.recentRequests.map((request) => (
-                  <div 
-                    key={request.id}
-                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-center space-x-3">
-                      {request.leave_type && (
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: request.leave_type.color_code }}
-                        />
-                      )}
-                      <div>
-                        <Text variant="medium" className="font-medium text-gray-900">
-                          {request.leave_type?.name || 'Unknown Leave Type'}
-                        </Text>
-                        <Text variant="small" className="text-gray-600">
-                          {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
-                        </Text>
+            {/* Recent Requests */}
+            {stats?.recentRequests && stats.recentRequests.length > 0 && (
+              <Container>
+                <SpaceBetween size="s">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-900">Recent Requests</h3>
+                    <button
+                      onClick={() => navigate('/leave/history')}
+                      className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      View All
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {stats.recentRequests.map((request) => (
+                      <div
+                        key={request.id}
+                        className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-center space-x-3">
+                          {request.leave_type && (
+                            <div
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: request.leave_type.color_code }}
+                            />
+                          )}
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {request.leave_type?.name || 'Unknown Leave Type'}
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <StatusIndicator
+                          type={
+                            request.status === LeaveRequestStatus.APPROVED ? 'success' :
+                            request.status === LeaveRequestStatus.PENDING ? 'pending' :
+                            request.status === LeaveRequestStatus.REJECTED ? 'error' :
+                            'stopped'
+                          }
+                        >
+                          {request.status}
+                        </StatusIndicator>
                       </div>
-                    </div>
-                    <div className={`
-                      px-2 py-1 rounded-full text-xs font-medium
-                      ${request.status === LeaveRequestStatus.APPROVED ? 'bg-green-100 text-green-800' :
-                        request.status === LeaveRequestStatus.PENDING ? 'bg-orange-100 text-orange-800' :
-                        request.status === LeaveRequestStatus.REJECTED ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }
-                    `}>
-                      {request.status}
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Column - Quick Actions & Upcoming */}
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <Text variant="large" className="font-semibold text-gray-900 mb-4">
-              Quick Actions
-            </Text>
-            <div className="space-y-3">
-              <DefaultButton
-                text="Request Leave"
-                iconProps={{ iconName: 'Add' }}
-                onClick={() => navigate('/leave/request')}
-                styles={{
-                  root: {
-                    width: '100%',
-                    justifyContent: 'flex-start',
-                    borderRadius: '8px'
-                  }
-                }}
-              />
-              <DefaultButton
-                text="View Balance"
-                iconProps={{ iconName: 'TimeEntry' }}
-                onClick={() => navigate('/leave/balance')}
-                styles={{
-                  root: {
-                    width: '100%',
-                    justifyContent: 'flex-start',
-                    borderRadius: '8px'
-                  }
-                }}
-              />
-              <DefaultButton
-                text="Leave History"
-                iconProps={{ iconName: 'History' }}
-                onClick={() => navigate('/leave/history')}
-                styles={{
-                  root: {
-                    width: '100%',
-                    justifyContent: 'flex-start',
-                    borderRadius: '8px'
-                  }
-                }}
-              />
-
-              {/* Manager/Admin Actions */}
-              {(isUserRole(UserRole.MANAGER) || isUserRole(UserRole.ADMIN)) && (
-                <>
-                  <hr className="my-3" />
-                  <DefaultButton
-                    text="Team Approvals"
-                    iconProps={{ iconName: 'CalendarReply' }}
-                    onClick={() => navigate('/leave/approvals')}
-                    styles={{
-                      root: {
-                        width: '100%',
-                        justifyContent: 'flex-start',
-                        borderRadius: '8px'
-                      }
-                    }}
-                  />
-                  <DefaultButton
-                    text="Team Calendar"
-                    iconProps={{ iconName: 'CalendarWorkWeek' }}
-                    onClick={() => navigate('/leave/calendar')}
-                    styles={{
-                      root: {
-                        width: '100%',
-                        justifyContent: 'flex-start',
-                        borderRadius: '8px'
-                      }
-                    }}
-                  />
-                </>
-              )}
-            </div>
+                </SpaceBetween>
+              </Container>
+            )}
           </div>
 
-          {/* Upcoming Leave */}
-          {stats?.upcomingLeave && stats.upcomingLeave.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <Text variant="large" className="font-semibold text-gray-900 mb-4">
-                Upcoming Leave
-              </Text>
-              <div className="space-y-3">
-                {stats.upcomingLeave.map((leave) => (
-                  <div 
-                    key={leave.id}
-                    className="p-3 rounded-lg border border-gray-200 bg-blue-50"
+          {/* Right Column - Quick Actions & Upcoming */}
+          <div className="space-y-6">
+            {/* Quick Actions */}
+            <Container>
+              <SpaceBetween size="s">
+                <h3 className="text-lg font-semibold text-gray-900">Quick Actions</h3>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => navigate('/leave/request')}
+                    className="w-full text-left px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                   >
-                    <div className="flex items-center space-x-2 mb-1">
-                      {leave.leave_type && (
-                        <div
-                          className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: leave.leave_type.color_code }}
-                        />
-                      )}
-                      <Text variant="medium" className="font-medium text-gray-900">
-                        {leave.leave_type?.name || 'Unknown Leave Type'}
-                      </Text>
-                    </div>
-                    <Text variant="small" className="text-gray-600">
-                      {new Date(leave.start_date).toLocaleDateString()} - {new Date(leave.end_date).toLocaleDateString()}
-                    </Text>
-                    <Text variant="small" className="text-blue-700 font-medium">
-                      {leave.days_requested} days
-                    </Text>
+                    Request Leave
+                  </button>
+                  <button
+                    onClick={() => navigate('/leave/balance')}
+                    className="w-full text-left px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    View Balance
+                  </button>
+                  <button
+                    onClick={() => navigate('/leave/history')}
+                    className="w-full text-left px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Leave History
+                  </button>
+
+                  {/* Manager/Admin Actions */}
+                  {(isUserRole(UserRole.MANAGER) || isUserRole(UserRole.ADMIN)) && (
+                    <>
+                      <hr className="my-3" />
+                      <button
+                        onClick={() => navigate('/leave/approvals')}
+                        className="w-full text-left px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        Team Approvals
+                      </button>
+                      <button
+                        onClick={() => navigate('/leave/calendar')}
+                        className="w-full text-left px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        Team Calendar
+                      </button>
+                    </>
+                  )}
+                </div>
+              </SpaceBetween>
+            </Container>
+
+            {/* Upcoming Leave */}
+            {stats?.upcomingLeave && stats.upcomingLeave.length > 0 && (
+              <Container>
+                <SpaceBetween size="s">
+                  <h3 className="text-lg font-semibold text-gray-900">Upcoming Leave</h3>
+                  <div className="space-y-3">
+                    {stats.upcomingLeave.map((leave) => (
+                      <div
+                        key={leave.id}
+                        className="p-3 rounded-lg border border-gray-200 bg-gray-50"
+                      >
+                        <div className="flex items-center space-x-2 mb-1">
+                          {leave.leave_type && (
+                            <div
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: leave.leave_type.color_code }}
+                            />
+                          )}
+                          <p className="text-sm font-medium text-gray-900">
+                            {leave.leave_type?.name || 'Unknown Leave Type'}
+                          </p>
+                        </div>
+                        <p className="text-xs text-gray-600">
+                          {new Date(leave.start_date).toLocaleDateString()} - {new Date(leave.end_date).toLocaleDateString()}
+                        </p>
+                        <p className="text-xs text-gray-800 font-medium">{leave.days_requested} days</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                </SpaceBetween>
+              </Container>
+            )}
+          </div>
         </div>
-      </div>
+      </SpaceBetween>
     </div>
   );
 };

@@ -1,20 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Stack,
-  Text,
-  SearchBox,
-  Dropdown,
-  IDropdownOption,
-  MessageBar,
-  MessageBarType,
-  Spinner,
-  SpinnerSize,
-  DefaultButton,
-  IconButton,
-  IStackTokens,
-  Pivot,
-  PivotItem
-} from '@fluentui/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { leaveService } from '../../services';
 import api from '../../services/api';
@@ -25,6 +9,15 @@ import {
   LeaveCalendarEvent,
   LeaveRequestFilterOptions
 } from '../../types/leave';
+import {
+  Header,
+  Container,
+  SpaceBetween,
+  EmptyState,
+  Alert,
+  Pagination,
+} from '../../components/cloudscape';
+import Flashbar, { useFlashbar } from '../../components/cloudscape/Flashbar';
 import TeamMemberCard from '../../components/leave/TeamMemberCard';
 import TeamCalendarView from '../../components/leave/TeamCalendarView';
 import QuickApprovalWidget from '../../components/leave/QuickApprovalWidget';
@@ -36,11 +29,6 @@ interface TeamMemberData {
   pendingRequests: PendingLeaveRequest[];
 }
 
-const stackTokens: IStackTokens = {
-  childrenGap: 24,
-  padding: 16,
-};
-
 const TeamOverview: React.FC = () => {
   const { authState } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
@@ -49,10 +37,7 @@ const TeamOverview: React.FC = () => {
   const [calendarEvents, setCalendarEvents] = useState<LeaveCalendarEvent[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
-  const [notification, setNotification] = useState<{
-    type: MessageBarType;
-    message: string;
-  } | null>(null);
+  const { items: flashItems, addFlash, removeFlash } = useFlashbar();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [currentView, setCurrentView] = useState('overview');
 
@@ -65,7 +50,7 @@ const TeamOverview: React.FC = () => {
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
 
   // Filter options
-  const departmentOptions: IDropdownOption[] = [
+  const departmentOptions = [
     { key: 'all', text: 'All Departments' },
     { key: 'security', text: 'Security' },
     { key: 'admin', text: 'Administration' },
@@ -112,9 +97,9 @@ const TeamOverview: React.FC = () => {
 
     } catch (error) {
       console.error('Error fetching team data:', error);
-      setNotification({
-        type: MessageBarType.error,
-        message: 'Failed to load team data. Please try again.'
+      addFlash({
+        type: 'error',
+        content: 'Failed to load team data. Please try again.',
       });
     } finally {
       setIsLoading(false);
@@ -173,17 +158,17 @@ const TeamOverview: React.FC = () => {
         comments
       });
 
-      setNotification({
-        type: MessageBarType.success,
-        message: 'Leave request approved successfully!'
+      addFlash({
+        type: 'success',
+        content: 'Leave request approved successfully!',
       });
 
       // Refresh data
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
-      setNotification({
-        type: MessageBarType.error,
-        message: 'Failed to approve request. Please try again.'
+      addFlash({
+        type: 'error',
+        content: 'Failed to approve request. Please try again.',
       });
     }
   }, []);
@@ -196,17 +181,17 @@ const TeamOverview: React.FC = () => {
         comments
       });
 
-      setNotification({
-        type: MessageBarType.success,
-        message: 'Leave request rejected successfully!'
+      addFlash({
+        type: 'success',
+        content: 'Leave request rejected successfully!',
       });
 
       // Refresh data
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
-      setNotification({
-        type: MessageBarType.error,
-        message: 'Failed to reject request. Please try again.'
+      addFlash({
+        type: 'error',
+        content: 'Failed to reject request. Please try again.',
       });
     }
   }, []);
@@ -230,14 +215,6 @@ const TeamOverview: React.FC = () => {
     }
   }, []);
 
-  // Clear notification after 5 seconds
-  useEffect(() => {
-    if (notification) {
-      const timer = setTimeout(() => setNotification(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [notification]);
-
   // Get summary statistics
   const summaryStats = React.useMemo(() => {
     const totalMembers = teamMembers.length;
@@ -260,232 +237,208 @@ const TeamOverview: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="team-overview-page">
-        <Stack horizontal horizontalAlign="center" verticalAlign="center" tokens={{ padding: 40 }}>
-          <Spinner size={SpinnerSize.large} label="Loading team overview..." />
-        </Stack>
+      <div className="flex items-center justify-center py-16">
+        <svg className="animate-spin h-8 w-8 text-red-600" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        <span className="ml-3 text-sm text-gray-500">Loading team overview...</span>
       </div>
     );
   }
 
+  const tabs = [
+    { key: 'overview', label: 'Team Members' },
+    { key: 'approvals', label: 'Quick Approvals' },
+    { key: 'calendar', label: 'Team Calendar' },
+  ];
+
   return (
     <div className="max-w-7xl">
-      <Stack tokens={stackTokens}>
+      <SpaceBetween size="l">
         {/* Page Header */}
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Stack>
-            <Text variant="xxLarge" styles={{ root: { fontWeight: 600 } }}>
-              Team Overview
-            </Text>
-            <Text variant="medium" styles={{ root: { color: '#666' } }}>
-              Manage your team's leave requests and balances
-            </Text>
-          </Stack>
+        <Header
+          variant="h1"
+          description="Manage your team's leave requests and balances"
+          actions={
+            <div className="flex items-center gap-2">
+              <button
+                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Export Report
+              </button>
+              <button
+                onClick={() => setRefreshTrigger(prev => prev + 1)}
+                className="inline-flex items-center justify-center w-9 h-9 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                title="Refresh data"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
+          }
+        >
+          Team Overview
+        </Header>
 
-          <Stack horizontal tokens={{ childrenGap: 8 }}>
-            <DefaultButton
-              text="Export Report"
-              iconProps={{ iconName: 'Download' }}
-            />
-            <IconButton
-              iconProps={{ iconName: 'Refresh' }}
-              onClick={() => setRefreshTrigger(prev => prev + 1)}
-              title="Refresh data"
-            />
-          </Stack>
-        </Stack>
-
-        {/* Notification */}
-        {notification && (
-          <MessageBar
-            messageBarType={notification.type}
-            onDismiss={() => setNotification(null)}
-            dismissButtonAriaLabel="Close"
-          >
-            {notification.message}
-          </MessageBar>
-        )}
+        {/* Notifications */}
+        <Flashbar items={flashItems} onDismiss={removeFlash} />
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <Stack tokens={{ childrenGap: 4 }}>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#0078d4' } }}>
-                {summaryStats.totalMembers}
-              </Text>
-              <Text variant="medium">Team Members</Text>
-            </Stack>
-          </div>
+          <Container>
+            <div className="text-center">
+              <p className="text-2xl font-semibold text-red-600">{summaryStats.totalMembers}</p>
+              <p className="text-sm text-gray-600 mt-1">Team Members</p>
+            </div>
+          </Container>
 
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <Stack tokens={{ childrenGap: 4 }}>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#ff8c00' } }}>
-                {summaryStats.totalPendingRequests}
-              </Text>
-              <Text variant="medium">Pending Requests</Text>
-            </Stack>
-          </div>
+          <Container>
+            <div className="text-center">
+              <p className="text-2xl font-semibold text-amber-600">{summaryStats.totalPendingRequests}</p>
+              <p className="text-sm text-gray-600 mt-1">Pending Requests</p>
+            </div>
+          </Container>
 
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <Stack tokens={{ childrenGap: 4 }}>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#d13438' } }}>
-                {summaryStats.urgentRequests}
-              </Text>
-              <Text variant="medium">Urgent Requests</Text>
-            </Stack>
-          </div>
+          <Container>
+            <div className="text-center">
+              <p className="text-2xl font-semibold text-red-700">{summaryStats.urgentRequests}</p>
+              <p className="text-sm text-gray-600 mt-1">Urgent Requests</p>
+            </div>
+          </Container>
 
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <Stack tokens={{ childrenGap: 4 }}>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#107c10' } }}>
-                {summaryStats.totalLeaveDays}
-              </Text>
-              <Text variant="medium">Available Leave Days</Text>
-            </Stack>
-          </div>
+          <Container>
+            <div className="text-center">
+              <p className="text-2xl font-semibold text-green-600">{summaryStats.totalLeaveDays}</p>
+              <p className="text-sm text-gray-600 mt-1">Available Leave Days</p>
+            </div>
+          </Container>
         </div>
 
-        {/* Main Content with Tabs */}
-        <Pivot
-          selectedKey={currentView}
-          onLinkClick={(item) => setCurrentView(item?.props.itemKey || 'overview')}
-        >
-          <PivotItem headerText="Team Members" itemKey="overview">
-            <Stack tokens={{ childrenGap: 16 }}>
-              {/* Filters */}
-              <Stack horizontal tokens={{ childrenGap: 16 }} wrap>
-                <SearchBox
-                  placeholder="Search team members..."
-                  value={searchTerm}
-                  onChange={(_, newValue) => setSearchTerm(newValue || '')}
-                  styles={{ root: { width: 300 } }}
-                />
+        {/* Tabs */}
+        <div>
+          <div className="border-b border-gray-200">
+            <nav className="flex -mb-px">
+              {tabs.map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setCurrentView(tab.key)}
+                  className={
+                    currentView === tab.key
+                      ? 'px-4 py-2.5 text-sm font-medium text-red-600 border-b-2 border-red-600'
+                      : 'px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent'
+                  }
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </div>
 
-                <Dropdown
-                  placeholder="Filter by department"
-                  options={departmentOptions}
-                  selectedKey={selectedDepartment}
-                  onChange={(_, option) => setSelectedDepartment(option?.key as string)}
-                  styles={{ dropdown: { width: 200 } }}
-                />
-              </Stack>
+          {/* Tab Content */}
+          <div className="pt-6">
+            {/* Team Members Tab */}
+            {currentView === 'overview' && (
+              <SpaceBetween size="m">
+                {/* Filters */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="flex-1 sm:max-w-xs">
+                    <input
+                      type="text"
+                      placeholder="Search team members..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    />
+                  </div>
 
-              {/* Pagination Info */}
-              {filteredTeamMembers.length > 0 && (
-                <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                  <Text variant="medium">
-                    Showing {startIndex + 1}-{Math.min(endIndex, filteredTeamMembers.length)} of {filteredTeamMembers.length} team members
-                  </Text>
-                  <Dropdown
-                    placeholder="Items per page"
-                    selectedKey={itemsPerPage}
-                    onChange={(_, option) => handleItemsPerPageChange(option?.key as number)}
-                    options={[
-                      { key: 10, text: '10 per page' },
-                      { key: 20, text: '20 per page' },
-                      { key: 50, text: '50 per page' }
-                    ]}
-                    styles={{ dropdown: { width: 150 } }}
+                  <select
+                    value={selectedDepartment}
+                    onChange={(e) => setSelectedDepartment(e.target.value)}
+                    className="h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent sm:w-52"
+                  >
+                    {departmentOptions.map(opt => (
+                      <option key={opt.key} value={opt.key}>{opt.text}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Pagination Info */}
+                {filteredTeamMembers.length > 0 && (
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <p className="text-sm text-gray-600">
+                      Showing {startIndex + 1}-{Math.min(endIndex, filteredTeamMembers.length)} of {filteredTeamMembers.length} team members
+                    </p>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+                      className="h-9 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent w-40"
+                    >
+                      <option value={10}>10 per page</option>
+                      <option value={20}>20 per page</option>
+                      <option value={50}>50 per page</option>
+                    </select>
+                  </div>
+                )}
+
+                {/* Team Members Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {paginatedTeamMembers.map(member => (
+                    <TeamMemberCard
+                      key={member.user.id}
+                      user={member.user}
+                      leaveBalances={member.leaveBalances}
+                      pendingRequests={member.pendingRequests}
+                      onViewDetails={handleViewMemberDetails}
+                      onQuickApprove={handleQuickApprove}
+                      onQuickReject={handleQuickReject}
+                    />
+                  ))}
+                </div>
+
+                {/* Pagination Controls */}
+                {filteredTeamMembers.length > itemsPerPage && (
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={handlePageChange}
+                    totalItems={filteredTeamMembers.length}
                   />
-                </Stack>
-              )}
+                )}
 
-              {/* Team Members Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {paginatedTeamMembers.map(member => (
-                  <TeamMemberCard
-                    key={member.user.id}
-                    user={member.user}
-                    leaveBalances={member.leaveBalances}
-                    pendingRequests={member.pendingRequests}
-                    onViewDetails={handleViewMemberDetails}
-                    onQuickApprove={handleQuickApprove}
-                    onQuickReject={handleQuickReject}
+                {filteredTeamMembers.length === 0 && (
+                  <EmptyState
+                    title="No team members found"
+                    description="No team members found matching your criteria."
+                    variant="no-match"
                   />
-                ))}
-              </div>
+                )}
+              </SpaceBetween>
+            )}
 
-              {/* Pagination Controls */}
-              {filteredTeamMembers.length > itemsPerPage && (
-                <Stack horizontal horizontalAlign="center" tokens={{ childrenGap: 8 }} wrap>
-                  <DefaultButton
-                    text="Previous"
-                    iconProps={{ iconName: 'ChevronLeft' }}
-                    onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1}
-                  />
+            {/* Quick Approvals Tab */}
+            {currentView === 'approvals' && (
+              <QuickApprovalWidget
+                pendingRequests={allPendingRequests}
+                onApprove={handleQuickApprove}
+                onReject={handleQuickReject}
+                onRefresh={() => setRefreshTrigger(prev => prev + 1)}
+                isLoading={isLoading}
+              />
+            )}
 
-                  {/* Page Numbers */}
-                  {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
-                    // Show first 3, last 3, and current page with neighbors
-                    const pageNum = i + 1;
-                    const shouldShow =
-                      pageNum <= 3 ||
-                      pageNum > totalPages - 3 ||
-                      Math.abs(pageNum - currentPage) <= 1;
-
-                    if (!shouldShow && (pageNum === 4 || pageNum === totalPages - 3)) {
-                      return <Text key={`ellipsis-${i}`} variant="medium">...</Text>;
-                    }
-
-                    if (!shouldShow) {
-                      return null;
-                    }
-
-                    return (
-                      <DefaultButton
-                        key={pageNum}
-                        text={pageNum.toString()}
-                        onClick={() => handlePageChange(pageNum)}
-                        styles={{
-                          root: {
-                            minWidth: 40,
-                            backgroundColor: currentPage === pageNum ? '#0078d4' : undefined,
-                            color: currentPage === pageNum ? '#fff' : undefined
-                          }
-                        }}
-                      />
-                    );
-                  })}
-
-                  <DefaultButton
-                    text="Next"
-                    iconProps={{ iconName: 'ChevronRight' }}
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                  />
-                </Stack>
-              )}
-
-              {filteredTeamMembers.length === 0 && (
-                <Stack horizontalAlign="center" tokens={{ padding: 40 }}>
-                  <Text variant="large" styles={{ root: { color: '#666' } }}>
-                    No team members found matching your criteria.
-                  </Text>
-                </Stack>
-              )}
-            </Stack>
-          </PivotItem>
-
-          <PivotItem headerText="Quick Approvals" itemKey="approvals">
-            <QuickApprovalWidget
-              pendingRequests={allPendingRequests}
-              onApprove={handleQuickApprove}
-              onReject={handleQuickReject}
-              onRefresh={() => setRefreshTrigger(prev => prev + 1)}
-              isLoading={isLoading}
-            />
-          </PivotItem>
-
-          <PivotItem headerText="Team Calendar" itemKey="calendar">
-            <TeamCalendarView
-              events={calendarEvents}
-              onDateRangeChange={handleCalendarDateRangeChange}
-              isLoading={isLoading}
-            />
-          </PivotItem>
-        </Pivot>
-      </Stack>
+            {/* Team Calendar Tab */}
+            {currentView === 'calendar' && (
+              <TeamCalendarView
+                events={calendarEvents}
+                onDateRangeChange={handleCalendarDateRangeChange}
+                isLoading={isLoading}
+              />
+            )}
+          </div>
+        </div>
+      </SpaceBetween>
 
       {/* Team Member Details Panel */}
       <TeamMemberDetailsPanel

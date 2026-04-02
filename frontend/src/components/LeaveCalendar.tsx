@@ -1,6 +1,6 @@
 import React from 'react';
-import { MessageBar, MessageBarType } from '@fluentui/react';
 import { useAuth } from '../contexts/AuthContext';
+import { Alert } from './cloudscape';
 import AppleCalendar from './leave/AppleCalendar';
 import type {
   LeaveCalendarEvent
@@ -31,9 +31,9 @@ const LeaveCalendar: React.FC<LeaveCalendarProps> = ({
   if (!canViewAll) {
     return (
       <div className={className}>
-        <MessageBar messageBarType={MessageBarType.warning}>
+        <Alert type="warning">
           You do not have permission to view the leave calendar.
-        </MessageBar>
+        </Alert>
       </div>
     );
   }

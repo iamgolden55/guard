@@ -1,31 +1,22 @@
 import type React from 'react';
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import {
-  Stack,
-  Text,
-  PrimaryButton,
-  DefaultButton,
-  TextField,
-  MessageBar,
-  MessageBarType,
-  Spinner,
-  SpinnerSize,
-  DetailsList,
-  DetailsListLayoutMode,
-  SelectionMode,
-  type IColumn,
-  Toggle,
-  Dialog,
-  DialogType,
-  DialogFooter,
-  Link,
-  mergeStyleSets
-} from '@fluentui/react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { MainLayout } from '../../layouts';
-import { Card, SignatureCanvas } from '../../components';
+import {
+  Header,
+  Container,
+  CloudscapeTable,
+  StatusIndicator,
+  EmptyState,
+  ConfirmationModal,
+  SpaceBetween,
+  KeyValuePairs,
+  Alert,
+  ColumnLayout,
+} from '../../components/cloudscape';
+import type { ColumnDefinition } from '../../components/cloudscape/CloudscapeTable';
+import { SignatureCanvas } from '../../components';
 import { shiftService } from '../../services';
 import type {
   Shift,
@@ -55,38 +46,6 @@ const ShiftApproval: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [signature, setSignature] = useState<string | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-
-  // Custom styles
-  const styles = mergeStyleSets({
-    checkSummary: {
-      margin: '12px 0',
-      padding: '12px',
-      backgroundColor: '#f9f9f9',
-      border: '1px solid #eaeaea',
-      borderRadius: '4px'
-    },
-    sectionTitle: {
-      marginTop: '24px',
-      marginBottom: '12px',
-      fontWeight: 600,
-      borderBottom: '1px solid #eaeaea',
-      paddingBottom: '8px'
-    },
-    startSignature: {
-      maxWidth: '100%',
-      maxHeight: '100px',
-      border: '1px solid #eaeaea',
-      borderRadius: '4px',
-      padding: '4px'
-    },
-    endSignature: {
-      maxWidth: '100%',
-      maxHeight: '100px',
-      border: '1px solid #eaeaea',
-      borderRadius: '4px',
-      padding: '4px'
-    }
-  });
 
   // Load shift details and all checks on mount
   useEffect(() => {
@@ -242,453 +201,385 @@ const ShiftApproval: React.FC = () => {
   };
 
   // Column definitions for fire exit checks
-  const fireExitColumns: IColumn[] = [
+  const fireExitColumnDefs: ColumnDefinition<FireExitCheck>[] = [
     {
-      key: 'timestamp',
-      name: 'Time',
-      fieldName: 'timestamp',
-      minWidth: 120,
-      isResizable: true,
-      onRender: (item: FireExitCheck) => formatTime(item.timestamp)
-    },
-    {
-      key: 'exitName',
-      name: 'Exit Location',
-      fieldName: 'exitName',
-      minWidth: 150,
-      isResizable: true
-    },
-    {
-      key: 'isPassed',
-      name: 'Status',
-      fieldName: 'isPassed',
+      id: 'timestamp',
+      header: 'Time',
+      cell: (item: FireExitCheck) => formatTime(item.timestamp),
       minWidth: 100,
-      isResizable: true,
-      onRender: (item: FireExitCheck) => (
-        <span className={item.isPassed ? 'text-green-600' : 'text-red-600 font-bold'}>
-          {item.isPassed ? 'PASS' : 'FAIL'}
-        </span>
-      )
     },
     {
-      key: 'comments',
-      name: 'Comments',
-      fieldName: 'comments',
+      id: 'exitName',
+      header: 'Exit Location',
+      cell: (item: FireExitCheck) => item.exitName,
+      minWidth: 150,
+    },
+    {
+      id: 'isPassed',
+      header: 'Status',
+      cell: (item: FireExitCheck) => (
+        <StatusIndicator type={item.isPassed ? 'success' : 'error'}>
+          {item.isPassed ? 'PASS' : 'FAIL'}
+        </StatusIndicator>
+      ),
+      minWidth: 100,
+    },
+    {
+      id: 'comments',
+      header: 'Comments',
+      cell: (item: FireExitCheck) => item.comments || '-',
       minWidth: 200,
-      isResizable: true
-    }
+    },
   ];
 
   // Column definitions for capacity checks
-  const capacityColumns: IColumn[] = [
+  const capacityColumnDefs: ColumnDefinition<CapacityCheck>[] = [
     {
-      key: 'timestamp',
-      name: 'Time',
-      fieldName: 'timestamp',
-      minWidth: 120,
-      isResizable: true,
-      onRender: (item: CapacityCheck) => formatTime(item.timestamp)
-    },
-    {
-      key: 'count',
-      name: 'Count',
-      fieldName: 'count',
+      id: 'timestamp',
+      header: 'Time',
+      cell: (item: CapacityCheck) => formatTime(item.timestamp),
       minWidth: 100,
-      isResizable: true
     },
     {
-      key: 'comments',
-      name: 'Comments',
-      fieldName: 'comments',
+      id: 'count',
+      header: 'Count',
+      cell: (item: CapacityCheck) => String(item.count),
+      minWidth: 80,
+    },
+    {
+      id: 'comments',
+      header: 'Comments',
+      cell: (item: CapacityCheck) => item.comments || '-',
       minWidth: 250,
-      isResizable: true
-    }
+    },
   ];
 
   // Column definitions for toilet checks
-  const toiletColumns: IColumn[] = [
+  const toiletColumnDefs: ColumnDefinition<ToiletCheck>[] = [
     {
-      key: 'timestamp',
-      name: 'Time',
-      fieldName: 'timestamp',
-      minWidth: 120,
-      isResizable: true,
-      onRender: (item: ToiletCheck) => formatTime(item.timestamp)
+      id: 'timestamp',
+      header: 'Time',
+      cell: (item: ToiletCheck) => formatTime(item.timestamp),
+      minWidth: 100,
     },
     {
-      key: 'location',
-      name: 'Location',
-      fieldName: 'location',
+      id: 'location',
+      header: 'Location',
+      cell: (item: ToiletCheck) => item.location,
       minWidth: 150,
-      isResizable: true
     },
     {
-      key: 'condition',
-      name: 'Condition',
-      fieldName: 'condition',
-      minWidth: 120,
-      isResizable: true,
-      onRender: (item: ToiletCheck) => {
-        let colorClass = 'text-gray-600';
-
-        switch (item.condition) {
-          case 'excellent':
-            colorClass = 'text-green-600 font-bold';
-            break;
-          case 'good':
-            colorClass = 'text-green-500';
-            break;
-          case 'fair':
-            colorClass = 'text-yellow-600';
-            break;
-          case 'poor':
-            colorClass = 'text-orange-600 font-bold';
-            break;
-          case 'critical':
-            colorClass = 'text-red-600 font-bold';
-            break;
-        }
-
+      id: 'condition',
+      header: 'Condition',
+      cell: (item: ToiletCheck) => {
+        const type =
+          item.condition === 'excellent' || item.condition === 'good' ? 'success' as const :
+          item.condition === 'fair' ? 'warning' as const : 'error' as const;
         return (
-          <span className={`${colorClass} capitalize`}>
-            {item.condition}
-          </span>
+          <StatusIndicator type={type}>
+            <span className="capitalize">{item.condition}</span>
+          </StatusIndicator>
         );
-      }
+      },
+      minWidth: 120,
     },
     {
-      key: 'comments',
-      name: 'Comments',
-      fieldName: 'comments',
+      id: 'comments',
+      header: 'Comments',
+      cell: (item: ToiletCheck) => item.comments || '-',
       minWidth: 200,
-      isResizable: true
-    }
+    },
   ];
 
   // Column definitions for enforcement visits
-  const enforcementColumns: IColumn[] = [
+  const enforcementColumnDefs: ColumnDefinition<EnforcementVisit>[] = [
     {
-      key: 'timestamp',
-      name: 'Time',
-      fieldName: 'timestamp',
-      minWidth: 120,
-      isResizable: true,
-      onRender: (item: EnforcementVisit) => formatTime(item.timestamp)
-    },
-    {
-      key: 'officerName',
-      name: 'Officer Name',
-      fieldName: 'officerName',
-      minWidth: 150,
-      isResizable: true
-    },
-    {
-      key: 'officerBadge',
-      name: 'Badge #',
-      fieldName: 'officerBadge',
+      id: 'timestamp',
+      header: 'Time',
+      cell: (item: EnforcementVisit) => formatTime(item.timestamp),
       minWidth: 100,
-      isResizable: true
     },
     {
-      key: 'reasonForVisit',
-      name: 'Reason',
-      fieldName: 'reasonForVisit',
-      minWidth: 200,
-      isResizable: true
+      id: 'officerName',
+      header: 'Officer Name',
+      cell: (item: EnforcementVisit) => item.officerName,
+      minWidth: 150,
     },
     {
-      key: 'outcome',
-      name: 'Outcome',
-      fieldName: 'outcome',
+      id: 'officerBadge',
+      header: 'Badge #',
+      cell: (item: EnforcementVisit) => item.officerBadge,
+      minWidth: 100,
+    },
+    {
+      id: 'reasonForVisit',
+      header: 'Reason',
+      cell: (item: EnforcementVisit) => item.reasonForVisit,
       minWidth: 200,
-      isResizable: true
-    }
+    },
+    {
+      id: 'outcome',
+      header: 'Outcome',
+      cell: (item: EnforcementVisit) => item.outcome,
+      minWidth: 200,
+    },
   ];
 
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">
-            {formik.values.approved ? 'Approve Shift' : 'Reject Shift'}
-          </Text>
-        </Stack>
+    <SpaceBetween size="l">
+      <Header
+        variant="h1"
+        description={shift ? `Shift #${shift.id} at ${shift.venue.name}` : undefined}
+      >
+        {formik.values.approved ? 'Approve Shift' : 'Reject Shift'}
+      </Header>
 
-        {isLoading ? (
-          <div className="flex justify-center py-8">
-            <Spinner size={SpinnerSize.large} label="Loading shift details..." />
-          </div>
-        ) : error && !shift ? (
-          <MessageBar
-            messageBarType={MessageBarType.error}
-            isMultiline={true}
-            dismissButtonAriaLabel="Close"
-          >
-            {error}
-            <Link
-              className="block mt-2"
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <svg className="animate-spin h-8 w-8 text-red-600" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="ml-3 text-sm text-gray-500">Loading shift details...</span>
+        </div>
+      ) : error && !shift ? (
+        <Alert
+          type="error"
+          action={
+            <button
               onClick={() => navigate('/approvals')}
+              className="text-sm text-red-700 hover:text-red-800 underline font-medium"
             >
               Return to Approvals
-            </Link>
-          </MessageBar>
-        ) : shift ? (
-          <form onSubmit={formik.handleSubmit}>
-            <Stack tokens={{ childrenGap: 16 }}>
-              {/* Error message */}
-              {error && (
-                <MessageBar
-                  messageBarType={MessageBarType.error}
-                  isMultiline={false}
-                  dismissButtonAriaLabel="Close"
-                >
-                  {error}
-                </MessageBar>
-              )}
+            </button>
+          }
+        >
+          {error}
+        </Alert>
+      ) : shift ? (
+        <form onSubmit={formik.handleSubmit}>
+          <SpaceBetween size="l">
+            {/* Error message */}
+            {error && (
+              <Alert type="error" dismissible onDismiss={() => setError(null)}>
+                {error}
+              </Alert>
+            )}
 
-              {/* Shift Summary Card */}
-              <Card>
-                <Text variant="large" className="font-semibold mb-4">
-                  Shift Summary
-                </Text>
+            {/* Shift Summary */}
+            <Container header={<Header variant="h2">Shift Summary</Header>}>
+              <ColumnLayout columns={2}>
+                <KeyValuePairs
+                  items={[
+                    { label: 'Staff ID', value: String(shift.staffUser) },
+                    { label: 'Venue', value: shift.venue.name },
+                    { label: 'Shift Date', value: formatDate(shift.startTime) },
+                    { label: 'Start Time', value: formatTime(shift.startTime) },
+                    { label: 'End Time', value: shift.endTime ? formatTime(shift.endTime) : 'N/A' },
+                    { label: 'Duration', value: calculateDuration(shift.startTime, shift.endTime) },
+                  ]}
+                  columns={2}
+                />
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
                   <div>
-                    <Stack tokens={{ childrenGap: 10 }}>
-                      <Stack horizontal horizontalAlign="space-between">
-                        <Text className="font-semibold">Staff ID:</Text>
-                        <Text>{shift.staffUser}</Text>
-                      </Stack>
-
-                      <Stack horizontal horizontalAlign="space-between">
-                        <Text className="font-semibold">Venue:</Text>
-                        <Text>{shift.venue.name}</Text>
-                      </Stack>
-
-                      <Stack horizontal horizontalAlign="space-between">
-                        <Text className="font-semibold">Shift Date:</Text>
-                        <Text>{formatDate(shift.startTime)}</Text>
-                      </Stack>
-
-                      <Stack horizontal horizontalAlign="space-between">
-                        <Text className="font-semibold">Start Time:</Text>
-                        <Text>{formatTime(shift.startTime)}</Text>
-                      </Stack>
-
-                      <Stack horizontal horizontalAlign="space-between">
-                        <Text className="font-semibold">End Time:</Text>
-                        <Text>{shift.endTime ? formatTime(shift.endTime) : 'N/A'}</Text>
-                      </Stack>
-
-                      <Stack horizontal horizontalAlign="space-between">
-                        <Text className="font-semibold">Duration:</Text>
-                        <Text>{calculateDuration(shift.startTime, shift.endTime)}</Text>
-                      </Stack>
-                    </Stack>
+                    <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Start Signature</h4>
+                    {shift.startSignature ? (
+                      <img
+                        src={shift.startSignature}
+                        alt="Start Signature"
+                        className="max-w-full max-h-[100px] border border-gray-200 rounded-lg p-1"
+                      />
+                    ) : (
+                      <StatusIndicator type="error">Missing signature</StatusIndicator>
+                    )}
                   </div>
 
                   <div>
-                    <Stack tokens={{ childrenGap: 16 }}>
-                      <Stack>
-                        <Text className="font-semibold mb-2">Start Signature:</Text>
-                        {shift.startSignature ? (
-                          <img
-                            src={shift.startSignature}
-                            alt="Start Signature"
-                            className={styles.startSignature}
-                          />
-                        ) : (
-                          <Text className="text-red-600">Missing signature</Text>
-                        )}
-                      </Stack>
-
-                      <Stack>
-                        <Text className="font-semibold mb-2">End Signature:</Text>
-                        {shift.endSignature ? (
-                          <img
-                            src={shift.endSignature}
-                            alt="End Signature"
-                            className={styles.endSignature}
-                          />
-                        ) : (
-                          <Text className="text-red-600">Missing signature</Text>
-                        )}
-                      </Stack>
-                    </Stack>
+                    <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">End Signature</h4>
+                    {shift.endSignature ? (
+                      <img
+                        src={shift.endSignature}
+                        alt="End Signature"
+                        className="max-w-full max-h-[100px] border border-gray-200 rounded-lg p-1"
+                      />
+                    ) : (
+                      <StatusIndicator type="error">Missing signature</StatusIndicator>
+                    )}
                   </div>
                 </div>
-              </Card>
+              </ColumnLayout>
+            </Container>
 
-              {/* Fire Exit Checks */}
-              <Card>
-                <Text variant="large" className="font-semibold mb-4">
-                  Fire Exit Checks
-                </Text>
+            {/* Fire Exit Checks */}
+            <Container header={<Header variant="h2" counter={String(fireExitChecks.length)}>Fire Exit Checks</Header>}>
+              {fireExitChecks.length > 0 ? (
+                <CloudscapeTable<FireExitCheck>
+                  items={fireExitChecks}
+                  columnDefinitions={fireExitColumnDefs}
+                  variant="embedded"
+                  trackBy="id"
+                  wrapLines
+                />
+              ) : (
+                <p className="text-sm text-gray-500 italic">No fire exit checks recorded</p>
+              )}
+            </Container>
 
-                {fireExitChecks.length > 0 ? (
-                  <DetailsList
-                    items={fireExitChecks}
-                    columns={fireExitColumns}
-                    layoutMode={DetailsListLayoutMode.justified}
-                    selectionMode={SelectionMode.none}
-                    isHeaderVisible={true}
-                  />
-                ) : (
-                  <Text className="text-gray-500 italic">No fire exit checks recorded</Text>
-                )}
-              </Card>
+            {/* Capacity Checks */}
+            <Container header={<Header variant="h2" counter={String(capacityChecks.length)}>Capacity Checks</Header>}>
+              {capacityChecks.length > 0 ? (
+                <CloudscapeTable<CapacityCheck>
+                  items={capacityChecks}
+                  columnDefinitions={capacityColumnDefs}
+                  variant="embedded"
+                  trackBy="id"
+                  wrapLines
+                />
+              ) : (
+                <p className="text-sm text-gray-500 italic">No capacity checks recorded</p>
+              )}
+            </Container>
 
-              {/* Capacity Checks */}
-              <Card>
-                <Text variant="large" className="font-semibold mb-4">
-                  Capacity Checks
-                </Text>
+            {/* Toilet Checks */}
+            <Container header={<Header variant="h2" counter={String(toiletChecks.length)}>Toilet Checks</Header>}>
+              {toiletChecks.length > 0 ? (
+                <CloudscapeTable<ToiletCheck>
+                  items={toiletChecks}
+                  columnDefinitions={toiletColumnDefs}
+                  variant="embedded"
+                  trackBy="id"
+                  wrapLines
+                />
+              ) : (
+                <p className="text-sm text-gray-500 italic">No toilet checks recorded</p>
+              )}
+            </Container>
 
-                {capacityChecks.length > 0 ? (
-                  <DetailsList
-                    items={capacityChecks}
-                    columns={capacityColumns}
-                    layoutMode={DetailsListLayoutMode.justified}
-                    selectionMode={SelectionMode.none}
-                    isHeaderVisible={true}
-                  />
-                ) : (
-                  <Text className="text-gray-500 italic">No capacity checks recorded</Text>
-                )}
-              </Card>
+            {/* Enforcement Visits */}
+            <Container header={<Header variant="h2" counter={String(enforcementVisits.length)}>Enforcement Visits</Header>}>
+              {enforcementVisits.length > 0 ? (
+                <CloudscapeTable<EnforcementVisit>
+                  items={enforcementVisits}
+                  columnDefinitions={enforcementColumnDefs}
+                  variant="embedded"
+                  trackBy="id"
+                  wrapLines
+                />
+              ) : (
+                <p className="text-sm text-gray-500 italic">No enforcement visits recorded</p>
+              )}
+            </Container>
 
-              {/* Toilet Checks */}
-              <Card>
-                <Text variant="large" className="font-semibold mb-4">
-                  Toilet Checks
-                </Text>
+            {/* Manager Approval Section */}
+            <Container header={<Header variant="h2">Manager Decision</Header>}>
+              <SpaceBetween size="m">
+                {/* Toggle */}
+                <div className="flex items-center gap-3">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formik.values.approved}
+                      onChange={(e) => formik.setFieldValue('approved', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-red-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600" />
+                  </label>
+                  <span className="text-sm font-medium text-gray-700">
+                    {formik.values.approved ? 'Approve this shift' : 'Reject this shift'}
+                  </span>
+                </div>
 
-                {toiletChecks.length > 0 ? (
-                  <DetailsList
-                    items={toiletChecks}
-                    columns={toiletColumns}
-                    layoutMode={DetailsListLayoutMode.justified}
-                    selectionMode={SelectionMode.none}
-                    isHeaderVisible={true}
-                  />
-                ) : (
-                  <Text className="text-gray-500 italic">No toilet checks recorded</Text>
-                )}
-              </Card>
-
-              {/* Enforcement Visits */}
-              <Card>
-                <Text variant="large" className="font-semibold mb-4">
-                  Enforcement Visits
-                </Text>
-
-                {enforcementVisits.length > 0 ? (
-                  <DetailsList
-                    items={enforcementVisits}
-                    columns={enforcementColumns}
-                    layoutMode={DetailsListLayoutMode.justified}
-                    selectionMode={SelectionMode.none}
-                    isHeaderVisible={true}
-                  />
-                ) : (
-                  <Text className="text-gray-500 italic">No enforcement visits recorded</Text>
-                )}
-              </Card>
-
-              {/* Manager Approval Section */}
-              <Card>
-                <Text variant="large" className="font-semibold mb-4">
-                  Manager Decision
-                </Text>
-
-                <Stack tokens={{ childrenGap: 16 }}>
-                  <Toggle
-                    label="Approve this shift"
-                    checked={formik.values.approved}
-                    onChange={(_, checked) => formik.setFieldValue('approved', checked)}
-                  />
-
-                  <TextField
-                    label="Notes"
+                {/* Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Notes {!formik.values.approved && <span className="text-red-500">*</span>}
+                  </label>
+                  <textarea
                     name="notes"
-                    multiline
                     rows={3}
                     value={formik.values.notes}
                     onChange={formik.handleChange}
                     onBlur={formik.handleBlur}
-                    errorMessage={
-                      formik.touched.notes && formik.errors.notes
-                        ? formik.errors.notes
-                        : undefined
-                    }
-                    required={!formik.values.approved}
                     placeholder={formik.values.approved
                       ? "Optional notes for the staff member"
                       : "Please explain why you're rejecting this shift"
                     }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
                   />
+                  {formik.touched.notes && formik.errors.notes && (
+                    <p className="mt-1 text-sm text-red-600">{formik.errors.notes}</p>
+                  )}
+                </div>
 
-                  <Stack>
-                    <Text variant="medium" className="font-semibold mb-2">
-                      Manager Signature
-                    </Text>
-                    <SignatureCanvas
-                      onSave={handleSignatureSave}
-                      width={500}
-                      height={200}
-                      required
-                      errorMessage={error && !signature ? 'Signature is required' : undefined}
-                    />
-                  </Stack>
-                </Stack>
-              </Card>
+                {/* Signature */}
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">Manager Signature</h4>
+                  <SignatureCanvas
+                    onSave={handleSignatureSave}
+                    width={500}
+                    height={200}
+                    required
+                    errorMessage={error && !signature ? 'Signature is required' : undefined}
+                  />
+                </div>
+              </SpaceBetween>
+            </Container>
 
-              {/* Action Buttons */}
-              <Stack horizontal horizontalAlign="space-between">
-                <DefaultButton
-                  text="Cancel"
-                  onClick={() => navigate('/approvals')}
-                />
-                <PrimaryButton
-                  type="submit"
-                  text={formik.values.approved ? "Submit Approval" : "Submit Rejection"}
-                  iconProps={{ iconName: formik.values.approved ? 'Accept' : 'Cancel' }}
-                  disabled={isSaving}
-                />
-              </Stack>
-            </Stack>
-          </form>
-        ) : (
-          <Text>Shift not found.</Text>
-        )}
-      </Stack>
+            {/* Action Buttons */}
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => navigate('/approvals')}
+                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {formik.values.approved ? "Submit Approval" : "Submit Rejection"}
+              </button>
+            </div>
+          </SpaceBetween>
+        </form>
+      ) : (
+        <EmptyState
+          title="Shift not found"
+          description="The shift you are looking for does not exist."
+          variant="error"
+          action={
+            <button
+              onClick={() => navigate('/approvals')}
+              className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Return to Approvals
+            </button>
+          }
+        />
+      )}
 
-      {/* Confirmation Dialog */}
-      <Dialog
-        hidden={!showConfirmDialog}
-        onDismiss={() => setShowConfirmDialog(false)}
-        dialogContentProps={{
-          type: DialogType.normal,
-          title: formik.values.approved ? 'Confirm Approval' : 'Confirm Rejection',
-          subText: formik.values.approved
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        visible={showConfirmDialog}
+        header={formik.values.approved ? 'Confirm Approval' : 'Confirm Rejection'}
+        confirmLabel={formik.values.approved ? 'Approve' : 'Reject'}
+        cancelLabel="Cancel"
+        variant={formik.values.approved ? 'default' : 'destructive'}
+        onConfirm={handleConfirm}
+        onCancel={() => setShowConfirmDialog(false)}
+        loading={isSaving}
+      >
+        <p>
+          {formik.values.approved
             ? 'Are you sure you want to approve this shift?'
             : 'Are you sure you want to reject this shift?'
-        }}
-      >
-        <DialogFooter>
-          <PrimaryButton
-            onClick={handleConfirm}
-            text={formik.values.approved ? "Approve" : "Reject"}
-            disabled={isSaving}
-          />
-          <DefaultButton
-            onClick={() => setShowConfirmDialog(false)}
-            text="Cancel"
-            disabled={isSaving}
-          />
-        </DialogFooter>
-      </Dialog>
-    </MainLayout>
+          }
+        </p>
+      </ConfirmationModal>
+    </SpaceBetween>
   );
 };
 

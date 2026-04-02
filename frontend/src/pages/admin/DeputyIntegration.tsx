@@ -1,33 +1,7 @@
 import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
-import {
-  Stack,
-  Text,
-  PrimaryButton,
-  DefaultButton,
-  TextField,
-  Spinner,
-  SpinnerSize,
-  MessageBar,
-  MessageBarType,
-  Pivot,
-  PivotItem,
-  ProgressIndicator,
-  DetailsList,
-  DetailsListLayoutMode,
-  SelectionMode,
-  type IColumn,
-  Label,
-  Toggle,
-  CommandBar,
-  type ICommandBarItemProps,
-  Dialog,
-  DialogType,
-  DialogFooter,
-  ChoiceGroup,
-  type IChoiceGroupOption
-} from '@fluentui/react';
-import { MainLayout } from '../../layouts';
+import { Header, Container, SpaceBetween, StatusIndicator, CloudscapeTable, Alert, ConfirmationModal } from '../../components/cloudscape';
+import Flashbar, { useFlashbar } from '../../components/cloudscape/Flashbar';
 import api from '../../services/api';
 
 interface SyncLog {
@@ -48,10 +22,38 @@ interface DeputySettings {
   apiKey: string;
   enabled: boolean;
   autoSyncEnabled: boolean;
-  autoSyncFrequency: number; // in hours
+  autoSyncFrequency: number;
   lastSyncTime: string | null;
   syncInProgress: boolean;
 }
+
+// Toggle Switch component
+const ToggleSwitch: React.FC<{
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  disabled?: boolean;
+}> = ({ checked, onChange, label, disabled }) => (
+  <div className="flex items-center justify-between py-2">
+    <p className="text-sm font-medium text-gray-900">{label}</p>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+        checked ? 'bg-red-600' : 'bg-gray-300'
+      } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </button>
+  </div>
+);
 
 const DeputyIntegration: React.FC = () => {
   const [settings, setSettings] = useState<DeputySettings>({
@@ -68,32 +70,28 @@ const DeputyIntegration: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [syncType, setSyncType] = useState<'employees' | 'timesheets' | 'all'>('all');
+  const [activeTab, setActiveTab] = useState('settings');
+  const { items: flashItems, addFlash, removeFlash } = useFlashbar();
 
   // Load settings and logs
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    setError(null);
 
     try {
-      // Fetch Deputy config from the backend
       const configResponse = await api.get('/api/v1/deputy/config/');
       const config = configResponse.data;
 
-      setSettings({
+      setSettings(prev => ({
+        ...prev,
         apiUrl: config.api_endpoint || '',
         apiKey: config.api_key || '',
         enabled: config.is_active ?? false,
-        autoSyncEnabled: settings.autoSyncEnabled,
-        autoSyncFrequency: settings.autoSyncFrequency,
         lastSyncTime: config.last_sync_date || null,
         syncInProgress: false,
-      });
+      }));
 
-      // Fetch sync logs — endpoint may not exist yet, so gracefully fallback
       try {
         const logsResponse = await api.get('/api/v1/deputy/sync-logs/');
         const logsData = Array.isArray(logsResponse.data)
@@ -101,22 +99,18 @@ const DeputyIntegration: React.FC = () => {
           : logsResponse.data?.results || [];
         setLogs(logsData);
       } catch {
-        // sync-logs endpoint doesn't exist yet — use empty array
         setLogs([]);
       }
     } catch (error) {
       console.error('Failed to load Deputy integration data:', error);
-      setError('Failed to load Deputy integration settings. Please try again later.');
+      addFlash({ type: 'error', content: 'Failed to load Deputy integration settings. Please try again later.' });
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // Save settings
   const saveSettings = useCallback(async () => {
     setIsSaving(true);
-    setError(null);
-    setSuccessMessage(null);
 
     try {
       await api.put('/api/v1/deputy/config/', {
@@ -125,31 +119,25 @@ const DeputyIntegration: React.FC = () => {
         is_active: settings.enabled,
       });
 
-      setSuccessMessage('Settings saved successfully');
-      setTimeout(() => setSuccessMessage(null), 5000);
+      addFlash({ type: 'success', content: 'Settings saved successfully.' });
     } catch (error) {
       console.error('Failed to save Deputy integration settings:', error);
-      setError('Failed to save settings. Please try again.');
+      addFlash({ type: 'error', content: 'Failed to save settings. Please try again.' });
     } finally {
       setIsSaving(false);
     }
-  }, [settings]);
+  }, [settings, addFlash]);
 
-  // Start sync process
   const startSync = useCallback(async () => {
     setIsSyncing(true);
-    setError(null);
-    setSuccessMessage(null);
     setSettings(prev => ({ ...prev, syncInProgress: true }));
 
     try {
-      // Determine which sync endpoints to call
       const syncCalls: Promise<unknown>[] = [];
 
       if (syncType === 'employees' || syncType === 'all') {
         syncCalls.push(
           api.post('/api/v1/deputy/sync-employees/').catch(err => {
-            // Endpoint may not exist — log but don't fail the whole sync
             console.warn('sync-employees endpoint not available:', err?.response?.status);
             return null;
           })
@@ -167,370 +155,305 @@ const DeputyIntegration: React.FC = () => {
 
       await Promise.all(syncCalls);
 
-      // Refresh data after sync
       setSettings(prev => ({
         ...prev,
         syncInProgress: false,
         lastSyncTime: new Date().toISOString()
       }));
 
-      // Reload logs and config to get updated data
       await loadData();
 
-      setSuccessMessage(`${syncType === 'all' ? 'Full' : syncType} sync completed successfully`);
-      setTimeout(() => setSuccessMessage(null), 5000);
+      addFlash({ type: 'success', content: `${syncType === 'all' ? 'Full' : syncType} sync completed successfully.` });
     } catch (error) {
       console.error('Failed to start Deputy sync:', error);
-      setError('Failed to start sync process. Please try again.');
+      addFlash({ type: 'error', content: 'Failed to start sync process. Please try again.' });
       setSettings(prev => ({ ...prev, syncInProgress: false }));
     } finally {
       setIsSyncing(false);
       setShowConfirmDialog(false);
     }
-  }, [syncType, loadData]);
+  }, [syncType, loadData, addFlash]);
 
-  // Handle form input changes
   const handleSettingsChange = useCallback((field: keyof DeputySettings, value: string | boolean | number) => {
     setSettings(prev => ({ ...prev, [field]: value }));
   }, []);
 
-  // Handle sync frequency choice
-  const handleFrequencyChange = useCallback((ev?: React.FormEvent<HTMLElement | HTMLInputElement>, option?: IChoiceGroupOption) => {
-    if (option) {
-      handleSettingsChange('autoSyncFrequency', Number(option.key));
-    }
-  }, [handleSettingsChange]);
-
-  // Command bar items
-  const commandBarItems: ICommandBarItemProps[] = [
-    {
-      key: 'sync',
-      text: 'Start Sync',
-      iconProps: { iconName: 'Sync' },
-      disabled: settings.syncInProgress || !settings.enabled,
-      onClick: () => {
-        setSyncType('all');
-        setShowConfirmDialog(true);
-        return false;
-      },
-    },
-    {
-      key: 'syncEmployees',
-      text: 'Sync Employees Only',
-      iconProps: { iconName: 'People' },
-      disabled: settings.syncInProgress || !settings.enabled,
-      onClick: () => {
-        setSyncType('employees');
-        setShowConfirmDialog(true);
-        return false;
-      },
-    },
-    {
-      key: 'syncTimesheets',
-      text: 'Sync Timesheets Only',
-      iconProps: { iconName: 'Calendar' },
-      disabled: settings.syncInProgress || !settings.enabled,
-      onClick: () => {
-        setSyncType('timesheets');
-        setShowConfirmDialog(true);
-        return false;
-      },
-    },
-    {
-      key: 'refresh',
-      text: 'Refresh',
-      iconProps: { iconName: 'Refresh' },
-      onClick: () => {
-        loadData();
-        return false;
-      },
-    },
+  const frequencyOptions = [
+    { value: 4, label: 'Every 4 hours' },
+    { value: 8, label: 'Every 8 hours' },
+    { value: 12, label: 'Every 12 hours' },
+    { value: 24, label: 'Once a day' },
   ];
 
-  // Set up columns for the logs DetailsList
-  const logColumns: IColumn[] = [
-    {
-      key: 'syncType',
-      name: 'Sync Type',
-      fieldName: 'syncType',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: SyncLog) => {
-        const syncNames = {
-          all: 'Full Sync',
-          employees: 'Employees',
-          timesheets: 'Timesheets'
-        };
-        return <Text>{syncNames[item.syncType]}</Text>;
-      }
-    },
-    {
-      key: 'startTime',
-      name: 'Start Time',
-      fieldName: 'startTime',
-      minWidth: 150,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: SyncLog) => <Text>{new Date(item.startTime).toLocaleString()}</Text>,
-    },
-    {
-      key: 'endTime',
-      name: 'End Time',
-      fieldName: 'endTime',
-      minWidth: 150,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: SyncLog) =>
-        item.endTime ? <Text>{new Date(item.endTime).toLocaleString()}</Text> : <Text>-</Text>,
-    },
-    {
-      key: 'status',
-      name: 'Status',
-      fieldName: 'status',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: SyncLog) => {
-        const statusColors = {
-          in_progress: '#0078D4', // Blue
-          completed: '#107C10',   // Green
-          failed: '#D13438',      // Red
-        };
-
-        return (
-          <div
-            style={{
-              backgroundColor: statusColors[item.status],
-              color: 'white',
-              padding: '4px 8px',
-              borderRadius: '12px',
-              display: 'inline-block',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              textTransform: 'uppercase'
-            }}
-          >
-            {item.status.replace('_', ' ')}
-          </div>
-        );
-      }
-    },
-    {
-      key: 'records',
-      name: 'Records',
-      minWidth: 120,
-      maxWidth: 120,
-      isResizable: true,
-      onRender: (item: SyncLog) => <Text>{item.recordsProcessed} processed</Text>,
-    },
-    {
-      key: 'created',
-      name: 'Created',
-      fieldName: 'recordsCreated',
-      minWidth: 80,
-      maxWidth: 80,
-      isResizable: true,
-    },
-    {
-      key: 'updated',
-      name: 'Updated',
-      fieldName: 'recordsUpdated',
-      minWidth: 80,
-      maxWidth: 80,
-      isResizable: true,
-    },
-    {
-      key: 'failed',
-      name: 'Failed',
-      fieldName: 'recordsFailed',
-      minWidth: 80,
-      maxWidth: 80,
-      isResizable: true,
-    },
-  ];
-
-  // Frequency options for auto-sync
-  const frequencyOptions: IChoiceGroupOption[] = [
-    { key: '4', text: 'Every 4 hours' },
-    { key: '8', text: 'Every 8 hours' },
-    { key: '12', text: 'Every 12 hours' },
-    { key: '24', text: 'Once a day' },
-  ];
-
-  // Load data when component mounts
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  const tabs = [
+    { id: 'settings', label: 'Settings' },
+    { id: 'history', label: 'Sync History' },
+  ];
+
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">Deputy Integration</Text>
-        </Stack>
+    <SpaceBetween size="l">
+      <Header
+        actions={
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setSyncType('employees'); setShowConfirmDialog(true); }}
+              disabled={settings.syncInProgress || !settings.enabled}
+              className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              Sync Employees
+            </button>
+            <button
+              onClick={() => { setSyncType('timesheets'); setShowConfirmDialog(true); }}
+              disabled={settings.syncInProgress || !settings.enabled}
+              className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              Sync Timesheets
+            </button>
+            <button
+              onClick={() => { setSyncType('all'); setShowConfirmDialog(true); }}
+              disabled={settings.syncInProgress || !settings.enabled}
+              className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              Start Full Sync
+            </button>
+          </div>
+        }
+      >
+        Deputy Integration
+      </Header>
 
-        {settings.syncInProgress && (
-          <MessageBar messageBarType={MessageBarType.info}>
-            <Stack tokens={{ childrenGap: 10 }}>
-              <Text>Sync in progress...</Text>
-              <ProgressIndicator label="Processing records" />
-            </Stack>
-          </MessageBar>
-        )}
+      <Flashbar items={flashItems} onDismiss={removeFlash} />
 
-        {error && (
-          <MessageBar
-            messageBarType={MessageBarType.error}
-            isMultiline={false}
-            dismissButtonAriaLabel="Close"
-            onDismiss={() => setError(null)}
-          >
-            {error}
-          </MessageBar>
-        )}
+      {settings.syncInProgress && (
+        <Alert type="info">
+          <div className="flex items-center gap-3">
+            <svg className="animate-spin h-4 w-4 text-blue-600" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span>Sync in progress...</span>
+          </div>
+        </Alert>
+      )}
 
-        {successMessage && (
-          <MessageBar
-            messageBarType={MessageBarType.success}
-            isMultiline={false}
-            dismissButtonAriaLabel="Close"
-            onDismiss={() => setSuccessMessage(null)}
-          >
-            {successMessage}
-          </MessageBar>
-        )}
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-0 -mb-px">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={activeTab === tab.id
+                ? 'px-4 py-2.5 text-sm font-medium text-red-600 border-b-2 border-red-600'
+                : 'px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent'
+              }
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
 
-        <Pivot>
-          <PivotItem headerText="Settings">
-            {isLoading ? (
+      {/* Settings Tab */}
+      {activeTab === 'settings' && (
+        <>
+          {isLoading ? (
+            <Container>
               <div className="flex justify-center py-12">
-                <Spinner size={SpinnerSize.large} label="Loading settings..." />
+                <svg className="animate-spin h-8 w-8 text-red-600" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
               </div>
-            ) : (
-              <Stack tokens={{ childrenGap: 15 }} className="mt-4">
-                <Toggle
+            </Container>
+          ) : (
+            <Container header={<Header variant="h2">Connection Settings</Header>}>
+              <SpaceBetween size="m">
+                <ToggleSwitch
                   label="Enable Deputy Integration"
                   checked={settings.enabled}
-                  onChange={(_, checked) => handleSettingsChange('enabled', checked || false)}
-                  onText="Enabled"
-                  offText="Disabled"
+                  onChange={(checked) => handleSettingsChange('enabled', checked)}
                 />
 
-                <TextField
-                  label="Deputy API URL"
-                  required
-                  value={settings.apiUrl}
-                  onChange={(_, newValue) => handleSettingsChange('apiUrl', newValue || '')}
-                  placeholder="https://your-company.deputy.com/api/v1"
-                  disabled={!settings.enabled}
-                />
-
-                <TextField
-                  label="API Key"
-                  required
-                  type="password"
-                  value={settings.apiKey}
-                  onChange={(_, newValue) => handleSettingsChange('apiKey', newValue || '')}
-                  placeholder="Enter your Deputy API key"
-                  canRevealPassword
-                  disabled={!settings.enabled}
-                />
-
-                <div className="mt-4">
-                  <Toggle
-                    label="Enable Automatic Sync"
-                    checked={settings.autoSyncEnabled}
-                    onChange={(_, checked) => handleSettingsChange('autoSyncEnabled', checked || false)}
-                    onText="Enabled"
-                    offText="Disabled"
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Deputy API URL <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-100"
+                    value={settings.apiUrl}
+                    onChange={(e) => handleSettingsChange('apiUrl', e.target.value)}
+                    placeholder="https://your-company.deputy.com/api/v1"
                     disabled={!settings.enabled}
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">API Key <span className="text-red-500">*</span></label>
+                  <input
+                    type="password"
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-100"
+                    value={settings.apiKey}
+                    onChange={(e) => handleSettingsChange('apiKey', e.target.value)}
+                    placeholder="Enter your Deputy API key"
+                    disabled={!settings.enabled}
+                  />
+                </div>
+
+                <ToggleSwitch
+                  label="Enable Automatic Sync"
+                  checked={settings.autoSyncEnabled}
+                  onChange={(checked) => handleSettingsChange('autoSyncEnabled', checked)}
+                  disabled={!settings.enabled}
+                />
+
                 {settings.autoSyncEnabled && (
-                  <div className="ml-8 mt-2">
-                    <Label>Automatic Sync Frequency</Label>
-                    <ChoiceGroup
-                      options={frequencyOptions}
-                      selectedKey={settings.autoSyncFrequency.toString()}
-                      onChange={handleFrequencyChange}
-                      disabled={!settings.enabled}
-                    />
+                  <div className="ml-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Automatic Sync Frequency</label>
+                    <div className="space-y-2">
+                      {frequencyOptions.map(opt => (
+                        <label key={opt.value} className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="syncFrequency"
+                            value={opt.value}
+                            checked={settings.autoSyncFrequency === opt.value}
+                            onChange={() => handleSettingsChange('autoSyncFrequency', opt.value)}
+                            disabled={!settings.enabled}
+                            className="w-4 h-4 text-red-600 focus:ring-red-500"
+                          />
+                          <span className="text-sm text-gray-700">{opt.label}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                <div className="mt-4">
-                  <Label>Last Sync</Label>
-                  <Text>
-                    {settings.lastSyncTime
-                      ? new Date(settings.lastSyncTime).toLocaleString()
-                      : 'Never synced'}
-                  </Text>
+                <div className="pt-2">
+                  <p className="text-sm text-gray-500">
+                    Last Sync: {settings.lastSyncTime ? new Date(settings.lastSyncTime).toLocaleString() : 'Never synced'}
+                  </p>
                 </div>
 
-                <Stack horizontal tokens={{ childrenGap: 10 }} horizontalAlign="end" className="mt-4">
-                  <PrimaryButton
-                    text="Save Settings"
+                <div className="flex justify-end pt-2">
+                  <button
                     onClick={saveSettings}
                     disabled={isSaving || !settings.enabled}
-                  />
-                </Stack>
-              </Stack>
-            )}
-          </PivotItem>
+                    className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                  >
+                    {isSaving ? 'Saving...' : 'Save Settings'}
+                  </button>
+                </div>
+              </SpaceBetween>
+            </Container>
+          )}
+        </>
+      )}
 
-          <PivotItem headerText="Sync History">
-            <CommandBar items={commandBarItems} className="mt-4" />
+      {/* Sync History Tab */}
+      {activeTab === 'history' && (
+        <Container
+          header={
+            <Header
+              actions={
+                <button
+                  onClick={() => loadData()}
+                  className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Refresh
+                </button>
+              }
+              variant="h2"
+            >
+              Sync History
+            </Header>
+          }
+        >
+          {isLoading ? (
+            <div className="flex justify-center py-12">
+              <svg className="animate-spin h-8 w-8 text-red-600" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            </div>
+          ) : logs.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-base font-medium text-gray-900 mb-1">No sync logs found</p>
+              <p className="text-sm text-gray-500">Start a sync to see the history.</p>
+            </div>
+          ) : (
+            <CloudscapeTable
+              columnDefinitions={[
+                {
+                  id: 'syncType',
+                  header: 'Sync Type',
+                  cell: (item: SyncLog) => {
+                    const syncNames = { all: 'Full Sync', employees: 'Employees', timesheets: 'Timesheets' };
+                    return syncNames[item.syncType];
+                  },
+                },
+                {
+                  id: 'startTime',
+                  header: 'Start Time',
+                  cell: (item: SyncLog) => new Date(item.startTime).toLocaleString(),
+                },
+                {
+                  id: 'endTime',
+                  header: 'End Time',
+                  cell: (item: SyncLog) => item.endTime ? new Date(item.endTime).toLocaleString() : '-',
+                },
+                {
+                  id: 'status',
+                  header: 'Status',
+                  cell: (item: SyncLog) => (
+                    <StatusIndicator type={item.status === 'completed' ? 'success' : item.status === 'in_progress' ? 'info' : 'error'}>
+                      {item.status.replace('_', ' ')}
+                    </StatusIndicator>
+                  ),
+                },
+                {
+                  id: 'records',
+                  header: 'Processed',
+                  cell: (item: SyncLog) => `${item.recordsProcessed}`,
+                },
+                {
+                  id: 'created',
+                  header: 'Created',
+                  cell: (item: SyncLog) => `${item.recordsCreated}`,
+                },
+                {
+                  id: 'updated',
+                  header: 'Updated',
+                  cell: (item: SyncLog) => `${item.recordsUpdated}`,
+                },
+                {
+                  id: 'failed',
+                  header: 'Failed',
+                  cell: (item: SyncLog) => `${item.recordsFailed}`,
+                },
+              ]}
+              items={logs}
+              empty="No sync logs found."
+            />
+          )}
+        </Container>
+      )}
 
-            {isLoading ? (
-              <div className="flex justify-center py-12">
-                <Spinner size={SpinnerSize.large} label="Loading sync history..." />
-              </div>
-            ) : logs.length === 0 ? (
-              <div className="bg-gray-50 rounded-lg p-8 text-center mt-4">
-                <Text variant="large">No sync logs found</Text>
-                <Text>Start a sync to see the history.</Text>
-              </div>
-            ) : (
-              <DetailsList
-                items={logs}
-                columns={logColumns}
-                layoutMode={DetailsListLayoutMode.justified}
-                selectionMode={SelectionMode.none}
-                className="mt-4"
-              />
-            )}
-          </PivotItem>
-        </Pivot>
-      </Stack>
-
-      {/* Confirm Sync Dialog */}
-      <Dialog
-        hidden={!showConfirmDialog}
-        onDismiss={() => setShowConfirmDialog(false)}
-        dialogContentProps={{
-          type: DialogType.normal,
-          title: 'Confirm Sync',
-          subText: `Are you sure you want to start a${syncType === 'all' ? ' full' : ''} sync of ${
-            syncType === 'all' ? 'employees and timesheets' : syncType
-          }?`
-        }}
+      {/* Confirm Sync Modal */}
+      <ConfirmationModal
+        visible={showConfirmDialog}
+        onCancel={() => setShowConfirmDialog(false)}
+        onConfirm={startSync}
+        header="Confirm Sync"
+        confirmLabel={isSyncing ? 'Syncing...' : 'Start Sync'}
+        loading={isSyncing}
       >
-        <DialogFooter>
-          <PrimaryButton
-            text="Start Sync"
-            onClick={startSync}
-            disabled={isSyncing}
-          />
-          <DefaultButton
-            text="Cancel"
-            onClick={() => setShowConfirmDialog(false)}
-            disabled={isSyncing}
-          />
-        </DialogFooter>
-      </Dialog>
-    </MainLayout>
+        Are you sure you want to start a{syncType === 'all' ? ' full' : ''} sync of {syncType === 'all' ? 'employees and timesheets' : syncType}?
+      </ConfirmationModal>
+    </SpaceBetween>
   );
 };
 

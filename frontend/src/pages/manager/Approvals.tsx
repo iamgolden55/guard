@@ -1,35 +1,7 @@
 import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
-import {
-  DetailsList,
-  DetailsListLayoutMode,
-  SelectionMode,
-  type IColumn,
-  Stack,
-  Text,
-  StackItem,
-  Spinner,
-  SpinnerSize,
-  MessageBar,
-  MessageBarType,
-  Link,
-  PrimaryButton,
-  Dialog,
-  DialogType,
-  DialogFooter,
-  TextField,
-  DefaultButton,
-  Pivot,
-  PivotItem,
-  SearchBox,
-  TooltipHost,
-  DirectionalHint,
-  Icon,
-  IconButton,
-  DetailsRow,
-  type IDetailsRowProps
-} from '@fluentui/react';
-import { MainLayout } from '../../layouts';
+import { Header, Container, CloudscapeTable, StatusIndicator, EmptyState, Alert } from '../../components/cloudscape';
+import type { ColumnDefinition } from '../../components/cloudscape/CloudscapeTable';
 import { shiftService, exchangeService, api } from '../../services';
 import type { ShiftExchange, OpenShiftRequest } from '../../services/exchangeService';
 import AdjustTimeDialog from '../../components/AdjustTimeDialog';
@@ -109,537 +81,331 @@ const Approvals: React.FC = () => {
   };
 
   // Exchange columns
-  const exchangeColumns: IColumn[] = [
+  const exchangeColumns: ColumnDefinition<ShiftExchange>[] = [
     {
-      key: 'id',
-      name: 'ID',
-      fieldName: 'id',
-      minWidth: 50,
-      maxWidth: 50,
-      isResizable: true,
+      id: 'id',
+      header: 'ID',
+      width: 60,
+      cell: (item) => <span className="text-gray-500 font-mono text-xs">#{item.id}</span>,
     },
     {
-      key: 'requesting_user',
-      name: 'Requesting Staff',
+      id: 'requesting_user',
+      header: 'Requesting Staff',
       minWidth: 150,
-      maxWidth: 170,
-      isResizable: true,
-      onRender: (item: ShiftExchange) => (
-        <Text>{`${item.requesting_user_details.first_name} ${item.requesting_user_details.last_name}`}</Text>
+      cell: (item) => (
+        <span>{`${item.requesting_user_details.first_name} ${item.requesting_user_details.last_name}`}</span>
       ),
     },
     {
-      key: 'target_user',
-      name: 'Target Staff',
+      id: 'target_user',
+      header: 'Target Staff',
       minWidth: 150,
-      maxWidth: 170,
-      isResizable: true,
-      onRender: (item: ShiftExchange) => (
-        <Text>{`${item.target_user_details.first_name} ${item.target_user_details.last_name}`}</Text>
+      cell: (item) => (
+        <span>{`${item.target_user_details.first_name} ${item.target_user_details.last_name}`}</span>
       ),
     },
     {
-      key: 'venue',
-      name: 'Venue',
+      id: 'venue',
+      header: 'Venue',
       minWidth: 120,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: ShiftExchange) => <Text>{item.original_shift_details.venue.name}</Text>,
+      cell: (item) => <span>{item.original_shift_details.venue.name}</span>,
     },
     {
-      key: 'date',
-      name: 'Date',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: ShiftExchange) => (
-        <Text>{new Date(item.original_shift_details.start_time).toLocaleDateString()}</Text>
+      id: 'date',
+      header: 'Date',
+      width: 110,
+      cell: (item) => (
+        <span>{new Date(item.original_shift_details.start_time).toLocaleDateString()}</span>
       ),
     },
     {
-      key: 'status',
-      name: 'Status',
-      minWidth: 120,
-      maxWidth: 120,
-      isResizable: true,
-      onRender: (item: ShiftExchange) => (
-        <div
-          style={{
-            backgroundColor: item.status === 'accepted_by_target' ? '#F59E0B' : '#9CA3AF',
-            color: 'white',
-            padding: '4px 8px',
-            borderRadius: '12px',
-            display: 'inline-block',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            textTransform: 'uppercase'
-          }}
-        >
-          {item.status.replace('_', ' ')}
-        </div>
-      ),
+      id: 'status',
+      header: 'Status',
+      width: 130,
+      cell: (item) => {
+        const statusType = item.status === 'accepted_by_target' ? 'warning' : 'stopped';
+        return (
+          <StatusIndicator type={statusType}>
+            {item.status.replace(/_/g, ' ')}
+          </StatusIndicator>
+        );
+      },
     },
     {
-      key: 'reason',
-      name: 'Reason',
+      id: 'reason',
+      header: 'Reason',
       minWidth: 200,
-      maxWidth: 250,
-      isResizable: true,
-      onRender: (item: ShiftExchange) => <Text>{item.request_reason}</Text>,
+      cell: (item) => <span className="text-gray-600">{item.request_reason}</span>,
     },
     {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 150,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: ShiftExchange) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
+      id: 'actions',
+      header: 'Actions',
+      width: 160,
+      cell: (item) => (
+        <div className="flex items-center gap-2">
           {item.status === 'accepted_by_target' && (
             <>
-              <Link onClick={() => handleApproveExchange(item.id)}>
+              <button
+                onClick={() => handleApproveExchange(item.id)}
+                className="px-3 h-8 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+              >
                 Approve
-              </Link>
-              <Link onClick={() => handleRejectExchange(item.id)}>
+              </button>
+              <button
+                onClick={() => handleRejectExchange(item.id)}
+                className="px-3 h-8 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
                 Reject
-              </Link>
+              </button>
             </>
           )}
-        </Stack>
+        </div>
       ),
     },
   ];
 
   // Open Shift Request columns
-  const openRequestColumns: IColumn[] = [
+  const openRequestColumns: ColumnDefinition<OpenShiftRequest>[] = [
     {
-      key: 'id',
-      name: 'ID',
-      fieldName: 'id',
-      minWidth: 50,
-      maxWidth: 50,
-      isResizable: true,
+      id: 'id',
+      header: 'ID',
+      width: 60,
+      cell: (item) => <span className="text-gray-500 font-mono text-xs">#{item.id}</span>,
     },
     {
-      key: 'requesting_user',
-      name: 'Releasing Staff',
+      id: 'requesting_user',
+      header: 'Releasing Staff',
       minWidth: 150,
-      maxWidth: 170,
-      isResizable: true,
-      onRender: (item: OpenShiftRequest) => (
-        <Text>{`${item.requesting_user_details.first_name} ${item.requesting_user_details.last_name}`}</Text>
+      cell: (item) => (
+        <span>{`${item.requesting_user_details.first_name} ${item.requesting_user_details.last_name}`}</span>
       ),
     },
     {
-      key: 'claimed_by',
-      name: 'Claimed By',
+      id: 'claimed_by',
+      header: 'Claimed By',
       minWidth: 150,
-      maxWidth: 170,
-      isResizable: true,
-      onRender: (item: OpenShiftRequest) => (
-        <Text>
-          {item.claimed_by_details 
+      cell: (item) => (
+        <span>
+          {item.claimed_by_details
             ? `${item.claimed_by_details.first_name} ${item.claimed_by_details.last_name}`
-            : 'Not claimed'
+            : <span className="text-gray-400 italic">Not claimed</span>
           }
-        </Text>
+        </span>
       ),
     },
     {
-      key: 'venue',
-      name: 'Venue',
+      id: 'venue',
+      header: 'Venue',
       minWidth: 120,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: OpenShiftRequest) => <Text>{item.original_shift_details.venue.name}</Text>,
+      cell: (item) => <span>{item.original_shift_details.venue.name}</span>,
     },
     {
-      key: 'date',
-      name: 'Date',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: OpenShiftRequest) => (
-        <Text>{new Date(item.original_shift_details.start_time).toLocaleDateString()}</Text>
+      id: 'date',
+      header: 'Date',
+      width: 110,
+      cell: (item) => (
+        <span>{new Date(item.original_shift_details.start_time).toLocaleDateString()}</span>
       ),
     },
     {
-      key: 'status',
-      name: 'Status',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: OpenShiftRequest) => (
-        <div
-          style={{
-            backgroundColor: item.status === 'claimed' ? '#F59E0B' : item.status === 'open' ? '#10B981' : '#9CA3AF',
-            color: 'white',
-            padding: '4px 8px',
-            borderRadius: '12px',
-            display: 'inline-block',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            textTransform: 'uppercase'
-          }}
-        >
-          {item.status}
-        </div>
-      ),
+      id: 'status',
+      header: 'Status',
+      width: 110,
+      cell: (item) => {
+        const statusType = item.status === 'claimed' ? 'warning' : item.status === 'open' ? 'success' : 'stopped';
+        return (
+          <StatusIndicator type={statusType}>
+            {item.status}
+          </StatusIndicator>
+        );
+      },
     },
     {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 150,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: OpenShiftRequest) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
+      id: 'actions',
+      header: 'Actions',
+      width: 160,
+      cell: (item) => (
+        <div className="flex items-center gap-2">
           {item.status === 'claimed' && (
             <>
-              <Link onClick={() => handleApproveOpenRequest(item.id)}>
+              <button
+                onClick={() => handleApproveOpenRequest(item.id)}
+                className="px-3 h-8 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+              >
                 Approve
-              </Link>
-              <Link onClick={() => handleRejectOpenRequest(item.id)}>
+              </button>
+              <button
+                onClick={() => handleRejectOpenRequest(item.id)}
+                className="px-3 h-8 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
                 Reject
-              </Link>
+              </button>
             </>
           )}
-        </Stack>
+        </div>
       ),
     },
   ];
 
   // Priority indicator component
   const PriorityPill: React.FC<{priority: 'low' | 'medium' | 'high' | 'critical'}> = ({ priority }) => {
-    let backgroundColor = '';
-    let color = 'white';
-
-    switch(priority) {
-      case 'critical':
-        backgroundColor = '#7C2D12'; // Dark red/maroon
-        break;
-      case 'high':
-        backgroundColor = '#EF4444'; // Red
-        break;
-      case 'medium':
-        backgroundColor = '#F59E0B'; // Yellow
-        color = 'black';
-        break;
-      case 'low':
-        backgroundColor = '#10B981'; // Green
-        break;
-      default:
-        backgroundColor = '#9CA3AF'; // Gray
-    }
-
-    return (
-      <div
-        style={{
-          backgroundColor,
-          color,
-          padding: '4px 8px',
-          borderRadius: '12px',
-          display: 'inline-block',
-          fontSize: '12px',
-          fontWeight: 'bold',
-          textTransform: 'uppercase'
-        }}
-      >
-        {priority}
-      </div>
-    );
+    const config: Record<string, { type: 'success' | 'warning' | 'error' | 'stopped' }> = {
+      critical: { type: 'error' },
+      high: { type: 'error' },
+      medium: { type: 'warning' },
+      low: { type: 'success' },
+    };
+    const c = config[priority] || config.low;
+    return <StatusIndicator type={c.type}>{priority}</StatusIndicator>;
   };
 
   // Incomplete Shifts columns
-  const incompleteColumns: IColumn[] = [
+  const incompleteColumns: ColumnDefinition<IncompleteShift>[] = [
     {
-      key: 'priority',
-      name: 'Priority',
-      minWidth: 70,
-      maxWidth: 80,
-      isResizable: true,
-      onRender: (item: IncompleteShift) => <PriorityPill priority={item.priority} />,
+      id: 'priority',
+      header: 'Priority',
+      width: 100,
+      cell: (item) => <PriorityPill priority={item.priority} />,
     },
     {
-      key: 'type',
-      name: 'Issue',
-      minWidth: 100,
-      maxWidth: 120,
-      isResizable: true,
-      onRender: (item: IncompleteShift) => (
-        <div
-          style={{
-            backgroundColor: item.type === 'no_checkin' ? '#EF4444' : '#F59E0B',
-            color: 'white',
-            padding: '4px 8px',
-            borderRadius: '12px',
-            display: 'inline-block',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            textTransform: 'uppercase'
-          }}
-        >
+      id: 'type',
+      header: 'Issue',
+      width: 130,
+      cell: (item) => (
+        <StatusIndicator type={item.type === 'no_checkin' ? 'error' : 'warning'}>
           {item.type === 'no_checkin' ? 'No Check-in' : 'No Check-out'}
-        </div>
+        </StatusIndicator>
       ),
     },
     {
-      key: 'staff',
-      name: 'Staff Member',
+      id: 'staff',
+      header: 'Staff Member',
       minWidth: 150,
-      maxWidth: 170,
-      isResizable: true,
-      onRender: (item: IncompleteShift) => (
-        <Text>{`${item.staff_details.first_name} ${item.staff_details.last_name}`}</Text>
+      cell: (item) => (
+        <span>{`${item.staff_details.first_name} ${item.staff_details.last_name}`}</span>
       ),
     },
     {
-      key: 'venue',
-      name: 'Venue',
+      id: 'venue',
+      header: 'Venue',
       minWidth: 120,
-      maxWidth: 150,
-      isResizable: true,
-      onRender: (item: IncompleteShift) => <Text>{item.venue_details.name}</Text>,
+      cell: (item) => <span>{item.venue_details.name}</span>,
     },
     {
-      key: 'date',
-      name: 'Date',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: IncompleteShift) => <Text>{new Date(item.start_time).toLocaleDateString()}</Text>,
+      id: 'date',
+      header: 'Date',
+      width: 110,
+      cell: (item) => <span>{new Date(item.start_time).toLocaleDateString()}</span>,
     },
     {
-      key: 'hours_overdue',
-      name: 'Hours Overdue',
-      minWidth: 120,
-      maxWidth: 140,
-      isResizable: true,
-      onRender: (item: IncompleteShift) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <Text style={{
-            color: item.requires_manual_resolution ? '#DC2626' : item.hours_overdue > 2 ? '#EF4444' : '#F59E0B',
-            fontWeight: 'bold'
-          }}>
+      id: 'hours_overdue',
+      header: 'Hours Overdue',
+      width: 130,
+      cell: (item) => (
+        <div className="flex items-center gap-1">
+          <span className={`font-bold ${
+            item.requires_manual_resolution ? 'text-red-600' : item.hours_overdue > 2 ? 'text-red-500' : 'text-amber-500'
+          }`}>
             {item.requires_manual_resolution ? '24+' : item.hours_overdue.toFixed(1)}
-          </Text>
+          </span>
           {item.requires_manual_resolution && (
-            <span title={`Actual: ${item.hours_overdue_raw?.toFixed(1) || '24+'} hours - Requires manual resolution`}
-                  style={{ color: '#DC2626', cursor: 'help' }}>
-              ⚠️
+            <span
+              title={`Actual: ${item.hours_overdue_raw?.toFixed(1) || '24+'} hours - Requires manual resolution`}
+              className="text-red-600 cursor-help"
+            >
+              &#9888;
             </span>
           )}
         </div>
       ),
     },
     {
-      key: 'urgency',
-      name: 'Action Required',
-      minWidth: 160,
-      maxWidth: 180,
-      isResizable: true,
-      onRender: (item: IncompleteShift) => {
+      id: 'urgency',
+      header: 'Action Required',
+      minWidth: 170,
+      cell: (item) => {
         const urgencyConfig = {
-          critical: {
-            text: 'Immediate action required',
-            color: '#dc2626',
-            bgColor: '#fef2f2',
-            icon: 'WarningSolid'
-          },
-          high: {
-            text: 'Action within 2 hours',
-            color: '#ea580c',
-            bgColor: '#fff7ed',
-            icon: 'Warning'
-          },
-          medium: {
-            text: 'Action within 4 hours',
-            color: '#d97706',
-            bgColor: '#fffbeb',
-            icon: 'Clock'
-          },
-          low: {
-            text: 'Action recommended',
-            color: '#059669',
-            bgColor: '#ecfdf5',
-            icon: 'Info'
-          }
+          critical: { text: 'Immediate action required', bgClass: 'bg-red-50', textClass: 'text-red-600' },
+          high: { text: 'Action within 2 hours', bgClass: 'bg-orange-50', textClass: 'text-orange-600' },
+          medium: { text: 'Action within 4 hours', bgClass: 'bg-amber-50', textClass: 'text-amber-600' },
+          low: { text: 'Action recommended', bgClass: 'bg-green-50', textClass: 'text-green-600' },
         };
-
         const urgency = urgencyConfig[item.priority];
-
         return (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              backgroundColor: urgency.bgColor,
-              padding: '4px 8px',
-              borderRadius: '6px'
-            }}
-          >
-            <Icon iconName={urgency.icon} style={{ color: urgency.color, fontSize: 14 }} />
-            <Text style={{ color: urgency.color, fontSize: 12, fontWeight: 500 }}>
-              {urgency.text}
-            </Text>
-          </div>
+          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${urgency.bgClass} ${urgency.textClass}`}>
+            {item.priority === 'critical' && (
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+            )}
+            {urgency.text}
+          </span>
         );
       },
     },
     {
-      key: 'auto_checkout',
-      name: 'Auto-Checkout',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: IncompleteShift) => (
-        <Text>
-          {item.auto_checkout_eligible ?
-            <span style={{ color: '#10B981' }}>✓ Eligible</span> :
-            <span style={{ color: '#EF4444' }}>✗ Not Eligible</span>
-          }
-        </Text>
+      id: 'auto_checkout',
+      header: 'Auto-Checkout',
+      width: 110,
+      cell: (item) => (
+        <StatusIndicator type={item.auto_checkout_eligible ? 'success' : 'error'}>
+          {item.auto_checkout_eligible ? 'Eligible' : 'Not Eligible'}
+        </StatusIndicator>
       ),
     },
     {
-      key: 'force_timeout',
-      name: 'Force Timeout',
-      minWidth: 100,
-      maxWidth: 100,
-      isResizable: true,
-      onRender: (item: IncompleteShift) => (
-        <Text>
-          {item.force_timeout_eligible ? 
-            <span style={{ color: '#EF4444' }}>⚠ Ready</span> : 
-            <span style={{ color: '#9CA3AF' }}>⏳ Pending</span>
-          }
-        </Text>
+      id: 'force_timeout',
+      header: 'Force Timeout',
+      width: 110,
+      cell: (item) => (
+        <StatusIndicator type={item.force_timeout_eligible ? 'warning' : 'pending'}>
+          {item.force_timeout_eligible ? 'Ready' : 'Pending'}
+        </StatusIndicator>
       ),
     },
     {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 360,
-      maxWidth: 420,
-      isResizable: true,
-      onRender: (item: IncompleteShift) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }} verticalAlign="center">
+      id: 'actions',
+      header: 'Actions',
+      minWidth: 340,
+      cell: (item) => (
+        <div className="flex items-center gap-2">
           {item.type === 'no_checkin' && (
-            <TooltipHost
-              content="Record a manual check-in time for this staff member. Use this when staff forgot to check in or had technical issues."
-              directionalHint={DirectionalHint.topCenter}
+            <button
+              onClick={() => handleManualCheckin(item)}
+              title="Record a manual check-in time for this staff member. Use this when staff forgot to check in or had technical issues."
+              className="px-3 h-8 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
             >
-              <PrimaryButton
-                text="Check In"
-                iconProps={{ iconName: 'BoxCheckmarkSolid' }}
-                onClick={() => handleManualCheckin(item)}
-                styles={{
-                  root: {
-                    backgroundColor: '#059669',
-                    borderColor: '#059669',
-                    borderRadius: '6px',
-                    height: '32px',
-                    padding: '0 12px'
-                  },
-                  rootHovered: {
-                    backgroundColor: '#047857',
-                    borderColor: '#047857'
-                  },
-                  rootPressed: {
-                    backgroundColor: '#065f46',
-                    borderColor: '#065f46'
-                  }
-                }}
-              />
-            </TooltipHost>
+              Check In
+            </button>
           )}
           {item.type === 'no_checkout' && (
-            <TooltipHost
-              content="Record a manual check-out time for this staff member. Use this when staff forgot to check out or had technical issues."
-              directionalHint={DirectionalHint.topCenter}
+            <button
+              onClick={() => handleManualCheckout(item)}
+              title="Record a manual check-out time for this staff member. Use this when staff forgot to check out or had technical issues."
+              className="px-3 h-8 text-xs font-medium text-white bg-sky-600 rounded-lg hover:bg-sky-700 transition-colors"
             >
-              <PrimaryButton
-                text="Check Out"
-                iconProps={{ iconName: 'BoxCheckmarkSolid' }}
-                onClick={() => handleManualCheckout(item)}
-                styles={{
-                  root: {
-                    backgroundColor: '#0078d4',
-                    borderColor: '#0078d4',
-                    borderRadius: '6px',
-                    height: '32px',
-                    padding: '0 12px'
-                  },
-                  rootHovered: {
-                    backgroundColor: '#106ebe',
-                    borderColor: '#106ebe'
-                  },
-                  rootPressed: {
-                    backgroundColor: '#005a9e',
-                    borderColor: '#005a9e'
-                  }
-                }}
-              />
-            </TooltipHost>
+              Check Out
+            </button>
           )}
-          <TooltipHost
-            content="Administratively complete this shift. Use this when the shift cannot be resolved normally and needs to be marked complete for payroll."
-            directionalHint={DirectionalHint.topCenter}
+          <button
+            onClick={() => handleForceComplete(item)}
+            title="Administratively complete this shift. Use this when the shift cannot be resolved normally and needs to be marked complete for payroll."
+            className="px-3 h-8 text-xs font-medium text-red-600 bg-white border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
           >
-            <DefaultButton
-              text="Force Complete"
-              iconProps={{ iconName: 'CompletedSolid' }}
-              onClick={() => handleForceComplete(item)}
-              styles={{
-                root: {
-                  borderColor: '#dc2626',
-                  color: '#dc2626',
-                  borderRadius: '6px',
-                  height: '32px',
-                  padding: '0 12px'
-                },
-                rootHovered: {
-                  borderColor: '#b91c1c',
-                  color: '#b91c1c',
-                  backgroundColor: '#fef2f2'
-                },
-                rootPressed: {
-                  borderColor: '#991b1b',
-                  color: '#991b1b',
-                  backgroundColor: '#fee2e2'
-                }
-              }}
-            />
-          </TooltipHost>
+            Force Complete
+          </button>
           {item.check_in_time && (
-            <TooltipHost
-              content="Adjust the recorded check-in or check-out times. Use this to correct time tracking errors."
-              directionalHint={DirectionalHint.topCenter}
+            <button
+              onClick={() => handleAdjustTimes(item)}
+              title="Adjust the recorded check-in or check-out times. Use this to correct time tracking errors."
+              className="w-8 h-8 inline-flex items-center justify-center text-sky-600 bg-sky-50 rounded-lg hover:bg-sky-100 transition-colors"
             >
-              <IconButton
-                iconProps={{ iconName: 'Clock' }}
-                title="Adjust Times"
-                onClick={() => handleAdjustTimes(item)}
-                styles={{
-                  root: {
-                    backgroundColor: '#eff6ff',
-                    borderRadius: '6px',
-                    height: '32px',
-                    width: '32px'
-                  },
-                  rootHovered: {
-                    backgroundColor: '#dbeafe'
-                  },
-                  icon: {
-                    color: '#0078d4',
-                    fontSize: 16
-                  }
-                }}
-              />
-            </TooltipHost>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
           )}
-        </Stack>
+        </div>
       ),
     },
   ];
@@ -652,7 +418,7 @@ const Approvals: React.FC = () => {
     try {
       // Get pending approvals from the exchange service
       const approvals = await exchangeService.getPendingApprovals();
-      
+
       setExchanges(approvals.exchange_requests || []);
       setOpenShiftRequests(approvals.shift_claims || []);
       setFilteredExchanges(approvals.exchange_requests || []);
@@ -878,429 +644,419 @@ const Approvals: React.FC = () => {
     loadData();
   }, [loadData]);
 
+  const tabs = [
+    { key: 'exchange-approvals', label: 'Exchange Approvals' },
+    { key: 'incomplete-shifts', label: 'Incomplete Shifts' },
+  ];
+
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Text variant="xxLarge" style={{ color: '#B91C1C' }}>Pending Approvals</Text>
-        
-        <Pivot
-          selectedKey={activeTab}
-          onLinkClick={(item) => setActiveTab(item?.props.itemKey || 'exchange-approvals')}
-          headersOnly={false}
-        >
-          <PivotItem headerText="Exchange Approvals" itemKey="exchange-approvals">
-            <Stack tokens={{ childrenGap: 20 }}>
-              <Text variant="large">Direct Exchange Requests</Text>
-              
-              {error && (
-                <MessageBar
-                  messageBarType={MessageBarType.error}
-                  isMultiline={false}
-                  dismissButtonAriaLabel="Close"
-                >
-                  {error}
-                </MessageBar>
-              )}
+    <div className="space-y-6">
+      <Header variant="h1" description="Review and manage pending shift exchanges, open shift claims, and incomplete shifts.">
+        Pending Approvals
+      </Header>
 
-              {isLoading ? (
-                <div className="flex justify-center py-12">
-                  <Spinner size={SpinnerSize.large} label="Loading exchange requests..." />
-                </div>
-              ) : filteredExchanges.length === 0 ? (
-                <div className="bg-gray-50 rounded-lg p-8 text-center">
-                  <Text variant="large">No exchange requests pending approval</Text><br />
-                  <Text>No staff have accepted exchange requests that need manager approval.</Text>
-                </div>
-              ) : (
-                <DetailsList
-                  items={filteredExchanges}
-                  columns={exchangeColumns}
-                  layoutMode={DetailsListLayoutMode.justified}
-                  selectionMode={SelectionMode.none}
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-0 -mb-px">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={
+                activeTab === tab.key
+                  ? 'px-4 py-2.5 text-sm font-medium text-red-600 border-b-2 border-red-600 whitespace-nowrap'
+                  : 'px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent whitespace-nowrap'
+              }
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert type="error" dismissible onDismiss={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Exchange Approvals Tab */}
+      {activeTab === 'exchange-approvals' && (
+        <div className="space-y-6">
+          {/* Direct Exchange Requests */}
+          <Container>
+            <CloudscapeTable<ShiftExchange>
+              items={filteredExchanges}
+              columnDefinitions={exchangeColumns}
+              trackBy="id"
+              loading={isLoading}
+              loadingText="Loading exchange requests..."
+              header={
+                <Header variant="h2" counter={`${filteredExchanges.length}`}>
+                  Direct Exchange Requests
+                </Header>
+              }
+              empty={
+                <EmptyState
+                  title="No exchange requests pending approval"
+                  description="No staff have accepted exchange requests that need manager approval."
                 />
-              )}
+              }
+              variant="embedded"
+              wrapLines
+            />
+          </Container>
 
-              <Text variant="large" style={{ marginTop: '20px' }}>Open Shift Claims</Text>
-              
-              {filteredOpenRequests.length === 0 ? (
-                <div className="bg-gray-50 rounded-lg p-8 text-center">
-                  <Text variant="large">No open shift claims pending approval</Text><br />
-                  <Text>No staff have claimed open shifts that need manager approval.</Text>
-                </div>
-              ) : (
-                <DetailsList
-                  items={filteredOpenRequests}
-                  columns={openRequestColumns}
-                  layoutMode={DetailsListLayoutMode.justified}
-                  selectionMode={SelectionMode.none}
+          {/* Open Shift Claims */}
+          <Container>
+            <CloudscapeTable<OpenShiftRequest>
+              items={filteredOpenRequests}
+              columnDefinitions={openRequestColumns}
+              trackBy="id"
+              loading={false}
+              header={
+                <Header variant="h2" counter={`${filteredOpenRequests.length}`}>
+                  Open Shift Claims
+                </Header>
+              }
+              empty={
+                <EmptyState
+                  title="No open shift claims pending approval"
+                  description="No staff have claimed open shifts that need manager approval."
                 />
-              )}
-            </Stack>
-          </PivotItem>
+              }
+              variant="embedded"
+              wrapLines
+            />
+          </Container>
+        </div>
+      )}
 
-          <PivotItem headerText="Incomplete Shifts" itemKey="incomplete-shifts">
-            <Stack tokens={{ childrenGap: 20 }}>
-              <Stack horizontal tokens={{ childrenGap: 10 }}>
-                <StackItem grow={3}>
-                  <SearchBox
-                    placeholder="Search by staff name or venue"
-                    onChange={(_, newValue) => setIncompleteSearchText(newValue || '')}
-                    onClear={() => setIncompleteSearchText('')}
-                    value={incompleteSearchText}
-                  />
-                </StackItem>
-              </Stack>
+      {/* Incomplete Shifts Tab */}
+      {activeTab === 'incomplete-shifts' && (
+        <Container>
+          {filteredIncompleteShifts.length > 0 && !isLoading && (
+            <Alert type="warning" header={`${filteredIncompleteShifts.length} shifts need manager attention`}>
+              High priority items require immediate action. Click on actions to manually resolve.
+            </Alert>
+          )}
 
-              {error && (
-                <MessageBar
-                  messageBarType={MessageBarType.error}
-                  isMultiline={false}
-                  dismissButtonAriaLabel="Close"
-                >
-                  {error}
-                </MessageBar>
-              )}
-
-              {isLoading ? (
-                <div className="flex justify-center py-12">
-                  <Spinner size={SpinnerSize.large} label="Loading incomplete shifts..." />
-                </div>
-              ) : filteredIncompleteShifts.length === 0 ? (
-                <div className="bg-green-50 rounded-lg p-8 text-center">
-                  <Text variant="large" style={{ color: '#10B981' }}>All shifts are complete!</Text><br />
-                  <Text>No shifts require manager intervention at this time.</Text>
-                </div>
-              ) : (
-                <div>
-                  <div className="bg-yellow-50 p-3 rounded-md mb-4">
-                    <Text style={{ color: '#D97706', fontWeight: 'bold' }}>
-                      ⚠ {filteredIncompleteShifts.length} shifts need manager attention
-                    </Text>
-                    <Text style={{ color: '#92400E' }}>
-                      High priority items require immediate action. Click on actions to manually resolve.
-                    </Text>
-                  </div>
-                  
-                  <DetailsList
-                    items={filteredIncompleteShifts}
-                    columns={incompleteColumns}
-                    layoutMode={DetailsListLayoutMode.justified}
-                    selectionMode={SelectionMode.none}
-                    onRenderRow={(props?: IDetailsRowProps) => {
-                      if (!props) return null;
-                      const item = props.item as IncompleteShift;
-                      const isCritical = item.priority === 'critical';
-                      const isHigh = item.priority === 'high';
-
-                      const rowStyles = {
-                        root: {
-                          backgroundColor: isCritical
-                            ? '#fef2f2'
-                            : isHigh
-                            ? '#fff7ed'
-                            : undefined,
-                          borderLeft: isCritical
-                            ? '4px solid #dc2626'
-                            : isHigh
-                            ? '4px solid #f59e0b'
-                            : undefined,
-                          transition: 'all 0.2s ease',
-                          selectors: {
-                            '&:hover': {
-                              backgroundColor: isCritical
-                                ? '#fee2e2'
-                                : isHigh
-                                ? '#ffedd5'
-                                : '#f9fafb'
-                            }
-                          }
-                        }
-                      };
-
-                      return <DetailsRow {...props} styles={rowStyles} />;
-                    }}
-                  />
-                </div>
-              )}
-            </Stack>
-          </PivotItem>
-        </Pivot>
-      </Stack>
+          <div className={filteredIncompleteShifts.length > 0 && !isLoading ? 'mt-4' : ''}>
+            <CloudscapeTable<IncompleteShift>
+              items={filteredIncompleteShifts}
+              columnDefinitions={incompleteColumns}
+              trackBy="id"
+              loading={isLoading}
+              loadingText="Loading incomplete shifts..."
+              header={
+                <Header variant="h2" counter={`${filteredIncompleteShifts.length}`}>
+                  Incomplete Shifts
+                </Header>
+              }
+              filter={
+                <input
+                  type="text"
+                  placeholder="Search by staff name or venue"
+                  value={incompleteSearchText}
+                  onChange={(e) => setIncompleteSearchText(e.target.value)}
+                  className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+              }
+              empty={
+                <EmptyState
+                  title="All shifts are complete!"
+                  description="No shifts require manager intervention at this time."
+                />
+              }
+              variant="embedded"
+              wrapLines
+            />
+          </div>
+        </Container>
+      )}
 
       {/* Manual Action Dialog */}
-      <Dialog
-        hidden={!showManualDialog}
-        dialogContentProps={{
-          type: DialogType.largeHeader,
-          title: `${
-            manualAction === 'checkin' ? 'Manual Check-in' :
-            manualAction === 'checkout' ? 'Manual Check-out' :
-            'Force Complete Shift'
-          }`
-        }}
-        onDismiss={() => setShowManualDialog(false)}
-        minWidth={560}
-        maxWidth={600}
-      >
-        <Stack tokens={{ childrenGap: 16 }}>
-          {/* Context Card - Staff & Shift Info */}
-          {selectedShiftForManual && (
-            <div
-              style={{
-                backgroundColor: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                padding: '12px 16px'
-              }}
-            >
-              <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 12 }}>
-                <div
-                  style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: '50%',
-                    backgroundColor: '#e2e8f0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 600,
-                    color: '#475569',
-                    fontSize: 16
-                  }}
-                >
-                  {selectedShiftForManual.staff_details.first_name[0]}
-                  {selectedShiftForManual.staff_details.last_name[0]}
-                </div>
-                <Stack tokens={{ childrenGap: 4 }}>
-                  <Text style={{ fontWeight: 600, fontSize: 15 }}>
-                    {selectedShiftForManual.staff_details.first_name} {selectedShiftForManual.staff_details.last_name}
-                  </Text>
-                  <Text style={{ color: '#64748b', fontSize: 13 }}>
-                    {selectedShiftForManual.venue_details.name}
-                  </Text>
-                  <Text style={{ color: '#94a3b8', fontSize: 12 }}>
-                    Scheduled: {new Date(selectedShiftForManual.start_time).toLocaleString()} - {new Date(selectedShiftForManual.end_time).toLocaleTimeString()}
-                  </Text>
-                </Stack>
-              </Stack>
-            </div>
-          )}
+      {showManualDialog && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+            onClick={() => !isProcessingManual && setShowManualDialog(false)}
+            aria-hidden="true"
+          />
 
-          {/* Force Complete Warning */}
-          {manualAction === 'force_complete' && (
-            <MessageBar
-              messageBarType={MessageBarType.warning}
-              styles={{
-                root: { borderRadius: '6px' }
-              }}
-            >
-              <Stack tokens={{ childrenGap: 4 }}>
-                <Text style={{ fontWeight: 600 }}>Administrative Action</Text>
-                <Text style={{ fontSize: 13 }}>
+          {/* Modal */}
+          <div
+            className="relative bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+          >
+            {/* Header */}
+            <div className="px-6 pt-6 pb-0">
+              <h2 className="text-lg font-semibold text-gray-900">
+                {manualAction === 'checkin' ? 'Manual Check-in' :
+                 manualAction === 'checkout' ? 'Manual Check-out' :
+                 'Force Complete Shift'}
+              </h2>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-4 space-y-4">
+              {/* Context Card - Staff & Shift Info */}
+              {selectedShiftForManual && (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center font-semibold text-gray-600 text-base flex-shrink-0">
+                      {selectedShiftForManual.staff_details.first_name[0]}
+                      {selectedShiftForManual.staff_details.last_name[0]}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 text-[15px]">
+                        {selectedShiftForManual.staff_details.first_name} {selectedShiftForManual.staff_details.last_name}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {selectedShiftForManual.venue_details.name}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Scheduled: {new Date(selectedShiftForManual.start_time).toLocaleString()} - {new Date(selectedShiftForManual.end_time).toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Force Complete Warning */}
+              {manualAction === 'force_complete' && (
+                <Alert type="warning" header="Administrative Action">
                   This will mark the shift as complete and process it for payroll.
                   This action cannot be easily undone without creating a manual adjustment.
-                </Text>
-              </Stack>
-            </MessageBar>
-          )}
+                </Alert>
+              )}
 
-          {/* What This Will Do Section */}
-          <div
-            style={{
-              backgroundColor: manualAction === 'force_complete' ? '#fef3c7' : '#eff6ff',
-              border: `1px solid ${manualAction === 'force_complete' ? '#fcd34d' : '#bfdbfe'}`,
-              borderRadius: '8px',
-              padding: '12px 16px'
-            }}
-          >
-            <Stack tokens={{ childrenGap: 8 }}>
-              <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 6 }}>
-                <Icon
-                  iconName="Info"
-                  style={{
-                    color: manualAction === 'force_complete' ? '#d97706' : '#3b82f6',
-                    fontSize: 14
-                  }}
-                />
-                <Text style={{ fontWeight: 600, fontSize: 13 }}>What this will do:</Text>
-              </Stack>
-              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: '#334155' }}>
-                {manualAction === 'checkin' && (
-                  <>
-                    <li>Record a manual check-in time for this staff member</li>
-                    <li>Update shift status to "In Progress"</li>
-                    <li>Your signature will be logged as the authorizing manager</li>
-                  </>
-                )}
-                {manualAction === 'checkout' && (
-                  <>
-                    <li>Record a manual check-out time based on hours worked</li>
-                    <li>Mark shift as "Completed" and ready for approval</li>
-                    <li>Calculate payment based on the hours specified</li>
-                    <li>Your signature will be logged as the authorizing manager</li>
-                  </>
-                )}
-                {manualAction === 'force_complete' && (
-                  <>
-                    <li>Set both check-in and check-out times administratively</li>
-                    <li>Mark shift as "Completed" immediately</li>
-                    <li>Process hours for payroll calculation</li>
-                    <li>Skip normal approval workflow</li>
-                    <li>Create an audit record of this administrative action</li>
-                  </>
-                )}
-              </ul>
-            </Stack>
-          </div>
-
-          {/* Form Fields */}
-          <Stack tokens={{ childrenGap: 12 }}>
-            <TextField
-              label="Manager Signature"
-              value={manualSignature}
-              onChange={(_, newValue) => setManualSignature(newValue || '')}
-              placeholder="Enter your full name as digital signature"
-              required
-              description="Your name will be recorded as authorization for this action"
-            />
-
-            <TextField
-              label="Reason for Manual Intervention"
-              value={manualNotes}
-              onChange={(_, newValue) => setManualNotes(newValue || '')}
-              placeholder="e.g., Network issues, Staff emergency, App malfunction"
-              multiline
-              rows={2}
-              description="Explain why this manual action is needed"
-            />
-
-            {manualAction === 'checkin' && (
-              <TextField
-                label="Actual Arrival Time"
-                type="datetime-local"
-                value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
-                onChange={(_, newValue) => setManualCheckinTime(newValue ? new Date(newValue).toISOString() : '')}
-                max={new Date().toISOString().slice(0, 16)}
-                description="Adjust if the staff member arrived at a different time than now"
-              />
-            )}
-
-            {(manualAction === 'checkout' || manualAction === 'force_complete') && (
-              <>
-                <TextField
-                  label="Actual Hours Worked"
-                  type="number"
-                  value={manualHours}
-                  onChange={(_, newValue) => {
-                    setManualHours(newValue || '');
-
-                    // Auto-calculate checkout time if we have check-in time (checkout action only)
-                    if (manualAction === 'checkout') {
-                      const hours = parseFloat(newValue || '0');
-                      if (hours > 0 && hours <= 24 && selectedShiftForManual?.check_in_time) {
-                        const newCheckoutTime = calculateCheckoutTime(selectedShiftForManual.check_in_time, hours);
-                        setManualCheckoutTime(newCheckoutTime);
-                      }
-                    }
-                  }}
-                  placeholder="8.5"
-                  step="0.5"
-                  min="0"
-                  max="24"
-                  required={manualAction === 'force_complete'}
-                  description="Hours to be used for payroll calculation"
-                />
-
-                {manualAction === 'checkout' && (
-                  <TextField
-                    label="Actual Departure Time"
-                    type="datetime-local"
-                    value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
-                    onChange={(_, newValue) => {
-                      const newCheckoutTime = newValue ? new Date(newValue).toISOString() : '';
-                      setManualCheckoutTime(newCheckoutTime);
-
-                      // Auto-calculate hours if we have check-in time
-                      if (newCheckoutTime && selectedShiftForManual?.check_in_time) {
-                        const hours = calculateHoursWorked(selectedShiftForManual.check_in_time, newCheckoutTime);
-                        if (hours > 0 && hours <= 24) {
-                          setManualHours(hours.toString());
-                        }
-                      }
-                    }}
-                    max={new Date().toISOString().slice(0, 16)}
-                    description="Adjust if the staff member departed at a different time than now"
-                  />
-                )}
-              </>
-            )}
-
-            {manualAction === 'force_complete' && manualHours === '0' && (
-              <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded border border-amber-200">
-                ⚠️ No-show: Check-in/check-out times will not be recorded for 0 hours worked.
+              {/* What This Will Do Section */}
+              <div className={`rounded-xl border p-4 ${
+                manualAction === 'force_complete'
+                  ? 'bg-amber-50 border-amber-200'
+                  : 'bg-blue-50 border-blue-200'
+              }`}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <svg className={`w-4 h-4 ${manualAction === 'force_complete' ? 'text-amber-600' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="font-semibold text-sm text-gray-800">What this will do:</span>
+                </div>
+                <ul className="list-disc pl-5 text-sm text-gray-700 space-y-0.5">
+                  {manualAction === 'checkin' && (
+                    <>
+                      <li>Record a manual check-in time for this staff member</li>
+                      <li>Update shift status to "In Progress"</li>
+                      <li>Your signature will be logged as the authorizing manager</li>
+                    </>
+                  )}
+                  {manualAction === 'checkout' && (
+                    <>
+                      <li>Record a manual check-out time based on hours worked</li>
+                      <li>Mark shift as "Completed" and ready for approval</li>
+                      <li>Calculate payment based on the hours specified</li>
+                      <li>Your signature will be logged as the authorizing manager</li>
+                    </>
+                  )}
+                  {manualAction === 'force_complete' && (
+                    <>
+                      <li>Set both check-in and check-out times administratively</li>
+                      <li>Mark shift as "Completed" immediately</li>
+                      <li>Process hours for payroll calculation</li>
+                      <li>Skip normal approval workflow</li>
+                      <li>Create an audit record of this administrative action</li>
+                    </>
+                  )}
+                </ul>
               </div>
-            )}
 
-            {manualAction === 'force_complete' && parseFloat(manualHours || '0') > 0 && (
-              <>
-                <TextField
-                  label="Check-in Time"
-                  type="datetime-local"
-                  value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
-                  onChange={(_, newValue) => setManualCheckinTime(newValue ? new Date(newValue).toISOString() : '')}
-                  description="Administrative start time for this shift"
-                />
+              {/* Form Fields */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Manager Signature <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={manualSignature}
+                    onChange={(e) => setManualSignature(e.target.value)}
+                    placeholder="Enter your full name as digital signature"
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Your name will be recorded as authorization for this action</p>
+                </div>
 
-                <TextField
-                  label="Check-out Time"
-                  type="datetime-local"
-                  value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
-                  onChange={(_, newValue) => setManualCheckoutTime(newValue ? new Date(newValue).toISOString() : '')}
-                  description="Administrative end time for this shift"
-                />
-              </>
-            )}
-          </Stack>
-        </Stack>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Reason for Manual Intervention
+                  </label>
+                  <textarea
+                    value={manualNotes}
+                    onChange={(e) => setManualNotes(e.target.value)}
+                    placeholder="e.g., Network issues, Staff emergency, App malfunction"
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Explain why this manual action is needed</p>
+                </div>
 
-        <DialogFooter>
-          <PrimaryButton
-            text={
-              manualAction === 'checkin' ? 'Record Check-in' :
-              manualAction === 'checkout' ? 'Record Check-out' :
-              'Force Complete Shift'
-            }
-            iconProps={{
-              iconName: manualAction === 'force_complete' ? 'Warning' : 'CheckMark'
-            }}
-            onClick={processManualAction}
-            disabled={
-              isProcessingManual ||
-              !manualSignature.trim() ||
-              (manualAction === 'force_complete' && !manualHours.trim())
-            }
-            styles={manualAction === 'force_complete' ? {
-              root: {
-                backgroundColor: '#dc2626',
-                borderColor: '#dc2626'
-              },
-              rootHovered: {
-                backgroundColor: '#b91c1c',
-                borderColor: '#b91c1c'
-              },
-              rootPressed: {
-                backgroundColor: '#991b1b',
-                borderColor: '#991b1b'
-              }
-            } : undefined}
-          />
-          <DefaultButton
-            text="Cancel"
-            onClick={() => setShowManualDialog(false)}
-            disabled={isProcessingManual}
-          />
-        </DialogFooter>
-      </Dialog>
+                {manualAction === 'checkin' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Actual Arrival Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
+                      onChange={(e) => setManualCheckinTime(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                      max={new Date().toISOString().slice(0, 16)}
+                      className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Adjust if the staff member arrived at a different time than now</p>
+                  </div>
+                )}
+
+                {(manualAction === 'checkout' || manualAction === 'force_complete') && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Actual Hours Worked {manualAction === 'force_complete' && <span className="text-red-500">*</span>}
+                      </label>
+                      <input
+                        type="number"
+                        value={manualHours}
+                        onChange={(e) => {
+                          setManualHours(e.target.value);
+
+                          // Auto-calculate checkout time if we have check-in time (checkout action only)
+                          if (manualAction === 'checkout') {
+                            const hours = parseFloat(e.target.value || '0');
+                            if (hours > 0 && hours <= 24 && selectedShiftForManual?.check_in_time) {
+                              const newCheckoutTime = calculateCheckoutTime(selectedShiftForManual.check_in_time, hours);
+                              setManualCheckoutTime(newCheckoutTime);
+                            }
+                          }
+                        }}
+                        placeholder="8.5"
+                        step="0.5"
+                        min="0"
+                        max="24"
+                        className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Hours to be used for payroll calculation</p>
+                    </div>
+
+                    {manualAction === 'checkout' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Actual Departure Time
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
+                          onChange={(e) => {
+                            const newCheckoutTime = e.target.value ? new Date(e.target.value).toISOString() : '';
+                            setManualCheckoutTime(newCheckoutTime);
+
+                            // Auto-calculate hours if we have check-in time
+                            if (newCheckoutTime && selectedShiftForManual?.check_in_time) {
+                              const hours = calculateHoursWorked(selectedShiftForManual.check_in_time, newCheckoutTime);
+                              if (hours > 0 && hours <= 24) {
+                                setManualHours(hours.toString());
+                              }
+                            }
+                          }}
+                          max={new Date().toISOString().slice(0, 16)}
+                          className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Adjust if the staff member departed at a different time than now</p>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {manualAction === 'force_complete' && manualHours === '0' && (
+                  <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
+                    No-show: Check-in/check-out times will not be recorded for 0 hours worked.
+                  </div>
+                )}
+
+                {manualAction === 'force_complete' && parseFloat(manualHours || '0') > 0 && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Check-in Time
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
+                        onChange={(e) => setManualCheckinTime(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                        className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Administrative start time for this shift</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Check-out Time
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
+                        onChange={(e) => setManualCheckoutTime(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                        className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Administrative end time for this shift</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 px-6 pb-6 pt-2">
+              <button
+                onClick={() => setShowManualDialog(false)}
+                disabled={isProcessingManual}
+                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={processManualAction}
+                disabled={
+                  isProcessingManual ||
+                  !manualSignature.trim() ||
+                  (manualAction === 'force_complete' && !manualHours.trim())
+                }
+                className={`px-4 h-9 text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                  manualAction === 'force_complete'
+                    ? 'text-white bg-red-600 hover:bg-red-700'
+                    : 'text-white bg-red-600 hover:bg-red-700'
+                }`}
+              >
+                {isProcessingManual ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Processing...
+                  </span>
+                ) : (
+                  manualAction === 'checkin' ? 'Record Check-in' :
+                  manualAction === 'checkout' ? 'Record Check-out' :
+                  'Force Complete Shift'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Time Adjustment Dialog */}
       {selectedShiftForAdjustment && (
@@ -1314,7 +1070,7 @@ const Approvals: React.FC = () => {
           onSuccess={handleAdjustmentSuccess}
         />
       )}
-    </MainLayout>
+    </div>
   );
 };
 

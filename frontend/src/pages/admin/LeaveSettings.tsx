@@ -1,18 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Stack,
-  Text,
-  MessageBar,
-  MessageBarType,
-  Spinner,
-  SpinnerSize,
-  IStackTokens,
-  IconButton,
-  Pivot,
-  PivotItem,
-  Icon,
-  DefaultButton
-} from '@fluentui/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { leaveService } from '../../services';
 import api from '../../services/api';
@@ -22,7 +8,8 @@ import {
 import AccrualSettings from '../../components/leave/AccrualSettings';
 import BlackoutPeriodManager from '../../components/leave/BlackoutPeriodManager';
 import NotificationSettings from '../../components/leave/NotificationSettings';
-import Card from '../../components/Card';
+import { Header, Container, SpaceBetween, StatusIndicator, EmptyState } from '../../components/cloudscape';
+import Flashbar, { useFlashbar } from '../../components/cloudscape/Flashbar';
 
 interface AccrualSettingsData {
   default_accrual_method: 'monthly' | 'annual' | 'per_shift' | 'length_of_service';
@@ -67,7 +54,7 @@ interface BlackoutPeriod {
   updated_at?: string;
 }
 
-interface NotificationSettings {
+interface NotificationSettingsData {
   email_notifications: boolean;
   sms_notifications: boolean;
   manager_approval_notifications: boolean;
@@ -101,24 +88,17 @@ interface SystemHealthData {
   last_updated: string;
 }
 
-const stackTokens: IStackTokens = {
-  childrenGap: 24,
-  padding: 16,
-};
-
 const LeaveSettings: React.FC = () => {
   const { authState } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [accrualSettings, setAccrualSettings] = useState<AccrualSettingsData | null>(null);
   const [blackoutPeriods, setBlackoutPeriods] = useState<BlackoutPeriod[]>([]);
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettingsData | null>(null);
   const [systemHealth, setSystemHealth] = useState<SystemHealthData | null>(null);
-  const [notification, setNotification] = useState<{
-    type: MessageBarType;
-    message: string;
-  } | null>(null);
+  const { items: flashItems, addFlash, removeFlash } = useFlashbar();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [activeTab, setActiveTab] = useState<'accrual' | 'blackout' | 'notifications' | 'integration' | 'health'>('accrual');
 
   // Fetch all settings data
   const fetchSettingsData = useCallback(async () => {
@@ -143,10 +123,7 @@ const LeaveSettings: React.FC = () => {
 
     } catch (error) {
       console.error('Error fetching settings data:', error);
-      setNotification({
-        type: MessageBarType.error,
-        message: 'Failed to load settings data. Please try again.'
-      });
+      addFlash({ type: 'error', content: 'Failed to load settings data. Please try again.' });
     } finally {
       setIsLoading(false);
     }
@@ -175,7 +152,7 @@ const LeaveSettings: React.FC = () => {
   };
 
   // Fetch notification settings
-  const fetchNotificationSettings = async (): Promise<NotificationSettings> => {
+  const fetchNotificationSettings = async (): Promise<NotificationSettingsData> => {
     try {
       const { data } = await api.get('/api/v1/leave/settings/notifications/');
       return data || getDefaultNotificationSettings();
@@ -223,7 +200,7 @@ const LeaveSettings: React.FC = () => {
     notify_accrual_processed: false,
   });
 
-  const getDefaultNotificationSettings = (): NotificationSettings => ({
+  const getDefaultNotificationSettings = (): NotificationSettingsData => ({
     email_notifications: true,
     sms_notifications: false,
     manager_approval_notifications: true,
@@ -243,12 +220,8 @@ const LeaveSettings: React.FC = () => {
   const handleSaveAccrualSettings = useCallback(async (settings: AccrualSettingsData) => {
     try {
       await api.put('/api/v1/leave/settings/system_config/', { accrual_settings: settings });
-
       setAccrualSettings(settings);
-      setNotification({
-        type: MessageBarType.success,
-        message: 'Accrual settings saved successfully!'
-      });
+      addFlash({ type: 'success', content: 'Accrual settings saved successfully!' });
     } catch (error) {
       console.error('Error saving accrual settings:', error);
       throw error;
@@ -256,15 +229,11 @@ const LeaveSettings: React.FC = () => {
   }, []);
 
   // Handle notification settings save
-  const handleSaveNotificationSettings = useCallback(async (settings: NotificationSettings) => {
+  const handleSaveNotificationSettings = useCallback(async (settings: NotificationSettingsData) => {
     try {
       await api.put('/api/v1/leave/settings/notifications/', settings);
-
       setNotificationSettings(settings);
-      setNotification({
-        type: MessageBarType.success,
-        message: 'Notification settings saved successfully!'
-      });
+      addFlash({ type: 'success', content: 'Notification settings saved successfully!' });
     } catch (error) {
       console.error('Error saving notification settings:', error);
       throw error;
@@ -304,7 +273,6 @@ const LeaveSettings: React.FC = () => {
   const handleDeleteBlackoutPeriod = useCallback(async (periodId: number) => {
     try {
       await api.delete(`/api/v1/leave/blackout-periods/${periodId}/`);
-
       setBlackoutPeriods(prev => prev.filter(p => p.id !== periodId));
     } catch (error) {
       console.error('Error deleting blackout period:', error);
@@ -334,9 +302,7 @@ const LeaveSettings: React.FC = () => {
       'This action cannot be undone.'
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     try {
       setIsLoading(true);
@@ -349,358 +315,323 @@ const LeaveSettings: React.FC = () => {
       const defaultNotificationSettings = getDefaultNotificationSettings();
       await handleSaveNotificationSettings(defaultNotificationSettings);
 
-      setNotification({
-        type: MessageBarType.success,
-        message: 'All settings have been reset to default values!'
-      });
-
-      // Refresh data to show the changes
+      addFlash({ type: 'success', content: 'All settings have been reset to default values!' });
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Error resetting to defaults:', error);
-      setNotification({
-        type: MessageBarType.error,
-        message: 'Failed to reset settings. Please try again.'
-      });
+      addFlash({ type: 'error', content: 'Failed to reset settings. Please try again.' });
     } finally {
       setIsLoading(false);
     }
   }, [handleSaveAccrualSettings, handleSaveNotificationSettings]);
 
-  // Clear notification after 5 seconds
-  useEffect(() => {
-    if (notification) {
-      const timer = setTimeout(() => setNotification(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [notification]);
-
   if (isLoading) {
     return (
-      <div className="leave-settings-page">
-        <Stack horizontal horizontalAlign="center" verticalAlign="center" tokens={{ padding: 40 }}>
-          <Spinner size={SpinnerSize.large} label="Loading leave system settings..." />
-        </Stack>
+      <div className="flex items-center justify-center py-16">
+        <div className="flex items-center gap-3 text-gray-500">
+          <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm">Loading leave system settings...</span>
+        </div>
       </div>
     );
   }
 
+  const tabs = [
+    { key: 'accrual', label: 'Accrual Settings' },
+    { key: 'blackout', label: 'Blackout Periods' },
+    { key: 'notifications', label: 'Notifications' },
+    { key: 'integration', label: 'Integration' },
+    { key: 'health', label: 'System Health' },
+  ] as const;
+
   return (
     <div className="max-w-7xl">
-      <Stack tokens={stackTokens}>
+      <SpaceBetween size="l">
         {/* Page Header */}
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Stack>
-            <Text variant="xxLarge" styles={{ root: { fontWeight: 600 } }}>
-              Leave System Settings
-            </Text>
-            <Text variant="medium" styles={{ root: { color: '#666' } }}>
-              Configure global leave management system settings and policies
-            </Text>
-          </Stack>
+        <Header
+          variant="h1"
+          description="Configure global leave management system settings and policies"
+          actions={
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleResetToDefaults}
+                disabled={isLoading}
+                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                Reset to Defaults
+              </button>
+              <button
+                onClick={() => setRefreshTrigger(prev => prev + 1)}
+                disabled={isLoading}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                title="Refresh data"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
+          }
+        >
+          Leave System Settings
+        </Header>
 
-          <Stack horizontal tokens={{ childrenGap: 8 }}>
-            <DefaultButton
-              text="Reset to Defaults"
-              iconProps={{ iconName: 'Refresh' }}
-              onClick={handleResetToDefaults}
-              disabled={isLoading}
-            />
-            <IconButton
-              iconProps={{ iconName: 'Refresh' }}
-              onClick={() => setRefreshTrigger(prev => prev + 1)}
-              title="Refresh data"
-              disabled={isLoading}
-            />
-          </Stack>
-        </Stack>
-
-        {/* Notification */}
-        {notification && (
-          <MessageBar
-            messageBarType={notification.type}
-            onDismiss={() => setNotification(null)}
-            dismissButtonAriaLabel="Close"
-          >
-            {notification.message}
-          </MessageBar>
-        )}
+        <Flashbar items={flashItems} onDismiss={removeFlash} />
 
         {/* Settings Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card tokens={{ padding: 16 }}>
-            <Stack tokens={{ childrenGap: 8 }}>
-              <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>
-                  Accrual Method
-                </Text>
-                <Icon iconName="CalendarSettings" styles={{ root: { color: '#0078d4' } }} />
-              </Stack>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#0078d4' } }}>
+          <Container>
+            <SpaceBetween size="xs">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-900">Accrual Method</p>
+                <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <p className="text-lg font-bold text-red-600">
                 {accrualSettings?.default_accrual_method.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Monthly'}
-              </Text>
-              <Text variant="small" styles={{ root: { color: '#666' } }}>
-                Default accrual method
-              </Text>
-            </Stack>
-          </Card>
+              </p>
+              <p className="text-xs text-gray-500">Default accrual method</p>
+            </SpaceBetween>
+          </Container>
 
-          <Card tokens={{ padding: 16 }}>
-            <Stack tokens={{ childrenGap: 8 }}>
-              <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>
-                  Global Rate
-                </Text>
-                <Icon iconName="NumberSymbol" styles={{ root: { color: '#107c10' } }} />
-              </Stack>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#107c10' } }}>
-                {accrualSettings?.global_accrual_rate || '1.67'} days
-              </Text>
-              <Text variant="small" styles={{ root: { color: '#666' } }}>
-                Per period
-              </Text>
-            </Stack>
-          </Card>
+          <Container>
+            <SpaceBetween size="xs">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-900">Global Rate</p>
+                <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                </svg>
+              </div>
+              <p className="text-lg font-bold text-green-600">{accrualSettings?.global_accrual_rate || '1.67'} days</p>
+              <p className="text-xs text-gray-500">Per period</p>
+            </SpaceBetween>
+          </Container>
 
-          <Card tokens={{ padding: 16 }}>
-            <Stack tokens={{ childrenGap: 8 }}>
-              <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>
-                  Blackout Periods
-                </Text>
-                <Icon iconName="BlockContact" styles={{ root: { color: '#d13438' } }} />
-              </Stack>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#d13438' } }}>
-                {blackoutPeriods.filter(bp => bp.is_active).length}
-              </Text>
-              <Text variant="small" styles={{ root: { color: '#666' } }}>
-                Active periods
-              </Text>
-            </Stack>
-          </Card>
+          <Container>
+            <SpaceBetween size="xs">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-900">Blackout Periods</p>
+                <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+              </div>
+              <p className="text-lg font-bold text-red-600">{blackoutPeriods.filter(bp => bp.is_active).length}</p>
+              <p className="text-xs text-gray-500">Active periods</p>
+            </SpaceBetween>
+          </Container>
 
-          <Card tokens={{ padding: 16 }}>
-            <Stack tokens={{ childrenGap: 8 }}>
-              <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                <Text variant="medium" styles={{ root: { fontWeight: 600 } }}>
-                  Leave Types
-                </Text>
-                <Icon iconName="Tag" styles={{ root: { color: '#ff8c00' } }} />
-              </Stack>
-              <Text variant="large" styles={{ root: { fontWeight: 600, color: '#ff8c00' } }}>
-                {leaveTypes.filter(lt => lt.is_active).length}
-              </Text>
-              <Text variant="small" styles={{ root: { color: '#666' } }}>
-                Available types
-              </Text>
-            </Stack>
-          </Card>
+          <Container>
+            <SpaceBetween size="xs">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-900">Leave Types</p>
+                <svg className="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                </svg>
+              </div>
+              <p className="text-lg font-bold text-orange-600">{leaveTypes.filter(lt => lt.is_active).length}</p>
+              <p className="text-xs text-gray-500">Available types</p>
+            </SpaceBetween>
+          </Container>
         </div>
 
         {/* Settings Tabs */}
-        <Pivot>
-          <PivotItem headerText="Accrual Settings" itemIcon="CalendarSettings">
-            {accrualSettings && (
-              <AccrualSettings
-                initialSettings={accrualSettings}
-                onSave={handleSaveAccrualSettings}
-                isLoading={isLoading}
+        <div className="border-b border-gray-200">
+          <nav className="flex space-x-0">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={
+                  activeTab === tab.key
+                    ? 'px-4 py-2.5 text-sm font-medium text-red-600 border-b-2 border-red-600'
+                    : 'px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent'
+                }
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'accrual' && accrualSettings && (
+          <AccrualSettings
+            initialSettings={accrualSettings}
+            onSave={handleSaveAccrualSettings}
+            isLoading={isLoading}
+          />
+        )}
+
+        {activeTab === 'blackout' && (
+          <BlackoutPeriodManager
+            periods={blackoutPeriods}
+            leaveTypes={leaveTypes}
+            onSave={handleSaveBlackoutPeriod}
+            onDelete={handleDeleteBlackoutPeriod}
+            onActivate={handleActivateBlackoutPeriod}
+            isLoading={isLoading}
+          />
+        )}
+
+        {activeTab === 'notifications' && notificationSettings && (
+          <NotificationSettings
+            initialSettings={notificationSettings}
+            onSave={handleSaveNotificationSettings}
+            isLoading={isLoading}
+          />
+        )}
+
+        {activeTab === 'integration' && (
+          <Container>
+            <SpaceBetween size="m">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+                <h3 className="text-lg font-semibold text-gray-900">External Integrations</h3>
+              </div>
+              <EmptyState
+                title="Integration settings coming soon"
+                description="Configure integrations with payroll systems, calendar applications, and other workforce management tools."
+                icon={
+                  <svg className="w-12 h-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                  </svg>
+                }
               />
-            )}
-          </PivotItem>
+            </SpaceBetween>
+          </Container>
+        )}
 
-          <PivotItem headerText="Blackout Periods" itemIcon="BlockContact">
-            <BlackoutPeriodManager
-              periods={blackoutPeriods}
-              leaveTypes={leaveTypes}
-              onSave={handleSaveBlackoutPeriod}
-              onDelete={handleDeleteBlackoutPeriod}
-              onActivate={handleActivateBlackoutPeriod}
-              isLoading={isLoading}
-            />
-          </PivotItem>
-
-          <PivotItem headerText="Notifications" itemIcon="Ringer">
-            {notificationSettings && (
-              <NotificationSettings
-                initialSettings={notificationSettings}
-                onSave={handleSaveNotificationSettings}
-                isLoading={isLoading}
-              />
-            )}
-          </PivotItem>
-
-          <PivotItem headerText="Integration" itemIcon="Plug">
-            <Card tokens={{ padding: 20 }}>
-              <Stack tokens={{ childrenGap: 16 }}>
-                <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-                  <Icon iconName="Plug" styles={{ root: { color: '#0078d4' } }} />
-                  <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
-                    External Integrations
-                  </Text>
-                </Stack>
-
-                <div className="text-center py-12">
-                  <Icon iconName="Plug" styles={{ root: { fontSize: 48, marginBottom: 16, color: '#666' } }} />
-                  <Text variant="medium" styles={{ root: { color: '#666', marginBottom: 16 } }}>
-                    Integration settings coming soon
-                  </Text>
-                  <Text variant="small" styles={{ root: { color: '#666' } }}>
-                    Configure integrations with payroll systems, calendar applications,
-                    and other workforce management tools.
-                  </Text>
+        {activeTab === 'health' && (
+          <Container>
+            <SpaceBetween size="m">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                  <h3 className="text-lg font-semibold text-gray-900">System Health & Diagnostics</h3>
                 </div>
-              </Stack>
-            </Card>
-          </PivotItem>
-
-          <PivotItem headerText="System Health" itemIcon="Health">
-            <Card tokens={{ padding: 20 }}>
-              <Stack tokens={{ childrenGap: 16 }}>
-                <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-                  <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-                    <Icon iconName="Health" styles={{ root: { color: '#107c10' } }} />
-                    <Text variant="large" styles={{ root: { fontWeight: 600 } }}>
-                      System Health & Diagnostics
-                    </Text>
-                  </Stack>
-                  {systemHealth && (
-                    <Text variant="small" styles={{ root: { color: '#666' } }}>
-                      Last updated: {new Date(systemHealth.last_updated).toLocaleString()}
-                    </Text>
-                  )}
-                </Stack>
-
-                {!systemHealth ? (
-                  <div className="text-center py-12">
-                    <Spinner size={SpinnerSize.medium} label="Loading system health data..." />
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {/* Accrual Engine */}
-                      <div className={`p-4 rounded-lg border ${
-                        systemHealth.accrual_engine.status === 'healthy'
-                          ? 'bg-green-50 border-green-200'
-                          : systemHealth.accrual_engine.status === 'not_configured'
-                          ? 'bg-yellow-50 border-yellow-200'
-                          : 'bg-red-50 border-red-200'
-                      }`}>
-                        <Stack tokens={{ childrenGap: 4 }}>
-                          <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-                            <Icon
-                              iconName={systemHealth.accrual_engine.status === 'healthy' ? 'CheckMark' : 'Warning'}
-                              styles={{ root: { color: systemHealth.accrual_engine.status === 'healthy' ? '#107c10' : '#d13438' } }}
-                            />
-                            <Text variant="medium" styles={{ root: { fontWeight: 600, color: systemHealth.accrual_engine.status === 'healthy' ? '#107c10' : '#d13438' } }}>
-                              Accrual Engine
-                            </Text>
-                          </Stack>
-                          <Text variant="small" styles={{ root: { textTransform: 'capitalize' } }}>
-                            {systemHealth.accrual_engine.status.replace('_', ' ')}
-                          </Text>
-                          <Text variant="small" styles={{ root: { color: '#666' } }}>
-                            {systemHealth.accrual_engine.last_run
-                              ? `Last run: ${new Date(systemHealth.accrual_engine.last_run).toLocaleString()}`
-                              : 'Not yet run'
-                            }
-                          </Text>
-                          <Text variant="small" styles={{ root: { color: '#666' } }}>
-                            Next: {systemHealth.accrual_engine.next_run}
-                          </Text>
-                        </Stack>
-                      </div>
-
-                      {/* Notifications */}
-                      <div className={`p-4 rounded-lg border ${
-                        systemHealth.notifications.status === 'operational'
-                          ? 'bg-green-50 border-green-200'
-                          : 'bg-red-50 border-red-200'
-                      }`}>
-                        <Stack tokens={{ childrenGap: 4 }}>
-                          <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-                            <Icon
-                              iconName={systemHealth.notifications.status === 'operational' ? 'CheckMark' : 'Warning'}
-                              styles={{ root: { color: systemHealth.notifications.status === 'operational' ? '#107c10' : '#d13438' } }}
-                            />
-                            <Text variant="medium" styles={{ root: { fontWeight: 600, color: systemHealth.notifications.status === 'operational' ? '#107c10' : '#d13438' } }}>
-                              Notifications
-                            </Text>
-                          </Stack>
-                          <Text variant="small" styles={{ root: { textTransform: 'capitalize' } }}>
-                            {systemHealth.notifications.status}
-                          </Text>
-                          <Text variant="small" styles={{ root: { color: '#666' } }}>
-                            Queue: {systemHealth.notifications.pending_count} pending
-                          </Text>
-                          <Text variant="small" styles={{ root: { color: '#666' } }}>
-                            Status: {systemHealth.notifications.queue_status}
-                          </Text>
-                        </Stack>
-                      </div>
-
-                      {/* Database */}
-                      <div className={`p-4 rounded-lg border ${
-                        systemHealth.database.status === 'healthy'
-                          ? 'bg-green-50 border-green-200'
-                          : 'bg-red-50 border-red-200'
-                      }`}>
-                        <Stack tokens={{ childrenGap: 4 }}>
-                          <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 8 }}>
-                            <Icon
-                              iconName={systemHealth.database.status === 'healthy' ? 'CheckMark' : 'Warning'}
-                              styles={{ root: { color: systemHealth.database.status === 'healthy' ? '#107c10' : '#d13438' } }}
-                            />
-                            <Text variant="medium" styles={{ root: { fontWeight: 600, color: systemHealth.database.status === 'healthy' ? '#107c10' : '#d13438' } }}>
-                              Database
-                            </Text>
-                          </Stack>
-                          <Text variant="small" styles={{ root: { textTransform: 'capitalize' } }}>
-                            {systemHealth.database.status}
-                          </Text>
-                          <Text variant="small" styles={{ root: { color: '#666' } }}>
-                            Response time: {systemHealth.database.response_time}
-                          </Text>
-                          <Text variant="small" styles={{ root: { color: '#666' } }}>
-                            Pool: {systemHealth.database.connection_pool}
-                          </Text>
-                        </Stack>
-                      </div>
-                    </div>
-
-                    {/* Statistics */}
-                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                      <Stack tokens={{ childrenGap: 8 }}>
-                        <Text variant="medium" styles={{ root: { fontWeight: 600, color: '#0078d4' } }}>
-                          System Statistics
-                        </Text>
-                        <Stack horizontal tokens={{ childrenGap: 24 }}>
-                          <Stack tokens={{ childrenGap: 4 }}>
-                            <Text variant="small" styles={{ root: { color: '#666' } }}>
-                              Total Leave Requests
-                            </Text>
-                            <Text variant="large" styles={{ root: { fontWeight: 600, color: '#0078d4' } }}>
-                              {systemHealth.statistics.total_leave_requests}
-                            </Text>
-                          </Stack>
-                          <Stack tokens={{ childrenGap: 4 }}>
-                            <Text variant="small" styles={{ root: { color: '#666' } }}>
-                              Pending Approvals
-                            </Text>
-                            <Text variant="large" styles={{ root: { fontWeight: 600, color: '#ff8c00' } }}>
-                              {systemHealth.statistics.pending_approvals}
-                            </Text>
-                          </Stack>
-                        </Stack>
-                      </Stack>
-                    </div>
-                  </>
+                {systemHealth && (
+                  <p className="text-xs text-gray-500">
+                    Last updated: {new Date(systemHealth.last_updated).toLocaleString()}
+                  </p>
                 )}
-              </Stack>
-            </Card>
-          </PivotItem>
-        </Pivot>
-      </Stack>
+              </div>
+
+              {!systemHealth ? (
+                <div className="flex justify-center py-8">
+                  <div className="flex items-center gap-3 text-gray-500">
+                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <span className="text-sm">Loading system health data...</span>
+                  </div>
+                </div>
+              ) : (
+                <SpaceBetween size="m">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Accrual Engine */}
+                    <div className={`p-4 rounded-lg border ${
+                      systemHealth.accrual_engine.status === 'healthy'
+                        ? 'bg-green-50 border-green-200'
+                        : systemHealth.accrual_engine.status === 'not_configured'
+                        ? 'bg-yellow-50 border-yellow-200'
+                        : 'bg-red-50 border-red-200'
+                    }`}>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <StatusIndicator type={systemHealth.accrual_engine.status === 'healthy' ? 'success' : 'error'}>
+                            Accrual Engine
+                          </StatusIndicator>
+                        </div>
+                        <p className="text-xs text-gray-600 capitalize">
+                          {systemHealth.accrual_engine.status.replace('_', ' ')}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {systemHealth.accrual_engine.last_run
+                            ? `Last run: ${new Date(systemHealth.accrual_engine.last_run).toLocaleString()}`
+                            : 'Not yet run'
+                          }
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Next: {systemHealth.accrual_engine.next_run}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Notifications */}
+                    <div className={`p-4 rounded-lg border ${
+                      systemHealth.notifications.status === 'operational'
+                        ? 'bg-green-50 border-green-200'
+                        : 'bg-red-50 border-red-200'
+                    }`}>
+                      <div className="space-y-2">
+                        <StatusIndicator type={systemHealth.notifications.status === 'operational' ? 'success' : 'error'}>
+                          Notifications
+                        </StatusIndicator>
+                        <p className="text-xs text-gray-600 capitalize">
+                          {systemHealth.notifications.status}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Queue: {systemHealth.notifications.pending_count} pending
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Status: {systemHealth.notifications.queue_status}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Database */}
+                    <div className={`p-4 rounded-lg border ${
+                      systemHealth.database.status === 'healthy'
+                        ? 'bg-green-50 border-green-200'
+                        : 'bg-red-50 border-red-200'
+                    }`}>
+                      <div className="space-y-2">
+                        <StatusIndicator type={systemHealth.database.status === 'healthy' ? 'success' : 'error'}>
+                          Database
+                        </StatusIndicator>
+                        <p className="text-xs text-gray-600 capitalize">
+                          {systemHealth.database.status}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Response time: {systemHealth.database.response_time}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Pool: {systemHealth.database.connection_pool}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Statistics */}
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <p className="text-sm font-semibold text-gray-900 mb-3">System Statistics</p>
+                    <div className="flex gap-12">
+                      <div>
+                        <p className="text-xs text-gray-500">Total Leave Requests</p>
+                        <p className="text-xl font-bold text-red-600">{systemHealth.statistics.total_leave_requests}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Pending Approvals</p>
+                        <p className="text-xl font-bold text-orange-600">{systemHealth.statistics.pending_approvals}</p>
+                      </div>
+                    </div>
+                  </div>
+                </SpaceBetween>
+              )}
+            </SpaceBetween>
+          </Container>
+        )}
+      </SpaceBetween>
     </div>
   );
 };

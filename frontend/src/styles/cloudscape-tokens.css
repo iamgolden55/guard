@@ -1,0 +1,116 @@
+/* Cloudscape Design Tokens - AWS Console Quality UI */
+/* These tokens augment the existing Tailwind config */
+
+:root {
+  /* === Spacing Scale === */
+  --cs-space-xxxs: 2px;
+  --cs-space-xxs: 4px;
+  --cs-space-xs: 8px;
+  --cs-space-s: 12px;
+  --cs-space-m: 16px;
+  --cs-space-l: 20px;
+  --cs-space-xl: 24px;
+  --cs-space-xxl: 32px;
+  --cs-space-xxxl: 40px;
+
+  /* === Border Radius === */
+  --cs-border-radius-button: 8px;
+  --cs-border-radius-container: 12px;
+  --cs-border-radius-badge: 4px;
+  --cs-border-radius-input: 8px;
+  --cs-border-radius-item: 8px;
+
+  /* === Shadows === */
+  --cs-shadow-container: 0 1px 2px 0 rgba(0, 7, 22, 0.05);
+  --cs-shadow-container-stacked: 0 1px 2px 0 rgba(0, 7, 22, 0.05), 0 2px 6px 0 rgba(0, 7, 22, 0.05);
+  --cs-shadow-dropdown: 0 4px 20px 0 rgba(0, 7, 22, 0.12);
+  --cs-shadow-panel: 0 1px 1px 0 rgba(0, 7, 22, 0.05), 0 6px 20px 0 rgba(0, 7, 22, 0.08);
+  --cs-shadow-sticky: 0 4px 8px -1px rgba(0, 7, 22, 0.08);
+
+  /* === Color Palette - Neutral === */
+  --cs-color-background-layout: #f2f3f3;
+  --cs-color-background-container: #ffffff;
+  --cs-color-background-input: #ffffff;
+  --cs-color-background-input-disabled: #f2f3f3;
+
+  /* === Color Palette - Brand (Red accent #d13438) === */
+  --cs-color-primary: #d13438;
+  --cs-color-primary-hover: #a4262c;
+  --cs-color-primary-active: #8c2025;
+  --cs-color-primary-light: #fde7e7;
+  --cs-color-primary-text: #d13438;
+
+  /* === Color Palette - Status === */
+  --cs-color-status-success: #037f0c;
+  --cs-color-status-success-bg: #f2fcf3;
+  --cs-color-status-warning: #8d6605;
+  --cs-color-status-warning-bg: #fef8e7;
+  --cs-color-status-error: #d91515;
+  --cs-color-status-error-bg: #fdf3f3;
+  --cs-color-status-info: #006ce0;
+  --cs-color-status-info-bg: #f0f6ff;
+  --cs-color-status-pending: #656871;
+  --cs-color-status-pending-bg: #f2f3f3;
+  --cs-color-status-stopped: #656871;
+  --cs-color-status-loading: #006ce0;
+
+  /* === Color Palette - Text === */
+  --cs-color-text-body: #0f1b2d;
+  --cs-color-text-heading: #0f1b2d;
+  --cs-color-text-secondary: #414d5c;
+  --cs-color-text-disabled: #9ba7b6;
+  --cs-color-text-placeholder: #7d8998;
+  --cs-color-text-link: #006ce0;
+  --cs-color-text-link-hover: #004da0;
+  --cs-color-text-interactive: #414d5c;
+
+  /* === Color Palette - Border === */
+  --cs-color-border-divider: #e9ebed;
+  --cs-color-border-container: #e9ebed;
+  --cs-color-border-input: #7d8998;
+  --cs-color-border-input-focused: #006ce0;
+
+  /* === Typography === */
+  --cs-font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --cs-font-family-heading: 'Plus Jakarta Sans', 'Inter', -apple-system, sans-serif;
+  --cs-font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* === Font Sizes === */
+  --cs-font-size-body-s: 12px;
+  --cs-font-size-body-m: 14px;
+  --cs-font-size-heading-xs: 14px;
+  --cs-font-size-heading-s: 16px;
+  --cs-font-size-heading-m: 18px;
+  --cs-font-size-heading-l: 20px;
+  --cs-font-size-heading-xl: 24px;
+  --cs-font-size-display-l: 36px;
+
+  /* === Line Heights === */
+  --cs-line-height-body-s: 16px;
+  --cs-line-height-body-m: 20px;
+  --cs-line-height-heading-xs: 18px;
+  --cs-line-height-heading-s: 20px;
+  --cs-line-height-heading-m: 22px;
+  --cs-line-height-heading-l: 24px;
+  --cs-line-height-heading-xl: 30px;
+  --cs-line-height-display-l: 40px;
+
+  /* === Animation === */
+  --cs-motion-duration-fast: 135ms;
+  --cs-motion-duration-normal: 180ms;
+  --cs-motion-duration-slow: 270ms;
+  --cs-motion-easing-responsive: cubic-bezier(0.16, 1, 0.3, 1);
+  --cs-motion-easing-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* === Z-Index Scale === */
+  --cs-z-dropdown: 1000;
+  --cs-z-sticky: 900;
+  --cs-z-modal: 2000;
+  --cs-z-notification: 3000;
+
+  /* === Layout === */
+  --cs-sidebar-width: 240px;
+  --cs-sidebar-width-collapsed: 0px;
+  --cs-top-nav-height: 48px;
+  --cs-content-max-width: 1280px;
+}
