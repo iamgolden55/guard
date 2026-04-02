@@ -289,7 +289,7 @@ LOGGING = {
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'format': '{asctime} {levelname} {name} {module} {message}',
             'style': '{',
         },
     },
@@ -312,6 +312,31 @@ LOGGING = {
             'level': 'DEBUG',
             'propagate': True,
         },
+        'django': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'api': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'security': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'shifts': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'leave_management': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }
 
@@ -326,6 +351,14 @@ REST_FRAMEWORK = {
         # Keep SessionAuthentication for Django admin and browsable API
         'rest_framework.authentication.SessionAuthentication',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/minute',
+        'user': '120/minute',
+    },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 100,  # Increased from 10 to 100 to show more shifts
     'DEFAULT_FILTER_BACKENDS': [
@@ -341,7 +374,7 @@ REST_FRAMEWORK = {
 
 # JWT settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=14),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -464,6 +497,24 @@ CELERY_TASK_MAX_RETRIES = 3
 # Security settings
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
 CELERY_TASK_IGNORE_RESULT = False
+
+# Celery Beat Schedule (periodic tasks)
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    'update-expired-sia-licenses': {
+        'task': 'api.tasks.update_expired_sia_licenses',
+        'schedule': crontab(hour=0, minute=15),
+    },
+    'detect-attendance-exceptions': {
+        'task': 'api.tasks.detect_attendance_exceptions',
+        'schedule': crontab(minute='*/15'),
+    },
+    'process-monthly-leave-accruals': {
+        'task': 'api.tasks.process_monthly_leave_accruals',
+        'schedule': crontab(day_of_month=1, hour=2, minute=0),
+    },
+}
 
 # Report generation specific settings
 REPORT_FILE_RETENTION_DAYS = int(os.getenv('REPORT_FILE_RETENTION_DAYS', '7'))

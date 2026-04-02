@@ -192,6 +192,23 @@ class ShiftSerializer(serializers.ModelSerializer):
                     f"{first_conflict.end_time.strftime('%H:%M')} at {venue_name}"
                 )
 
+        # Check if staff is on approved leave (explicit date-range overlap check)
+        if staff_user and start_time:
+            from leave_management.models import LeaveRequest
+            shift_date = start_time.date() if hasattr(start_time, 'date') else start_time
+            shift_end_date = end_time.date() if end_time and hasattr(end_time, 'date') else shift_date
+            if shift_date:
+                on_leave = LeaveRequest.objects.filter(
+                    staff_user=staff_user,
+                    status='approved',
+                    start_date__lte=shift_end_date,
+                    end_date__gte=shift_date,
+                ).exists()
+                if on_leave:
+                    raise serializers.ValidationError(
+                        "This staff member has approved leave during this shift period."
+                    )
+
         # Also check for shift_group duplicates (legacy check for multi-staff shifts)
         if (self.instance is None and
             'shift_group' in data and 'staff_user' in data and

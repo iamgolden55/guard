@@ -1795,3 +1795,111 @@ async def _send_cancellation_notification(job_id: str, user_id: int):
     await channel_layer.group_send(f'reports_user_{user_id}', notification)
     # Send to job-specific group
     await channel_layer.group_send(f'report_job_{job_id}', notification)
+
+
+# =============================================================================
+# SIA License Auto-Expiry Task
+# =============================================================================
+
+@shared_task
+def update_expired_sia_licenses():
+    """Auto-expire SIA licenses past their expiry date. Run daily via Celery Beat."""
+    from api.models import SIALicense
+
+    expired = SIALicense.objects.filter(
+        status='valid',
+        expiry_date__lt=timezone.now().date()
+    )
+    count = expired.update(status='expired')
+    logger.info(f"Auto-expired {count} SIA licenses")
+    return count
+
+
+# =============================================================================
+# Attendance Exception Detection Task
+# =============================================================================
+
+@shared_task
+def detect_attendance_exceptions():
+    """
+    Detect attendance exceptions. Run every 15 minutes via Celery Beat.
+
+    1. No-shows: Shifts past start_time + 30min with no check-in -> mark as no_show
+    2. Late check-ins: Shifts where check-in was >5 min after start -> create LatenessRecord
+    3. Overdue shifts: In-progress shifts past end_time + 60min grace -> log for manager review
+    """
+    from api.models import Shift, LatenessRecord
+
+    now = timezone.now()
+    results = {'no_shows': 0, 'late_records': 0, 'overdue_flagged': 0}
+
+    # 1. Auto-detect no-shows: scheduled/active shifts 30+ min past start with no check-in
+    no_show_threshold = now - timedelta(minutes=30)
+    no_show_shifts = Shift.objects.filter(
+        status__in=['scheduled', 'active'],
+        start_time__lte=no_show_threshold,
+        check_in_time__isnull=True,
+        staff_user__isnull=False,
+    )
+    for shift in no_show_shifts:
+        shift.status = 'no_show'
+        shift.notes = (shift.notes or '') + (
+            '\n[Auto] No-show detected: no check-in 30 minutes after shift start.'
+        )
+        shift.save(update_fields=['status', 'notes', 'updated_at'])
+        results['no_shows'] += 1
+
+    # 2. Auto-create LatenessRecord for late check-ins (>5 min late, no existing record)
+    late_threshold_minutes = 5
+    late_shifts = Shift.objects.filter(
+        status='in_progress',
+        check_in_time__isnull=False,
+        staff_user__isnull=False,
+    ).exclude(
+        id__in=LatenessRecord.objects.values_list('shift_id', flat=True)
+    )
+    for shift in late_shifts:
+        if shift.check_in_time and shift.start_time:
+            minutes_late = (shift.check_in_time - shift.start_time).total_seconds() / 60
+            if minutes_late > late_threshold_minutes:
+                LatenessRecord.objects.create(
+                    shift=shift,
+                    staff_user=shift.staff_user,
+                    minutes_late=int(minutes_late),
+                    reason='Auto-detected late check-in',
+                )
+                results['late_records'] += 1
+
+    # 3. Overdue shifts: in-progress past end_time + 60min grace period
+    overdue_threshold = now - timedelta(minutes=60)
+    overdue_shifts = Shift.objects.filter(
+        status='in_progress',
+        end_time__isnull=False,
+        end_time__lte=overdue_threshold,
+        check_out_time__isnull=True,
+    )
+    for shift in overdue_shifts:
+        overdue_minutes = int((now - shift.end_time).total_seconds() / 60)
+        logger.warning(
+            f"Overdue shift detected: Shift {shift.id} for user "
+            f"{shift.staff_user_id} at venue {shift.venue_id} is "
+            f"{overdue_minutes} minutes past end time."
+        )
+        results['overdue_flagged'] += 1
+
+    logger.info(f"Attendance exceptions detected: {results}")
+    return results
+
+
+# =============================================================================
+# MONTHLY LEAVE ACCRUAL TASK
+# =============================================================================
+
+@shared_task
+def process_monthly_leave_accruals():
+    """Process monthly leave accruals for all active employees. Runs 1st of each month."""
+    from leave_management.services import LeaveAccrualService
+    service = LeaveAccrualService()
+    result = service.process_monthly_accruals()
+    logger.info(f"Monthly leave accruals processed: {result}")
+    return result

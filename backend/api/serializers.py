@@ -107,7 +107,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ('id', 'username', 'email', 'first_name', 'last_name',
                  'role', 'is_active', 'password', 'security_roles', 'created_at', 'updated_at')
-        read_only_fields = ('created_at', 'updated_at')
+        read_only_fields = ('created_at', 'updated_at', 'role', 'is_active')
         extra_kwargs = {
             'password': {'write_only': True}
         }
@@ -129,9 +129,9 @@ class UserSerializer(serializers.ModelSerializer):
             password=validated_data['password'],
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
-            role=validated_data.get('role', 'staff'),
+            role='staff',
             is_active=True,
-            is_staff=True  # This is needed for API access
+            is_staff=False,
         )
         return user
 
@@ -146,8 +146,11 @@ class UserSerializer(serializers.ModelSerializer):
         # Note: This assumes 'profile' is read-only and handled elsewhere if needed.
         profile_data = validated_data.pop('profile', None) # Exclude profile from direct update
 
+        # SECURITY: Never allow these fields to be set via API updates
+        PROTECTED_FIELDS = {'role', 'is_active', 'is_staff', 'is_superuser'}
         for attr, value in validated_data.items():
-            setattr(instance, attr, value)
+            if attr not in PROTECTED_FIELDS:
+                setattr(instance, attr, value)
 
         instance.save()
 
@@ -634,6 +637,23 @@ class ShiftSerializer(serializers.ModelSerializer):
                     f"{first_conflict.start_time.strftime('%Y-%m-%d %H:%M')} - "
                     f"{first_conflict.end_time.strftime('%H:%M')} at {venue_name}"
                 })
+
+        # Check if staff is on approved leave
+        if staff_user and start_time:
+            from leave_management.models import LeaveRequest
+            shift_date = start_time.date() if hasattr(start_time, 'date') else start_time
+            shift_end_date = end_time.date() if end_time and hasattr(end_time, 'date') else shift_date
+            if shift_date:
+                on_leave = LeaveRequest.objects.filter(
+                    staff_user=staff_user,
+                    status='approved',
+                    start_date__lte=shift_end_date,
+                    end_date__gte=shift_date,
+                ).exists()
+                if on_leave:
+                    raise serializers.ValidationError(
+                        "This staff member has approved leave during this shift period."
+                    )
 
         return data
 

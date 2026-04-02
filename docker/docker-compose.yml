@@ -2,9 +2,9 @@ name: meadsecurity
 
 x-api-env: &api-env
   DJANGO_SETTINGS_MODULE: core.settings
-  DJANGO_SECRET_KEY: dev-secret-key-not-for-production
-  DJANGO_DEBUG: "True"
-  DJANGO_ALLOWED_HOSTS: "*"
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in docker/.env}
+  DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
   DB_HOST: db
   DB_NAME: meadsecurity
   DB_USER: meadsecurity
@@ -50,8 +50,8 @@ services:
       POSTGRES_DB: meadsecurity
       POSTGRES_USER: meadsecurity
       POSTGRES_PASSWORD: meadsecurity
-    ports:
-      - "5433:5432"
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # SQL files in init/ run automatically on first start (fresh volume only)
@@ -64,8 +64,8 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6380:6379"
+    expose:
+      - "6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -183,7 +183,7 @@ services:
         condition: service_healthy
     volumes:
       - ../backend:/app
-    command: celery -A core flower --port=5555
+    command: celery -A core flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:?Set FLOWER_PASSWORD in docker/.env}
     restart: unless-stopped
 
 volumes:

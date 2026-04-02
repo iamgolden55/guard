@@ -20,9 +20,12 @@ RUN pip install --no-cache-dir -r requirements/prod.txt
 
 COPY backend/ .
 
-# Collect static files at build time
-RUN python manage.py collectstatic --noinput 2>/dev/null || true
+# Static files are collected at container startup via entrypoint.sh
+# (requires DATABASE_URL / env vars that aren't available at build time)
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 8000
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "core.asgi:application"]

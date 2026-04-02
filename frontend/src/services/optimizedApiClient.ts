@@ -167,6 +167,7 @@ class OptimizedApiClient {
     return axios.create({
       baseURL: this.config.baseURL,
       timeout: this.config.timeout,
+      withCredentials: true, // Send httpOnly cookies for authentication
       headers: {
         'Content-Type': 'application/json',
         ...(this.config.enableCompression && {
@@ -183,11 +184,8 @@ class OptimizedApiClient {
         const startTime = performance.now();
         config.metadata = { startTime };
 
-        // Add authentication token if available
-        const token = this.getAuthToken();
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
+        // Auth is handled via httpOnly cookies (withCredentials: true).
+        // No Authorization header from localStorage.
 
         // Add company context if available
         const companyId = this.getCurrentCompanyId();
@@ -323,9 +321,9 @@ class OptimizedApiClient {
   }
 
   private getAuthToken(): string | null {
-    // Get token from localStorage or auth context
+    // Auth is handled via httpOnly cookies — no localStorage token access needed
     try {
-      return localStorage.getItem('auth_token');
+      return null;
     } catch {
       return null;
     }

@@ -1,56 +1,34 @@
 // Secure token storage utilities
+// Tokens are now managed exclusively via httpOnly cookies set by the backend.
+// These functions are retained as no-ops for backward compatibility with any
+// callers that haven't been updated yet.
 
 /**
- * Sets a secure httpOnly cookie for authentication
+ * @deprecated Tokens are set as httpOnly cookies by the backend. No client-side storage needed.
  */
-export const setAuthCookie = (name: string, value: string, days: number = 7): void => {
-  // In a real implementation, this would be handled by the backend
-  // by setting httpOnly cookies in the response headers
-  console.warn('setAuthCookie should be implemented server-side with httpOnly cookies');
-
-  // For development/testing, fall back to secure localStorage
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(name, value);
-    } catch (error) {
-      console.error('Failed to store auth token:', error);
-    }
-  }
+export const setAuthCookie = (_name: string, _value: string, _days: number = 7): void => {
+  // No-op: httpOnly cookies are set by the backend via Set-Cookie headers.
+  // Client-side JS cannot and should not access auth tokens.
 };
 
 /**
- * Gets an authentication token from secure storage
+ * @deprecated Tokens are in httpOnly cookies and not accessible from JS.
  */
-export const getAuthToken = (name: string): string | null => {
-  // In a real implementation, this would be handled by the backend
-  // reading httpOnly cookies from the request headers
-
-  if (typeof window !== 'undefined') {
-    try {
-      return localStorage.getItem(name);
-    } catch (error) {
-      console.error('Failed to retrieve auth token:', error);
-      return null;
-    }
-  }
-
+export const getAuthToken = (_name: string): string | null => {
+  // No-op: httpOnly cookies are sent automatically by the browser.
   return null;
 };
 
 /**
- * Removes authentication tokens from secure storage
+ * @deprecated Tokens are cleared by the backend logout endpoint.
  */
 export const removeAuthTokens = (): void => {
-  // In a real implementation, this would be handled by the backend
-  // by clearing the httpOnly cookies in the response headers
-
+  // Only clear non-sensitive UI state. Tokens are cleared by backend via cookie expiry.
   if (typeof window !== 'undefined') {
     try {
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
     } catch (error) {
-      console.error('Failed to remove auth tokens:', error);
+      console.error('Failed to remove user data:', error);
     }
   }
 };
@@ -62,11 +40,3 @@ export const isSecureContext = (): boolean => {
   if (typeof window === 'undefined') return true; // SSR
   return window.location.protocol === 'https:' || window.location.hostname === 'localhost';
 };
-
-// Development warning about token storage
-if (process.env.NODE_ENV === 'development') {
-  console.warn(
-    'SECURITY WARNING: Tokens are currently stored in localStorage for development. ' +
-    'In production, implement httpOnly cookies for secure token storage.'
-  );
-}

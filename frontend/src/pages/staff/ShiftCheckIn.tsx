@@ -1,21 +1,8 @@
 import type React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  Stack,
-  Text,
-  PrimaryButton,
-  DefaultButton,
-  MessageBar,
-  MessageBarType,
-  Spinner,
-  SpinnerSize,
-  Separator,
-  Label,
-  ProgressIndicator
-} from '@fluentui/react';
-import { MainLayout } from '../../layouts';
-import { Card, SignatureCanvas } from '../../components';
+import { Header, Container, SpaceBetween, KeyValuePairs, Alert } from '../../components/cloudscape';
+import { SignatureCanvas } from '../../components';
 import { shiftService } from '../../services';
 
 interface ShiftDetails {
@@ -50,17 +37,17 @@ interface CheckInData {
 // Helper function to calculate total hours
 const calculateTotalHours = (startTime: string, endTime: string): number => {
   if (!startTime || !endTime) return 0;
-  
+
   try {
     const start = new Date(startTime);
     const end = new Date(endTime);
-    
+
     if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
-    
+
     const diffMs = end.getTime() - start.getTime();
     const diffHours = diffMs / (1000 * 60 * 60);
-    
-    return Math.round(diffHours * 100) / 100; // Round to 2 decimal places
+
+    return Math.round(diffHours * 100) / 100;
   } catch (error) {
     console.error('Error calculating total hours:', error);
     return 0;
@@ -71,55 +58,52 @@ const calculateTotalHours = (startTime: string, endTime: string): number => {
 const validateCheckInTiming = (shiftStartTime: string): { isValid: boolean; errorMessage?: string; availableTime?: string } => {
   const now = new Date();
   const shiftStart = new Date(shiftStartTime);
-  
-  // Check if dates are valid
+
   if (isNaN(shiftStart.getTime())) {
     return { isValid: false, errorMessage: 'Invalid shift start time' };
   }
-  
+
   const shiftDate = shiftStart.toDateString();
   const currentDate = now.toDateString();
-  
-  // Restriction 1: Must be the same date
+
   if (shiftDate !== currentDate) {
     if (shiftStart > now) {
       const daysDiff = Math.ceil((shiftStart.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      return { 
-        isValid: false, 
-        errorMessage: `Cannot check in ${daysDiff} day${daysDiff > 1 ? 's' : ''} early. You can only check in on the day of your shift (${shiftStart.toLocaleDateString()}).` 
+      return {
+        isValid: false,
+        errorMessage: `Cannot check in ${daysDiff} day${daysDiff > 1 ? 's' : ''} early. You can only check in on the day of your shift (${shiftStart.toLocaleDateString()}).`
       };
     } else {
-      return { 
-        isValid: false, 
-        errorMessage: 'Cannot check in to a shift from a previous date. Please contact your manager.' 
+      return {
+        isValid: false,
+        errorMessage: 'Cannot check in to a shift from a previous date. Please contact your manager.'
       };
     }
   }
-  
-  // Restriction 2: Cannot check in more than 15 minutes early
+
   const earlyCheckInWindowMinutes = 15;
   const earliestCheckInTime = new Date(shiftStart.getTime() - (earlyCheckInWindowMinutes * 60 * 1000));
-  
+
   if (now < earliestCheckInTime) {
     const timeDiff = earliestCheckInTime.getTime() - now.getTime();
     const hours = Math.floor(timeDiff / (1000 * 60 * 60));
     const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
-    
+
     let waitTime: string;
     if (hours > 0) {
       waitTime = `${hours} hour${hours > 1 ? 's' : ''} and ${minutes} minute${minutes !== 1 ? 's' : ''}`;
     } else {
       waitTime = `${minutes} minute${minutes !== 1 ? 's' : ''}`;
     }
-    
+
     const availableTime = earliestCheckInTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return { 
-      isValid: false, 
+    return {
+      isValid: false,
       errorMessage: `Cannot check in ${waitTime} early. Check-in becomes available at ${availableTime} (15 minutes before shift start).`,
       availableTime: availableTime
     };
   }
-  
+
   return { isValid: true };
 };
 
@@ -143,7 +127,7 @@ const ShiftCheckIn: React.FC = () => {
   const [checkInAvailable, setCheckInAvailable] = useState(false);
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState<boolean | null>(null);
   const [isAcceptingTerms, setIsAcceptingTerms] = useState(false);
-  
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
@@ -159,18 +143,13 @@ const ShiftCheckIn: React.FC = () => {
       }
 
       try {
-        // Load shift data from API
         const shiftData: any = await shiftService.getShiftById(parseInt(id));
-        console.log('Shift data received:', shiftData);
-        
-        // Transform the API response to match our component interface
+
         const startTime = shiftData.start_time || shiftData.startTime;
         const endTime = shiftData.end_time || shiftData.endTime || '';
-        
-        // Extract venue data - coordinates should be included in shift response
+
         const venueData = shiftData.venue || shiftData.venue_details || shiftData.venueDetails;
-        console.log('Venue data from shift:', venueData);
-        
+
         const transformedShift: ShiftDetails = {
           id: shiftData.id,
           venue: {
@@ -185,27 +164,18 @@ const ShiftCheckIn: React.FC = () => {
           status: shiftData.status || 'scheduled',
           totalHours: calculateTotalHours(startTime, endTime)
         };
-        
-        console.log('Transformed shift for UI:', transformedShift);
-        console.log('Venue coordinates from shift response:', {
-          latitude: transformedShift.venue.latitude,
-          longitude: transformedShift.venue.longitude,
-          hasCoordinates: !!(transformedShift.venue.latitude && transformedShift.venue.longitude)
-        });
-        
-        // Validate check-in timing
+
         const timingValidation = validateCheckInTiming(transformedShift.startTime);
         if (!timingValidation.isValid) {
           setError(timingValidation.errorMessage || 'Check-in not available at this time');
-          setShift(transformedShift); // Still set shift for display purposes
+          setShift(transformedShift);
           setCheckInAvailable(false);
           return;
         }
-        
+
         setCheckInAvailable(true);
         setShift(transformedShift);
-        
-        // Check if user has accepted venue terms
+
         checkVenueTermsAcceptance(transformedShift.venue.id);
       } catch (error) {
         console.error('Failed to load shift:', error);
@@ -232,7 +202,6 @@ const ShiftCheckIn: React.FC = () => {
       const earliestCheckInTime = new Date(shiftStart.getTime() - (earlyCheckInWindowMinutes * 60 * 1000));
 
       if (now >= earliestCheckInTime) {
-        // Check-in is now available, re-validate
         const timingValidation = validateCheckInTiming(shift.startTime);
         if (timingValidation.isValid) {
           setCheckInAvailable(true);
@@ -260,52 +229,35 @@ const ShiftCheckIn: React.FC = () => {
       setCountdown(`Check-in available in ${countdownText} (at ${availableTime})`);
     };
 
-    // Update immediately
     updateCountdown();
-
-    // Update every second
     const interval = setInterval(updateCountdown, 1000);
-
     return () => clearInterval(interval);
   }, [shift, checkInAvailable]);
 
-  // Start location verification once shift is loaded (only if check-in is available and terms accepted)
+  // Start location verification
   useEffect(() => {
-    console.log('Location verification check:', { 
-      shift: !!shift, 
-      currentStep, 
-      locationStatus,
-      checkInAvailable,
-      hasAcceptedTerms,
-      hasError: !!error
-    });
     if (shift && currentStep === 1 && locationStatus === 'idle' && checkInAvailable && hasAcceptedTerms && !error) {
-      console.log('Starting location verification...');
       requestLocation();
     }
   }, [shift, currentStep, locationStatus, checkInAvailable, hasAcceptedTerms, error]);
 
-  // Check venue terms acceptance
   const checkVenueTermsAcceptance = async (venueId: number) => {
     try {
       const hasAccepted = await shiftService.hasAcceptedVenueTerms(venueId);
       setHasAcceptedTerms(hasAccepted);
-      console.log('Venue terms acceptance status:', hasAccepted);
     } catch (error) {
       console.error('Error checking venue terms acceptance:', error);
       setHasAcceptedTerms(false);
     }
   };
 
-  // Accept venue terms
   const acceptVenueTerms = async () => {
     if (!shift) return;
-    
+
     setIsAcceptingTerms(true);
     try {
       await shiftService.acceptVenueTerms(shift.venue.id);
       setHasAcceptedTerms(true);
-      console.log('Venue terms accepted successfully');
     } catch (error) {
       console.error('Error accepting venue terms:', error);
       setError('Failed to accept venue terms. Please try again.');
@@ -314,17 +266,13 @@ const ShiftCheckIn: React.FC = () => {
     }
   };
 
-  // Development mode bypass for location verification
   const isDevelopmentMode = import.meta.env.DEV || window.location.hostname === 'localhost';
-  
-  // Step 1: Get user location and verify proximity to venue
+
   const requestLocation = async () => {
     setLocationStatus('pending');
     setLocationError(null);
-    
-    // Development mode bypass - skip actual location verification
+
     if (isDevelopmentMode && import.meta.env.VITE_BYPASS_LOCATION_CHECK === 'true') {
-      console.log('🚧 DEVELOPMENT MODE: Bypassing location verification');
       setLocationStatus('success');
       setCurrentStep(2);
       return;
@@ -336,51 +284,26 @@ const ShiftCheckIn: React.FC = () => {
       return;
     }
 
-    // Try with high accuracy first, then fallback to lower accuracy
     const tryLocation = (enableHighAccuracy: boolean, timeout: number): Promise<GeolocationPosition> => {
       return new Promise((resolve, reject) => {
-        const options = {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
           enableHighAccuracy,
           timeout,
-          maximumAge: enableHighAccuracy ? 60000 : 300000 // 1 min for high accuracy, 5 min for low
-        };
-
-        navigator.geolocation.getCurrentPosition(resolve, reject, options);
+          maximumAge: enableHighAccuracy ? 60000 : 300000
+        });
       });
     };
 
-    console.log('Requesting location permission...');
-    
     try {
       let position: GeolocationPosition;
-      
+
       try {
-        // First attempt: High accuracy with shorter timeout
         position = await tryLocation(true, 10000);
-        console.log('High accuracy location received:', position);
       } catch (highAccuracyError) {
-        console.log('High accuracy location failed, trying low accuracy...', highAccuracyError);
-        console.log('High accuracy error details:', {
-          code: highAccuracyError.code,
-          message: highAccuracyError.message,
-          type: typeof highAccuracyError
-        });
-        
         try {
-          // Second attempt: Low accuracy with longer timeout
           position = await tryLocation(false, 20000);
-          console.log('Low accuracy location received:', position);
         } catch (lowAccuracyError) {
-          console.log('Low accuracy location also failed, trying cached location...', lowAccuracyError);
-          console.log('Low accuracy error details:', {
-            code: lowAccuracyError.code,
-            message: lowAccuracyError.message,
-            type: typeof lowAccuracyError
-          });
-          
-          // Third attempt: Use cached location
           position = await tryLocation(false, 5000);
-          console.log('Cached location received:', position);
         }
       }
 
@@ -391,17 +314,7 @@ const ShiftCheckIn: React.FC = () => {
       };
 
       setCheckInData(prev => ({ ...prev, location: userLocation }));
-      
-      // Check if user is within acceptable range of venue (if venue has coordinates)
-      console.log('Venue coordinates:', shift?.venue.latitude, shift?.venue.longitude);
-      console.log('Venue coordinates type check:', {
-        latitudeType: typeof shift?.venue.latitude,
-        longitudeType: typeof shift?.venue.longitude,
-        latitudeValue: shift?.venue.latitude,
-        longitudeValue: shift?.venue.longitude,
-        hasLatitude: !!shift?.venue.latitude,
-        hasLongitude: !!shift?.venue.longitude
-      });
+
       if (shift?.venue.latitude && shift?.venue.longitude) {
         const distance = calculateDistance(
           userLocation.latitude,
@@ -409,19 +322,14 @@ const ShiftCheckIn: React.FC = () => {
           Number(shift.venue.latitude),
           Number(shift.venue.longitude)
         );
-        
-        console.log(`Distance to venue: ${(distance * 1000).toFixed(0)}m (accuracy: ±${userLocation.accuracy.toFixed(0)}m)`);
-        
-        // Use venue's actual check radius instead of hardcoded 100m
-        // Add GPS accuracy buffer to account for location uncertainty
-        const venueCheckRadius = shift.venue.checkRadius || shift.venue.check_radius || 50; // Default to 50m if not set
-        const gpsAccuracyBuffer = Math.min(userLocation.accuracy, 20); // Cap GPS buffer at 20m
+
+        const venueCheckRadius = shift.venue.checkRadius || shift.venue.check_radius || 50;
+        const gpsAccuracyBuffer = Math.min(userLocation.accuracy, 20);
         const allowedDistance = venueCheckRadius + gpsAccuracyBuffer;
-        const isWithin = distance * 1000 <= allowedDistance; // Convert km to meters
-        
-        console.log(`Venue check radius: ${venueCheckRadius}m, GPS accuracy: ${userLocation.accuracy.toFixed(0)}m, Total allowed: ${allowedDistance.toFixed(0)}m`);
+        const isWithin = distance * 1000 <= allowedDistance;
+
         setIsWithinRange(isWithin);
-        
+
         if (isWithin) {
           setLocationStatus('success');
           setCurrentStep(2);
@@ -430,25 +338,16 @@ const ShiftCheckIn: React.FC = () => {
           setLocationStatus('error');
         }
       } else {
-        // If venue doesn't have coordinates, cannot verify location - this is a security issue
-        console.log('No venue coordinates available - cannot verify location');
         setLocationError('This venue does not have location coordinates set up. Please contact your manager to configure the venue location before check-in is allowed.');
         setLocationStatus('error');
       }
     } catch (error: any) {
-      console.error('All location attempts failed:', error);
-      console.log('Final error details:', {
-        code: error.code,
-        message: error.message,
-        type: typeof error,
-        errorObject: error
-      });
       let errorMessage = 'Unable to retrieve your location';
-      
+
       if (error.code) {
         switch (error.code) {
           case error.PERMISSION_DENIED:
-            errorMessage = 'Location access denied. To check in, you need to:\n1. Click the location icon 📍 in your browser address bar\n2. Select "Allow" for location access\n3. Refresh this page and try again';
+            errorMessage = 'Location access denied. To check in, you need to:\n1. Click the location icon in your browser address bar\n2. Select "Allow" for location access\n3. Refresh this page and try again';
             break;
           case error.POSITION_UNAVAILABLE:
             errorMessage = 'Location information is unavailable. Please ensure you have a stable internet connection and GPS is enabled.';
@@ -460,15 +359,14 @@ const ShiftCheckIn: React.FC = () => {
             errorMessage = `Location error (${error.code}): ${error.message}`;
         }
       }
-      
+
       setLocationError(errorMessage);
       setLocationStatus('error');
     }
   };
 
-  // Calculate distance between two coordinates (Haversine formula)
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371; // Radius of the Earth in kilometers
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -478,11 +376,10 @@ const ShiftCheckIn: React.FC = () => {
     return R * c;
   };
 
-  // Step 2: Start camera for photo capture
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' } // Use back camera if available
+        video: { facingMode: 'environment' }
       });
       setCameraStream(stream);
       if (videoRef.current) {
@@ -494,46 +391,41 @@ const ShiftCheckIn: React.FC = () => {
     }
   };
 
-  // Capture photo
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const canvas = canvasRef.current;
       const video = videoRef.current;
       const context = canvas.getContext('2d');
-      
+
       if (context) {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         context.drawImage(video, 0, 0);
-        
+
         const photoDataUrl = canvas.toDataURL('image/jpeg', 0.8);
         setCheckInData(prev => ({ ...prev, photo: photoDataUrl }));
         setPhotoTaken(true);
-        
-        // Stop camera stream
+
         if (cameraStream) {
           cameraStream.getTracks().forEach(track => track.stop());
           setCameraStream(null);
         }
-        
+
         setCurrentStep(3);
       }
     }
   };
 
-  // Retake photo
   const retakePhoto = () => {
     setPhotoTaken(false);
     setCheckInData(prev => ({ ...prev, photo: null }));
     startCamera();
   };
 
-  // Step 3: Handle signature
   const handleSignatureSave = (signatureDataUrl: string) => {
     setCheckInData(prev => ({ ...prev, signature: signatureDataUrl }));
   };
 
-  // Final step: Submit check-in
   const submitCheckIn = async () => {
     if (!checkInData.location || !checkInData.photo || !checkInData.signature) {
       setError('Please complete all check-in steps');
@@ -544,36 +436,20 @@ const ShiftCheckIn: React.FC = () => {
     setError(null);
 
     try {
-      console.log('Submitting check-in data:', {
-        shiftId: parseInt(id!),
-        location: checkInData.location,
-        hasPhoto: !!checkInData.photo,
-        photoLength: checkInData.photo?.length,
-        hasSignature: !!checkInData.signature,
-        signatureLength: checkInData.signature?.length
-      });
-      
-      // Call the backend check-in API
       await shiftService.checkInShift(parseInt(id!), {
         location: checkInData.location,
         photo: checkInData.photo,
         signature: checkInData.signature
       });
-      
-      // Navigate back to shifts with success message
-      navigate('/shifts', { 
-        state: { 
+
+      navigate('/shifts', {
+        state: {
           message: 'Successfully checked in to shift!',
           type: 'success'
         }
       });
     } catch (error: any) {
       console.error('Check-in failed:', error);
-      console.error('Error response data:', error.response?.data);
-      console.error('Error status:', error.response?.status);
-      console.error('Error headers:', error.response?.headers);
-      
-      // Show more specific error message if available
       const errorMessage = error.response?.data?.error || error.response?.data?.detail || error.message || 'Failed to check in. Please try again.';
       setError(`Check-in failed: ${errorMessage}`);
     } finally {
@@ -581,14 +457,12 @@ const ShiftCheckIn: React.FC = () => {
     }
   };
 
-  // Start camera when reaching step 2
   useEffect(() => {
     if (currentStep === 2 && !cameraStream && !photoTaken) {
       startCamera();
     }
   }, [currentStep, cameraStream, photoTaken]);
 
-  // Cleanup camera stream on unmount
   useEffect(() => {
     return () => {
       if (cameraStream) {
@@ -599,303 +473,259 @@ const ShiftCheckIn: React.FC = () => {
 
   if (isLoading) {
     return (
-      <MainLayout>
-        <div className="flex justify-center py-12">
-          <Spinner size={SpinnerSize.large} label="Loading shift details..." />
+      <div className="flex items-center justify-center py-16">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-4 border-gray-200 border-t-red-600 rounded-full animate-spin" />
+          <p className="text-sm text-gray-500">Loading shift details...</p>
         </div>
-      </MainLayout>
+      </div>
     );
   }
 
   if (!shift) {
-    return (
-      <MainLayout>
-        <MessageBar messageBarType={MessageBarType.error}>
-          Shift not found
-        </MessageBar>
-      </MainLayout>
-    );
+    return <Alert type="error">Shift not found</Alert>;
   }
 
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Stack horizontal horizontalAlign="space-between" verticalAlign="center">
-          <Text variant="xxLarge">Check In to Shift</Text>
-          <DefaultButton
-            text="Cancel"
+    <SpaceBetween size="l">
+      <Header
+        variant="h1"
+        actions={
+          <button
             onClick={() => navigate('/shifts')}
-            iconProps={{ iconName: 'Cancel' }}
-          />
-        </Stack>
+            className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+        }
+      >
+        Check In to Shift
+      </Header>
 
-        {/* Shift Details Card */}
-        <Card>
-          <Stack tokens={{ childrenGap: 12 }}>
-            <Text variant="large" styles={{ root: { fontWeight: 'bold' } }}>
-              {shift.venue.name}
-            </Text>
-            <Text>{shift.venue.address}</Text>
-            <Text>
-              <strong>Start Time:</strong> {shift.startTime ? new Date(shift.startTime).toLocaleString() : 'Invalid Date'}
-            </Text>
-            <Text>
-              <strong>End Time:</strong> {shift.endTime ? new Date(shift.endTime).toLocaleString() : 'Invalid Date'}
-            </Text>
-            <Text>
-              <strong>Total Hours:</strong> {shift.totalHours ? `${shift.totalHours} hours` : 'Unable to calculate'}
-            </Text>
-          </Stack>
-        </Card>
-
-        {/* Progress Indicator */}
-        <ProgressIndicator 
-          label="Check-in Progress" 
-          percentComplete={hasAcceptedTerms ? (currentStep / 3) : 0} 
+      {/* Shift Details */}
+      <Container header={<Header variant="h2">{shift.venue.name}</Header>}>
+        <KeyValuePairs
+          columns={2}
+          items={[
+            { label: 'Address', value: shift.venue.address },
+            { label: 'Start Time', value: shift.startTime ? new Date(shift.startTime).toLocaleString() : 'Invalid Date' },
+            { label: 'End Time', value: shift.endTime ? new Date(shift.endTime).toLocaleString() : 'Invalid Date' },
+            { label: 'Total Hours', value: shift.totalHours ? `${shift.totalHours} hours` : 'Unable to calculate' },
+          ]}
         />
+      </Container>
 
-        {error && (
-          <MessageBar
-            messageBarType={MessageBarType.error}
-            onDismiss={() => setError(null)}
-          >
-            {error}
-          </MessageBar>
-        )}
+      {/* Progress */}
+      <div className="w-full bg-gray-200 rounded-full h-2">
+        <div
+          className="bg-red-600 h-2 rounded-full transition-all duration-300"
+          style={{ width: `${hasAcceptedTerms ? (currentStep / 3) * 100 : 0}%` }}
+        />
+      </div>
 
-        {/* Countdown Timer Display */}
-        {countdown && !checkInAvailable && (
-          <MessageBar
-            messageBarType={MessageBarType.warning}
-            styles={{
-              root: {
-                backgroundColor: '#fff4e6',
-                borderColor: '#f4a261'
-              }
-            }}
-          >
-            🕒 {countdown}
-          </MessageBar>
-        )}
+      {error && (
+        <Alert type="error" dismissible onDismiss={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
 
-        {/* Step 0: Venue Terms Acceptance */}
-        {currentStep === 1 && checkInAvailable && hasAcceptedTerms === false && (
-          <Card>
-            <Stack tokens={{ childrenGap: 16 }}>
-              <Text variant="large" className="font-semibold">
-                Step 1: Accept Venue Terms & Conditions
-              </Text>
-              <Text variant="medium">
-                Before you can check in to your shift at <strong>{shift?.venue.name}</strong>, you must accept the venue's terms and conditions.
-              </Text>
-              <Text variant="medium">
-                📍 <strong>Venue:</strong> {shift?.venue.name}<br />
-                📍 <strong>Address:</strong> {shift?.venue.address}
-              </Text>
-              
-              <MessageBar messageBarType={MessageBarType.warning}>
-                <Text variant="medium">
-                  <strong>Please note:</strong> By accepting these terms, you agree to follow all venue-specific policies, safety procedures, and conduct requirements during your shift.
-                </Text>
-              </MessageBar>
-              
-              <PrimaryButton
-                text={isAcceptingTerms ? "Accepting Terms..." : "Accept Terms & Continue"}
-                onClick={acceptVenueTerms}
-                disabled={isAcceptingTerms}
-                iconProps={{ iconName: isAcceptingTerms ? undefined : 'CheckMark' }}
-              />
-            </Stack>
-          </Card>
-        )}
+      {/* Countdown */}
+      {countdown && !checkInAvailable && (
+        <Alert type="warning">{countdown}</Alert>
+      )}
 
-        {/* Step 1: Location Verification */}
-        {currentStep === 1 && checkInAvailable && hasAcceptedTerms === true && (
-          <Card>
-            <Stack tokens={{ childrenGap: 16 }}>
-              <Text variant="large">Step 2: Verify Your Location</Text>
-              
-              {/* Development mode indicator */}
-              {isDevelopmentMode && import.meta.env.VITE_BYPASS_LOCATION_CHECK === 'true' && (
-                <MessageBar
-                  messageBarType={MessageBarType.info}
-                  isMultiline={false}
+      {/* Step 0: Venue Terms */}
+      {currentStep === 1 && checkInAvailable && hasAcceptedTerms === false && (
+        <Container header={<Header variant="h2">Step 1: Accept Venue Terms & Conditions</Header>}>
+          <SpaceBetween size="m">
+            <p className="text-sm text-gray-600">
+              Before you can check in to your shift at <strong>{shift?.venue.name}</strong>, you must accept the venue's terms and conditions.
+            </p>
+            <KeyValuePairs
+              columns={2}
+              items={[
+                { label: 'Venue', value: shift?.venue.name },
+                { label: 'Address', value: shift?.venue.address },
+              ]}
+            />
+            <Alert type="warning">
+              By accepting these terms, you agree to follow all venue-specific policies, safety procedures, and conduct requirements during your shift.
+            </Alert>
+            <button
+              onClick={acceptVenueTerms}
+              disabled={isAcceptingTerms}
+              className="w-full px-6 h-12 text-base font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              {isAcceptingTerms ? 'Accepting Terms...' : 'Accept Terms & Continue'}
+            </button>
+          </SpaceBetween>
+        </Container>
+      )}
+
+      {/* Step 1: Location Verification */}
+      {currentStep === 1 && checkInAvailable && hasAcceptedTerms === true && (
+        <Container header={<Header variant="h2">Step 2: Verify Your Location</Header>}>
+          <SpaceBetween size="m">
+            {isDevelopmentMode && import.meta.env.VITE_BYPASS_LOCATION_CHECK === 'true' && (
+              <Alert type="info">Development Mode: Location verification is bypassed for testing</Alert>
+            )}
+            <p className="text-sm text-gray-600">We need to verify that you are at the correct venue before you can check in.</p>
+
+            {locationStatus === 'pending' && (
+              <div className="flex items-center gap-3 py-4">
+                <div className="w-6 h-6 border-3 border-gray-200 border-t-red-600 rounded-full animate-spin" />
+                <p className="text-sm text-gray-600">Getting your location...</p>
+              </div>
+            )}
+
+            {locationStatus === 'error' && (
+              <SpaceBetween size="s">
+                <Alert type="error">{locationError}</Alert>
+                <SpaceBetween direction="horizontal" size="s">
+                  <button
+                    onClick={() => {
+                      setLocationError(null);
+                      setLocationStatus('idle');
+                      setTimeout(() => requestLocation(), 100);
+                    }}
+                    className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    Try Again
+                  </button>
+                  <button
+                    onClick={() => {
+                      alert(`Location troubleshooting tips:\n1. Ensure location services are enabled in your browser\n2. Allow location access when prompted\n3. Try refreshing the page\n4. Move to an area with better GPS signal\n5. Check that location services are enabled on your device\n6. If using iOS Safari, go to Settings > Privacy & Security > Location Services > Safari Websites and ensure it's enabled`);
+                    }}
+                    className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Troubleshoot
+                  </button>
+                  {isDevelopmentMode && (
+                    <button
+                      onClick={() => {
+                        const confirmed = confirm(
+                          `DEVELOPMENT OVERRIDE\n\nAre you physically present at:\n${shift?.venue.name}\n${shift?.venue.address}\n\nThis bypasses location verification for testing only.`
+                        );
+                        if (confirmed) {
+                          setLocationStatus('success');
+                          setCurrentStep(2);
+                          setCheckInData(prev => ({
+                            ...prev,
+                            location: {
+                              latitude: Number(shift?.venue.latitude || 0),
+                              longitude: Number(shift?.venue.longitude || 0),
+                              accuracy: 10
+                            }
+                          }));
+                        }
+                      }}
+                      className="px-4 h-9 text-sm font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600 transition-colors"
+                    >
+                      Manual Override
+                    </button>
+                  )}
+                </SpaceBetween>
+              </SpaceBetween>
+            )}
+
+            {locationStatus === 'success' && isWithinRange && (
+              <Alert type="success">Location verified! You are at the correct venue.</Alert>
+            )}
+
+            {locationStatus !== 'pending' && locationStatus !== 'success' && (
+              <button
+                onClick={requestLocation}
+                className="w-full px-6 h-12 text-base font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors"
+              >
+                Verify Location
+              </button>
+            )}
+          </SpaceBetween>
+        </Container>
+      )}
+
+      {/* Step 2: Photo Capture */}
+      {currentStep === 2 && (
+        <Container header={<Header variant="h2">Step 3: Take Arrival Photo</Header>}>
+          <SpaceBetween size="m">
+            <p className="text-sm text-gray-600">Take a photo as proof of your arrival at the venue.</p>
+
+            {!photoTaken ? (
+              <SpaceBetween size="m">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  className="w-full max-w-md rounded-xl border border-gray-200"
+                />
+                <canvas ref={canvasRef} style={{ display: 'none' }} />
+                <button
+                  onClick={capturePhoto}
+                  className="w-full px-6 h-12 text-base font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors"
                 >
-                  🚧 Development Mode: Location verification is bypassed for testing
-                </MessageBar>
-              )}
-              <Text>
-                We need to verify that you are at the correct venue before you can check in.
-              </Text>
-              
-              {locationStatus === 'pending' && (
-                <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 12 }}>
-                  <Spinner size={SpinnerSize.medium} />
-                  <Text>Getting your location...</Text>
-                </Stack>
-              )}
-              
-              {locationStatus === 'error' && (
-                <Stack tokens={{ childrenGap: 12 }}>
-                  <MessageBar messageBarType={MessageBarType.error}>
-                    {locationError}
-                  </MessageBar>
-                  <Stack horizontal tokens={{ childrenGap: 8 }}>
-                    <PrimaryButton
-                      text="Try Again"
-                      onClick={() => {
-                        setLocationError(null);
-                        setLocationStatus('idle');
-                        setTimeout(() => requestLocation(), 100);
-                      }}
-                      iconProps={{ iconName: 'Refresh' }}
-                    />
-                    <DefaultButton
-                      text="Troubleshoot"
-                      onClick={() => {
-                        const troubleshootMsg = `Location troubleshooting tips:
-1. Ensure location services are enabled in your browser
-2. Allow location access when prompted
-3. Try refreshing the page
-4. Move to an area with better GPS signal
-5. Check that location services are enabled on your device
-6. If using iOS Safari, go to Settings > Privacy & Security > Location Services > Safari Websites and ensure it's enabled`;
-                        alert(troubleshootMsg);
-                      }}
-                      iconProps={{ iconName: 'Help' }}
-                    />
-                    {isDevelopmentMode && (
-                      <DefaultButton
-                        text="Manual Override"
-                        onClick={() => {
-                          const confirmed = confirm(
-                            `⚠️ DEVELOPMENT OVERRIDE ⚠️\n\nAre you physically present at:\n${shift?.venue.name}\n${shift?.venue.address}\n\nThis bypasses location verification for testing only.`
-                          );
-                          if (confirmed) {
-                            setLocationStatus('success');
-                            setCurrentStep(2);
-                            // Set dummy location data
-                            setCheckInData(prev => ({
-                              ...prev,
-                              location: {
-                                latitude: Number(shift?.venue.latitude || 0),
-                                longitude: Number(shift?.venue.longitude || 0),
-                                accuracy: 10
-                              }
-                            }));
-                          }
-                        }}
-                        iconProps={{ iconName: 'Warning' }}
-                        styles={{ root: { backgroundColor: '#ff9800', color: 'white' } }}
-                      />
-                    )}
-                  </Stack>
-                </Stack>
-              )}
-              
-              {locationStatus === 'success' && isWithinRange && (
-                <MessageBar messageBarType={MessageBarType.success}>
-                  Location verified! You are at the correct venue.
-                </MessageBar>
-              )}
-              
-              {locationStatus !== 'pending' && locationStatus !== 'success' && (
-                <PrimaryButton
-                  text="Verify Location"
-                  onClick={requestLocation}
-                  iconProps={{ iconName: 'Location' }}
+                  Capture Photo
+                </button>
+              </SpaceBetween>
+            ) : (
+              <SpaceBetween size="m">
+                <img
+                  src={checkInData.photo!}
+                  alt="Arrival proof"
+                  className="w-full max-w-md rounded-xl border border-gray-200"
                 />
-              )}
-            </Stack>
-          </Card>
-        )}
+                <SpaceBetween direction="horizontal" size="s">
+                  <button
+                    onClick={() => setCurrentStep(3)}
+                    className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    Continue
+                  </button>
+                  <button
+                    onClick={retakePhoto}
+                    className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Retake
+                  </button>
+                </SpaceBetween>
+              </SpaceBetween>
+            )}
+          </SpaceBetween>
+        </Container>
+      )}
 
-        {/* Step 2: Photo Capture */}
-        {currentStep === 2 && (
-          <Card>
-            <Stack tokens={{ childrenGap: 16 }}>
-              <Text variant="large">Step 3: Take Arrival Photo</Text>
-              <Text>
-                Take a photo as proof of your arrival at the venue.
-              </Text>
-              
-              {!photoTaken ? (
-                <Stack tokens={{ childrenGap: 12 }}>
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    style={{ width: '100%', maxWidth: '400px', borderRadius: '8px' }}
-                  />
-                  <canvas ref={canvasRef} style={{ display: 'none' }} />
-                  <Stack horizontal tokens={{ childrenGap: 8 }}>
-                    <PrimaryButton
-                      text="Capture Photo"
-                      onClick={capturePhoto}
-                      iconProps={{ iconName: 'Camera' }}
-                    />
-                  </Stack>
-                </Stack>
-              ) : (
-                <Stack tokens={{ childrenGap: 12 }}>
-                  <img
-                    src={checkInData.photo!}
-                    alt="Arrival proof"
-                    style={{ width: '100%', maxWidth: '400px', borderRadius: '8px' }}
-                  />
-                  <Stack horizontal tokens={{ childrenGap: 8 }}>
-                    <PrimaryButton
-                      text="Continue"
-                      onClick={() => setCurrentStep(3)}
-                      iconProps={{ iconName: 'Forward' }}
-                    />
-                    <DefaultButton
-                      text="Retake"
-                      onClick={retakePhoto}
-                      iconProps={{ iconName: 'Refresh' }}
-                    />
-                  </Stack>
-                </Stack>
-              )}
-            </Stack>
-          </Card>
-        )}
+      {/* Step 3: Digital Signature */}
+      {currentStep === 3 && (
+        <Container header={<Header variant="h2">Step 4: Confirm with Signature</Header>}>
+          <SpaceBetween size="m">
+            <p className="text-sm text-gray-600">Please sign below to confirm your check-in and start of shift.</p>
 
-        {/* Step 3: Digital Signature */}
-        {currentStep === 3 && (
-          <Card>
-            <Stack tokens={{ childrenGap: 16 }}>
-              <Text variant="large">Step 4: Confirm with Signature</Text>
-              <Text>
-                Please sign below to confirm your check-in and start of shift.
-              </Text>
-              
-              <SignatureCanvas
-                onSave={handleSignatureSave}
-                width={500}
-                height={200}
-                label="Your Signature"
-                required
-              />
-              
-              <Stack horizontal horizontalAlign="end" tokens={{ childrenGap: 10 }}>
-                <DefaultButton
-                  text="Back"
-                  onClick={() => setCurrentStep(2)}
-                  iconProps={{ iconName: 'Back' }}
-                />
-                <PrimaryButton
-                  text={isCheckingIn ? 'Checking In...' : 'Complete Check-In'}
-                  onClick={submitCheckIn}
-                  disabled={!checkInData.signature || isCheckingIn}
-                  iconProps={{ iconName: isCheckingIn ? undefined : 'CheckMark' }}
-                />
-              </Stack>
-            </Stack>
-          </Card>
-        )}
-      </Stack>
-    </MainLayout>
+            <SignatureCanvas
+              onSave={handleSignatureSave}
+              width={500}
+              height={200}
+              label="Your Signature"
+              required
+            />
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setCurrentStep(2)}
+                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Back
+              </button>
+              <button
+                onClick={submitCheckIn}
+                disabled={!checkInData.signature || isCheckingIn}
+                className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {isCheckingIn ? 'Checking In...' : 'Complete Check-In'}
+              </button>
+            </div>
+          </SpaceBetween>
+        </Container>
+      )}
+    </SpaceBetween>
   );
 };
 

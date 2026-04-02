@@ -797,13 +797,9 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             # Allow user to submit later
             pass
         else:
-            # Auto-submit and update pending balance
+            # Auto-submit — save() handles adding to LeaveBalance.pending_balance
             serializer.instance.status = 'pending'
-            serializer.instance.submitted_at = timezone.now()
             serializer.instance.save()
-
-            # Add to pending balance
-            entitlement.add_pending(serializer.validated_data['days_requested'])
 
         headers = self.get_success_headers(serializer.data)
         return Response({
@@ -832,22 +828,9 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                 'error': f'Only draft requests can be submitted. Current status: {leave_request.status}'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Submit the request
+        # Submit the request — save() handles adding to LeaveBalance.pending_balance
         leave_request.status = 'pending'
-        leave_request.submitted_at = timezone.now()
         leave_request.save()
-
-        # Update pending balance
-        try:
-            current_year = timezone.now().year
-            entitlement = LeaveEntitlement.objects.get(
-                user=leave_request.staff_user,
-                policy__leave_type=leave_request.leave_type,
-                year=current_year
-            )
-            entitlement.add_pending(leave_request.days_requested)
-        except LeaveEntitlement.DoesNotExist:
-            pass
 
         return Response({
             'message': 'Leave request submitted for approval',
@@ -865,24 +848,8 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                 'error': f'Only pending requests can be approved. Current status: {leave_request.status}'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Approve the request
+        # Approve the request — model method handles LeaveBalance + LeaveEntitlement updates
         leave_request.approve(request.user, notes)
-
-        # Update leave balances
-        try:
-            current_year = timezone.now().year
-            entitlement = LeaveEntitlement.objects.get(
-                user=leave_request.staff_user,
-                policy__leave_type=leave_request.leave_type,
-                year=current_year
-            )
-
-            # Remove from pending and add to used
-            entitlement.remove_pending(leave_request.days_requested)
-            entitlement.use_leave(leave_request.days_requested)
-
-        except LeaveEntitlement.DoesNotExist:
-            logger.warning(f'No entitlement found for approved leave request {leave_request.id}')
 
         return Response({
             'message': 'Leave request approved successfully',
@@ -905,20 +872,8 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                 'error': 'Rejection reason is required'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Reject the request
+        # Reject the request — model method handles LeaveBalance pending reversal
         leave_request.reject(request.user, notes)
-
-        # Remove from pending balance
-        try:
-            current_year = timezone.now().year
-            entitlement = LeaveEntitlement.objects.get(
-                user=leave_request.staff_user,
-                policy__leave_type=leave_request.leave_type,
-                year=current_year
-            )
-            entitlement.remove_pending(leave_request.days_requested)
-        except LeaveEntitlement.DoesNotExist:
-            pass
 
         return Response({
             'message': 'Leave request rejected',
@@ -941,21 +896,8 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                 'error': f'Request cannot be cancelled. Current status: {leave_request.status}'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Cancel the request
+        # Cancel the request — model method handles LeaveBalance pending reversal
         leave_request.cancel()
-
-        # Remove from pending balance if it was pending
-        if leave_request.status == 'cancelled':
-            try:
-                current_year = timezone.now().year
-                entitlement = LeaveEntitlement.objects.get(
-                    user=leave_request.staff_user,
-                    policy__leave_type=leave_request.leave_type,
-                    year=current_year
-                )
-                entitlement.remove_pending(leave_request.days_requested)
-            except LeaveEntitlement.DoesNotExist:
-                pass
 
         return Response({
             'message': 'Leave request cancelled successfully',

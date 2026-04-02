@@ -108,23 +108,61 @@ class ReportGenerator:
         return params
 
     def _validate_query_safety(self):
-        """Basic validation to prevent dangerous SQL operations"""
+        """Validate that query is a safe, read-only SELECT statement.
+
+        SECURITY: Uses an allowlist approach: the query MUST start with SELECT
+        (after stripping comments and whitespace), blocks semicolons to prevent
+        statement chaining, and blocks dangerous PostgreSQL functions, system
+        catalog access, and data exfiltration patterns.
+        """
         import re
 
-        # More precise dangerous keyword detection using word boundaries
+        query = self.template.sql_query.strip()
+
+        # Strip SQL comments (both -- and /* */ style)
+        query_no_comments = re.sub(r'--[^\n]*', ' ', query)
+        query_no_comments = re.sub(r'/\*.*?\*/', ' ', query_no_comments, flags=re.DOTALL)
+        query_clean = query_no_comments.strip()
+
+        # Must start with SELECT (allowlist approach)
+        if not re.match(r'^\s*SELECT\b', query_clean, re.IGNORECASE):
+            raise ValueError("Only SELECT queries are allowed")
+
+        # Block semicolons — prevents statement chaining
+        if ';' in query_clean:
+            raise ValueError("Query must not contain semicolons")
+
+        # Block dangerous keywords even within SELECT (subqueries, CTEs, etc.)
         dangerous_patterns = [
+            # DDL/DML operations
             r'\bDROP\b', r'\bDELETE\b', r'\bTRUNCATE\b', r'\bALTER\b',
-            r'\bCREATE\s+(TABLE|INDEX|VIEW|DATABASE)\b',  # More specific CREATE detection
-            r'\bINSERT\b', r'\bUPDATE\b', r'\bEXEC\b', r'\bEXECUTE\b'
+            r'\bCREATE\b', r'\bINSERT\b', r'\bUPDATE\b', r'\bEXEC\b',
+            r'\bEXECUTE\b', r'\bGRANT\b', r'\bREVOKE\b', r'\bCOPY\b',
+            # PostgreSQL file/system access functions
+            r'\bpg_read_file\b', r'\bpg_write_file\b', r'\bpg_ls_dir\b',
+            r'\bpg_read_binary_file\b', r'\bpg_stat_file\b',
+            r'\blo_import\b', r'\blo_export\b', r'\blo_create\b',
+            r'\blo_unlink\b', r'\bpg_largeobject\b',
+            # PostgreSQL remote execution
+            r'\bdblink\b', r'\bdblink_exec\b', r'\bdblink_connect\b',
+            # MySQL-specific (defense in depth)
+            r'\bINTO\s+OUTFILE\b', r'\bINTO\s+DUMPFILE\b', r'\bLOAD_FILE\b',
+            # SELECT INTO (creates tables/variables)
+            r'\bSELECT\b[^;]*\bINTO\b',
+            # Session/role manipulation
+            r'\bSET\s+ROLE\b', r'\bSET\s+SESSION\b', r'\bSET\s+LOCAL\b',
+            r'\bRESET\s+ROLE\b',
+            # System catalog access (cross-tenant data exposure)
+            r'\binformation_schema\b', r'\bpg_catalog\b',
+            r'\bpg_shadow\b', r'\bpg_authid\b', r'\bpg_roles\b',
+            r'\bpg_user\b', r'\bpg_stat_activity\b',
+            # Notification channels (side-channel data exfiltration)
+            r'\bpg_notify\b', r'\bNOTIFY\b', r'\bLISTEN\b',
         ]
 
-        query_upper = self.template.sql_query.upper()
-
-        # Check for dangerous keywords with word boundaries
         for pattern in dangerous_patterns:
-            if re.search(pattern, query_upper):
-                keyword = pattern.replace(r'\b', '').replace(r'\s+.*', '').replace('\\', '')
-                raise ValueError(f"Query contains prohibited keyword: {keyword}")
+            if re.search(pattern, query_clean, re.IGNORECASE):
+                raise ValueError("Query contains prohibited operation")
 
     def _generate_csv(self, data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Generate CSV format report"""

@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
@@ -605,15 +605,28 @@ class LeaveRequest(TimestampedModel):
                 hours = (end_datetime - start_datetime).total_seconds() / 3600
                 self.days_requested = Decimal(str(hours / 8)).quantize(Decimal('0.01'))
 
-        # Set submitted_at when status changes to pending
+        # Detect status transition to 'pending' to add pending balance
+        _add_pending = False
         if self.status == 'pending' and not self.submitted_at:
             self.submitted_at = timezone.now()
+            _add_pending = True
 
         # Set approved_at when status changes to approved/rejected
         if self.status in ['approved', 'rejected'] and not self.approved_at:
             self.approved_at = timezone.now()
 
         super().save(*args, **kwargs)
+
+        # Add to pending balance on LeaveBalance after the save succeeds
+        # (only when transitioning to pending for the first time)
+        if _add_pending and self.days_requested:
+            leave_year = self._get_leave_year()
+            balance, _ = LeaveBalance.objects.get_or_create(
+                staff_user=self.staff_user,
+                leave_type=self.leave_type,
+                year=leave_year,
+            )
+            balance.add_pending(self.days_requested)
 
     @property
     def duration_days(self):
@@ -635,27 +648,74 @@ class LeaveRequest(TimestampedModel):
         """Check if request can be cancelled by user"""
         return self.status in ['draft', 'pending']
 
+    def _get_leave_year(self):
+        """Determine the leave year based on the request start date"""
+        return self.start_date.year
+
+    @transaction.atomic
     def approve(self, manager, notes=''):
-        """Approve the leave request"""
+        """Approve the leave request and deduct from LeaveBalance"""
         self.status = 'approved'
         self.approved_by = manager
         self.approved_at = timezone.now()
         self.manager_notes = notes
+
+        # Update LeaveBalance: move from pending to used
+        leave_year = self._get_leave_year()
+        balance, created = LeaveBalance.objects.select_for_update().get_or_create(
+            staff_user=self.staff_user,
+            leave_type=self.leave_type,
+            year=leave_year,
+        )
+
+        days = Decimal(str(self.days_requested))
+        balance.pending_balance = max(Decimal('0'), balance.pending_balance - days)
+        balance.used_balance += days
+        balance.save()
+
+        self.balance_deducted = True
         self.save()
+
+        # Also update LeaveEntitlement if it exists
+        try:
+            entitlement = LeaveEntitlement.objects.select_for_update().get(
+                user=self.staff_user,
+                policy__leave_type=self.leave_type,
+                year=leave_year,
+            )
+            entitlement.used_to_date += days
+            entitlement.save()
+        except LeaveEntitlement.DoesNotExist:
+            pass
 
         logger.info(
             f"Leave request approved: {self.staff_user.username} - "
             f"{self.leave_type.name} ({self.start_date} to {self.end_date}) "
-            f"by {manager.username}"
+            f"by {manager.username} | {days} days deducted from balance"
         )
 
+    @transaction.atomic
     def reject(self, manager, notes=''):
-        """Reject the leave request"""
+        """Reject the leave request and reverse pending balance"""
         self.status = 'rejected'
         self.approved_by = manager
         self.approved_at = timezone.now()
         self.manager_notes = notes
         self.save()
+
+        # Reverse pending balance on LeaveBalance
+        leave_year = self._get_leave_year()
+        try:
+            balance = LeaveBalance.objects.select_for_update().get(
+                staff_user=self.staff_user,
+                leave_type=self.leave_type,
+                year=leave_year,
+            )
+            days = Decimal(str(self.days_requested))
+            balance.pending_balance = max(Decimal('0'), balance.pending_balance - days)
+            balance.save()
+        except LeaveBalance.DoesNotExist:
+            pass
 
         logger.info(
             f"Leave request rejected: {self.staff_user.username} - "
@@ -663,16 +723,63 @@ class LeaveRequest(TimestampedModel):
             f"by {manager.username}"
         )
 
+    @transaction.atomic
     def cancel(self):
-        """Cancel the leave request (by user)"""
-        if self.can_be_cancelled:
-            self.status = 'cancelled'
-            self.save()
+        """Cancel the leave request and reverse pending balance (by user)"""
+        if not self.can_be_cancelled:
+            return
 
-            logger.info(
-                f"Leave request cancelled: {self.staff_user.username} - "
-                f"{self.leave_type.name} ({self.start_date} to {self.end_date})"
+        was_pending = self.status == 'pending'
+        self.status = 'cancelled'
+        self.save()
+
+        # Reverse pending balance if it was in pending status
+        if was_pending:
+            leave_year = self._get_leave_year()
+            try:
+                balance = LeaveBalance.objects.select_for_update().get(
+                    staff_user=self.staff_user,
+                    leave_type=self.leave_type,
+                    year=leave_year,
+                )
+                days = Decimal(str(self.days_requested))
+                balance.pending_balance = max(Decimal('0'), balance.pending_balance - days)
+                balance.save()
+            except LeaveBalance.DoesNotExist:
+                pass
+
+        logger.info(
+            f"Leave request cancelled: {self.staff_user.username} - "
+            f"{self.leave_type.name} ({self.start_date} to {self.end_date})"
+        )
+
+    @transaction.atomic
+    def withdraw(self):
+        """Withdraw a pending leave request and reverse pending balance"""
+        if self.status != 'pending':
+            return
+
+        self.status = 'withdrawn'
+        self.save()
+
+        # Reverse pending balance
+        leave_year = self._get_leave_year()
+        try:
+            balance = LeaveBalance.objects.select_for_update().get(
+                staff_user=self.staff_user,
+                leave_type=self.leave_type,
+                year=leave_year,
             )
+            days = Decimal(str(self.days_requested))
+            balance.pending_balance = max(Decimal('0'), balance.pending_balance - days)
+            balance.save()
+        except LeaveBalance.DoesNotExist:
+            pass
+
+        logger.info(
+            f"Leave request withdrawn: {self.staff_user.username} - "
+            f"{self.leave_type.name} ({self.start_date} to {self.end_date})"
+        )
 
 
 class LeaveBalanceManager(models.Manager):

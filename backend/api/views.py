@@ -48,7 +48,9 @@ from .models import (
     # Password reset models
     PasswordResetToken,
     # Leave/Availability models
-    ContractorUnavailability, BankHoliday, StaffLeaveDailyRate
+    ContractorUnavailability, BankHoliday, StaffLeaveDailyRate,
+    # Audit logging
+    AuditLog,
 )
 from .serializers import (
     UserSerializer, StaffProfileSerializer, EmergencyContactSerializer,
@@ -289,6 +291,24 @@ class LoginView(APIView):
                     'refresh': refresh_token
                 }, status=200)
 
+                # Audit log: successful login
+                try:
+                    company = None
+                    membership = user.company_memberships.filter(is_active=True).select_related('company').first()
+                    if membership:
+                        company = membership.company
+                    AuditLog.log(
+                        user=user,
+                        company=company,
+                        action='login',
+                        resource_type='User',
+                        resource_id=user.id,
+                        details={'method': 'credentials'},
+                        request=request,
+                    )
+                except Exception:
+                    logger.warning(f'Failed to create audit log for login of user {user.pk}')
+
                 # Set access token cookie
                 response.set_cookie(
                     key=settings.SIMPLE_JWT['AUTH_COOKIE'],
@@ -350,17 +370,48 @@ class LoginView(APIView):
                     except Exception:
                         logger.warning(f'Failed to send account lockout email to user {user.pk}')
 
+                    # Audit log: account locked due to failed attempts
+                    try:
+                        AuditLog.log(
+                            user=user,
+                            action='login_failed',
+                            resource_type='User',
+                            resource_id=user.id,
+                            details={
+                                'reason': 'account_locked',
+                                'failed_attempts': user.failed_login_attempts,
+                            },
+                            request=request,
+                        )
+                    except Exception:
+                        logger.warning(f'Failed to create audit log for locked account {user.pk}')
+
                     return Response({
                         'message': 'Account locked',
-                        'detail': 'Too many failed login attempts. Your account has been locked for 30 minutes. Please contact an administrator if you need immediate access.',
-                        'locked_until': user.account_locked_until.isoformat()
+                        'detail': 'Too many failed login attempts. Your account has been temporarily locked. Please try again later or contact an administrator.'
                     }, status=status.HTTP_403_FORBIDDEN)
                 else:
                     user.save(update_fields=['failed_login_attempts', 'last_failed_login'])
-                    attempts_remaining = 5 - user.failed_login_attempts
+
+                    # Audit log: failed login attempt
+                    try:
+                        AuditLog.log(
+                            user=user,
+                            action='login_failed',
+                            resource_type='User',
+                            resource_id=user.id,
+                            details={
+                                'reason': 'invalid_password',
+                                'failed_attempts': user.failed_login_attempts,
+                            },
+                            request=request,
+                        )
+                    except Exception:
+                        logger.warning(f'Failed to create audit log for failed login of user {user.pk}')
+
+                    # SECURITY: Use generic message to prevent account enumeration
                     return Response({
-                        'message': 'Incorrect password',
-                        'detail': f'Invalid password. {attempts_remaining} attempt(s) remaining before account lockout.'
+                        'message': 'Invalid username/email or password'
                     }, status=status.HTTP_401_UNAUTHORIZED)
 
         except User.DoesNotExist:
@@ -412,6 +463,24 @@ class LogoutView(APIView):
             token = RefreshToken(refresh_token)
             token.blacklist()
 
+            # Audit log: successful logout
+            try:
+                user = request.user
+                company = None
+                membership = user.company_memberships.filter(is_active=True).select_related('company').first()
+                if membership:
+                    company = membership.company
+                AuditLog.log(
+                    user=user,
+                    company=company,
+                    action='logout',
+                    resource_type='User',
+                    resource_id=user.id,
+                    request=request,
+                )
+            except Exception:
+                logger.warning('Failed to create audit log for logout')
+
             # Sprint 3: Clear cookies and return success response
             response = Response({
                 'message': 'Logout successful',
@@ -434,9 +503,10 @@ class LogoutView(APIView):
 
         except Exception as e:
             # Even on error, try to clear cookies
+            logger.exception("Token blacklist failed during logout")
             response = Response({
                 'message': 'Logout completed with warning',
-                'detail': f'Cookies cleared, but token blacklist failed: {str(e)}'
+                'detail': 'Cookies cleared, but token invalidation encountered an issue'
             }, status=status.HTTP_200_OK)
 
             response.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE'])
@@ -519,9 +589,10 @@ class CookieTokenRefreshView(APIView):
             return response
 
         except Exception as e:
+            logger.exception("Token refresh failed")
             return Response({
                 'message': 'Token refresh failed',
-                'detail': str(e)
+                'detail': 'Unable to refresh authentication token'
             }, status=status.HTTP_401_UNAUTHORIZED)
 
 
@@ -586,12 +657,9 @@ class UserViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
-            # Create user with proper permissions
+            # Create user — role defaults to 'staff', is_staff=False
+            # User will be promoted to admin during company onboarding flow
             user = serializer.save()
-            user.is_staff = True  # Enable staff status for API access
-            # New registered users are company admins who will create their company during onboarding
-            user.role = 'admin'  # Set role to admin for new registrations (company owners)
-            user.save()
 
             return Response({
                 'message': 'User created successfully',
@@ -621,27 +689,14 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def destroy(self, request, *args, **kwargs):
+        # SECURITY: get_object() uses company-scoped get_queryset(), preventing cross-tenant deletion
         instance = self.get_object()
         username = instance.username
-        
-        try:
-            user = User.objects.filter(username=username).delete()[0]
-            
-            if user:  # In case of multiple users with same name
-                response_data = {
-                    'message': f'User {username} deleted successfully',
-                    'status': status.HTTP_200_OK
-                }
-                
-                return Response(response_data)
-        except User.DoesNotExist:
-            pass
-        
+        instance.delete()
         return Response({
-            'error': f'Failed to delete user with username {username}',
-            'details': "The requested resource was not found.",
-            'code': status.HTTP_404_NOT_FOUND
-        }, status=status.HTTP_404_NOT_FOUND)
+            'message': f'User {username} deleted successfully',
+            'status': status.HTTP_200_OK
+        })
     
     @action(detail=False, methods=['get'], url_path='staff')
     def staff_users(self, request):
@@ -652,9 +707,15 @@ class UserViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_403_FORBIDDEN)
         
         try:
-            staff_users = User.objects.filter(role='staff').select_related('profile')
+            # Scope to company for multi-tenant isolation
+            company = self.get_user_company(request)
+            if company:
+                company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+                staff_users = User.objects.filter(id__in=company_user_ids, role='staff').select_related('profile')
+            else:
+                staff_users = User.objects.none()
             staff_data = []
-            
+
             for user in staff_users:
                 staff_data.append({
                     'id': user.id,
@@ -669,9 +730,9 @@ class UserViewSet(viewsets.ModelViewSet):
             
             return Response(staff_data)
         except Exception as e:
+            logger.error("Failed to fetch staff users: %s", str(e))
             return Response({
-                'error': 'Failed to fetch staff users',
-                'details': str(e)
+                'error': 'Failed to fetch staff users'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['get'], url_path='eligible-for-transfer')
@@ -784,9 +845,9 @@ class UserViewSet(viewsets.ModelViewSet):
                 ]
             })
         except Exception as e:
+            logger.exception("Failed to calculate pending earnings")
             return Response({
-                'error': 'Failed to calculate pending earnings',
-                'details': str(e)
+                'error': 'An internal error occurred while calculating pending earnings'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['get'], url_path='me/weekly-earnings')
@@ -825,9 +886,9 @@ class UserViewSet(viewsets.ModelViewSet):
                 ]
             })
         except Exception as e:
+            logger.exception("Failed to calculate weekly earnings")
             return Response({
-                'error': 'Failed to calculate weekly earnings',
-                'details': str(e)
+                'error': 'An internal error occurred while calculating weekly earnings'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
@@ -838,16 +899,32 @@ def payroll_preview(request):
         return Response({
             'error': 'Permission denied'
         }, status=status.HTTP_403_FORBIDDEN)
-    
+
     try:
         from datetime import datetime
         from decimal import Decimal
-        
+
         start_date = datetime.strptime(request.data['start_date'], '%Y-%m-%d').date()
         end_date = datetime.strptime(request.data['end_date'], '%Y-%m-%d').date()
-        
-        # Get all staff with approved shifts in the date range
+
+        # Get company context for multi-tenant isolation
+        company = None
+        if hasattr(request, 'current_company') and request.current_company:
+            company = request.current_company
+        else:
+            membership = request.user.company_memberships.filter(
+                is_active=True, company__is_active=True
+            ).select_related('company').order_by('-joined_at').first()
+            company = membership.company if membership else None
+
+        if not company:
+            return Response({'error': 'No company context found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+
+        # Get all staff with approved shifts in the date range (company-scoped)
         staff_with_shifts = User.objects.filter(
+            id__in=company_user_ids,
             role='staff',
             shifts__status='approved',
             shifts__start_time__date__gte=start_date,
@@ -891,9 +968,9 @@ def payroll_preview(request):
         })
         
     except Exception as e:
+        logger.exception("Failed to preview payroll")
         return Response({
-            'error': 'Failed to preview payroll',
-            'details': str(e)
+            'error': 'An internal error occurred while previewing payroll'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
@@ -904,16 +981,32 @@ def payroll_generate(request):
         return Response({
             'error': 'Permission denied'
         }, status=status.HTTP_403_FORBIDDEN)
-    
+
     try:
         from datetime import datetime
         from decimal import Decimal
-        
+
         start_date = datetime.strptime(request.data['start_date'], '%Y-%m-%d').date()
         end_date = datetime.strptime(request.data['end_date'], '%Y-%m-%d').date()
-        
-        # Get all staff with approved shifts in the date range
+
+        # Get company context for multi-tenant isolation
+        company = None
+        if hasattr(request, 'current_company') and request.current_company:
+            company = request.current_company
+        else:
+            membership = request.user.company_memberships.filter(
+                is_active=True, company__is_active=True
+            ).select_related('company').order_by('-joined_at').first()
+            company = membership.company if membership else None
+
+        if not company:
+            return Response({'error': 'No company context found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+
+        # Get all staff with approved shifts in the date range (company-scoped)
         staff_with_shifts = User.objects.filter(
+            id__in=company_user_ids,
             role='staff',
             shifts__status='approved',
             shifts__start_time__date__gte=start_date,
@@ -970,9 +1063,9 @@ def payroll_generate(request):
         })
         
     except Exception as e:
+        logger.exception("Failed to generate payroll")
         return Response({
-            'error': 'Failed to generate payroll',
-            'details': str(e)
+            'error': 'An internal error occurred while generating payroll'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class StaffProfileViewSet(viewsets.ModelViewSet):
@@ -1002,13 +1095,26 @@ class StaffProfileViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Limit staff users to only see their own profile.
-        Managers and admins can see all profiles.
+        Managers and admins can see profiles within their company only.
         Supports filtering by is_approved query parameter.
         """
         user = self.request.user
-        queryset = StaffProfile.objects.all()
 
-        # Filter by user ID if provided
+        # Admin and managers can see profiles within their company
+        if user.role in ['admin', 'manager']:
+            company = self._get_user_company()
+            if company:
+                company_user_ids = company.memberships.filter(
+                    is_active=True
+                ).values_list('user_id', flat=True)
+                queryset = StaffProfile.objects.filter(user_id__in=company_user_ids)
+            else:
+                queryset = StaffProfile.objects.filter(user=user)
+        else:
+            # Staff can only see their own profile
+            queryset = StaffProfile.objects.filter(user=user)
+
+        # Filter by user ID if provided (within already-scoped queryset)
         user_id = self.request.query_params.get('user', None)
         if user_id:
             queryset = queryset.filter(user__id=user_id)
@@ -1016,27 +1122,23 @@ class StaffProfileViewSet(viewsets.ModelViewSet):
         # Filter by approval status if provided (only for admin/manager)
         is_approved = self.request.query_params.get('is_approved', None)
         if is_approved is not None and user.role in ['admin', 'manager']:
-            # Convert string to boolean
             is_approved_bool = is_approved.lower() in ['true', '1', 'yes']
             queryset = queryset.filter(is_approved=is_approved_bool)
 
-        # Admin and managers can see all profiles (or filtered subset)
-        if user.role in ['admin', 'manager']:
-            return queryset
+        return queryset
 
-        # Staff can only see their own profile
-        return queryset.filter(user=user)
+    def _get_user_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
     
     def update(self, request, *args, **kwargs):
         """
         Handle partial updates (PATCH) and protect immutable fields
         """
-        # DEBUG: Print incoming request data
-        print("=" * 80)
-        print("StaffProfileViewSet.update() - Incoming request.data:")
-        print(request.data)
-        print("=" * 80)
-
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
 
@@ -1084,20 +1186,92 @@ class EmergencyContactViewSet(viewsets.ModelViewSet):
     queryset = EmergencyContact.objects.all()
     serializer_class = EmergencyContactSerializer
 
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['admin', 'manager']:
+            company = self._get_user_company()
+            if company:
+                company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+                return EmergencyContact.objects.filter(staff_profile__user_id__in=company_user_ids)
+            return EmergencyContact.objects.none()
+        return EmergencyContact.objects.filter(staff_profile__user=user)
+
+    def _get_user_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
+
 class BankDetailsViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = BankDetails.objects.all()
     serializer_class = BankDetailsSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['admin', 'manager']:
+            company = self._get_user_company()
+            if company:
+                company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+                return BankDetails.objects.filter(staff_profile__user_id__in=company_user_ids)
+            return BankDetails.objects.none()
+        return BankDetails.objects.filter(staff_profile__user=user)
+
+    def _get_user_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
 
 class SIALicenseViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = SIALicense.objects.all()
     serializer_class = SIALicenseSerializer
 
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['admin', 'manager']:
+            company = self._get_user_company()
+            if company:
+                company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+                return SIALicense.objects.filter(staff_profile__user_id__in=company_user_ids)
+            return SIALicense.objects.none()
+        return SIALicense.objects.filter(staff_profile__user=user)
+
+    def _get_user_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
+
 class StaffAvailabilityViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = StaffAvailability.objects.all()
     serializer_class = StaffAvailabilitySerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['admin', 'manager']:
+            company = self._get_user_company()
+            if company:
+                company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+                return StaffAvailability.objects.filter(staff_profile__user_id__in=company_user_ids)
+            return StaffAvailability.objects.none()
+        return StaffAvailability.objects.filter(staff_profile__user=user)
+
+    def _get_user_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
 
 class VenueViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -1299,11 +1473,9 @@ class VenueViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
-            logger.error(f"Error accepting venue terms: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
+            logger.exception("Error accepting venue terms")
             return Response({
-                'error': f'Failed to accept terms: {str(e)}'
+                'error': 'An internal error occurred while accepting terms'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class VenueTermsAcceptanceViewSet(viewsets.ModelViewSet):
@@ -1311,15 +1483,65 @@ class VenueTermsAcceptanceViewSet(viewsets.ModelViewSet):
     queryset = VenueTermsAcceptance.objects.all()
     serializer_class = VenueTermsAcceptanceSerializer
 
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['admin', 'manager']:
+            company = self._get_user_company()
+            if company:
+                company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+                return VenueTermsAcceptance.objects.filter(staff_user_id__in=company_user_ids)
+            return VenueTermsAcceptance.objects.none()
+        return VenueTermsAcceptance.objects.filter(staff_user=user)
+
+    def _get_user_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
+
 class PreferredVenueViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = PreferredVenue.objects.all()
     serializer_class = PreferredVenueSerializer
 
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['admin', 'manager']:
+            company = self._get_user_company()
+            if company:
+                company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+                return PreferredVenue.objects.filter(staff_profile__user_id__in=company_user_ids)
+            return PreferredVenue.objects.none()
+        return PreferredVenue.objects.filter(staff_profile__user=user)
+
+    def _get_user_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
+
 class ShiftTemplateViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = ShiftTemplate.objects.all()
     serializer_class = ShiftTemplateSerializer
+
+    def get_queryset(self):
+        company = self._get_user_company()
+        if company:
+            return ShiftTemplate.objects.filter(venue__company=company)
+        return ShiftTemplate.objects.none()
+
+    def _get_user_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
     
     @action(detail=True, methods=['post'])
     def apply(self, request, *args, **kwargs):
@@ -1410,122 +1632,88 @@ class ShiftTemplateViewSet(viewsets.ModelViewSet):
 # Register the ShiftTemplateViewSet in urls.py like:
 # router.register('shift-templates', ShiftTemplateViewSet)
 
-class FireExitCheckViewSet(viewsets.ModelViewSet):
+class CompanyScopedCheckMixin:
+    """Mixin to add company scoping to venue check viewsets."""
+
+    def _get_company_scoped_queryset(self, base_queryset):
+        """Apply company scoping then shift/shift_group filtering."""
+        # SECURITY: Scope to company first
+        company = getattr(self.request, 'current_company', None)
+        if company:
+            base_queryset = base_queryset.filter(shift__venue__company=company)
+
+        queryset = base_queryset.select_related('performed_by')
+        shift_id = self.request.query_params.get('shift', None)
+        shift_group = self.request.query_params.get('shift_group', None)
+
+        if shift_group:
+            queryset = queryset.filter(shift_group=shift_group)
+        elif shift_id:
+            try:
+                shift = Shift.objects.get(id=shift_id)
+                if shift.shift_group:
+                    queryset = queryset.filter(shift_group=shift.shift_group)
+                else:
+                    queryset = queryset.filter(shift_id=shift_id)
+            except Shift.DoesNotExist:
+                queryset = queryset.filter(shift_id=shift_id)
+
+        return queryset.order_by('-timestamp')
+
+
+class FireExitCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = FireExitCheck.objects.all()
     serializer_class = FireExitCheckSerializer
 
     def get_queryset(self):
-        """
-        Filter checks by shift_id or shift_group.
-
-        For multi-staff shifts, using shift_group returns all checks from all
-        staff members in the group, enabling shared visibility of completed checks.
-        """
-        queryset = super().get_queryset().select_related('performed_by')
-        shift_id = self.request.query_params.get('shift', None)
-        shift_group = self.request.query_params.get('shift_group', None)
-
-        if shift_group:
-            # Multi-staff: return all checks for the shift group
-            queryset = queryset.filter(shift_group=shift_group)
-        elif shift_id:
-            # Single staff or backward compatibility: filter by shift
-            # Check if this shift has a group, if so return all group checks
-            try:
-                shift = Shift.objects.get(id=shift_id)
-                if shift.shift_group:
-                    queryset = queryset.filter(shift_group=shift.shift_group)
-                else:
-                    queryset = queryset.filter(shift_id=shift_id)
-            except Shift.DoesNotExist:
-                queryset = queryset.filter(shift_id=shift_id)
-
-        return queryset.order_by('-timestamp')
+        return self._get_company_scoped_queryset(FireExitCheck.objects.all())
 
 
-class CapacityCheckViewSet(viewsets.ModelViewSet):
+class CapacityCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = CapacityCheck.objects.all()
     serializer_class = CapacityCheckSerializer
 
     def get_queryset(self):
-        """
-        Filter checks by shift_id or shift_group.
-
-        For multi-staff shifts, using shift_group returns all checks from all
-        staff members in the group, enabling shared visibility of completed checks.
-        """
-        queryset = super().get_queryset().select_related('performed_by')
-        shift_id = self.request.query_params.get('shift', None)
-        shift_group = self.request.query_params.get('shift_group', None)
-
-        if shift_group:
-            # Multi-staff: return all checks for the shift group
-            queryset = queryset.filter(shift_group=shift_group)
-        elif shift_id:
-            # Single staff or backward compatibility: filter by shift
-            # Check if this shift has a group, if so return all group checks
-            try:
-                shift = Shift.objects.get(id=shift_id)
-                if shift.shift_group:
-                    queryset = queryset.filter(shift_group=shift.shift_group)
-                else:
-                    queryset = queryset.filter(shift_id=shift_id)
-            except Shift.DoesNotExist:
-                queryset = queryset.filter(shift_id=shift_id)
-
-        return queryset.order_by('-timestamp')
+        return self._get_company_scoped_queryset(CapacityCheck.objects.all())
 
 
-class ToiletCheckViewSet(viewsets.ModelViewSet):
+class ToiletCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = ToiletCheck.objects.all()
     serializer_class = ToiletCheckSerializer
 
     def get_queryset(self):
-        """
-        Filter checks by shift_id or shift_group.
-
-        For multi-staff shifts, using shift_group returns all checks from all
-        staff members in the group, enabling shared visibility of completed checks.
-        """
-        queryset = super().get_queryset().select_related('performed_by')
-        shift_id = self.request.query_params.get('shift', None)
-        shift_group = self.request.query_params.get('shift_group', None)
-
-        if shift_group:
-            # Multi-staff: return all checks for the shift group
-            queryset = queryset.filter(shift_group=shift_group)
-        elif shift_id:
-            # Single staff or backward compatibility: filter by shift
-            # Check if this shift has a group, if so return all group checks
-            try:
-                shift = Shift.objects.get(id=shift_id)
-                if shift.shift_group:
-                    queryset = queryset.filter(shift_group=shift.shift_group)
-                else:
-                    queryset = queryset.filter(shift_id=shift_id)
-            except Shift.DoesNotExist:
-                queryset = queryset.filter(shift_id=shift_id)
-
-        return queryset.order_by('-timestamp')
+        return self._get_company_scoped_queryset(ToiletCheck.objects.all())
 
 class ShiftExchangeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = ShiftExchange.objects.all()
     serializer_class = ShiftExchangeSerializer
-    
+
     def get_queryset(self):
-        """Filter exchanges to show only relevant ones for the user"""
+        """Filter exchanges to show only relevant ones for the user, scoped to company"""
         user = self.request.user
         if user.role in ['manager', 'admin']:
-            return ShiftExchange.objects.all()
+            company = self._get_user_company()
+            if company:
+                company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+                return ShiftExchange.objects.filter(requesting_user_id__in=company_user_ids)
+            return ShiftExchange.objects.none()
         else:
             # Staff can only see exchanges they're involved in
             return ShiftExchange.objects.filter(
                 models.Q(requesting_user=user) | models.Q(target_user=user)
             )
+
+    def _get_user_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
     
     def perform_create(self, serializer):
         """Set the requesting user to the current user"""
@@ -1648,28 +1836,41 @@ class OpenShiftRequestViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = OpenShiftRequest.objects.all()
     serializer_class = OpenShiftRequestSerializer
-    
+
     def get_queryset(self):
-        """Filter requests to show only relevant ones for the user"""
+        """Filter requests to show only relevant ones for the user, scoped to company"""
         user = self.request.user
         if user.role in ['manager', 'admin']:
-            return OpenShiftRequest.objects.all()
+            company = self._get_user_company()
+            if company:
+                company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+                return OpenShiftRequest.objects.filter(requesting_user_id__in=company_user_ids)
+            return OpenShiftRequest.objects.none()
         else:
             # For list action: Show only requests the user created or claimed
-            # For detail actions (claim, retrieve, cancel): Also include open shifts
+            # For detail actions (claim, retrieve, cancel): Also include open shifts within company
+            company = self._get_user_company()
+            company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True) if company else []
             if self.action == 'list':
-                # List view: Only show user's own releases and claims
                 return OpenShiftRequest.objects.filter(
                     models.Q(requesting_user=user) |
                     models.Q(claimed_by=user)
                 )
             else:
-                # Detail actions: Include open shifts for claiming
+                # Detail actions: Include open shifts for claiming (company-scoped)
                 return OpenShiftRequest.objects.filter(
                     models.Q(requesting_user=user) |
                     models.Q(claimed_by=user) |
-                    models.Q(status='open')  # Allow access to open shifts for claiming
+                    models.Q(status='open', requesting_user_id__in=company_user_ids)
                 )
+
+    def _get_user_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
 
     def create(self, request, *args, **kwargs):
         """
@@ -1745,8 +1946,9 @@ class OpenShiftRequestViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(available_shifts, many=True)
             return Response(serializer.data)
         except Exception as e:
+            logger.exception("Failed to get available shifts")
             return Response(
-                {"error": f"Failed to get available shifts: {str(e)}"}, 
+                {"error": "An internal error occurred while fetching available shifts"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
@@ -1972,16 +2174,23 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     def generate(self, request):
         """Generate an invoice for a staff member for a specific period"""
         try:
+            # SECURITY: Only admin/manager can generate invoices
+            if request.user.role not in ['admin', 'manager']:
+                return Response(
+                    {'error': 'Only admin or manager users can generate invoices'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
             staff_user_id = request.data.get('staff_user_id')
             start_date = request.data.get('start_date')
             end_date = request.data.get('end_date')
-            
+
             if not all([staff_user_id, start_date, end_date]):
                 return Response(
                     {'error': 'staff_user_id, start_date, and end_date are required'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            
+
             # Parse dates
             from datetime import datetime
             try:
@@ -1992,11 +2201,22 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                     {'error': 'Invalid date format. Use YYYY-MM-DD'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            
-            # Get staff user
+
+            # SECURITY: Verify staff belongs to same company
+            company = self.get_user_company(request)
+            if not company:
+                return Response(
+                    {'error': 'No company context available'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Get staff user scoped to company
             try:
                 from api.models import User
-                staff_user = User.objects.get(id=staff_user_id)
+                company_staff_ids = company.memberships.filter(
+                    is_active=True
+                ).values_list('user_id', flat=True)
+                staff_user = User.objects.get(id=staff_user_id, id__in=company_staff_ids)
             except User.DoesNotExist:
                 return Response(
                     {'error': 'Staff user not found'},
@@ -2044,25 +2264,43 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='preview')
     def preview_generation(self, request):
         """Preview what shifts are available for invoice generation"""
+        # SECURITY: Only admin/manager can preview invoice generation
+        if request.user.role not in ['admin', 'manager']:
+            return Response(
+                {'error': 'Only admin or manager users can preview invoices'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         staff_user_id = request.query_params.get('staff_user_id')
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
-        
+
         if not all([staff_user_id, start_date, end_date]):
             return Response({
                 'error': 'staff_user_id, start_date, and end_date are required'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         try:
             from datetime import datetime
             from api.models import User, Shift
-            
+
             # Parse dates
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
             end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-            
-            # Get staff user
-            staff_user = User.objects.get(id=staff_user_id)
+
+            # SECURITY: Verify staff belongs to same company
+            company = self.get_user_company(request)
+            if not company:
+                return Response(
+                    {'error': 'No company context available'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            company_staff_ids = company.memberships.filter(
+                is_active=True
+            ).values_list('user_id', flat=True)
+
+            # Get staff user scoped to company
+            staff_user = User.objects.get(id=staff_user_id, id__in=company_staff_ids)
             
             # Get all shifts for this staff member in the date range
             all_shifts = Shift.objects.filter(
@@ -2098,11 +2336,16 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 'shifts': shift_data
             })
             
-        except Exception as e:
+        except User.DoesNotExist:
             return Response({
-                'error': str(e)
+                'error': 'Staff user not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error previewing invoice generation: {str(e)}")
+            return Response({
+                'error': 'An internal error occurred'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+
     @action(detail=True, methods=['post'], url_path='generate-pdf')
     def generate_pdf(self, request, pk=None):
         """Generate PDF for an invoice"""
@@ -2266,8 +2509,15 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['patch'], url_path='update-status')
     def update_status(self, request, pk=None):
         """Update invoice status"""
+        # SECURITY: Only admin/manager can update invoice status
+        if request.user.role not in ['admin', 'manager']:
+            return Response(
+                {'error': 'Only admin or manager users can update invoice status'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        # get_object() uses get_queryset() which is company-scoped
         invoice = self.get_object()
-        
+
         try:
             new_status = request.data.get('status')
             
@@ -2294,10 +2544,50 @@ class InvoiceItemViewSet(viewsets.ModelViewSet):
     queryset = InvoiceItem.objects.all()
     serializer_class = InvoiceItemSerializer
 
+    def _get_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').first()
+        return membership.company if membership else None
+
+    def get_queryset(self):
+        """SECURITY: Scope invoice items to the requesting user's company."""
+        company = self._get_company()
+        if not company:
+            return InvoiceItem.objects.none()
+        company_staff_ids = company.memberships.filter(
+            is_active=True
+        ).values_list('user_id', flat=True)
+        return InvoiceItem.objects.filter(
+            invoice__staff_user_id__in=company_staff_ids
+        )
+
 class PayRateViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsAdminUser]
     queryset = PayRate.objects.all()
     serializer_class = PayRateSerializer
+
+    def _get_company(self):
+        if hasattr(self.request, 'current_company') and self.request.current_company:
+            return self.request.current_company
+        membership = self.request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').first()
+        return membership.company if membership else None
+
+    def get_queryset(self):
+        """SECURITY: Scope pay rates to the requesting user's company."""
+        company = self._get_company()
+        if not company:
+            return PayRate.objects.none()
+        company_staff_ids = company.memberships.filter(
+            is_active=True
+        ).values_list('user_id', flat=True)
+        return PayRate.objects.filter(
+            staff_profile__user_id__in=company_staff_ids
+        )
 
 class DeputyConfigViewSet(viewsets.ModelViewSet):
     """ViewSet for the DeputyConfig model"""
@@ -2318,32 +2608,58 @@ class DeputyConfigView(APIView):
             serializer = DeputyConfigSerializer(config)
             return Response(serializer.data)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+            logger.exception("Failed to retrieve Deputy configuration")
+            return Response({"error": "An internal error occurred"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     def put(self, request):
         """Update the deputy configuration"""
         try:
             config = DeputyConfig.objects.first()
             if not config:
                 config = DeputyConfig.objects.create()
-            
+
             serializer = DeputyConfigSerializer(config, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
                 return Response(serializer.data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.exception("Failed to update Deputy configuration")
+            return Response({"error": "An internal error occurred"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class DeputyEmployeeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsAdminUser]
     queryset = DeputyEmployee.objects.all()
     serializer_class = DeputyEmployeeSerializer
 
+    def get_queryset(self):
+        """SECURITY: Scope Deputy employees to the requesting user's company."""
+        company = getattr(self.request, 'current_company', None)
+        if not company:
+            return DeputyEmployee.objects.none()
+        company_user_ids = company.memberships.filter(
+            is_active=True
+        ).values_list('user_id', flat=True)
+        return DeputyEmployee.objects.filter(
+            Q(mapped_to_user_id__in=company_user_ids) | Q(mapped_to_user__isnull=True)
+        )
+
 class DeputyTimesheetViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsAdminUser]
     queryset = DeputyTimesheet.objects.all()
     serializer_class = DeputyTimesheetSerializer
+
+    def get_queryset(self):
+        """SECURITY: Scope Deputy timesheets to the requesting user's company."""
+        company = getattr(self.request, 'current_company', None)
+        if not company:
+            return DeputyTimesheet.objects.none()
+        company_user_ids = company.memberships.filter(
+            is_active=True
+        ).values_list('user_id', flat=True)
+        return DeputyTimesheet.objects.filter(
+            employee__mapped_to_user_id__in=company_user_ids
+        )
 
 class SystemSettingsView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
@@ -2917,10 +3233,50 @@ class FileUploadView(APIView):
         name = name.strip('_')
         return f"{name}{ext}"
 
+    # SECURITY: Restrict file types and size for SIA license uploads
+    ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+    # Magic byte signatures for file type validation
+    VALID_FILE_SIGNATURES = [
+        b'\xff\xd8\xff',  # JPEG
+        b'\x89PNG',       # PNG
+        b'%PDF',          # PDF
+    ]
+
+    @staticmethod
+    def validate_file_magic_bytes(file_obj):
+        """Validate file type by checking magic bytes, not just Content-Type header."""
+        valid_signatures = [
+            b'\xff\xd8\xff',  # JPEG
+            b'\x89PNG',       # PNG
+            b'%PDF',          # PDF
+        ]
+        header = file_obj.read(8)
+        file_obj.seek(0)
+        return any(header.startswith(sig) for sig in valid_signatures)
+
     def post(self, request, format=None):
         file_obj = request.FILES.get('file')
         if not file_obj:
             return Response({'error': 'No file provided.'}, status=400)
+
+        # Validate file size
+        if file_obj.size > self.MAX_FILE_SIZE:
+            return Response({'error': 'File too large. Maximum size is 10MB.'}, status=400)
+
+        # Validate file type by Content-Type header
+        if file_obj.content_type not in self.ALLOWED_TYPES:
+            return Response({
+                'error': 'Invalid file type. Allowed types: PDF, JPEG, PNG.'
+            }, status=400)
+
+        # SECURITY: Validate file type by magic bytes to prevent Content-Type spoofing
+        if not self.validate_file_magic_bytes(file_obj):
+            return Response({
+                'error': 'Invalid file type. Only JPEG, PNG, and PDF files are allowed.'
+            }, status=400)
+
         # Sanitize filename to remove spaces and special characters
         sanitized_filename = self.sanitize_filename(file_obj.name)
         # Save the file to MEDIA_ROOT/sia_licenses/
@@ -2951,6 +3307,34 @@ class ProfilePhotoUploadView(APIView):
     ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
     MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
+    # Magic byte signatures for image file type validation
+    VALID_IMAGE_SIGNATURES = [
+        b'\xff\xd8\xff',          # JPEG
+        b'\x89PNG',               # PNG
+        b'GIF87a',                # GIF87a
+        b'GIF89a',                # GIF89a
+        b'RIFF',                  # WebP (starts with RIFF....WEBP)
+    ]
+
+    @staticmethod
+    def validate_image_magic_bytes(file_obj):
+        """Validate image file type by checking magic bytes, not just Content-Type header."""
+        header = file_obj.read(12)
+        file_obj.seek(0)
+        # Check standard signatures
+        standard_sigs = [
+            b'\xff\xd8\xff',  # JPEG
+            b'\x89PNG',       # PNG
+            b'GIF87a',        # GIF87a
+            b'GIF89a',        # GIF89a
+        ]
+        if any(header.startswith(sig) for sig in standard_sigs):
+            return True
+        # WebP: starts with RIFF, then 4 bytes of size, then WEBP
+        if header[:4] == b'RIFF' and header[8:12] == b'WEBP':
+            return True
+        return False
+
     def sanitize_filename(self, filename):
         """Sanitize filename for safe storage."""
         name, ext = os.path.splitext(filename)
@@ -2962,7 +3346,7 @@ class ProfilePhotoUploadView(APIView):
 
     def post(self, request, format=None):
         logger = logging.getLogger(__name__)
-        
+
         # Get the photo file
         photo = request.FILES.get('photo')
         if not photo:
@@ -2971,11 +3355,18 @@ class ProfilePhotoUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Validate file type
+        # Validate file type by Content-Type header
         content_type = photo.content_type
         if content_type not in self.ALLOWED_TYPES:
             return Response(
                 {'error': f'Invalid file type: {content_type}. Allowed types: JPEG, PNG, GIF, WebP'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # SECURITY: Validate file type by magic bytes to prevent Content-Type spoofing
+        if not self.validate_image_magic_bytes(photo):
+            return Response(
+                {'error': 'Invalid file content. The file does not match its declared type.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -3303,21 +3694,29 @@ class RecruitmentApplicationViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='stats')
     def stats(self, request):
         """Get recruitment application statistics"""
+        # SECURITY: Scope stats to the requesting user's company
+        company = self.get_user_company(request)
+        if not company:
+            return Response({'error': 'No company context available'}, status=status.HTTP_403_FORBIDDEN)
+
+        base_qs = RecruitmentApplication.objects.filter(
+            employment_type__company=company
+        )
         stats = {
-            'total': RecruitmentApplication.objects.count(),
-            'pending': RecruitmentApplication.objects.filter(status='pending').count(),
-            'approved': RecruitmentApplication.objects.filter(status='approved').count(),
-            'rejected': RecruitmentApplication.objects.filter(status='rejected').count(),
-            'converted': RecruitmentApplication.objects.filter(converted_to_user__isnull=False).count(),
+            'total': base_qs.count(),
+            'pending': base_qs.filter(status='pending').count(),
+            'approved': base_qs.filter(status='approved').count(),
+            'rejected': base_qs.filter(status='rejected').count(),
+            'converted': base_qs.filter(converted_to_user__isnull=False).count(),
         }
-        
-        # Stats by employment type
+
+        # Stats by employment type - scoped to company
         employment_type_stats = {}
-        for et in EmploymentType.objects.all():
+        for et in EmploymentType.objects.filter(company=company):
             employment_type_stats[et.name] = et.applications.count()
-        
+
         stats['by_employment_type'] = employment_type_stats
-        
+
         return Response(stats)
 
 
@@ -4969,11 +5368,21 @@ class RegionalComplianceViewSet(viewsets.ViewSet):
 # =============================================================================
 
 class ReportTemplateViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing report templates"""
+    """ViewSet for managing report templates.
+
+    SECURITY: Only admin users can create/update/delete templates.
+    Templates with sql_query fields are restricted to prevent SQL injection.
+    """
 
     queryset = ReportTemplate.objects.all()
     serializer_class = ReportTemplateSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        """Restrict create/update/delete to admin users only"""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsAdminUser()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         """Filter templates based on user permissions"""
@@ -5033,11 +5442,10 @@ class ReportTemplateViewSet(viewsets.ModelViewSet):
             })
 
         except Exception as e:
-            logger.error(f"Template query test error: {str(e)}")
+            logger.exception("Template query test error")
             return Response({
                 'status': 'error',
-                'message': 'Query test failed',
-                'error': str(e)
+                'message': 'Query test failed due to an internal error'
             }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'])
@@ -5078,11 +5486,10 @@ class ReportTemplateViewSet(viewsets.ModelViewSet):
             })
 
         except Exception as e:
-            logger.error(f"Report preview error: {str(e)}")
+            logger.exception("Report preview generation error")
             return Response({
                 'status': 'error',
-                'message': 'Preview generation failed',
-                'error': str(e)
+                'message': 'Preview generation failed due to an internal error'
             }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'])
@@ -5101,11 +5508,10 @@ class ReportTemplateViewSet(viewsets.ModelViewSet):
             })
 
         except Exception as e:
-            logger.error(f"Template validation error: {str(e)}")
+            logger.exception("Template validation error")
             return Response({
                 'status': 'error',
-                'message': 'Validation failed',
-                'error': str(e)
+                'message': 'Validation failed due to an internal error'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -5273,11 +5679,10 @@ class ReportJobViewSet(viewsets.ModelViewSet):
                 })
 
             except Exception as e:
-                logger.error(f"Synchronous report generation error: {str(e)}")
+                logger.exception("Synchronous report generation error")
                 return Response({
                     'status': 'error',
-                    'message': 'Failed to generate report',
-                    'error': str(e)
+                    'message': 'Failed to generate report due to an internal error'
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         else:
@@ -5484,10 +5889,10 @@ class ReportJobViewSet(viewsets.ModelViewSet):
                 logger.info(f"Bulk report job {job.job_id} created by user {request.user.id}")
 
             except Exception as e:
-                logger.error(f"Bulk report generation error at index {i}: {str(e)}")
+                logger.exception(f"Bulk report generation error at index {i}")
                 errors.append({
                     'index': i,
-                    'error': str(e)
+                    'error': 'Failed to create report job due to an internal error'
                 })
 
         return Response({
@@ -5624,11 +6029,10 @@ class ExportViewSet(viewsets.ViewSet):
             })
 
         except Exception as e:
-            logger.error(f"Export conversion error: {str(e)}")
+            logger.exception("Export conversion error")
             return Response({
                 'status': 'error',
-                'message': 'Failed to convert data',
-                'error': str(e)
+                'message': 'Failed to convert data due to an internal error'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['post'])
@@ -6106,6 +6510,10 @@ class OnboardingViewSet(viewsets.ViewSet):
                 is_owner=True,
                 is_active=True
             )
+
+            # Promote user to admin role now that they own a company
+            request.user.role = 'admin'
+            request.user.save(update_fields=['role'])
 
             # Create onboarding record
             onboarding = CompanyOnboarding.objects.create(

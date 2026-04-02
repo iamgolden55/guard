@@ -7,7 +7,7 @@ from django.db.models.signals import post_save, pre_save, pre_delete
 from django.dispatch import receiver
 from datetime import timedelta
 from django.utils import timezone
-from .models import SecurityCompany, Shift, OpenShiftRequest, ShiftExchange
+from .models import SecurityCompany, Shift, OpenShiftRequest, ShiftExchange, AuditLog, ShiftStatusHistory
 from .services import push_notification_service
 import logging
 
@@ -75,6 +75,26 @@ def track_shift_assignment(sender, instance, **kwargs):
     else:
         instance._previous_staff_user = None
         instance._previous_status = None
+
+
+@receiver(post_save, sender=Shift)
+def record_shift_status_history(sender, instance, created, **kwargs):
+    """
+    Record a ShiftStatusHistory entry whenever a shift's status changes.
+    Uses _previous_status set by track_shift_assignment pre_save signal.
+    """
+    original = getattr(instance, '_previous_status', None)
+    if not created and original and original != instance.status:
+        try:
+            ShiftStatusHistory.objects.create(
+                shift=instance,
+                old_status=original,
+                new_status=instance.status,
+                changed_by=getattr(instance, '_changed_by', None),
+                notes=getattr(instance, '_status_change_notes', '')
+            )
+        except Exception as e:
+            logger.error(f"Failed to record shift status history for shift {instance.id}: {e}")
 
 
 @receiver(post_save, sender=Shift)
@@ -710,3 +730,95 @@ def notify_claim_approved(sender, instance, created, **kwargs):
 
     except Exception as e:
         logger.warning(f"Could not queue claim approval email: {e}")
+
+
+# =============================================================================
+# Audit Logging Signals
+# =============================================================================
+
+@receiver(post_save, sender='api.User')
+def audit_user_creation(sender, instance, created, **kwargs):
+    """Log user creation events to the audit trail."""
+    if not created:
+        return
+    try:
+        company = None
+        membership = instance.company_memberships.filter(is_active=True).select_related('company').first()
+        if membership:
+            company = membership.company
+        AuditLog.objects.create(
+            user=instance,
+            company=company,
+            action='create',
+            resource_type='User',
+            resource_id=str(instance.id),
+            details={
+                'username': instance.username,
+                'email': instance.email,
+                'role': getattr(instance, 'role', ''),
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Failed to create audit log for user creation: {e}")
+
+
+@receiver(pre_save, sender='api.User')
+def audit_user_role_change(sender, instance, **kwargs):
+    """Log user role changes to the audit trail."""
+    if not instance.pk:
+        return
+    try:
+        from .models import User
+        old_user = User.objects.get(pk=instance.pk)
+        old_role = getattr(old_user, 'role', None)
+        new_role = getattr(instance, 'role', None)
+        if old_role and new_role and old_role != new_role:
+            company = None
+            membership = instance.company_memberships.filter(is_active=True).select_related('company').first()
+            if membership:
+                company = membership.company
+            AuditLog.objects.create(
+                user=instance,
+                company=company,
+                action='role_change',
+                resource_type='User',
+                resource_id=str(instance.id),
+                details={
+                    'old_role': old_role,
+                    'new_role': new_role,
+                    'username': instance.username,
+                },
+            )
+    except sender.DoesNotExist:
+        pass
+    except Exception as e:
+        logger.warning(f"Failed to create audit log for role change: {e}")
+
+
+@receiver(pre_save, sender='api.Invoice')
+def audit_invoice_status_change(sender, instance, **kwargs):
+    """Log invoice status changes to the audit trail."""
+    if not instance.pk:
+        return
+    try:
+        from .models import Invoice
+        old_invoice = Invoice.objects.get(pk=instance.pk)
+        old_status = old_invoice.status
+        new_status = instance.status
+        if old_status != new_status:
+            AuditLog.objects.create(
+                user=instance.staff_user if hasattr(instance, 'staff_user') else None,
+                company=instance.company if hasattr(instance, 'company') else None,
+                action='status_change',
+                resource_type='Invoice',
+                resource_id=str(instance.id),
+                details={
+                    'old_status': old_status,
+                    'new_status': new_status,
+                    'invoice_number': getattr(instance, 'invoice_number', ''),
+                },
+            )
+    except sender.DoesNotExist:
+        pass
+    except Exception as e:
+        logger.warning(f"Failed to create audit log for invoice status change: {e}")

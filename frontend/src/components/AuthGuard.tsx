@@ -44,25 +44,10 @@ const AuthGuard: React.FC<AuthGuardProps> = ({
 
   // Check if the user is authenticated
   if (!authState.isAuthenticated) {
-    console.log('AuthGuard: User not authenticated, redirecting to login');
-
-    // Check localStorage to see if tokens exist even though auth state says not authenticated
-    const token = localStorage.getItem('token');
-    const refreshToken = localStorage.getItem('refreshToken');
+    // If user data exists but auth state says not authenticated,
+    // try to recover by refreshing the cookie-based session
     const user = localStorage.getItem('user');
-
-    console.log('AuthGuard: LocalStorage check:', {
-      token: token ? 'exists' : 'missing',
-      refreshToken: refreshToken ? 'exists' : 'missing',
-      user: user ? 'exists' : 'missing'
-    });
-
-    // If tokens exist in localStorage but authState says not authenticated,
-    // try to recover by refreshing the token
-    if (token && refreshToken && user) {
-      console.log('AuthGuard: Tokens exist in localStorage but authState says not authenticated, trying to recover...');
-      // Try to refresh the token, but continue with redirection regardless
-      // This is to prevent an infinite loop if the token refresh fails
+    if (user) {
       refreshUserToken().catch(err => {
         console.error('AuthGuard: Token refresh failed during recovery attempt:', err);
       });
@@ -76,7 +61,6 @@ const AuthGuard: React.FC<AuthGuardProps> = ({
   if (requireOnboarding) {
     // Staff users don't need onboarding - they join existing companies
     if (authState.user?.role === 'staff') {
-      console.log('AuthGuard: Staff user detected, bypassing onboarding checks');
       return children ? <>{children}</> : <Outlet />;
     }
 
@@ -87,8 +71,6 @@ const AuthGuard: React.FC<AuthGuardProps> = ({
 
     // If onboarding is not completed (null means not loaded, false means loaded but incomplete)
     if (authState.onboarding.isCompleted !== true) {
-      console.log('AuthGuard: Onboarding not completed. Status:', authState.onboarding);
-
       // Redirect to appropriate onboarding step (use 1 as fallback if currentStep is null)
       const currentStep = authState.onboarding.currentStep ?? 1;
       return <Navigate to={`/onboarding/step/${currentStep}`} replace />;
@@ -96,7 +78,6 @@ const AuthGuard: React.FC<AuthGuardProps> = ({
 
     // Check company requirement if specified
     if (requireCompany && !authState.onboarding.hasCompany) {
-      console.log('AuthGuard: Company required but user has no company assigned');
       return <Navigate to="/onboarding/step/1" replace />;
     }
   }
@@ -106,15 +87,12 @@ const AuthGuard: React.FC<AuthGuardProps> = ({
     const hasAllowedRole = allowedRoles.some(role => isUserRole(role));
 
     if (!hasAllowedRole) {
-      console.log(`AuthGuard: User does not have any of the required roles: ${allowedRoles.join(', ')}`);
-      console.log(`AuthGuard: Current user role: ${authState.user?.role}`);
       // Redirect to unauthorized page if user doesn't have the required role
       return <Navigate to="/unauthorized" replace />;
     }
   }
 
   // All checks passed, render children or outlet
-  console.log('AuthGuard: User authenticated and authorized for route:', location.pathname);
   return children ? <>{children}</> : <Outlet />;
 };
 

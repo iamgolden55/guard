@@ -77,9 +77,8 @@ export const useReportWebSocket = (
       setError(null);
       isManuallyClosedRef.current = false;
 
-      // Add authentication token to WebSocket URL
-      const authToken = token || localStorage.getItem('token');
-      const wsUrlWithAuth = authToken ? `${defaultWsUrl}?token=${encodeURIComponent(authToken)}` : defaultWsUrl;
+      // WebSocket auth is handled via cookies (browser sends cookies for same-origin WS connections)
+      const wsUrlWithAuth = defaultWsUrl;
 
       wsRef.current = new WebSocket(wsUrlWithAuth);
 

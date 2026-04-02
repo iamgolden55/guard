@@ -76,6 +76,13 @@ class ShiftViewSet(viewsets.ModelViewSet):
         serializer.context['allow_past_dates'] = allow_past_dates
         serializer.save()
 
+    def perform_update(self, serializer):
+        shift = self.get_object()
+        if shift.status == 'in_progress' and self.request.user.role != 'admin':
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Cannot edit an in-progress shift. Use time adjustments instead.")
+        serializer.save()
+
     @action(detail=False, methods=['get'])
     def upcoming(self, request):
         """Get upcoming shifts in the next 7 days"""
@@ -729,14 +736,21 @@ class ShiftViewSet(viewsets.ModelViewSet):
         try:
             from django.utils import timezone
             import logging
-            
+
             # Use provided time or current time
             if checkin_time:
                 from datetime import datetime
                 checkin_datetime = datetime.fromisoformat(checkin_time.replace('Z', '+00:00'))
+
+                # Validate: override time must not be in the future
+                if checkin_datetime > timezone.now():
+                    return Response(
+                        {"detail": "Check-in time cannot be in the future"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
             else:
                 checkin_datetime = timezone.now()
-            
+
             # Perform manual check-in
             shift.check_in_time = checkin_datetime
             shift.status = 'in_progress'
@@ -801,14 +815,28 @@ class ShiftViewSet(viewsets.ModelViewSet):
         try:
             from django.utils import timezone
             import logging
-            
+
             # Use provided time or current time
             if checkout_time:
                 from datetime import datetime
                 checkout_datetime = datetime.fromisoformat(checkout_time.replace('Z', '+00:00'))
+
+                # Validate: override time must not be in the future
+                if checkout_datetime > timezone.now():
+                    return Response(
+                        {"detail": "Check-out time cannot be in the future"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                # Validate: checkout time must be after check-in time
+                if shift.check_in_time and checkout_datetime <= shift.check_in_time:
+                    return Response(
+                        {"detail": "Check-out time must be after check-in time"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
             else:
                 checkout_datetime = timezone.now()
-            
+
             # Perform manual check-out
             shift.check_out_time = checkout_datetime
             shift.status = 'completed'
@@ -854,9 +882,9 @@ class ShiftViewSet(viewsets.ModelViewSet):
             )
         
         # Check if already completed
-        if shift.status == 'completed':
+        if shift.status in ('completed', 'no_show'):
             return Response(
-                {"detail": "Shift already completed"}, 
+                {"detail": "Shift already completed"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -899,8 +927,8 @@ class ShiftViewSet(viewsets.ModelViewSet):
                     shift.check_out_time = timezone.now()
             # else: No-show - leave check_in_time and check_out_time as None/unset
 
-            # Set status and hours
-            shift.status = 'completed'
+            # Set status based on hours (0 hours = no show)
+            shift.status = 'no_show' if float(actual_hours) == 0 else 'completed'
             shift.actual_hours_worked = float(actual_hours)
             shift.start_signature = manager_signature
             shift.end_signature = manager_signature
@@ -1520,11 +1548,10 @@ class ShiftViewSet(viewsets.ModelViewSet):
         # Calculate summary metrics
         total_check_ins = shifts_queryset.filter(check_in_time__isnull=False).count()
 
-        # No-shows: scheduled shifts that have ended but never checked in
+        # No-shows: scheduled shifts that have ended but never checked in, or explicitly marked no_show
         total_no_shows = shifts_queryset.filter(
-            status='scheduled',
-            end_time__lt=now,
-            check_in_time__isnull=True
+            Q(status='scheduled', end_time__lt=now, check_in_time__isnull=True) |
+            Q(status='no_show')
         ).count()
 
         # Late check-ins: checked in after the scheduled start time
@@ -1556,9 +1583,8 @@ class ShiftViewSet(viewsets.ModelViewSet):
 
         prev_check_ins = prev_shifts.filter(check_in_time__isnull=False).count()
         prev_no_shows = prev_shifts.filter(
-            status='scheduled',
-            end_time__lt=now,
-            check_in_time__isnull=True
+            Q(status='scheduled', end_time__lt=now, check_in_time__isnull=True) |
+            Q(status='no_show')
         ).count()
         prev_late = prev_shifts.filter(
             check_in_time__isnull=False,
@@ -1612,9 +1638,8 @@ class ShiftViewSet(viewsets.ModelViewSet):
 
             check_in_count = user_shifts.filter(check_in_time__isnull=False).count()
             no_show_count = user_shifts.filter(
-                status='scheduled',
-                end_time__lt=now,
-                check_in_time__isnull=True
+                Q(status='scheduled', end_time__lt=now, check_in_time__isnull=True) |
+                Q(status='no_show')
             ).count()
             late_count = user_shifts.filter(
                 check_in_time__isnull=False,

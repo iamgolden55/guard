@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { useMutation } from '@tanstack/react-query';
+import api from '../../services/api';
 import {
   Button,
   Input,
@@ -94,21 +95,9 @@ const RegulationEditor: React.FC<RegulationEditorProps> = ({
   // Update regulation mutation
   const updateMutation = useMutation({
     mutationFn: async (data: Partial<WorkingHoursRegulation>) => {
-      // This would be the update endpoint
-      const response = await fetch(`/api/v1/compliance/regulations/${regulation.id}/`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update regulation');
-      }
-
-      return await response.json();
+      // Auth handled via httpOnly cookies (withCredentials: true on api instance)
+      const response = await api.put(`/api/v1/compliance/regulations/${regulation.id}/`, data);
+      return response.data;
     },
     onSuccess: () => {
       onSave();

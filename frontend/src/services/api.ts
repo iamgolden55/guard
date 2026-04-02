@@ -45,14 +45,8 @@ api.interceptors.request.use(
       }
     }
 
-    // HYBRID AUTH: Add Authorization header from localStorage as fallback
-    // This handles Safari and other browsers that block cross-site cookies
-    // Cookies are still sent (withCredentials: true), but if they're blocked,
-    // the Authorization header provides a fallback
-    const accessToken = localStorage.getItem('access_token');
-    if (accessToken && config.headers) {
-      config.headers['Authorization'] = `Bearer ${accessToken}`;
-    }
+    // Auth is handled exclusively via httpOnly cookies (withCredentials: true).
+    // No Authorization header from localStorage — that would negate XSS protection.
 
     return config;
   },
@@ -99,13 +93,9 @@ api.interceptors.response.use(
       if (isRefreshing && refreshPromise) {
         try {
           await refreshPromise;
-          // Retry the original request with new token
+          // Retry the original request — fresh cookies are already set by the refresh response
           if (originalRequest.headers) {
             originalRequest.headers['X-Retry'] = 'true';
-            const newToken = localStorage.getItem('access_token');
-            if (newToken) {
-              originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
-            }
           }
           return api(originalRequest);
         } catch {
@@ -118,19 +108,17 @@ api.interceptors.response.use(
 
       refreshPromise = (async () => {
         try {
-          // HYBRID AUTH: Send refresh token in body as fallback for Safari
-          const refreshToken = localStorage.getItem('refresh_token');
-
           // FIX: Use proper API URL in production (relative URL goes to frontend domain otherwise)
           const refreshUrl = import.meta.env.DEV
             ? '/api/v1/auth/refresh/'
             : `${API_URL}/api/v1/auth/refresh/`;
 
+          // Refresh token is in httpOnly cookie — sent automatically via withCredentials
           const response = await axios.post(
             refreshUrl,
-            refreshToken ? { refresh: refreshToken } : {},
+            {},
             {
-              withCredentials: true, // Still try cookies
+              withCredentials: true,
               headers: {
                 'X-CSRFToken': getCsrfToken() || '',
               }
@@ -139,13 +127,8 @@ api.interceptors.response.use(
 
           console.log('Token refreshed successfully');
 
-          // HYBRID AUTH: Store new tokens in localStorage if returned
-          if (response.data?.access) {
-            localStorage.setItem('access_token', response.data.access);
-          }
-          if (response.data?.refresh) {
-            localStorage.setItem('refresh_token', response.data.refresh);
-          }
+          // New tokens are set as httpOnly cookies by the backend response.
+          // No localStorage storage needed.
 
           return response;
         } finally {
@@ -157,14 +140,9 @@ api.interceptors.response.use(
       try {
         const response = await refreshPromise;
 
-        // Retry the original request with new token
+        // Retry the original request — fresh cookies are already set by the refresh response
         if (originalRequest.headers) {
           originalRequest.headers['X-Retry'] = 'true';
-          // Update Authorization header with new token
-          const newToken = response.data?.access || localStorage.getItem('access_token');
-          if (newToken) {
-            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
-          }
         }
 
         return api(originalRequest);
@@ -174,9 +152,7 @@ api.interceptors.response.use(
         // Set flag to prevent other handlers from trying
         isSessionInvalidating = true;
 
-        // Clear ALL auth tokens on refresh failure (including user - critical fix!)
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        // Clear user data on refresh failure (tokens are in httpOnly cookies, cleared by backend)
         localStorage.removeItem('user');
 
         // Redirect to login page immediately (no setTimeout race condition)

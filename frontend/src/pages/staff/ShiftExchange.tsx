@@ -1,38 +1,14 @@
 import type React from 'react';
 import { useState, useEffect } from 'react';
-import {
-  Stack,
-  Text,
-  PrimaryButton,
-  DefaultButton,
-  DetailsList,
-  SelectionMode,
-  IColumn,
-  Spinner,
-  SpinnerSize,
-  MessageBar,
-  MessageBarType,
-  Pivot,
-  PivotItem,
-  Icon,
-  Dialog,
-  DialogType,
-  DialogFooter,
-  TextField,
-  Dropdown,
-  IDropdownOption,
-  Link,
-  PersonaSize,
-  Persona
-} from '@fluentui/react';
-import { MainLayout } from '../../layouts';
+import { Header, Container, SpaceBetween, StatusIndicator, Alert, ConfirmationModal, EmptyState } from '../../components/cloudscape';
 import { useAuth } from '../../contexts/AuthContext';
 import { shiftService, exchangeService } from '../../services';
 import type { Shift, StaffProfile } from '../../types';
 import type { ShiftExchange, OpenShiftRequest } from '../../services/exchangeService';
 
 const ShiftExchangePage: React.FC = () => {
-  const { user } = useAuth();
+  const { authState } = useAuth();
+  const user = authState?.user;
   const [selectedTab, setSelectedTab] = useState('my-shifts');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +37,7 @@ const ShiftExchangePage: React.FC = () => {
   const loadData = async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       if (selectedTab === 'my-shifts') {
         const shifts = await shiftService.getMyShifts();
@@ -84,245 +60,59 @@ const ShiftExchangePage: React.FC = () => {
     }
   };
 
-  // My Shifts tab columns
-  const myShiftsColumns: IColumn[] = [
-    {
-      key: 'venue',
-      name: 'Venue',
-      fieldName: 'venue',
-      minWidth: 120,
-      onRender: (item: Shift) => <Text>{item?.venue?.name || 'No venue'}</Text>
-    },
-    {
-      key: 'date',
-      name: 'Date',
-      fieldName: 'startTime',
-      minWidth: 100,
-      onRender: (item: Shift) => <Text>{item?.startTime ? new Date(item.startTime).toLocaleDateString() : 'No date'}</Text>
-    },
-    {
-      key: 'time',
-      name: 'Time',
-      fieldName: 'startTime',
-      minWidth: 120,
-      onRender: (item: Shift) => (
-        <Text>
-          {item?.startTime ? new Date(item.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'No time'}
-          {item?.endTime && ` - ${new Date(item.endTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-        </Text>
-      )
-    },
-    {
-      key: 'status',
-      name: 'Status',
-      fieldName: 'status',
-      minWidth: 80,
-      onRender: (item: Shift) => (
-        <span style={{
-          padding: '4px 8px',
-          borderRadius: '4px',
-          backgroundColor: item?.status === 'scheduled' ? '#10B981' : '#F59E0B',
-          color: 'white',
-          fontSize: '12px',
-          textTransform: 'capitalize'
-        }}>
-          {item?.status || 'unknown'}
-        </span>
-      )
-    },
-    {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 200,
-      onRender: (item: Shift) => (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
-          <DefaultButton
-            text="Release"
-            onClick={() => handleReleaseShift(item)}
-            styles={{ root: { backgroundColor: '#B91C1C', color: 'white', border: 'none' } }}
-          />
-          <DefaultButton
-            text="Exchange"
-            onClick={() => handleExchangeShift(item)}
-            styles={{ root: { backgroundColor: '#f8f9fa', color: '#B91C1C', border: '1px solid #dee2e6' } }}
-          />
-        </Stack>
-      )
-    }
-  ];
-
-  // Available Shifts tab columns
-  const availableShiftsColumns: IColumn[] = [
-    {
-      key: 'venue',
-      name: 'Venue',
-      fieldName: 'venue',
-      minWidth: 120,
-      onRender: (item: OpenShiftRequest) => <Text>{item.original_shift_details.venue.name}</Text>
-    },
-    {
-      key: 'date',
-      name: 'Date',
-      fieldName: 'date',
-      minWidth: 100,
-      onRender: (item: OpenShiftRequest) => <Text>{new Date(item.original_shift_details.start_time).toLocaleDateString()}</Text>
-    },
-    {
-      key: 'time',
-      name: 'Time',
-      fieldName: 'time',
-      minWidth: 120,
-      onRender: (item: OpenShiftRequest) => (
-        <Text>
-          {new Date(item.original_shift_details.start_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-          {item.original_shift_details.end_time && ` - ${new Date(item.original_shift_details.end_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-        </Text>
-      )
-    },
-    {
-      key: 'released_by',
-      name: 'Released By',
-      minWidth: 120,
-      onRender: (item: OpenShiftRequest) => {
-        // Check if this is a system-generated shift
-        const isSystemGenerated = item.request_reason?.includes('System-generated') || 
-                                 item.request_reason?.includes('unassigned venue shift');
-        
-        if (isSystemGenerated) {
-          return <Text style={{ fontStyle: 'italic', color: '#666' }}>System</Text>;
-        }
-        
-        return <Text>{`${item.requesting_user_details.first_name} ${item.requesting_user_details.last_name}`}</Text>;
-      }
-    },
-    {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 100,
-      onRender: (item: OpenShiftRequest) => (
-        <DefaultButton
-          text="Claim"
-          onClick={() => handleClaimShift(item.id)}
-          styles={{ root: { backgroundColor: '#B91C1C', color: 'white', border: 'none' } }}
-          disabled={item.status !== 'open'}
-        />
-      )
-    }
-  ];
-
-  // Direct Exchanges tab columns
-  const exchangesColumns: IColumn[] = [
-    {
-      key: 'type',
-      name: 'Type',
-      minWidth: 80,
-      onRender: (item: ShiftExchange) => (
-        <Icon 
-          iconName={item.requesting_user === user?.id ? 'Send' : 'Receive'} 
-          style={{ color: item.requesting_user === user?.id ? '#B91C1C' : '#10B981' }}
-        />
-      )
-    },
-    {
-      key: 'other_user',
-      name: 'With',
-      minWidth: 120,
-      onRender: (item: ShiftExchange) => {
-        const otherUser = item.requesting_user === user?.id ? item.target_user_details : item.requesting_user_details;
-        return <Text>{`${otherUser.first_name} ${otherUser.last_name}`}</Text>;
-      }
-    },
-    {
-      key: 'shift',
-      name: 'Shift',
-      minWidth: 150,
-      onRender: (item: ShiftExchange) => (
-        <Stack>
-          <Text>{item.original_shift_details.venue.name}</Text>
-          <Text variant="small">{new Date(item.original_shift_details.start_time).toLocaleDateString()}</Text>
-        </Stack>
-      )
-    },
-    {
-      key: 'status',
-      name: 'Status',
-      minWidth: 100,
-      onRender: (item: ShiftExchange) => (
-        <span style={{
-          padding: '4px 8px',
-          borderRadius: '4px',
-          backgroundColor: getStatusColor(item.status),
-          color: 'white',
-          fontSize: '12px',
-          textTransform: 'capitalize'
-        }}>
-          {item.status.replace('_', ' ')}
-        </span>
-      )
-    },
-    {
-      key: 'actions',
-      name: 'Actions',
-      minWidth: 150,
-      onRender: (item: ShiftExchange) => renderExchangeActions(item)
-    }
-  ];
-
-  const getStatusColor = (status: string): string => {
+  const getStatusType = (status: string): 'success' | 'warning' | 'error' | 'info' | 'pending' | 'stopped' => {
     switch (status) {
-      case 'pending': return '#F59E0B';
-      case 'accepted_by_target': return '#3B82F6';
-      case 'approved': return '#10B981';
-      case 'rejected': return '#EF4444';
-      case 'cancelled': return '#9CA3AF';
-      default: return '#9CA3AF';
+      case 'pending': return 'warning';
+      case 'accepted_by_target': return 'info';
+      case 'approved': return 'success';
+      case 'rejected': return 'error';
+      case 'cancelled': return 'stopped';
+      case 'scheduled': return 'success';
+      case 'active': return 'warning';
+      case 'open': return 'success';
+      default: return 'stopped';
     }
   };
 
   const renderExchangeActions = (item: ShiftExchange) => {
-    // Get current user ID - try multiple possible sources
     const currentUserId = user?.id || user?.user_id || parseInt(localStorage.getItem('user')?.match(/"id":(\d+)/)?.[1] || '0');
-    
-    console.log('renderExchangeActions - item:', item);
-    console.log('renderExchangeActions - user object:', user);
-    console.log('renderExchangeActions - currentUserId:', currentUserId);
-    console.log('renderExchangeActions - item.requesting_user:', item.requesting_user);
-    console.log('renderExchangeActions - item.target_user:', item.target_user);
-    
+
     const isRequestingUser = item.requesting_user === currentUserId;
     const isTargetUser = item.target_user === currentUserId;
-    
-    console.log('renderExchangeActions - isRequestingUser:', isRequestingUser);
-    console.log('renderExchangeActions - isTargetUser:', isTargetUser);
 
     if (item.status === 'pending' && isTargetUser) {
       return (
-        <Stack horizontal tokens={{ childrenGap: 8 }}>
-          <DefaultButton
-            text="Accept"
+        <div className="flex gap-2 mt-3">
+          <button
             onClick={() => handleAcceptExchange(item.id)}
-            styles={{ root: { backgroundColor: '#10B981', color: 'white', border: 'none' } }}
-          />
-          <DefaultButton
-            text="Decline"
+            className="px-4 h-9 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
+          >
+            Accept
+          </button>
+          <button
             onClick={() => handleDeclineExchange(item.id)}
-            styles={{ root: { backgroundColor: '#EF4444', color: 'white', border: 'none' } }}
-          />
-        </Stack>
+            className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Decline
+          </button>
+        </div>
       );
     }
 
     if (['pending', 'accepted_by_target'].includes(item.status) && (isRequestingUser || isTargetUser)) {
       return (
-        <DefaultButton
-          text="Cancel"
-          onClick={() => handleCancelExchange(item.id)}
-          styles={{ root: { backgroundColor: '#9CA3AF', color: 'white', border: 'none' } }}
-        />
+        <div className="mt-3">
+          <button
+            onClick={() => handleCancelExchange(item.id)}
+            className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
       );
     }
 
-    return <Text variant="small">No actions</Text>;
+    return <p className="text-xs text-gray-400 mt-3">No actions available</p>;
   };
 
   // Event handlers
@@ -336,7 +126,7 @@ const ShiftExchangePage: React.FC = () => {
     setSelectedShift(shift);
     setExchangeReason('');
     setSelectedTargetStaff(null);
-    
+
     try {
       const staff = await shiftService.getEligibleStaffForExchange(shift.id);
       setEligibleStaff(staff);
@@ -374,10 +164,6 @@ const ShiftExchangePage: React.FC = () => {
       request_reason: exchangeReason
     };
 
-    console.log('Creating exchange with data:', exchangeData);
-    console.log('Selected shift:', selectedShift);
-    console.log('Selected target staff ID:', selectedTargetStaff);
-
     try {
       setIsLoading(true);
       await exchangeService.createExchange(exchangeData);
@@ -386,19 +172,9 @@ const ShiftExchangePage: React.FC = () => {
       loadData();
     } catch (err: any) {
       console.error('Exchange creation error:', err);
-      console.error('Error response:', err.response);
-      console.error('Error response data:', err.response?.data);
-      
-      // Log specific field validation errors
-      if (err.response?.data) {
-        Object.keys(err.response.data).forEach(field => {
-          console.error(`${field} validation errors:`, err.response.data[field]);
-        });
-      }
-      
+
       let errorMessage = 'Failed to create exchange request';
       if (err.response?.data) {
-        // Handle Django validation errors
         if (err.response.data.non_field_errors) {
           errorMessage = err.response.data.non_field_errors[0];
         } else if (err.response.data.detail) {
@@ -408,7 +184,6 @@ const ShiftExchangePage: React.FC = () => {
         } else if (typeof err.response.data === 'string') {
           errorMessage = err.response.data;
         } else {
-          // Extract the first validation error message
           const firstError = Object.values(err.response.data)[0];
           if (Array.isArray(firstError) && firstError.length > 0) {
             errorMessage = firstError[0];
@@ -417,7 +192,7 @@ const ShiftExchangePage: React.FC = () => {
           }
         }
       }
-      
+
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -476,401 +251,301 @@ const ShiftExchangePage: React.FC = () => {
     }
   };
 
-  const staffDropdownOptions: IDropdownOption[] = eligibleStaff.map((staff, index) => ({
-    key: staff.userId || staff.id || index,  // Use userId for the exchange request
-    text: `${staff.firstName || 'Unknown'} ${staff.lastName || 'User'}`,
-    data: staff
-  }));
+  const tabs = [
+    { key: 'my-shifts', label: 'My Shifts' },
+    { key: 'available-shifts', label: 'Available Shifts' },
+    { key: 'direct-exchanges', label: 'Direct Exchanges' },
+    { key: 'my-requests', label: 'My Requests' },
+  ];
 
   return (
-    <MainLayout>
-      <Stack tokens={{ childrenGap: 20 }}>
-        <Text variant="xxLarge" style={{ color: '#B91C1C' }}>Shift Exchange</Text>
-        
-        {error && (
-          <MessageBar
-            messageBarType={MessageBarType.error}
-            isMultiline={false}
-            onDismiss={() => setError(null)}
-          >
-            {error}
-          </MessageBar>
-        )}
+    <SpaceBetween size="l">
+      <Header variant="h1">Shift Exchange</Header>
 
-        {success && (
-          <MessageBar
-            messageBarType={MessageBarType.success}
-            isMultiline={false}
-            onDismiss={() => setSuccess(null)}
-          >
-            {success}
-          </MessageBar>
-        )}
+      {error && (
+        <Alert type="error" dismissible onDismiss={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
 
-        
-        <Pivot
-          selectedKey={selectedTab}
-          onLinkClick={(item) => setSelectedTab(item?.props.itemKey || 'my-shifts')}
-          headersOnly={false}
-          getTabId={(itemKey) => itemKey}
-        >
-          <PivotItem headerText="My Shifts" itemKey="my-shifts">
-            <div className="mt-4">
-              {isLoading ? (
-                <div className="flex justify-center py-8">
-                  <Spinner size={SpinnerSize.large} label="Loading shifts..." />
-                </div>
-              ) : (
-                <div>
-                  <div className="mb-4">
-                    <Text>Release shifts to the open pool or request exchanges with other staff members.</Text>
-                  </div>
-                  <div className="hidden md:block">
-                    <DetailsList
-                      items={myShifts}
-                      columns={myShiftsColumns}
-                      selectionMode={SelectionMode.none}
-                      compact={true}
-                    />
-                  </div>
-                  
-                  {/* Mobile view */}
-                  <div className="block md:hidden">
-                    <Stack tokens={{ childrenGap: 12 }}>
-                      {myShifts.map((shift, index) => (
-                            <div key={shift.id || index} style={{
-                              backgroundColor: '#ffffff',
-                              border: '1px solid #dee2e6',
-                              borderRadius: '8px',
-                              padding: '16px',
-                              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                            }}>
-                              <Stack tokens={{ childrenGap: 8 }}>
-                                <Stack horizontal horizontalAlign="space-between">
-                                  <Text variant="medium" style={{ fontWeight: '600' }}>
-                                    {shift?.venue?.name || 'No venue name'}
-                                  </Text>
-                                  <span style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '4px',
-                                    backgroundColor: shift.status === 'scheduled' ? '#10B981' : '#F59E0B',
-                                    color: 'white',
-                                    fontSize: '12px',
-                                    textTransform: 'capitalize'
-                                  }}>
-                                    {shift.status}
-                                  </span>
-                                </Stack>
-                                <Text>
-                                  {shift?.startTime ? new Date(shift.startTime).toLocaleDateString() : 'No date'}
-                                </Text>
-                                <Text>
-                                  {shift?.startTime ? new Date(shift.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'No time'}
-                                  {shift?.endTime && ` - ${new Date(shift.endTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-                                </Text>
-                                <Stack horizontal tokens={{ childrenGap: 12 }} style={{ marginTop: '12px' }}>
-                                  <DefaultButton
-                                    text="Release"
-                                    onClick={() => handleReleaseShift(shift)}
-                                    styles={{ root: { flex: 1, backgroundColor: '#B91C1C', color: 'white', border: 'none' } }}
-                                  />
-                                  <DefaultButton
-                                    text="Exchange"
-                                    onClick={() => handleExchangeShift(shift)}
-                                    styles={{ root: { flex: 1, backgroundColor: '#f8f9fa', color: '#B91C1C', border: '1px solid #dee2e6' } }}
-                                  />
-                                </Stack>
-                              </Stack>
-                              </div>
-                      ))}
-                    </Stack>
-                  </div>
-                </div>
-              )}
-            </div>
-          </PivotItem>
+      {success && (
+        <Alert type="success" dismissible onDismiss={() => setSuccess(null)}>
+          {success}
+        </Alert>
+      )}
 
-          <PivotItem headerText="Available Shifts" itemKey="available-shifts">
-            <div className="mt-4">
-              {isLoading ? (
-                <div className="flex justify-center py-8">
-                  <Spinner size={SpinnerSize.large} label="Loading available shifts..." />
-                </div>
-              ) : (
-                <div>
-                  <div className="mb-4">
-                    <Text>Claim shifts that other staff members have released.</Text>
-                  </div>
-                  <div className="hidden md:block">
-                    <DetailsList
-                      items={availableShifts}
-                      columns={availableShiftsColumns}
-                      selectionMode={SelectionMode.none}
-                      compact={true}
-                    />
-                  </div>
-                  
-                  {/* Mobile view */}
-                  <div className="block md:hidden">
-                    <Stack tokens={{ childrenGap: 12 }}>
-                      {availableShifts.map((request) => (
-                        <div key={request.id} style={{
-                          backgroundColor: '#ffffff',
-                          border: '1px solid #dee2e6',
-                          borderRadius: '8px',
-                          padding: '16px',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                        }}>
-                          <Stack tokens={{ childrenGap: 8 }}>
-                            <Stack horizontal horizontalAlign="space-between">
-                              <Text variant="medium" style={{ fontWeight: '600' }}>{request.original_shift_details.venue.name}</Text>
-                              <span style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                backgroundColor: request.status === 'open' ? '#10B981' : '#9CA3AF',
-                                color: 'white',
-                                fontSize: '12px',
-                                textTransform: 'capitalize'
-                              }}>
-                                {request.status}
-                              </span>
-                            </Stack>
-                            <Text>
-                              Released by: {
-                                (request.request_reason?.includes('System-generated') || 
-                                 request.request_reason?.includes('unassigned venue shift'))
-                                  ? 'System'
-                                  : `${request.requesting_user_details.first_name} ${request.requesting_user_details.last_name}`
-                              }
-                            </Text>
-                            <Text>{new Date(request.original_shift_details.start_time).toLocaleDateString()}</Text>
-                            <Text>
-                              {new Date(request.original_shift_details.start_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                              {request.original_shift_details.end_time && ` - ${new Date(request.original_shift_details.end_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
-                            </Text>
-                            <DefaultButton
-                              text="Claim Shift"
-                              onClick={() => handleClaimShift(request.id)}
-                              disabled={request.status !== 'open'}
-                              styles={{ root: { backgroundColor: '#B91C1C', color: 'white', border: 'none', marginTop: '12px' } }}
-                            />
-                          </Stack>
-                        </div>
-                      ))}
-                    </Stack>
-                  </div>
-                </div>
-              )}
-            </div>
-          </PivotItem>
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-0 -mb-px overflow-x-auto">
+          {tabs.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setSelectedTab(tab.key)}
+              className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                selectedTab === tab.key
+                  ? 'border-red-600 text-red-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
 
-          <PivotItem headerText="Direct Exchanges" itemKey="direct-exchanges">
-            <div className="mt-4">
-              {isLoading ? (
-                <div className="flex justify-center py-8">
-                  <Spinner size={SpinnerSize.large} label="Loading exchanges..." />
-                </div>
-              ) : (
-                <div>
-                  <div className="mb-4">
-                    <Text>Direct shift exchanges with specific staff members.</Text>
-                  </div>
-                  <div className="hidden md:block">
-                    <DetailsList
-                      items={directExchanges}
-                      columns={exchangesColumns}
-                      selectionMode={SelectionMode.none}
-                      compact={true}
-                    />
-                  </div>
-                  
-                  {/* Mobile view */}
-                  <div className="block md:hidden">
-                    <Stack tokens={{ childrenGap: 12 }}>
-                      {directExchanges.map((exchange) => {
-                        const otherUser = exchange.requesting_user === user?.id ? exchange.target_user_details : exchange.requesting_user_details;
-                        const isRequestingUser = exchange.requesting_user === user?.id;
-                        
-                        return (
-                          <div key={exchange.id} style={{
-                            backgroundColor: '#ffffff',
-                            border: '1px solid #dee2e6',
-                            borderRadius: '8px',
-                            padding: '16px',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                          }}>
-                            <Stack tokens={{ childrenGap: 8 }}>
-                              <Stack horizontal horizontalAlign="space-between">
-                                <Stack horizontal tokens={{ childrenGap: 8 }} verticalAlign="center">
-                                  <Icon 
-                                    iconName={isRequestingUser ? 'Send' : 'Receive'} 
-                                    style={{ color: isRequestingUser ? '#B91C1C' : '#10B981' }}
-                                  />
-                                  <Text variant="medium" style={{ fontWeight: '600' }}>
-                                    {isRequestingUser ? 'To' : 'From'} {`${otherUser.first_name} ${otherUser.last_name}`}
-                                  </Text>
-                                </Stack>
-                                <span style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  backgroundColor: getStatusColor(exchange.status),
-                                  color: 'white',
-                                  fontSize: '12px',
-                                  textTransform: 'capitalize'
-                                }}>
-                                  {exchange.status.replace('_', ' ')}
-                                </span>
-                              </Stack>
-                              <Text>{exchange.original_shift_details.venue.name}</Text>
-                              <Text>{new Date(exchange.original_shift_details.start_time).toLocaleDateString()}</Text>
-                              <Text>Reason: {exchange.request_reason}</Text>
-                              {renderExchangeActions(exchange)}
-                            </Stack>
-                          </div>
-                        );
-                      })}
-                    </Stack>
-                  </div>
-                </div>
-              )}
-            </div>
-          </PivotItem>
+      {/* Loading */}
+      {isLoading && (
+        <div className="flex justify-center py-12">
+          <div className="w-8 h-8 border-4 border-gray-200 border-t-red-600 rounded-full animate-spin" />
+        </div>
+      )}
 
-          <PivotItem headerText="My Requests" itemKey="my-requests">
-            <div className="mt-4">
-              {isLoading ? (
-                <div className="flex justify-center py-8">
-                  <Spinner size={SpinnerSize.large} label="Loading requests..." />
-                </div>
-              ) : (
-                <div>
-                  <div className="mb-4">
-                    <Text>Track your shift release requests and claims.</Text>
-                  </div>
-                  <Stack tokens={{ childrenGap: 12 }}>
-                    {myRequests.map((request) => (
-                      <div key={request.id} style={{
-                        backgroundColor: '#ffffff',
-                        border: '1px solid #dee2e6',
-                        borderRadius: '8px',
-                        padding: '16px',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                      }}>
-                        <Stack tokens={{ childrenGap: 8 }}>
-                          <Stack horizontal horizontalAlign="space-between">
-                            <Text variant="medium" style={{ fontWeight: '600' }}>{request.original_shift_details.venue.name}</Text>
-                            <span style={{
-                              padding: '4px 8px',
-                              borderRadius: '4px',
-                              backgroundColor: getStatusColor(request.status),
-                              color: 'white',
-                              fontSize: '12px',
-                              textTransform: 'capitalize'
-                            }}>
-                              {request.status}
-                            </span>
-                          </Stack>
-                          <Text>{new Date(request.original_shift_details.start_time).toLocaleDateString()}</Text>
-                          <Text>Reason: {request.request_reason}</Text>
-                          {request.claimed_by_details && (
-                            <Text>Claimed by: {`${request.claimed_by_details.first_name} ${request.claimed_by_details.last_name}`}</Text>
-                          )}
-                        </Stack>
+      {/* My Shifts Tab */}
+      {!isLoading && selectedTab === 'my-shifts' && (
+        <Container>
+          <SpaceBetween size="m">
+            <p className="text-sm text-gray-500">Release shifts to the open pool or request exchanges with other staff members.</p>
+            {myShifts.length === 0 ? (
+              <EmptyState title="No active or scheduled shifts" description="You have no shifts available for exchange." />
+            ) : (
+              <div className="space-y-3">
+                {myShifts.map((shift, index) => (
+                  <div key={shift.id || index} className="p-4 bg-white border border-gray-200 rounded-lg">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">{shift?.venue?.name || 'No venue name'}</p>
+                        <p className="text-xs text-gray-500">
+                          {shift?.startTime ? new Date(shift.startTime).toLocaleDateString() : 'No date'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {shift?.startTime ? new Date(shift.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'No time'}
+                          {shift?.endTime && ` - ${new Date(shift.endTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                        </p>
                       </div>
-                    ))}
-                  </Stack>
-                </div>
-              )}
+                      <StatusIndicator type={getStatusType(shift.status)}>
+                        {shift.status}
+                      </StatusIndicator>
+                    </div>
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={() => handleReleaseShift(shift)}
+                        className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+                      >
+                        Release
+                      </button>
+                      <button
+                        onClick={() => handleExchangeShift(shift)}
+                        className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        Exchange
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SpaceBetween>
+        </Container>
+      )}
+
+      {/* Available Shifts Tab */}
+      {!isLoading && selectedTab === 'available-shifts' && (
+        <Container>
+          <SpaceBetween size="m">
+            <p className="text-sm text-gray-500">Claim shifts that other staff members have released.</p>
+            {availableShifts.length === 0 ? (
+              <EmptyState title="No available shifts" description="There are no shifts available to claim right now." />
+            ) : (
+              <div className="space-y-3">
+                {availableShifts.map((request) => (
+                  <div key={request.id} className="p-4 bg-white border border-gray-200 rounded-lg">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">{request.original_shift_details.venue.name}</p>
+                        <p className="text-xs text-gray-500">
+                          Released by: {
+                            (request.request_reason?.includes('System-generated') ||
+                             request.request_reason?.includes('unassigned venue shift'))
+                              ? 'System'
+                              : `${request.requesting_user_details.first_name} ${request.requesting_user_details.last_name}`
+                          }
+                        </p>
+                        <p className="text-xs text-gray-500">{new Date(request.original_shift_details.start_time).toLocaleDateString()}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(request.original_shift_details.start_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                          {request.original_shift_details.end_time && ` - ${new Date(request.original_shift_details.end_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                        </p>
+                      </div>
+                      <StatusIndicator type={getStatusType(request.status)}>
+                        {request.status}
+                      </StatusIndicator>
+                    </div>
+                    <div className="mt-3">
+                      <button
+                        onClick={() => handleClaimShift(request.id)}
+                        disabled={request.status !== 'open'}
+                        className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                      >
+                        Claim Shift
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SpaceBetween>
+        </Container>
+      )}
+
+      {/* Direct Exchanges Tab */}
+      {!isLoading && selectedTab === 'direct-exchanges' && (
+        <Container>
+          <SpaceBetween size="m">
+            <p className="text-sm text-gray-500">Direct shift exchanges with specific staff members.</p>
+            {directExchanges.length === 0 ? (
+              <EmptyState title="No direct exchanges" description="You have no active exchange requests." />
+            ) : (
+              <div className="space-y-3">
+                {directExchanges.map((exchange) => {
+                  const currentUserId = user?.id || user?.user_id || 0;
+                  const otherUser = exchange.requesting_user === currentUserId ? exchange.target_user_details : exchange.requesting_user_details;
+                  const isRequestingUser = exchange.requesting_user === currentUserId;
+
+                  return (
+                    <div key={exchange.id} className="p-4 bg-white border border-gray-200 rounded-lg">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900">
+                            {isRequestingUser ? 'To' : 'From'} {`${otherUser.first_name} ${otherUser.last_name}`}
+                          </p>
+                          <p className="text-xs text-gray-500">{exchange.original_shift_details.venue.name}</p>
+                          <p className="text-xs text-gray-500">{new Date(exchange.original_shift_details.start_time).toLocaleDateString()}</p>
+                          <p className="text-xs text-gray-500">Reason: {exchange.request_reason}</p>
+                        </div>
+                        <StatusIndicator type={getStatusType(exchange.status)}>
+                          {exchange.status.replace('_', ' ')}
+                        </StatusIndicator>
+                      </div>
+                      {renderExchangeActions(exchange)}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </SpaceBetween>
+        </Container>
+      )}
+
+      {/* My Requests Tab */}
+      {!isLoading && selectedTab === 'my-requests' && (
+        <Container>
+          <SpaceBetween size="m">
+            <p className="text-sm text-gray-500">Track your shift release requests and claims.</p>
+            {myRequests.length === 0 ? (
+              <EmptyState title="No requests" description="You have no shift release requests." />
+            ) : (
+              <div className="space-y-3">
+                {myRequests.map((request) => (
+                  <div key={request.id} className="p-4 bg-white border border-gray-200 rounded-lg">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">{request.original_shift_details.venue.name}</p>
+                        <p className="text-xs text-gray-500">{new Date(request.original_shift_details.start_time).toLocaleDateString()}</p>
+                        <p className="text-xs text-gray-500">Reason: {request.request_reason}</p>
+                        {request.claimed_by_details && (
+                          <p className="text-xs text-gray-500">Claimed by: {`${request.claimed_by_details.first_name} ${request.claimed_by_details.last_name}`}</p>
+                        )}
+                      </div>
+                      <StatusIndicator type={getStatusType(request.status)}>
+                        {request.status}
+                      </StatusIndicator>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SpaceBetween>
+        </Container>
+      )}
+
+      {/* Release Shift Modal */}
+      <ConfirmationModal
+        visible={showReleaseDialog}
+        header="Release Shift to Pool"
+        confirmLabel="Release Shift"
+        onConfirm={handleConfirmRelease}
+        onCancel={() => setShowReleaseDialog(false)}
+        loading={isLoading}
+      >
+        <SpaceBetween size="m">
+          <p className="text-sm text-gray-600">This will make your shift available for other staff members to claim.</p>
+          {selectedShift && (
+            <div className="space-y-1">
+              <p className="text-sm"><span className="font-medium">Venue:</span> {selectedShift.venue?.name}</p>
+              <p className="text-sm"><span className="font-medium">Date:</span> {new Date(selectedShift.startTime).toLocaleDateString()}</p>
+              <p className="text-sm"><span className="font-medium">Time:</span> {new Date(selectedShift.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
             </div>
-          </PivotItem>
-        </Pivot>
-
-        {/* Release Shift Dialog */}
-        <Dialog
-          hidden={!showReleaseDialog}
-          onDismiss={() => setShowReleaseDialog(false)}
-          dialogContentProps={{
-            type: DialogType.normal,
-            title: 'Release Shift to Pool',
-            subText: 'This will make your shift available for other staff members to claim.'
-          }}
-        >
-          <Stack tokens={{ childrenGap: 15 }}>
-            {selectedShift && (
-              <Stack tokens={{ childrenGap: 8 }}>
-                <Text><strong>Venue:</strong> {selectedShift.venue?.name}</Text>
-                <Text><strong>Date:</strong> {new Date(selectedShift.startTime).toLocaleDateString()}</Text>
-                <Text><strong>Time:</strong> {new Date(selectedShift.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</Text>
-              </Stack>
-            )}
-            <TextField
-              label="Reason for releasing shift"
-              multiline
-              rows={3}
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reason for releasing shift *</label>
+            <textarea
               value={releaseReason}
-              onChange={(_, value) => setReleaseReason(value || '')}
+              onChange={(e) => setReleaseReason(e.target.value)}
               placeholder="Please provide a reason for releasing this shift..."
-              required
-            />
-          </Stack>
-          <DialogFooter>
-            <PrimaryButton
-              text="Release Shift"
-              onClick={handleConfirmRelease}
-              disabled={!releaseReason.trim() || isLoading}
-            />
-            <DefaultButton text="Cancel" onClick={() => setShowReleaseDialog(false)} />
-          </DialogFooter>
-        </Dialog>
-
-        {/* Exchange Request Dialog */}
-        <Dialog
-          hidden={!showExchangeDialog}
-          onDismiss={() => setShowExchangeDialog(false)}
-          dialogContentProps={{
-            type: DialogType.normal,
-            title: 'Request Shift Exchange',
-            subText: 'Request to exchange this shift with another staff member.'
-          }}
-        >
-          <Stack tokens={{ childrenGap: 15 }}>
-            {selectedShift && (
-              <Stack tokens={{ childrenGap: 8 }}>
-                <Text><strong>Your Shift:</strong></Text>
-                <Text><strong>Venue:</strong> {selectedShift.venue?.name}</Text>
-                <Text><strong>Date:</strong> {new Date(selectedShift.startTime).toLocaleDateString()}</Text>
-                <Text><strong>Time:</strong> {new Date(selectedShift.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</Text>
-              </Stack>
-            )}
-            <Dropdown
-              label="Exchange with"
-              options={staffDropdownOptions}
-              selectedKey={selectedTargetStaff}
-              onChange={(_, option) => setSelectedTargetStaff(option?.key as number)}
-              placeholder="Select staff member..."
-              required
-            />
-            <TextField
-              label="Reason for exchange"
-              multiline
               rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            />
+          </div>
+        </SpaceBetween>
+      </ConfirmationModal>
+
+      {/* Exchange Request Modal */}
+      <ConfirmationModal
+        visible={showExchangeDialog}
+        header="Request Shift Exchange"
+        confirmLabel="Send Request"
+        onConfirm={handleConfirmExchange}
+        onCancel={() => setShowExchangeDialog(false)}
+        loading={isLoading}
+      >
+        <SpaceBetween size="m">
+          <p className="text-sm text-gray-600">Request to exchange this shift with another staff member.</p>
+          {selectedShift && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Your Shift:</p>
+              <p className="text-sm"><span className="font-medium">Venue:</span> {selectedShift.venue?.name}</p>
+              <p className="text-sm"><span className="font-medium">Date:</span> {new Date(selectedShift.startTime).toLocaleDateString()}</p>
+              <p className="text-sm"><span className="font-medium">Time:</span> {new Date(selectedShift.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Exchange with *</label>
+            <select
+              value={selectedTargetStaff || ''}
+              onChange={(e) => setSelectedTargetStaff(Number(e.target.value) || null)}
+              className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            >
+              <option value="">Select staff member...</option>
+              {eligibleStaff.map((staff, index) => (
+                <option key={staff.userId || staff.id || index} value={staff.userId || staff.id}>
+                  {`${staff.firstName || 'Unknown'} ${staff.lastName || 'User'}`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reason for exchange *</label>
+            <textarea
               value={exchangeReason}
-              onChange={(_, value) => setExchangeReason(value || '')}
+              onChange={(e) => setExchangeReason(e.target.value)}
               placeholder="Please provide a reason for this exchange request..."
-              required
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
             />
-          </Stack>
-          <DialogFooter>
-            <PrimaryButton
-              text="Send Request"
-              onClick={handleConfirmExchange}
-              disabled={!selectedTargetStaff || !exchangeReason.trim() || isLoading}
-            />
-            <DefaultButton text="Cancel" onClick={() => setShowExchangeDialog(false)} />
-          </DialogFooter>
-        </Dialog>
-      </Stack>
-    </MainLayout>
+          </div>
+        </SpaceBetween>
+      </ConfirmationModal>
+    </SpaceBetween>
   );
 };
 

@@ -10,6 +10,8 @@ import math
 import logging
 import uuid
 
+from .fields import EncryptedCharField
+
 # Import optimized managers
 from .compliance_query_optimizations import (
     OptimizedComplianceViolationManager,
@@ -1040,9 +1042,11 @@ class StaffProfile(models.Model):
         return f"Profile for {self.user.username}"
 
     def is_eligible_for_shifts(self):
-        # Check for valid SIA license
-        has_valid_sia = self.sia_licenses.filter(status='valid').exists()
-        # Add more checks as needed (e.g., required fields)
+        # Check for valid SIA license that hasn't expired
+        has_valid_sia = self.sia_licenses.filter(
+            status='valid',
+            expiry_date__gte=timezone.now().date()
+        ).exists()
         return self.is_approved and has_valid_sia
 
 class EmergencyContact(models.Model):
@@ -1063,8 +1067,8 @@ class EmergencyContact(models.Model):
 class BankDetails(models.Model):
     staff_profile = models.OneToOneField(StaffProfile, on_delete=models.CASCADE, related_name='bank_details')
     account_name = models.CharField(max_length=255)
-    account_number = models.CharField(max_length=255)  # Will be encrypted
-    sort_code = models.CharField(max_length=255)  # Will be encrypted
+    account_number = EncryptedCharField(max_length=255)
+    sort_code = EncryptedCharField(max_length=255)
     bank_name = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1347,8 +1351,11 @@ class PreferredVenue(models.Model):
 
 class ShiftStatusHistory(models.Model):
     shift = models.ForeignKey('Shift', on_delete=models.CASCADE, related_name='status_history')
-    status = models.CharField(max_length=20)
-    changed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='shift_status_changes')
+    old_status = models.CharField(max_length=20, null=True, blank=True)
+    new_status = models.CharField(max_length=20, default='')
+    # Keep legacy 'status' field as alias for new_status for backward compatibility
+    status = models.CharField(max_length=20, blank=True, default='')
+    changed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='shift_status_changes')
     notes = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -1356,8 +1363,15 @@ class ShiftStatusHistory(models.Model):
         db_table = 'shift_status_history'
         ordering = ['-created_at']
 
+    def save(self, *args, **kwargs):
+        # Keep status field in sync with new_status for backward compatibility
+        if self.new_status and not self.status:
+            self.status = self.new_status
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"Shift {self.shift.id} status changed to {self.status} by {self.changed_by.username}"
+        changed_by_name = self.changed_by.username if self.changed_by else 'system'
+        return f"Shift {self.shift.id} status: {self.old_status} -> {self.new_status} by {changed_by_name}"
 
 class ShiftTemplate(models.Model):
     DAYS_OF_WEEK = (
@@ -1533,17 +1547,20 @@ class OpenShiftRequest(models.Model):
         super().save(*args, **kwargs)
 
     def claim_shift(self, claiming_user):
-        """Staff member claims the open shift"""
-        if self.status != 'open':
-            raise ValueError("This shift is no longer available")
-            
+        """Staff member claims the open shift, with atomic locking to prevent race conditions."""
+        from django.db import transaction
+
         if claiming_user == self.requesting_user:
             raise ValueError("Cannot claim your own released shift")
-            
-        self.claimed_by = claiming_user
-        self.claim_time = timezone.now()
-        self.status = 'claimed'
-        self.save()
+
+        with transaction.atomic():
+            locked = OpenShiftRequest.objects.select_for_update().get(pk=self.pk)
+            if locked.status != 'open':
+                raise ValueError("This shift has already been claimed")
+            locked.claimed_by = claiming_user
+            locked.claim_time = timezone.now()
+            locked.status = 'claimed'
+            locked.save()
 
     def approve_claim(self, manager_user, notes=None):
         """Manager approves the shift claim"""
@@ -1792,7 +1809,7 @@ class Shift(models.Model):
         # Auto-approve if conditions are met
         old_status = self._original_status
         if self.status == 'pending_approval' and self.end_signature and self.check_out_time:
-            if self.venue.verify_location(
+            if self.check_out_location and self.venue.verify_location(
                 self.check_out_location.get('latitude'),
                 self.check_out_location.get('longitude')
             ):
@@ -2161,8 +2178,96 @@ class Shift(models.Model):
             hours = min(hours, max_payable_hours)
 
         rate = Decimal(str(effective_rate))
-        return hours * rate
-    
+        base_payment = hours * rate
+
+        # --- Overtime calculation ---
+        # Look up the applicable WorkingHoursRegulation via the venue's company country
+        overtime_premium = Decimal('0')
+        try:
+            company = getattr(self.venue, 'company', None) if self.venue else None
+            if company and company.country_code:
+                # SecurityCompany uses alpha-3 codes, WorkingHoursRegulation uses alpha-2.
+                # Try exact match first (works if regulation uses same format), then try
+                # the first 2 characters as a fallback for alpha-2 lookup.
+                regulation = (
+                    WorkingHoursRegulation.objects.filter(
+                        country_code__iexact=company.country_code,
+                        is_active=True,
+                    ).first()
+                    or WorkingHoursRegulation.objects.filter(
+                        country_code__iexact=company.country_code[:2],
+                        is_active=True,
+                    ).first()
+                )
+
+                if regulation and regulation.overtime_threshold_hours is not None and self.staff_user:
+                    from datetime import timedelta as td
+
+                    # Determine the ISO week (Mon-Sun) containing this shift
+                    shift_date = self.start_time.date() if self.start_time else None
+                    if shift_date:
+                        week_start = shift_date - td(days=shift_date.weekday())  # Monday
+                        week_end = week_start + td(days=6)  # Sunday
+
+                        # Total hours this staff member has worked this week (excluding current shift)
+                        from django.db.models import Sum as _Sum
+                        other_hours = (
+                            Shift.objects.filter(
+                                staff_user=self.staff_user,
+                                start_time__date__gte=week_start,
+                                start_time__date__lte=week_end,
+                                status__in=['completed', 'approved', 'in_progress'],
+                            )
+                            .exclude(pk=self.pk)
+                            .aggregate(total=_Sum('actual_hours_worked'))['total']
+                        ) or Decimal('0')
+
+                        prior_hours = Decimal(str(other_hours))
+                        current_hours = hours  # hours for this shift (already computed above)
+                        cumulative_after = prior_hours + current_hours
+
+                        threshold_1 = Decimal(str(regulation.overtime_threshold_hours))
+                        multiplier_1 = Decimal(str(regulation.overtime_multiplier_1))
+
+                        threshold_2 = (
+                            Decimal(str(regulation.overtime_threshold_2))
+                            if regulation.overtime_threshold_2
+                            else None
+                        )
+                        multiplier_2 = (
+                            Decimal(str(regulation.overtime_multiplier_2))
+                            if regulation.overtime_multiplier_2
+                            else None
+                        )
+
+                        if cumulative_after > threshold_1:
+                            # How many of THIS shift's hours are above threshold_1?
+                            ot_start = max(threshold_1 - prior_hours, Decimal('0'))
+                            ot1_hours = current_hours - ot_start  # hours in OT range
+
+                            if threshold_2 and multiplier_2 and cumulative_after > threshold_2:
+                                # Split into tier-1 and tier-2 overtime
+                                ot2_start = max(threshold_2 - prior_hours, Decimal('0'))
+                                tier2_hours = current_hours - ot2_start
+                                tier1_hours = ot1_hours - tier2_hours
+
+                                if tier1_hours > 0:
+                                    overtime_premium += tier1_hours * rate * (multiplier_1 - Decimal('1'))
+                                if tier2_hours > 0:
+                                    overtime_premium += tier2_hours * rate * (multiplier_2 - Decimal('1'))
+                            else:
+                                # All overtime at tier-1 rate
+                                if ot1_hours > 0:
+                                    overtime_premium += ot1_hours * rate * (multiplier_1 - Decimal('1'))
+        except Exception:
+            # If overtime calculation fails, still return the base payment
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                f"Overtime calculation failed for shift {self.pk}", exc_info=True
+            )
+
+        return base_payment + overtime_premium
+
     @property
     def calculated_payment(self):
         """Property to expose payment calculation through the API"""
@@ -6150,3 +6255,68 @@ class PasswordResetToken(models.Model):
 
     def __str__(self):
         return f"Password reset token for {self.user.username} - {'Valid' if self.is_valid() else 'Invalid'}"
+
+
+# =====================================================
+# AUDIT LOGGING
+# =====================================================
+
+class AuditLog(models.Model):
+    """Tracks all significant operations for regulatory compliance and security auditing."""
+    ACTION_CHOICES = [
+        ('create', 'Create'),
+        ('update', 'Update'),
+        ('delete', 'Delete'),
+        ('login', 'Login'),
+        ('logout', 'Logout'),
+        ('login_failed', 'Login Failed'),
+        ('role_change', 'Role Change'),
+        ('status_change', 'Status Change'),
+        ('export', 'Data Export'),
+        ('approve', 'Approve'),
+        ('reject', 'Reject'),
+    ]
+
+    user = models.ForeignKey('User', null=True, blank=True, on_delete=models.SET_NULL, related_name='audit_logs')
+    company = models.ForeignKey('SecurityCompany', null=True, blank=True, on_delete=models.SET_NULL, related_name='audit_logs')
+    action = models.CharField(max_length=50, choices=ACTION_CHOICES)
+    resource_type = models.CharField(max_length=100)
+    resource_id = models.CharField(max_length=255, blank=True, default='')
+    details = models.JSONField(default=dict, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True, default='')
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'audit_logs'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['company', 'timestamp']),
+            models.Index(fields=['user', 'timestamp']),
+            models.Index(fields=['resource_type', 'resource_id']),
+            models.Index(fields=['action', 'timestamp']),
+        ]
+
+    def __str__(self):
+        return f"{self.user} {self.action} {self.resource_type} {self.resource_id} at {self.timestamp}"
+
+    @classmethod
+    def log(cls, user=None, company=None, action='', resource_type='', resource_id='', details=None, request=None):
+        """Convenience method to create audit log entries."""
+        ip_address = None
+        user_agent = ''
+        if request:
+            ip_address = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', ''))
+            if ip_address and ',' in ip_address:
+                ip_address = ip_address.split(',')[0].strip()
+            user_agent = request.META.get('HTTP_USER_AGENT', '')
+        return cls.objects.create(
+            user=user,
+            company=company,
+            action=action,
+            resource_type=resource_type,
+            resource_id=str(resource_id) if resource_id else '',
+            details=details or {},
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )

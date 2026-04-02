@@ -376,8 +376,8 @@ export function useComplianceRealTimeUpdates(options: {
 
     setConnectionStatus('connecting');
 
-    const token = localStorage.getItem('token');
-    const wsUrl = `${process.env.REACT_APP_WS_URL || 'ws://localhost:8000'}/ws/compliance/?token=${token}`;
+    // WebSocket auth is handled via cookies (browser sends cookies for same-origin WS connections)
+    const wsUrl = `${process.env.REACT_APP_WS_URL || 'ws://localhost:8000'}/ws/compliance/`;
 
     try {
       wsRef.current = new WebSocket(wsUrl);
@@ -504,15 +504,17 @@ export function useOptimizedComplianceData(params: ComplianceDataParams) {
 
   // Process violations from infinite query
   const processedViolations = violationsData?.pages
-    ?.flatMap(page => page.results)
+    ?.flatMap(page => page?.results || [])
+    ?.filter(Boolean)
     ?.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) || [];
 
   // Calculate derived metrics
   const derivedMetrics = {
     totalViolations: processedViolations.length,
-    criticalViolations: processedViolations.filter(v => v.severity === 'critical').length,
-    openViolations: processedViolations.filter(v => !v.is_resolved).length,
+    criticalViolations: processedViolations.filter(v => v?.severity === 'critical').length,
+    openViolations: processedViolations.filter(v => v && !v.is_resolved).length,
     recentViolations: processedViolations.filter(v => {
+      if (!v?.created_at) return false;
       const violationDate = new Date(v.created_at);
       const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       return violationDate > dayAgo;
