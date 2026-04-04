@@ -8,6 +8,12 @@ import { useAuth } from '../../contexts/AuthContext';
 import { shiftService, invoiceService, deputyService, venueService, employmentTypeService, exchangeService } from '../../services';
 import api from '../../services/api';
 import type { DeputyStatus, User, Shift, Invoice, ActivityHeatMapData, HeatMapDayData } from '../../types';
+import {
+  Clock, CheckCircle, Gauge, Users, MapPin, DollarSign,
+  CalendarDays, ShieldCheck, AlertTriangle, Settings,
+  ArrowRight, Zap, Award, Shield, Info,
+  type LucideIcon,
+} from 'lucide-react';
 
 const AdminDashboard: React.FC = () => {
   const { authState } = useAuth();
@@ -183,7 +189,7 @@ const AdminDashboard: React.FC = () => {
               onClick={() => navigate('/admin/employment-types')}
               className="inline-flex items-center gap-2 px-4 py-2 text-[12px] font-semibold text-white bg-[#D97706] rounded-[10px] hover:bg-[#B45309] transition-colors"
             >
-              <i className="lni lni-gear-1 text-[12px]" />
+              <Settings size={12} />
               Set up employment types
             </button>
           }
@@ -194,74 +200,12 @@ const AdminDashboard: React.FC = () => {
 
       {/* ── KPI CARD GRID ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <KPICard
-          icon="lni-alarm-1"
-          iconColor="var(--ds-tile-urgent)"
-          iconBg="var(--ds-tile-urgent-bg)"
-          title="Active shifts"
-          value={stats.activeShifts}
-          hint={`${Math.max(1, Math.floor(stats.venueCount * 0.3))} venues live now`}
-          chipLabel={stats.activeShifts > 0 ? 'Live' : undefined}
-          chipColor="urgent"
-          isLoading={isLoading}
-          onClick={() => navigate('/staff-shifts')}
-        />
-        <KPICard
-          icon="lni-check-circle-1"
-          iconColor="var(--ds-tile-warning)"
-          iconBg="var(--ds-tile-warning-bg)"
-          title="Pending approvals"
-          value={stats.pendingApprovals}
-          hint={stats.pendingApprovals > 0 ? 'Needs manager review' : 'All clear'}
-          chipLabel={stats.pendingApprovals > 0 ? 'Review' : undefined}
-          chipColor="warning"
-          isLoading={isLoading}
-          onClick={() => navigate('/approvals')}
-        />
-        <KPICard
-          icon="lni-gauge-1"
-          iconColor="var(--ds-tile-success)"
-          iconBg="var(--ds-tile-success-bg)"
-          title="On-time rate"
-          value={`${stats.onTimePercentage.toFixed(0)}%`}
-          hint={stats.onTimePercentage >= 90 ? 'Above target' : 'Below target'}
-          chipLabel={stats.onTimePercentage >= 90 ? 'Good' : 'Low'}
-          chipColor={stats.onTimePercentage >= 90 ? 'success' : 'warning'}
-          isLoading={isLoading}
-          onClick={() => navigate('/admin/attendance')}
-        />
-        <KPICard
-          icon="lni-user-multiple-4"
-          iconColor="var(--ds-tile-info)"
-          iconBg="var(--ds-tile-info-bg)"
-          title="Total staff"
-          value={stats.totalStaff}
-          hint={`${Math.max(0, Math.floor(stats.totalStaff * 0.15))} off today`}
-          isLoading={isLoading}
-          onClick={() => navigate('/admin/staff')}
-        />
-        <KPICard
-          icon="lni-map-marker-1"
-          iconColor="var(--ds-tile-violet)"
-          iconBg="var(--ds-tile-violet-bg)"
-          title="Total venues"
-          value={stats.venueCount}
-          hint={`${Math.max(1, Math.floor(stats.venueCount * 0.3))} active today`}
-          isLoading={isLoading}
-          onClick={() => navigate('/admin/venues')}
-        />
-        <KPICard
-          icon="lni-dollar-circle"
-          iconColor="var(--ds-tile-finance)"
-          iconBg="var(--ds-tile-finance-bg)"
-          title="Pending invoices"
-          value={stats.pendingInvoices}
-          hint={stats.pendingInvoices > 0 ? 'Awaiting review' : 'All processed'}
-          chipLabel={stats.pendingInvoices > 0 ? 'Review' : undefined}
-          chipColor="finance"
-          isLoading={isLoading}
-          onClick={() => navigate('/admin/invoices')}
-        />
+        <KPICard Icon={Clock} iconColor="var(--ds-tile-urgent)" iconBg="var(--ds-tile-urgent-bg)" title="Active shifts" value={stats.activeShifts} hint={`${Math.max(1, Math.floor(stats.venueCount * 0.3))} venues live now`} chipLabel={stats.activeShifts > 0 ? 'Live' : undefined} chipColor="urgent" isLoading={isLoading} onClick={() => navigate('/staff-shifts')} />
+        <KPICard Icon={CheckCircle} iconColor="var(--ds-tile-warning)" iconBg="var(--ds-tile-warning-bg)" title="Pending approvals" value={stats.pendingApprovals} hint={stats.pendingApprovals > 0 ? 'Needs manager review' : 'All clear'} chipLabel={stats.pendingApprovals > 0 ? 'Review' : undefined} chipColor="warning" isLoading={isLoading} onClick={() => navigate('/approvals')} />
+        <KPICard Icon={Gauge} iconColor="var(--ds-tile-success)" iconBg="var(--ds-tile-success-bg)" title="On-time rate" value={`${stats.onTimePercentage.toFixed(0)}%`} hint={stats.onTimePercentage >= 90 ? 'Above target' : 'Below target'} chipLabel={stats.onTimePercentage >= 90 ? 'Good' : 'Low'} chipColor={stats.onTimePercentage >= 90 ? 'success' : 'warning'} isLoading={isLoading} onClick={() => navigate('/admin/attendance')} />
+        <KPICard Icon={Users} iconColor="var(--ds-tile-info)" iconBg="var(--ds-tile-info-bg)" title="Total staff" value={stats.totalStaff} hint={`${Math.max(0, Math.floor(stats.totalStaff * 0.15))} off today`} isLoading={isLoading} onClick={() => navigate('/admin/staff')} />
+        <KPICard Icon={MapPin} iconColor="var(--ds-tile-violet)" iconBg="var(--ds-tile-violet-bg)" title="Total venues" value={stats.venueCount} hint={`${Math.max(1, Math.floor(stats.venueCount * 0.3))} active today`} isLoading={isLoading} onClick={() => navigate('/admin/venues')} />
+        <KPICard Icon={DollarSign} iconColor="var(--ds-tile-finance)" iconBg="var(--ds-tile-finance-bg)" title="Pending invoices" value={stats.pendingInvoices} hint={stats.pendingInvoices > 0 ? 'Awaiting review' : 'All processed'} chipLabel={stats.pendingInvoices > 0 ? 'Review' : undefined} chipColor="finance" isLoading={isLoading} onClick={() => navigate('/admin/invoices')} />
       </div>
 
       {/* ── TWO-COLUMN CONTENT ── */}
@@ -367,7 +311,7 @@ const WelcomeBanner: React.FC<WelcomeBannerProps> = ({ userName, onViewSchedule,
             onClick={onViewSchedule}
             className="inline-flex items-center gap-2 px-5 py-2.5 text-[13px] font-semibold text-white bg-[#1A1A2E] rounded-xl hover:bg-[#374151] transition-colors"
           >
-            <i className="lni lni-calendar-days text-[14px]" />
+            <CalendarDays size={14} />
             View schedule
           </button>
           <button
@@ -598,7 +542,7 @@ const WelcomeBanner: React.FC<WelcomeBannerProps> = ({ userName, onViewSchedule,
 // ═══════════════════════════════════════════════════
 
 interface KPICardProps {
-  icon: string;
+  Icon: LucideIcon;
   iconColor: string;
   iconBg: string;
   title: string;
@@ -618,7 +562,7 @@ const chipStyles: Record<string, string> = {
   finance: 'bg-[#FFF7ED] text-[#EA580C]',
 };
 
-const KPICard: React.FC<KPICardProps> = ({ icon, iconColor, iconBg, title, value, hint, chipLabel, chipColor, isLoading, onClick }) => (
+const KPICard: React.FC<KPICardProps> = ({ Icon, iconColor, iconBg, title, value, hint, chipLabel, chipColor, isLoading, onClick }) => (
   <button
     onClick={onClick}
     className="relative w-full text-left bg-white border border-[#EAEAF0] rounded-[20px] p-5 hover:border-[#D1D5DB] transition-all duration-200 group overflow-hidden"
@@ -626,7 +570,7 @@ const KPICard: React.FC<KPICardProps> = ({ icon, iconColor, iconBg, title, value
   >
     {/* Subtle background decoration */}
     <div className="absolute pointer-events-none" aria-hidden="true" style={{ right: '-8px', bottom: '-8px', opacity: 0.04, color: iconColor }}>
-      <i className={`lni ${icon} text-[64px]`} />
+      <Icon size={64} strokeWidth={1} />
     </div>
 
     <div className="relative">
@@ -635,7 +579,7 @@ const KPICard: React.FC<KPICardProps> = ({ icon, iconColor, iconBg, title, value
           className="w-10 h-10 rounded-[12px] flex items-center justify-center"
           style={{ backgroundColor: iconBg, color: iconColor }}
         >
-          <i className={`lni ${icon} text-[18px]`} />
+          <Icon size={18} strokeWidth={1.8} />
         </div>
         {chipLabel && chipColor && (
           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${chipStyles[chipColor]}`}>
@@ -671,10 +615,10 @@ interface PriorityActionsProps {
 }
 
 const PriorityActions: React.FC<PriorityActionsProps> = ({ stats, incompleteShiftsCount, isLoading, navigate }) => {
-  const actions = [
+  const actions: Array<{ show: boolean; Icon: LucideIcon; tileClass: string; title: string; subtitle: string; time: string; path: string }> = [
     {
       show: stats.pendingApprovals > 0,
-      icon: 'lni-check-circle-1',
+      Icon: CheckCircle,
       tileClass: 'bg-[#FEF2F2] text-[#DC2626]',
       title: `Approve ${stats.pendingApprovals} pending shift${stats.pendingApprovals !== 1 ? 's' : ''}`,
       subtitle: 'Shift exchange and claim requests',
@@ -683,7 +627,7 @@ const PriorityActions: React.FC<PriorityActionsProps> = ({ stats, incompleteShif
     },
     {
       show: stats.pendingInvoices > 0,
-      icon: 'lni-dollar-circle',
+      Icon: DollarSign,
       tileClass: 'bg-[#FFF7ED] text-[#EA580C]',
       title: `Review ${stats.pendingInvoices} pending invoice${stats.pendingInvoices !== 1 ? 's' : ''}`,
       subtitle: 'Staff payment invoices awaiting approval',
@@ -692,7 +636,7 @@ const PriorityActions: React.FC<PriorityActionsProps> = ({ stats, incompleteShif
     },
     {
       show: incompleteShiftsCount > 0,
-      icon: 'lni-info',
+      Icon: AlertTriangle,
       tileClass: 'bg-[#FFFBEB] text-[#D97706]',
       title: `Resolve ${incompleteShiftsCount} missed check-in${incompleteShiftsCount !== 1 ? 's' : ''}`,
       subtitle: 'Shifts missing check-in or check-out',
@@ -701,7 +645,7 @@ const PriorityActions: React.FC<PriorityActionsProps> = ({ stats, incompleteShif
     },
     {
       show: true,
-      icon: 'lni-shield-2-check',
+      Icon: ShieldCheck,
       tileClass: 'bg-[#EFF6FF] text-[#2563EB]',
       title: 'Compliance documents',
       subtitle: 'Review SIA licences and qualifications',
@@ -710,7 +654,7 @@ const PriorityActions: React.FC<PriorityActionsProps> = ({ stats, incompleteShif
     },
     {
       show: true,
-      icon: 'lni-calendar-days',
+      Icon: CalendarDays,
       tileClass: 'bg-[#F5F3FF] text-[#7C3AED]',
       title: 'Confirm next week coverage',
       subtitle: 'Check scheduling gaps and availability',
@@ -739,7 +683,7 @@ const PriorityActions: React.FC<PriorityActionsProps> = ({ stats, incompleteShif
             <div className="absolute inset-0 w-20 h-20 mx-auto rounded-full bg-[#059669]/10 animate-pulse" style={{ filter: 'blur(10px)' }} />
             {/* Shield body */}
             <div className="relative w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-[#ECFDF5] to-[#D1FAE5] border border-[#A7F3D0] flex items-center justify-center" style={{ transform: 'rotate(-3deg)' }}>
-              <i className="lni lni-shield-2-check text-[32px] text-[#059669]" style={{ transform: 'rotate(3deg)' }} />
+              <ShieldCheck size={32} className="text-[#059669]" strokeWidth={1.5} style={{ transform: 'rotate(3deg)' }} />
             </div>
             {/* Confetti dots */}
             <div className="absolute -top-1 -left-2 w-2.5 h-2.5 rounded-full bg-[#6366F1]/30" />
@@ -760,7 +704,7 @@ const PriorityActions: React.FC<PriorityActionsProps> = ({ stats, incompleteShif
               className="w-full flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-[#F9FAFB] transition-colors text-left group"
             >
               <div className={`w-10 h-10 rounded-[12px] flex items-center justify-center flex-shrink-0 ${action.tileClass}`}>
-                <i className={`lni ${action.icon} text-[16px]`} />
+                <action.Icon size={16} strokeWidth={1.8} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-semibold text-[#1A1A2E] group-hover:text-[#374151] truncate">{action.title}</p>
@@ -952,17 +896,15 @@ const CoverageRisk: React.FC = () => {
             }`}
           >
             {/* Watermark shield illustration */}
-            <div className="absolute right-2 bottom-1 pointer-events-none" aria-hidden="true">
-              <i className={`lni lni-shield-2 text-[48px] ${
-                risk.severity === 'high' ? 'text-[#DC2626]/[0.06]' : 'text-[#D97706]/[0.06]'
-              }`} />
+            <div className="absolute right-2 bottom-1 pointer-events-none" aria-hidden="true" style={{ opacity: 0.06 }}>
+              <Shield size={48} className={risk.severity === 'high' ? 'text-[#DC2626]' : 'text-[#D97706]'} strokeWidth={1} />
             </div>
 
             <div className="relative flex items-start gap-3">
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
                 risk.severity === 'high' ? 'bg-[#DC2626]/10 text-[#DC2626]' : 'bg-[#D97706]/10 text-[#D97706]'
               }`}>
-                <i className="lni lni-info text-[14px]" />
+                <AlertTriangle size={14} strokeWidth={1.8} />
               </div>
               <div>
                 <p className={`text-[13px] font-semibold ${
@@ -997,7 +939,7 @@ const FeatureBanner: React.FC<{ navigate: (path: string) => void }> = ({ navigat
     {/* Content */}
     <div className="relative z-10 max-w-md">
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 text-[11px] font-medium text-white/80 mb-4">
-        <i className="lni lni-bolt-2 text-[12px] text-[#FBBF24]" />
+        <Zap size={12} className="text-[#FBBF24]" />
         New feature
       </span>
       <h3 className="text-[20px] md:text-[22px] font-bold text-white leading-tight font-['Plus_Jakarta_Sans']">
@@ -1015,7 +957,7 @@ const FeatureBanner: React.FC<{ navigate: (path: string) => void }> = ({ navigat
         </button>
         <button className="inline-flex items-center gap-2 px-5 py-2.5 text-[13px] font-medium text-white/70 hover:text-white transition-colors">
           Learn more
-          <i className="lni lni-arrow-right text-[12px]" />
+          <ArrowRight size={12} />
         </button>
       </div>
     </div>
@@ -1037,10 +979,10 @@ const FeatureBanner: React.FC<{ navigate: (path: string) => void }> = ({ navigat
 
       {/* Floating accent elements */}
       <div className="absolute w-10 h-10 rounded-xl bg-[#059669]/15 flex items-center justify-center" style={{ right: '40px', top: '20px', transform: 'rotate(-8deg)' }}>
-        <i className="lni lni-shield-2-check text-[18px] text-[#34D399]/40" />
+        <ShieldCheck size={18} className="text-[#34D399]/40" strokeWidth={1.5} />
       </div>
       <div className="absolute w-8 h-8 rounded-lg bg-[#FBBF24]/15 flex items-center justify-center" style={{ right: '150px', bottom: '25px', transform: 'rotate(6deg)' }}>
-        <i className="lni lni-certificate-badge-1 text-[14px] text-[#FBBF24]/40" />
+        <Award size={14} className="text-[#FBBF24]/40" strokeWidth={1.5} />
       </div>
 
       {/* Glow dots */}

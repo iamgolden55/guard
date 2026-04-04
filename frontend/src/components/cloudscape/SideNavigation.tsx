@@ -1,11 +1,18 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import {
+  LayoutDashboard, Clock, ArrowLeftRight, DollarSign, CalendarDays,
+  Users, CheckCircle, ShieldCheck, UserCog, MapPin, UserPlus,
+  Briefcase, Star, ClipboardList, BarChart3, PieChart,
+  Zap, CreditCard, Shield, Settings, X,
+  type LucideIcon,
+} from 'lucide-react';
 
 interface NavItem {
   text: string;
   href: string;
-  icon: string; // LineIcons class name (e.g. 'lni-dashboard-square-1')
+  icon: LucideIcon;
 }
 
 interface NavSection {
@@ -24,17 +31,17 @@ function getNavSections(effectiveRole: string): NavSection[] {
 
   sections.push({
     items: [
-      { text: 'Dashboard', href: '/dashboard', icon: 'lni-dashboard-square-1' },
+      { text: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     ],
   });
 
   sections.push({
     title: 'Staff',
     items: [
-      { text: 'My shifts', href: '/shifts', icon: 'lni-alarm-1' },
-      { text: 'Shift exchange', href: '/shifts/exchange', icon: 'lni-arrow-both-direction-horizontal-1' },
-      { text: 'My invoices', href: '/invoices', icon: 'lni-dollar-circle' },
-      { text: 'Leave management', href: '/leave', icon: 'lni-calendar-days' },
+      { text: 'My shifts', href: '/shifts', icon: Clock },
+      { text: 'Shift exchange', href: '/shifts/exchange', icon: ArrowLeftRight },
+      { text: 'My invoices', href: '/invoices', icon: DollarSign },
+      { text: 'Leave management', href: '/leave', icon: CalendarDays },
     ],
   });
 
@@ -42,9 +49,9 @@ function getNavSections(effectiveRole: string): NavSection[] {
     sections.push({
       title: 'Management',
       items: [
-        { text: 'Staff shifts', href: '/staff-shifts', icon: 'lni-user-multiple-4' },
-        { text: 'Approvals', href: '/approvals', icon: 'lni-check-circle-1' },
-        { text: 'Compliance', href: '/compliance', icon: 'lni-shield-2-check' },
+        { text: 'Staff shifts', href: '/staff-shifts', icon: Users },
+        { text: 'Approvals', href: '/approvals', icon: CheckCircle },
+        { text: 'Compliance', href: '/compliance', icon: ShieldCheck },
       ],
     });
   }
@@ -53,32 +60,32 @@ function getNavSections(effectiveRole: string): NavSection[] {
     sections.push({
       title: 'Administration',
       items: [
-        { text: 'Staff management', href: '/admin/staff', icon: 'lni-user-4' },
-        { text: 'Shift scheduling', href: '/admin/scheduling', icon: 'lni-calendar-days' },
-        { text: 'Venues', href: '/admin/venues', icon: 'lni-map-marker-1' },
-        { text: 'Recruitment', href: '/admin/recruitment', icon: 'lni-hand-taking-user' },
-        { text: 'Invoices', href: '/admin/invoices', icon: 'lni-dollar-circle' },
-        { text: 'Employment types', href: '/admin/employment-types', icon: 'lni-briefcase-1' },
-        { text: 'Bank holidays', href: '/admin/bank-holidays', icon: 'lni-star-fat' },
-        { text: 'Attendance', href: '/admin/attendance', icon: 'lni-clipboard' },
-        { text: 'Reports', href: '/admin/reports', icon: 'lni-bar-chart-4' },
-        { text: 'Analytics', href: '/admin/analytics', icon: 'lni-pie-chart-2' },
+        { text: 'Staff management', href: '/admin/staff', icon: UserCog },
+        { text: 'Shift scheduling', href: '/admin/scheduling', icon: CalendarDays },
+        { text: 'Venues', href: '/admin/venues', icon: MapPin },
+        { text: 'Recruitment', href: '/admin/recruitment', icon: UserPlus },
+        { text: 'Invoices', href: '/admin/invoices', icon: DollarSign },
+        { text: 'Employment types', href: '/admin/employment-types', icon: Briefcase },
+        { text: 'Bank holidays', href: '/admin/bank-holidays', icon: Star },
+        { text: 'Attendance', href: '/admin/attendance', icon: ClipboardList },
+        { text: 'Reports', href: '/admin/reports', icon: BarChart3 },
+        { text: 'Analytics', href: '/admin/analytics', icon: PieChart },
       ],
     });
 
     sections.push({
       title: 'Integrations',
       items: [
-        { text: 'Deputy', href: '/admin/deputy', icon: 'lni-bolt-2' },
-        { text: 'Finance', href: '/admin/finance-integrations', icon: 'lni-credit-card-multiple' },
+        { text: 'Deputy', href: '/admin/deputy', icon: Zap },
+        { text: 'Finance', href: '/admin/finance-integrations', icon: CreditCard },
       ],
     });
 
     sections.push({
       title: 'System',
       items: [
-        { text: 'Compliance settings', href: '/admin/compliance-settings', icon: 'lni-shield-2' },
-        { text: 'Settings', href: '/admin/settings', icon: 'lni-gear-1' },
+        { text: 'Compliance settings', href: '/admin/compliance-settings', icon: Shield },
+        { text: 'Settings', href: '/admin/settings', icon: Settings },
       ],
     });
   }
@@ -103,7 +110,6 @@ const SideNavigation: React.FC<SideNavigationProps> = ({ isOpen, onClose, classN
 
   return (
     <>
-      {/* Mobile overlay */}
       {isOpen && (
         <div
           className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 lg:hidden transition-opacity"
@@ -112,7 +118,6 @@ const SideNavigation: React.FC<SideNavigationProps> = ({ isOpen, onClose, classN
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`
           fixed lg:static inset-y-0 left-0 z-50
@@ -123,7 +128,6 @@ const SideNavigation: React.FC<SideNavigationProps> = ({ isOpen, onClose, classN
           ${className}
         `}
       >
-        {/* Logo area */}
         <div className="flex items-center gap-3 h-16 px-6 border-b border-[#EAEAF0] flex-shrink-0">
           <div className="w-8 h-8 rounded-[10px] bg-[#DC2626] flex items-center justify-center">
             <span className="text-white font-bold text-xs tracking-wide">MS</span>
@@ -132,18 +136,15 @@ const SideNavigation: React.FC<SideNavigationProps> = ({ isOpen, onClose, classN
             <span className="font-semibold text-[14px] text-[#1A1A2E] leading-tight">Mead Security</span>
             <span className="text-[11px] text-[#9CA3AF] leading-tight">Workforce platform</span>
           </div>
-
-          {/* Close button (mobile) */}
           <button
             onClick={onClose}
             className="lg:hidden ml-auto p-1.5 rounded-lg hover:bg-[#F7F7FA] text-[#9CA3AF] transition-colors"
             aria-label="Close navigation"
           >
-            <i className="lni lni-xmark text-[14px]" />
+            <X size={14} />
           </button>
         </div>
 
-        {/* Navigation sections */}
         <nav className="flex-1 overflow-y-auto py-4 px-4">
           {sections.map((section, sIndex) => (
             <div key={sIndex} className={sIndex > 0 ? 'mt-6' : ''}>
@@ -155,13 +156,14 @@ const SideNavigation: React.FC<SideNavigationProps> = ({ isOpen, onClose, classN
               <ul className="space-y-0.5">
                 {section.items.map((item) => {
                   const active = isActive(item.href);
+                  const Icon = item.icon;
                   return (
                     <li key={item.href}>
                       <Link
                         to={item.href}
                         onClick={onClose}
                         className={`
-                          flex items-center gap-3 px-3 py-[9px] rounded-[10px] text-[15px] font-bold
+                          flex items-center gap-3 px-3 py-[9px] rounded-[10px] text-[14px] font-semibold
                           transition-all duration-150 no-underline
                           ${active
                             ? 'bg-[#FEF2F2] text-[#DC2626]'
@@ -169,7 +171,7 @@ const SideNavigation: React.FC<SideNavigationProps> = ({ isOpen, onClose, classN
                           }
                         `}
                       >
-                        <i className={`lni ${item.icon} text-[18px] flex-shrink-0 ${active ? 'text-[#DC2626]' : 'text-[#9CA3AF]'}`} />
+                        <Icon size={18} className={`flex-shrink-0 ${active ? 'text-[#DC2626]' : 'text-[#9CA3AF]'}`} strokeWidth={1.8} />
                         {item.text}
                       </Link>
                     </li>
@@ -180,7 +182,6 @@ const SideNavigation: React.FC<SideNavigationProps> = ({ isOpen, onClose, classN
           ))}
         </nav>
 
-        {/* Bottom section */}
         <div className="px-4 py-4 border-t border-[#EAEAF0]">
           <div className="flex items-center gap-3 px-3 py-2">
             <div className="w-8 h-8 rounded-full bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { Menu, Search, LayoutGrid, HelpCircle, Bell, Settings, User, LogOut } from 'lucide-react';
 
 interface TopNavigationProps {
   onMenuToggle: () => void;
@@ -34,7 +35,6 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ onMenuToggle, className =
     navigate('/login');
   };
 
-  // Close menu on outside click
   useEffect(() => {
     if (!isUserMenuOpen) return;
     const handleClick = (e: MouseEvent) => {
@@ -48,19 +48,17 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ onMenuToggle, className =
 
   return (
     <header className={`h-14 bg-white border-b border-[#E5E7EB] flex items-center justify-between px-6 flex-shrink-0 ${className}`}>
-      {/* Left: Hamburger + Search */}
       <div className="flex items-center gap-3 flex-1">
         <button
           onClick={onMenuToggle}
           className="lg:hidden p-2 -ml-2 rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] transition-colors"
           aria-label="Toggle navigation"
         >
-          <i className="lni lni-menu-hamburger-1 text-[18px]" />
+          <Menu size={20} strokeWidth={1.5} />
         </button>
 
-        {/* Search */}
         <div className="relative w-full max-w-sm">
-          <i className="lni lni-search-1 absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-[#9CA3AF]" />
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" strokeWidth={1.5} />
           <input
             type="text"
             placeholder="Search"
@@ -69,47 +67,21 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ onMenuToggle, className =
         </div>
       </div>
 
-      {/* Right: Icon buttons + User avatar */}
       <div className="flex items-center gap-1">
-        {/* Quick actions grid */}
-        <button
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] transition-colors"
-          aria-label="Quick actions"
-          title="Quick actions"
-        >
-          <i className="lni lni-layout-9 text-[18px]" />
+        <button className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] transition-colors" title="Quick actions">
+          <LayoutGrid size={18} strokeWidth={1.5} />
         </button>
-
-        {/* Help */}
-        <button
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] transition-colors"
-          aria-label="Help"
-          title="Help"
-        >
-          <i className="lni lni-question-mark-circle text-[18px]" />
+        <button className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] transition-colors" title="Help">
+          <HelpCircle size={18} strokeWidth={1.5} />
         </button>
-
-        {/* Notifications */}
-        <button
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] relative transition-colors"
-          aria-label="Notifications"
-          title="Notifications"
-        >
-          <i className="lni lni-bell-1 text-[18px]" />
+        <button className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] relative transition-colors" title="Notifications">
+          <Bell size={18} strokeWidth={1.5} />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#DC2626] rounded-full ring-2 ring-white" />
         </button>
-
-        {/* Settings */}
-        <button
-          onClick={() => navigate('/admin/settings')}
-          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] transition-colors"
-          aria-label="Settings"
-          title="Settings"
-        >
-          <i className="lni lni-gear-1 text-[18px]" />
+        <button onClick={() => navigate('/admin/settings')} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] transition-colors" title="Settings">
+          <Settings size={18} strokeWidth={1.5} />
         </button>
 
-        {/* User avatar / menu */}
         <div className="relative ml-1" ref={menuRef}>
           <button
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
@@ -120,10 +92,7 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ onMenuToggle, className =
           </button>
 
           {isUserMenuOpen && (
-            <div
-              className="absolute right-0 mt-2 w-56 bg-white rounded-xl border border-[#E5E7EB] py-1.5 z-[1000] animate-fade-in"
-              style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}
-            >
+            <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl border border-[#E5E7EB] py-1.5 z-[1000] animate-fade-in" style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
               <div className="px-4 py-3 border-b border-[#F0F0F5]">
                 <p className="text-[13px] font-semibold text-[#1A1A2E]">{userDisplayName}</p>
                 <p className="text-[11px] text-[#9CA3AF] capitalize mt-0.5">
@@ -131,30 +100,16 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ onMenuToggle, className =
                 </p>
               </div>
               <div className="py-1">
-                <Link
-                  to="/profile"
-                  onClick={() => setIsUserMenuOpen(false)}
-                  className="flex items-center gap-3 px-4 py-2.5 text-[13px] text-[#6B7280] hover:bg-[#F7F7FA] hover:text-[#1A1A2E] no-underline transition-colors"
-                >
-                  <i className="lni lni-user-4 text-[15px]" />
-                  Profile
+                <Link to="/profile" onClick={() => setIsUserMenuOpen(false)} className="flex items-center gap-3 px-4 py-2.5 text-[13px] text-[#6B7280] hover:bg-[#F7F7FA] hover:text-[#1A1A2E] no-underline transition-colors">
+                  <User size={15} strokeWidth={1.5} /> Profile
                 </Link>
-                <Link
-                  to="/admin/settings"
-                  onClick={() => setIsUserMenuOpen(false)}
-                  className="flex items-center gap-3 px-4 py-2.5 text-[13px] text-[#6B7280] hover:bg-[#F7F7FA] hover:text-[#1A1A2E] no-underline transition-colors"
-                >
-                  <i className="lni lni-gear-1 text-[15px]" />
-                  Settings
+                <Link to="/admin/settings" onClick={() => setIsUserMenuOpen(false)} className="flex items-center gap-3 px-4 py-2.5 text-[13px] text-[#6B7280] hover:bg-[#F7F7FA] hover:text-[#1A1A2E] no-underline transition-colors">
+                  <Settings size={15} strokeWidth={1.5} /> Settings
                 </Link>
               </div>
               <div className="border-t border-[#F0F0F5] pt-1">
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center gap-3 w-full px-4 py-2.5 text-[13px] text-[#DC2626] hover:bg-[#FEF2F2] transition-colors"
-                >
-                  <i className="lni lni-exit text-[15px]" />
-                  Sign out
+                <button onClick={handleLogout} className="flex items-center gap-3 w-full px-4 py-2.5 text-[13px] text-[#DC2626] hover:bg-[#FEF2F2] transition-colors">
+                  <LogOut size={15} strokeWidth={1.5} /> Sign out
                 </button>
               </div>
             </div>
