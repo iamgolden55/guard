@@ -52,10 +52,8 @@ const AppLayout: React.FC = () => {
 
   const breadcrumbs = getBreadcrumbs(location.pathname);
 
-  // Determine if user is staff (to show Exchange vs Team)
   const isStaff = authState.user?.role === 'staff';
 
-  // Mobile bottom nav items
   const bottomNavItems = [
     { label: 'Home', icon: bottomNavIcons.home, href: '/dashboard' },
     { label: 'Shifts', icon: bottomNavIcons.shifts, href: '/shifts' },
@@ -72,7 +70,7 @@ const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[#f2f3f3]">
+    <div className="flex h-screen bg-[#F7F7FA]">
       {/* Sidebar */}
       <SideNavigation isOpen={sidebarOpen} onClose={closeSidebar} />
 
@@ -83,23 +81,23 @@ const AppLayout: React.FC = () => {
 
         {/* Offline / sync status banner */}
         {!isOnline && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-sm">
+          <div className="flex items-center gap-2.5 px-6 py-2.5 bg-[#FFFBEB] border-b border-[#FDE68A] text-[#92400E] text-[13px]">
             <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 11-12.728 0M12 9v4m0 4h.01" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18.364 5.636a9 9 0 11-12.728 0M12 9v4m0 4h.01" />
             </svg>
             <span>You are offline. Submissions will be queued and synced when connectivity returns.</span>
           </div>
         )}
         {isSyncing && pendingCount > 0 && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-sky-50 border-b border-sky-200 text-sky-800 text-sm">
-            <div className="w-4 h-4 border-2 border-sky-300 border-t-sky-700 rounded-full animate-spin flex-shrink-0" />
+          <div className="flex items-center gap-2.5 px-6 py-2.5 bg-[#FEF2F2] border-b border-[#FECACA] text-[#991B1B] text-[13px]">
+            <div className="w-4 h-4 border-2 border-[#FECACA] border-t-[#DC2626] rounded-full animate-spin flex-shrink-0" />
             <span>Syncing {pendingCount} pending submission{pendingCount > 1 ? 's' : ''}...</span>
           </div>
         )}
         {lastSyncResult && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-green-50 border-b border-green-200 text-green-800 text-sm">
+          <div className="flex items-center gap-2.5 px-6 py-2.5 bg-[#ECFDF5] border-b border-[#A7F3D0] text-[#065F46] text-[13px]">
             <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
             </svg>
             <span>{lastSyncResult}</span>
           </div>
@@ -107,25 +105,25 @@ const AppLayout: React.FC = () => {
 
         {/* Scrollable content */}
         <main className="flex-1 overflow-auto">
-          <BreadcrumbGroup items={breadcrumbs} className="px-5 lg:px-6 pt-4" />
-          <div className="px-5 lg:px-6 py-4 pb-20 lg:pb-6">
+          <BreadcrumbGroup items={breadcrumbs} className="px-8 pt-6" />
+          <div className="px-8 py-6 pb-24 lg:pb-8">
             <Outlet />
           </div>
         </main>
 
-        {/* Mobile bottom navigation - visible below lg breakpoint */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40">
-          <div className="flex items-center justify-around h-14">
+        {/* Mobile bottom navigation */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#EAEAF0] z-40">
+          <div className="flex items-center justify-around h-16 px-2">
             {bottomNavItems.map((item) => {
               const active = isActiveRoute(item.href);
               return (
                 <Link
                   key={item.href}
                   to={item.href}
-                  className={`flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors ${
+                  className={`flex flex-col items-center justify-center flex-1 h-full gap-1 transition-colors no-underline ${
                     active
-                      ? 'text-red-600'
-                      : 'text-gray-500 hover:text-gray-700'
+                      ? 'text-[#DC2626]'
+                      : 'text-[#9CA3AF] hover:text-[#6B7280]'
                   }`}
                 >
                   {item.icon}

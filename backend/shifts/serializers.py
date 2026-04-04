@@ -108,7 +108,7 @@ class ShiftSerializer(serializers.ModelSerializer):
             'check_in_photo', 'check_out_photo',
             'start_signature', 'end_signature',
             'break_duration',
-            'shift_group', 'hourly_rate', 'is_special_event', 'calculated_payment',
+            'shift_group', 'hourly_rate', 'bill_rate', 'is_published', 'is_special_event', 'calculated_payment',
             'actual_hours_worked', 'manager_approved', 'created_at', 'updated_at',
             # Transfer status fields
             'pending_exchange', 'pending_release', 'approved_transfer',

@@ -13,7 +13,7 @@ from .views import (
     ShiftExchangeViewSet, OpenShiftRequestViewSet, InvoiceViewSet, InvoiceItemViewSet, PayRateViewSet,
     DeputyConfigViewSet, DeputyEmployeeViewSet, DeputyTimesheetViewSet,
     ShiftTemplateViewSet, DeputyConfigView, SystemSettingsView,
-    my_profile, update_my_user, change_password,
+    my_profile, update_my_user, change_password, request_account_deletion,
     FileUploadView, ProfilePhotoUploadView, payroll_preview, payroll_generate,
     EmploymentTypeViewSet, RecruitmentApplicationViewSet, RecruitmentApplicationPublicViewSet,
     # Compliance system views
@@ -37,6 +37,8 @@ from .views import (
     EmailUnsubscribeView,
     # Client billing views
     ClientInvoiceViewSet,
+    # Incident reporting views
+    IncidentReportViewSet,
 )
 from .social_auth import apple_auth, google_auth
 
@@ -96,6 +98,8 @@ router.register('bank-holidays', BankHolidayViewSet, basename='bank-holidays')
 router.register('staff-leave-rates', StaffLeaveDailyRateViewSet, basename='staff-leave-rates')
 # Client billing endpoints
 router.register('client-invoices', ClientInvoiceViewSet, basename='client-invoices')
+# Incident reporting endpoints
+router.register('incidents', IncidentReportViewSet, basename='incidents')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -111,6 +115,7 @@ urlpatterns = [
     path('profiles/me', my_profile, name='my-profile'),
     path('users/me', update_my_user, name='update-my-user'),
     path('accounts/change-password/', change_password, name='change-password'),
+    path('accounts/delete-account/', request_account_deletion, name='delete-account'),
     path('upload/', FileUploadView.as_view(), name='file-upload'),
     path('staff/profile/upload-photo/', ProfilePhotoUploadView.as_view(), name='profile-photo-upload'),
     path('admin/payroll/preview/', payroll_preview, name='payroll-preview'),

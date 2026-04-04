@@ -514,6 +514,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'api.tasks.process_monthly_leave_accruals',
         'schedule': crontab(day_of_month=1, hour=2, minute=0),
     },
+    'hard-delete-expired-accounts': {
+        'task': 'api.tasks.hard_delete_expired_accounts',
+        'schedule': crontab(hour=2, minute=30),
+    },
 }
 
 # Report generation specific settings

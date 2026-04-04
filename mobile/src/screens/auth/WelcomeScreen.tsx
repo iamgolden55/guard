@@ -13,6 +13,7 @@ import {
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as WebBrowser from 'expo-web-browser';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../../types/navigation';
@@ -53,7 +54,7 @@ export const WelcomeScreen = () => {
 
         <TouchableOpacity
           style={styles.createAccountButton}
-          onPress={() => navigation.navigate('Register')}
+          onPress={() => WebBrowser.openBrowserAsync('https://admin.meadsecurity.co.uk/apply/mead-security-1')}
           activeOpacity={0.8}
         >
           <Text style={styles.createAccountButtonText}>Create an account</Text>
@@ -61,8 +62,7 @@ export const WelcomeScreen = () => {
 
         <Text style={styles.termsText}>
           By signing in or creating an account, you agree to our{' '}
-          <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-          <Text style={styles.termsLink}>Privacy Policy</Text>
+          <Text style={styles.termsLink} onPress={() => WebBrowser.openBrowserAsync('https://www.meadsecurity.co.uk/privacy-policy')}>Privacy Policy</Text>
         </Text>
       </View>
     </SafeAreaView>

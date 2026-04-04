@@ -53,6 +53,8 @@ from .models import (
     AuditLog,
     # Client billing models
     ClientInvoice, ClientInvoiceItem,
+    # Incident reporting
+    IncidentReport,
 )
 from .serializers import (
     UserSerializer, StaffProfileSerializer, EmergencyContactSerializer,
@@ -78,6 +80,8 @@ from .serializers import (
     BankHolidaySerializer, StaffLeaveDailyRateSerializer, StaffLeaveDailyRateUpdateSerializer,
     # Client billing serializers
     ClientInvoiceSerializer, ClientInvoiceItemSerializer, ClientInvoiceGenerateSerializer,
+    # Incident reporting serializers
+    IncidentReportSerializer,
 )
 
 User = get_user_model()
@@ -939,7 +943,7 @@ def payroll_preview(request):
         staff_breakdown = []
         total_amount = Decimal('0.00')
         total_shifts = 0
-        
+
         for staff_user in staff_with_shifts:
             # Get approved shifts for this staff member in the date range
             shifts = staff_user.shifts.filter(
@@ -948,12 +952,16 @@ def payroll_preview(request):
                 start_time__date__lte=end_date,
                 actual_hours_worked__isnull=False
             )
-            
+
             staff_total = Decimal('0.00')
             for shift in shifts:
-                payment = shift.calculate_payment()
-                if payment:
-                    staff_total += payment
+                try:
+                    payment = shift.calculate_payment()
+                    if payment:
+                        staff_total += payment
+                except Exception as calc_err:
+                    logger.warning(f"Failed to calculate payment for shift {shift.id}: {calc_err}")
+                    continue
             
             if staff_total > 0:
                 staff_breakdown.append({
@@ -971,10 +979,18 @@ def payroll_preview(request):
             'staff_breakdown': staff_breakdown
         })
         
+    except KeyError as e:
+        return Response({
+            'error': f'Missing required field: {str(e)}'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    except ValueError as e:
+        return Response({
+            'error': f'Invalid date format: {str(e)}'
+        }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         logger.exception("Failed to preview payroll")
         return Response({
-            'error': 'An internal error occurred while previewing payroll'
+            'error': f'An internal error occurred: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
@@ -1338,8 +1354,29 @@ class VenueViewSet(viewsets.ModelViewSet):
             # No company context, return empty queryset
             return Venue.objects.none()
 
-        return Venue.objects.filter(company=company)
-    
+        return Venue.objects.filter(company=company).select_related('company')
+
+    @action(detail=False, methods=['get'], url_path='map')
+    def map_view(self, request):
+        """Lightweight endpoint for map display - returns only essential fields."""
+        venues = self.get_queryset().only(
+            'id', 'name', 'address', 'city', 'postal_code', 'country',
+            'latitude', 'longitude', 'is_active'
+        )
+        data = [
+            {
+                'id': v.id,
+                'name': v.name,
+                'address': v.address,
+                'city': v.city,
+                'latitude': float(v.latitude) if v.latitude else None,
+                'longitude': float(v.longitude) if v.longitude else None,
+                'is_active': v.is_active,
+            }
+            for v in venues
+        ]
+        return Response(data)
+
     def create(self, request, *args, **kwargs):
         # Only admin users can create venues
         if request.user.role != 'admin':
@@ -2080,9 +2117,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         if user.role == 'staff':
-            # Staff can only see their own system-generated invoices
-            # Admin-generated invoices are excluded from staff view
-            queryset = Invoice.objects.filter(staff_user=user, source='system')
+            # Staff can see all their own invoices regardless of source
+            queryset = Invoice.objects.filter(staff_user=user)
         elif user.role in ['manager', 'admin']:
             # Managers and admins can see all invoices for their company (including admin-generated)
             company = self.get_user_company(self.request)
@@ -2097,8 +2133,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
             queryset = Invoice.objects.filter(staff_user_id__in=company_staff_ids)
         else:
-            # Default to only user's own system-generated invoices
-            queryset = Invoice.objects.filter(staff_user=user, source='system')
+            # Default to user's own invoices
+            queryset = Invoice.objects.filter(staff_user=user)
 
         # Filter by date range if provided
         start_date = self.request.query_params.get('start_date')
@@ -2374,9 +2410,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             return response
 
         except Exception as e:
-            logger.error(f"Error generating PDF for invoice {invoice.id}: {str(e)}")
+            import traceback
+            logger.error(f"Error generating PDF for invoice {invoice.id}: {str(e)}\n{traceback.format_exc()}")
             return Response(
-                {'error': 'Failed to generate PDF'},
+                {'error': f'Failed to generate PDF: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -3115,6 +3152,64 @@ def change_password(request):
     return Response({
         'detail': 'Password changed successfully.'
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def request_account_deletion(request):
+    """
+    Self-service account deletion endpoint (Apple App Store compliance).
+    Soft-deletes the account immediately and schedules permanent deletion after 30 days.
+    Requires password confirmation, or type-to-confirm for social auth users without a password.
+    """
+    user = request.user
+
+    if user.deletion_scheduled_at:
+        return Response(
+            {'detail': 'Account deletion is already scheduled.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Check for in-progress shifts
+    active_shifts = user.shifts.filter(status__in=['checked_in', 'in_progress']).exists()
+    if active_shifts:
+        return Response(
+            {'detail': 'Cannot delete account while you have active shifts. Please check out first.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Verify identity: password for normal users, confirmation phrase for social auth users
+    if user.has_usable_password():
+        password = request.data.get('password')
+        if not password:
+            return Response(
+                {'detail': 'Password is required to confirm account deletion.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not user.check_password(password):
+            return Response(
+                {'detail': 'Password is incorrect.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    else:
+        confirmation = request.data.get('confirmation')
+        if confirmation != 'DELETE':
+            return Response(
+                {'detail': 'Please type DELETE to confirm account deletion.', 'requires_confirmation': True},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    user.is_active = False
+    user.deletion_scheduled_at = timezone.now()
+    user.save(update_fields=['is_active', 'deletion_scheduled_at'])
+
+    deletion_date = user.deletion_scheduled_at + datetime.timedelta(days=30)
+
+    return Response({
+        'message': 'Your account has been deactivated and is scheduled for permanent deletion.',
+        'deletion_date': deletion_date.isoformat(),
+    })
+
 
 class FileUploadView(APIView):
     permission_classes = [IsAuthenticated]
@@ -4150,30 +4245,94 @@ class ComplianceReportViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'])
     def summary(self, request):
-        """Get compliance dashboard summary"""
-        cache_key = f"compliance_dashboard_{request.user.id}"
-
-        # Check cache first
-        data = cache.get(cache_key)
-        if data:
-            return Response({'status': 'success', 'data': data, 'cached': True})
-
+        """Get compliance dashboard summary with real violation data"""
         try:
-            # Simple fallback implementation for now - replace with actual data when available
-            data = {
-                'overall_compliance_rate': 100.0,
-                'total_violations': 0,
-                'critical_violations': 0,
-                'resolved_violations': 0,
-                'open_violations': 0,
-                'weekly_trend': 'stable',
-                'last_updated': timezone.now().isoformat(),
-                'period_start': request.query_params.get('start_date'),
-                'period_end': request.query_params.get('end_date')
-            }
+            from datetime import timedelta
+            from django.db.models import Avg, Count
+            from django.db.models.functions import TruncDate
 
-            # Cache for 15 minutes
-            cache.set(cache_key, data, 900)
+            now = timezone.now()
+            period_days = int(request.query_params.get('days', 30))
+            period_start = now - timedelta(days=period_days)
+
+            # Get violations for this period
+            violations = ComplianceViolation.objects.filter(created_at__gte=period_start)
+
+            total_violations = violations.count()
+            critical_violations = violations.filter(severity='critical').count()
+            resolved_statuses = ['resolved', 'approved_exception', 'false_positive', 'dismissed']
+            resolved_violations = violations.filter(resolution_status__in=resolved_statuses).count()
+            open_violations = total_violations - resolved_violations
+
+            # Calculate compliance rate
+            if total_violations > 0:
+                overall_compliance_rate = round((resolved_violations / total_violations) * 100, 1)
+            else:
+                overall_compliance_rate = 100.0
+
+            # Average resolution time for resolved violations
+            resolved_with_time = violations.filter(
+                resolution_status__in=resolved_statuses, resolved_at__isnull=False
+            )
+            avg_resolution_hours = None
+            if resolved_with_time.exists():
+                from django.db.models import F, ExpressionWrapper, DurationField
+                avg_duration = resolved_with_time.annotate(
+                    resolution_time=ExpressionWrapper(
+                        F('resolved_at') - F('created_at'),
+                        output_field=DurationField()
+                    )
+                ).aggregate(avg_time=Avg('resolution_time'))['avg_time']
+                if avg_duration:
+                    avg_resolution_hours = round(avg_duration.total_seconds() / 3600, 1)
+
+            # Compliance trend (daily compliance rate over the period)
+            compliance_trend = []
+            daily_data = violations.annotate(
+                date=TruncDate('created_at')
+            ).values('date').annotate(
+                violation_count=Count('id'),
+                resolved_count=Count('id', filter=Q(resolution_status__in=resolved_statuses))
+            ).order_by('date')
+
+            for day in daily_data:
+                rate = round((day['resolved_count'] / day['violation_count']) * 100, 1) if day['violation_count'] > 0 else 100.0
+                compliance_trend.append({
+                    'date': day['date'].isoformat(),
+                    'compliance_rate': rate,
+                    'violation_count': day['violation_count'],
+                })
+
+            # Violation breakdown by type
+            violation_breakdown = list(
+                violations.values('violation_type').annotate(
+                    count=Count('id')
+                ).order_by('-count')
+            )
+            # Map to frontend expected format
+            violation_breakdown = [
+                {
+                    'type': item['violation_type'] or 'unknown',
+                    'count': item['count'],
+                    'severity': 'medium',  # Default; could be enhanced
+                }
+                for item in violation_breakdown
+            ]
+
+            data = {
+                'overall_compliance_rate': overall_compliance_rate,
+                'total_violations': total_violations,
+                'critical_violations': critical_violations,
+                'resolved_violations': resolved_violations,
+                'open_violations': open_violations,
+                'average_resolution_time_hours': avg_resolution_hours,
+                'compliance_trend': compliance_trend,
+                'violation_breakdown': violation_breakdown,
+                'weekly_trend': 'stable' if total_violations == 0 else ('improving' if overall_compliance_rate > 80 else 'declining'),
+                'last_updated': now.isoformat(),
+                'period_start': period_start.isoformat(),
+                'period_end': now.isoformat(),
+            }
 
             return Response({
                 'status': 'success',
@@ -8046,3 +8205,56 @@ class ClientInvoiceViewSet(viewsets.ModelViewSet):
                 'cancelled': invoices.filter(status='cancelled').count(),
             }
         })
+
+
+class IncidentReportViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for incident report management.
+    Staff can create and view their own reports.
+    Managers/admins can view and resolve all reports for their company.
+    """
+    serializer_class = IncidentReportSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['admin', 'manager']:
+            company = self.get_user_company(self.request)
+            if company:
+                company_user_ids = company.memberships.filter(
+                    is_active=True
+                ).values_list('user_id', flat=True)
+                return IncidentReport.objects.filter(
+                    reported_by_id__in=company_user_ids
+                ).select_related('venue', 'reported_by', 'shift', 'resolved_by')
+            return IncidentReport.objects.none()
+        return IncidentReport.objects.filter(
+            reported_by=user
+        ).select_related('venue', 'reported_by', 'shift', 'resolved_by')
+
+    def get_user_company(self, request):
+        if hasattr(request, 'current_company') and request.current_company:
+            return request.current_company
+        membership = request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').first()
+        return membership.company if membership else None
+
+    def perform_create(self, serializer):
+        serializer.save(reported_by=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def resolve(self, request, pk=None):
+        """Mark an incident as resolved"""
+        incident = self.get_object()
+        if request.user.role not in ['admin', 'manager']:
+            return Response(
+                {'error': 'Only managers and admins can resolve incidents'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        incident.resolved = True
+        incident.resolved_at = timezone.now()
+        incident.resolved_by = request.user
+        incident.followup_notes = request.data.get('followup_notes', incident.followup_notes)
+        incident.save()
+        return Response(IncidentReportSerializer(incident).data)

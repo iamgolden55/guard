@@ -888,6 +888,9 @@ class User(AbstractUser):
     account_locked_until = models.DateTimeField(null=True, blank=True, help_text="Account locked until this timestamp")
     last_failed_login = models.DateTimeField(null=True, blank=True, help_text="Timestamp of last failed login attempt")
 
+    # Account deletion
+    deletion_scheduled_at = models.DateTimeField(null=True, blank=True, help_text="When account deletion was requested. Hard delete occurs 30 days after this date.")
+
     groups = models.ManyToManyField(
         'auth.Group',
         related_name='api_user_set',
@@ -1663,6 +1666,8 @@ class Shift(models.Model):
     hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Hourly pay rate for this shift")
     is_special_event = models.BooleanField(default=False, help_text="Whether this shift is for a special event")
     auto_checkout = models.BooleanField(default=False, help_text="Whether this shift was automatically checked out")
+    is_published = models.BooleanField(default=False, help_text="Whether this shift is visible to staff (draft vs published)")
+    bill_rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Hourly bill rate charged to client for this shift")
     notes = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -305,7 +305,6 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         permission_checker = LeaveBalancePermission()
         return permission_checker.filter_queryset_for_user(queryset, user)
 
-    @method_decorator(cache_page(60 * 5))  # Cache for 5 minutes
     @action(detail=False, methods=['get'])
     def summary(self, request):
         """Get aggregated leave balance summary"""

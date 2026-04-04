@@ -144,13 +144,13 @@ const StaffDashboard: React.FC = () => {
   }
 
   return (
-    <SpaceBetween size="l">
+    <SpaceBetween size="xl">
       {needsApproval && (
         <Alert type="warning" header="Profile under review">
-          <p>Your profile is under review. You will be notified when approved.</p>
+          <p className="text-[13px]">Your profile is under review. You will be notified when approved.</p>
           <button
             onClick={() => setShowResubmit(true)}
-            className="mt-2 px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+            className="mt-3 px-4 py-2 text-[13px] font-medium text-white bg-[#DC2626] rounded-[10px] hover:bg-[#B91C1C] transition-colors"
           >
             Resubmit profile
           </button>
@@ -159,37 +159,32 @@ const StaffDashboard: React.FC = () => {
 
       {/* Pending offline submissions */}
       {pendingCount > 0 && (
-        <Container header={
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <h2 className="text-lg font-semibold text-gray-900">Pending submissions</h2>
-          </div>
-        }>
+        <div className="bg-[#FFFBEB] border border-[#FDE68A] rounded-2xl p-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <p className="text-sm text-gray-700">
-                <span className="font-semibold text-amber-600">{pendingCount}</span> check-in/check-out
-                submission{pendingCount > 1 ? 's' : ''} saved offline, waiting to sync.
-              </p>
-              {!isOnline && (
-                <p className="text-xs text-gray-500 mt-1">
-                  You are currently offline. Submissions will sync automatically when connectivity returns.
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#FEF3C7] flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-[#D97706]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-[#92400E]">
+                  {pendingCount} pending submission{pendingCount > 1 ? 's' : ''}
                 </p>
-              )}
-              {lastSyncResult && (
-                <p className="text-xs text-green-600 mt-1">{lastSyncResult}</p>
-              )}
+                <p className="text-[12px] text-[#A16207] mt-0.5">
+                  {!isOnline ? 'Currently offline. Will sync when connectivity returns.' : 'Waiting to sync.'}
+                </p>
+                {lastSyncResult && <p className="text-[12px] text-[#059669] mt-0.5">{lastSyncResult}</p>}
+              </div>
             </div>
             <button
               onClick={syncNow}
               disabled={isSyncing || !isOnline}
-              className="px-4 h-9 text-sm font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 whitespace-nowrap"
+              className="px-4 py-2 text-[13px] font-medium text-[#92400E] bg-white border border-[#FDE68A] rounded-[10px] hover:bg-[#FEF3C7] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2 whitespace-nowrap"
             >
               {isSyncing ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-3.5 h-3.5 border-2 border-[#D97706]/30 border-t-[#D97706] rounded-full animate-spin" />
                   Syncing...
                 </>
               ) : (
@@ -197,7 +192,7 @@ const StaffDashboard: React.FC = () => {
               )}
             </button>
           </div>
-        </Container>
+        </div>
       )}
 
       {/* Header */}
@@ -207,7 +202,7 @@ const StaffDashboard: React.FC = () => {
         actions={!activeShift ? (
           <button
             onClick={() => navigate('/shifts/new')}
-            className="px-5 h-10 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+            className="px-5 py-2.5 text-[13px] font-medium text-white bg-[#DC2626] rounded-[10px] hover:bg-[#B91C1C] transition-colors"
           >
             Start new shift
           </button>
@@ -216,134 +211,143 @@ const StaffDashboard: React.FC = () => {
         Welcome, {authState.user?.firstName}
       </Header>
 
-      {/* Earnings */}
-      <Container>
-        <div className="flex flex-col items-center py-4">
-          {/* Period toggle */}
-          <div className="flex items-center bg-gray-100 rounded-xl p-1 mb-6">
-            {(['weekly', 'monthly'] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setEarningsPeriod(p)}
-                className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
-                  earningsPeriod === p ? 'bg-white text-red-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'
-                }`}
-              >
-                {p === 'weekly' ? 'Weekly' : 'Monthly'}
-              </button>
-            ))}
-          </div>
+      {/* Top row: Earnings (large, hero) + Active shift side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Earnings — hero card, spans 5 cols */}
+        <div className="lg:col-span-5">
+          <div className="bg-white border border-[#EAEAF0] rounded-2xl p-6 h-full">
+            <div className="flex flex-col items-center">
+              {/* Period toggle */}
+              <div className="flex items-center bg-[#F7F7FA] rounded-xl p-1 mb-6 self-center">
+                {(['weekly', 'monthly'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setEarningsPeriod(p)}
+                    className={`px-5 py-2 rounded-[10px] text-[13px] font-medium transition-all ${
+                      earningsPeriod === p ? 'bg-white text-[#DC2626] shadow-sm' : 'text-[#6B7280] hover:text-[#1A1A2E]'
+                    }`}
+                  >
+                    {p === 'weekly' ? 'Weekly' : 'Monthly'}
+                  </button>
+                ))}
+              </div>
 
-          {/* Circle */}
-          <div className="relative">
-            <svg width="200" height="200" className="transform -rotate-90">
-              <circle cx="100" cy="100" r={radius} stroke="rgba(220,38,38,0.1)" strokeWidth="8" fill="none" />
-              <circle cx="100" cy="100" r={radius} stroke="url(#earningsGrad)" strokeWidth="8" fill="none"
-                strokeDasharray={circumference} strokeDashoffset={isLoading ? circumference : strokeDashoffset}
-                strokeLinecap="round" className="transition-all duration-1000 ease-out"
-                style={{ filter: 'drop-shadow(0 0 6px rgba(220,38,38,0.3))' }} />
-              <defs>
-                <linearGradient id="earningsGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#dc2626" /><stop offset="100%" stopColor="#ef4444" />
-                </linearGradient>
-              </defs>
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-xs font-medium text-gray-500 tracking-wide mb-1">
-                {earningsPeriod === 'weekly' ? "This week's" : "This month's"} earnings
-              </span>
-              <span className="text-4xl font-extrabold text-gray-900 transition-all duration-300">
-                £{isLoading ? '0.00' : currentEarnings.toFixed(2)}
-              </span>
-              <span className="text-xs font-medium text-green-600 tracking-wider uppercase mt-1">
-                Confirmed
-              </span>
-            </div>
-          </div>
-
-          {/* Breakdown */}
-          <div className="mt-4 text-center space-y-1.5">
-            <div className="flex items-center justify-between gap-12 text-sm">
-              <span className="text-gray-500">Confirmed</span>
-              <span className="font-semibold text-green-600">£{currentEarnings.toFixed(2)}</span>
-            </div>
-            {pendingEarnings > 0 ? (
-              <>
-                <div className="flex items-center justify-between gap-12 text-sm">
-                  <span className="text-gray-500">Current shift</span>
-                  <span className="font-semibold text-amber-500">£{pendingEarnings.toFixed(2)}</span>
+              {/* Circle */}
+              <div className="relative">
+                <svg width="200" height="200" className="transform -rotate-90">
+                  <circle cx="100" cy="100" r={radius} stroke="#FEF2F2" strokeWidth="8" fill="none" />
+                  <circle cx="100" cy="100" r={radius} stroke="url(#earningsGrad)" strokeWidth="8" fill="none"
+                    strokeDasharray={circumference} strokeDashoffset={isLoading ? circumference : strokeDashoffset}
+                    strokeLinecap="round" className="transition-all duration-1000 ease-out" />
+                  <defs>
+                    <linearGradient id="earningsGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#DC2626" /><stop offset="100%" stopColor="#EF4444" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-[11px] font-medium text-[#9CA3AF] tracking-wide uppercase mb-1">
+                    {earningsPeriod === 'weekly' ? 'This week' : 'This month'}
+                  </span>
+                  <span className="text-[36px] font-bold text-[#1A1A2E] tracking-[-0.02em] transition-all duration-300">
+                    £{isLoading ? '0' : currentEarnings.toFixed(2)}
+                  </span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#ECFDF5] text-[#059669] mt-1">
+                    Confirmed
+                  </span>
                 </div>
-                <p className="text-xs text-gray-400 italic">Updates every 30 seconds</p>
-              </>
-            ) : (
-              <p className="text-xs text-gray-400">No current shift running</p>
-            )}
+              </div>
+
+              {/* Breakdown */}
+              <div className="mt-5 w-full max-w-[240px] space-y-2.5">
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="text-[#9CA3AF]">Confirmed</span>
+                  <span className="font-semibold text-[#059669]">£{currentEarnings.toFixed(2)}</span>
+                </div>
+                {pendingEarnings > 0 ? (
+                  <>
+                    <div className="flex items-center justify-between text-[13px]">
+                      <span className="text-[#9CA3AF]">Current shift</span>
+                      <span className="font-semibold text-[#D97706]">£{pendingEarnings.toFixed(2)}</span>
+                    </div>
+                    <p className="text-[11px] text-[#D1D5DB] text-center">Updates every 30s</p>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-[#D1D5DB] text-center">No active shift</p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-      </Container>
 
-      {/* Auto-checkout status */}
-      <AutoCheckoutStatus
-        currentShift={activeShift || undefined}
-        onCheckOutClick={() => activeShift && navigate(`/shifts/${activeShift.id}/end`)}
-      />
-
-      {/* Active shift */}
-      <Container header={
-        <h2 className="text-lg font-semibold text-gray-900">Active shift</h2>
-      }>
-        {isLoading ? (
-          <div className="animate-pulse space-y-3">
-            <div className="h-5 bg-gray-200 rounded w-3/5" />
-            <div className="h-4 bg-gray-200 rounded w-2/5" />
-            <div className="h-9 bg-gray-200 rounded w-1/4 mt-4" />
-          </div>
-        ) : activeShift ? (
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <span className="text-base font-semibold text-gray-900">{activeShift.venue.name}</span>
-                <StatusIndicator type="success">Active</StatusIndicator>
+        {/* Active shift + Quick actions — spans 7 cols */}
+        <div className="lg:col-span-7 flex flex-col gap-6">
+          {/* Active shift card */}
+          <Container header="Active shift">
+            {isLoading ? (
+              <div className="animate-pulse space-y-3">
+                <div className="h-5 bg-[#F0F0F5] rounded w-3/5" />
+                <div className="h-4 bg-[#F0F0F5] rounded w-2/5" />
+                <div className="h-9 bg-[#F0F0F5] rounded w-1/4 mt-4" />
               </div>
-              <p className="text-sm text-gray-500">
-                Started: {formatDate(activeShift.startTime)} at {formatTime(activeShift.startTime)}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => navigate(`/shifts/${activeShift.id}/end`)}
-                className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">
-                End shift
-              </button>
-              <button onClick={() => navigate(`/shifts/${activeShift.id}/checks`)}
-                className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                Add checks
-              </button>
-            </div>
-          </div>
-        ) : (
-          <EmptyState
-            title="No active shifts"
-            description="You have no active shifts right now."
-            action={
-              <button onClick={() => navigate('/shifts/new')}
-                className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">
-                Start new shift
-              </button>
-            }
-          />
-        )}
-      </Container>
+            ) : activeShift ? (
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2.5 mb-1.5">
+                    <div className="w-8 h-8 rounded-lg bg-[#FEF2F2] flex items-center justify-center">
+                      <svg className="w-4 h-4 text-[#DC2626]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-[15px] font-semibold text-[#1A1A2E]">{activeShift.venue.name}</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#ECFDF5] text-[#059669]">
+                      Active
+                    </span>
+                  </div>
+                  <p className="text-[13px] text-[#9CA3AF] ml-[42px]">
+                    Started {formatDate(activeShift.startTime)} at {formatTime(activeShift.startTime)}
+                  </p>
+                </div>
+                <div className="flex gap-2.5">
+                  <button onClick={() => navigate(`/shifts/${activeShift.id}/end`)}
+                    className="px-4 py-2 text-[13px] font-medium text-white bg-[#DC2626] rounded-[10px] hover:bg-[#B91C1C] transition-colors">
+                    End shift
+                  </button>
+                  <button onClick={() => navigate(`/shifts/${activeShift.id}/checks`)}
+                    className="px-4 py-2 text-[13px] font-medium text-[#1A1A2E] bg-white border border-[#EAEAF0] rounded-[10px] hover:bg-[#F7F7FA] transition-colors">
+                    Add checks
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <EmptyState
+                title="No active shifts"
+                description="You have no active shifts right now."
+                action={
+                  <button onClick={() => navigate('/shifts/new')}
+                    className="px-4 py-2 text-[13px] font-medium text-white bg-[#DC2626] rounded-[10px] hover:bg-[#B91C1C] transition-colors">
+                    Start new shift
+                  </button>
+                }
+              />
+            )}
+          </Container>
 
-      {/* Recent shifts */}
+          {/* Auto-checkout status */}
+          <AutoCheckoutStatus
+            currentShift={activeShift || undefined}
+            onCheckOutClick={() => activeShift && navigate(`/shifts/${activeShift.id}/end`)}
+          />
+        </div>
+      </div>
+
+      {/* Recent shifts — full width */}
       <Container header={
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Recent shifts</h2>
+          <h2 className="text-[15px] font-semibold text-[#1A1A2E]">Recent shifts</h2>
           <button onClick={() => navigate('/shifts')}
-            className="text-sm font-medium text-red-600 hover:text-red-700 transition-colors">
+            className="text-[13px] font-medium text-[#DC2626] hover:text-[#B91C1C] transition-colors">
             View all
           </button>
         </div>
@@ -351,10 +355,10 @@ const StaffDashboard: React.FC = () => {
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[1, 2, 3].map(i => (
-              <div key={i} className="animate-pulse rounded-xl border border-gray-100 p-4">
-                <div className="h-5 bg-gray-200 rounded w-4/5 mb-3" />
-                <div className="h-4 bg-gray-200 rounded w-3/5 mb-2" />
-                <div className="h-4 bg-gray-200 rounded w-2/5" />
+              <div key={i} className="animate-pulse rounded-xl border border-[#F0F0F5] p-5">
+                <div className="h-5 bg-[#F0F0F5] rounded w-4/5 mb-3" />
+                <div className="h-4 bg-[#F0F0F5] rounded w-3/5 mb-2" />
+                <div className="h-4 bg-[#F0F0F5] rounded w-2/5" />
               </div>
             ))}
           </div>
@@ -364,19 +368,19 @@ const StaffDashboard: React.FC = () => {
               <button
                 key={shift.id}
                 onClick={() => navigate(`/shifts/${shift.id}`)}
-                className="text-left rounded-xl border border-gray-100 p-4 hover:shadow-md hover:border-gray-200 transition-all group"
+                className="text-left rounded-xl border border-[#EAEAF0] p-5 hover:border-[#D1D5DB] transition-all group"
               >
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center group-hover:bg-red-100 transition-colors">
-                    <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#FEF2F2] flex items-center justify-center group-hover:bg-[#FECACA] transition-colors">
+                    <svg className="w-4 h-4 text-[#DC2626]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     </svg>
                   </div>
-                  <span className="font-semibold text-gray-900 text-sm">{shift.venue.name}</span>
+                  <span className="font-semibold text-[#1A1A2E] text-[13px]">{shift.venue.name}</span>
                 </div>
-                <div className="space-y-1.5 text-sm">
-                  <p className="text-gray-600">{formatDate(shift.startTime)}</p>
-                  <p className="text-gray-600">
+                <div className="space-y-1.5 text-[13px]">
+                  <p className="text-[#6B7280]">{formatDate(shift.startTime)}</p>
+                  <p className="text-[#6B7280]">
                     {formatTime(shift.startTime)} – {shift.endTime ? formatTime(shift.endTime) : 'In progress'}
                   </p>
                   <StatusIndicator type={statusColor(shift.status)}>
@@ -394,9 +398,9 @@ const StaffDashboard: React.FC = () => {
       {/* Invoices */}
       <Container header={
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Invoices</h2>
+          <h2 className="text-[15px] font-semibold text-[#1A1A2E]">Invoices</h2>
           <button onClick={() => navigate('/invoices')}
-            className="text-sm font-medium text-red-600 hover:text-red-700 transition-colors">
+            className="text-[13px] font-medium text-[#DC2626] hover:text-[#B91C1C] transition-colors">
             View all
           </button>
         </div>
@@ -405,28 +409,28 @@ const StaffDashboard: React.FC = () => {
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
               <div key={i} className="animate-pulse flex items-center justify-between p-3 rounded-lg">
-                <div><div className="h-5 bg-gray-200 rounded w-32 mb-2" /><div className="h-4 bg-gray-200 rounded w-48" /></div>
-                <div className="h-6 bg-gray-200 rounded w-20" />
+                <div><div className="h-5 bg-[#F0F0F5] rounded w-32 mb-2" /><div className="h-4 bg-[#F0F0F5] rounded w-48" /></div>
+                <div className="h-6 bg-[#F0F0F5] rounded w-20" />
               </div>
             ))}
           </div>
         ) : pendingInvoices.length > 0 ? (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-[#F0F0F5]">
             {pendingInvoices.map((invoice) => (
               <button
                 key={invoice.id}
                 onClick={() => navigate(`/invoices/${invoice.id}`)}
-                className="w-full text-left flex items-center justify-between py-3 px-2 hover:bg-gray-50 rounded-lg transition-colors group"
+                className="w-full text-left flex items-center justify-between py-3.5 px-3 hover:bg-[#F7F7FA] rounded-xl transition-colors group"
               >
                 <div>
-                  <span className="font-medium text-gray-900 text-sm">Invoice #{invoice.id}</span>
-                  <p className="text-xs text-gray-500 mt-0.5">
+                  <span className="font-semibold text-[#1A1A2E] text-[13px]">Invoice #{invoice.id}</span>
+                  <p className="text-[12px] text-[#9CA3AF] mt-0.5">
                     {formatDate(invoice.startDate || invoice.start_date)} – {formatDate(invoice.endDate || invoice.end_date)}
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <span className="text-lg font-bold text-gray-900">
+                    <span className="text-[18px] font-bold text-[#1A1A2E]">
                       £{Number(invoice.totalAmount || invoice.total_amount || 0).toFixed(2)}
                     </span>
                     <div className="mt-0.5">
@@ -435,8 +439,8 @@ const StaffDashboard: React.FC = () => {
                       </StatusIndicator>
                     </div>
                   </div>
-                  <svg className="w-4 h-4 text-gray-400 group-hover:text-red-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  <svg className="w-4 h-4 text-[#D1D5DB] group-hover:text-[#DC2626] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
               </button>

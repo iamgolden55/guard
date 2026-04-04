@@ -91,6 +91,31 @@ export const updateProfile = createAsyncThunk<
   }
 );
 
+// Async thunk for requesting account deletion
+export const deleteAccount = createAsyncThunk<
+  { message: string; deletion_date: string },
+  { password?: string; confirmation?: string },
+  { state: RootState; rejectValue: string }
+>(
+  'auth/deleteAccount',
+  async (data, { getState, rejectWithValue }) => {
+    try {
+      const state = getState();
+      const token = state.auth.accessToken;
+
+      if (!token) {
+        return rejectWithValue('No access token available');
+      }
+
+      return await authService.requestAccountDeletion(token, data);
+    } catch (error: any) {
+      return rejectWithValue(
+        error.response?.data?.detail || error.message || 'Failed to delete account'
+      );
+    }
+  }
+);
+
 interface AuthState {
   user: User | null;
   accessToken: string | null;

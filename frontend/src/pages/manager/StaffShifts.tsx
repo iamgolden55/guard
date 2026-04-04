@@ -236,13 +236,17 @@ const StaffShifts: React.FC = () => {
     },
   ];
 
-  // Load shifts from API with venue check summaries
-  const loadShifts = useCallback(async () => {
+  // Load shifts from API with venue check summaries (server-side pagination)
+  const loadShifts = useCallback(async (page?: number) => {
     setIsLoading(true);
     setError(null);
     try {
-      // Fetch all shifts for manager view
-      const shiftsData = await shiftService.getAllShiftsForManager();
+      const currentPage = page || pagination.currentPage;
+      const response = await shiftService.getAllShiftsForManager({
+        page: currentPage,
+        page_size: pagination.itemsPerPage,
+      });
+      const shiftsData = response.results || [];
 
       // Transform the data to include venue check summaries
       const transformedShifts: Shift[] = shiftsData.map((shift: any) => ({
@@ -285,6 +289,11 @@ const StaffShifts: React.FC = () => {
       setVenueOptions([{ key: '', text: 'All Venues' }, ...venues]);
       setShifts(transformedShifts);
       setFilteredShifts(transformedShifts);
+      setPagination(prev => ({
+        ...prev,
+        currentPage: response.current_page || currentPage,
+        totalItems: response.count || transformedShifts.length,
+      }));
     } catch (error) {
       console.error('Failed to load shifts:', error);
       setError('Failed to load shifts. Please try again later.');
@@ -295,7 +304,7 @@ const StaffShifts: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [pagination.currentPage, pagination.itemsPerPage]);
 
   // Handler functions
   const handleViewShift = useCallback((shiftId: number) => {
@@ -404,15 +413,12 @@ const StaffShifts: React.FC = () => {
     });
   }, []);
 
-  // Pagination functions
+  // Pagination functions - data is already paginated from server
   const getPaginatedShifts = () => {
-    const startIndex = (pagination.currentPage - 1) * pagination.itemsPerPage;
-    const endIndex = startIndex + pagination.itemsPerPage;
-
     return {
-      items: filteredShifts.slice(startIndex, endIndex),
-      totalItems: filteredShifts.length,
-      totalPages: Math.ceil(filteredShifts.length / pagination.itemsPerPage)
+      items: filteredShifts,
+      totalItems: pagination.totalItems,
+      totalPages: Math.ceil(pagination.totalItems / pagination.itemsPerPage)
     };
   };
 
@@ -421,6 +427,7 @@ const StaffShifts: React.FC = () => {
       ...prev,
       currentPage: page
     }));
+    loadShifts(page);
   };
 
   // Apply filters when search text or status filter changes

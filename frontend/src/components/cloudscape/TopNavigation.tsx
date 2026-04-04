@@ -47,109 +47,113 @@ const TopNavigation: React.FC<TopNavigationProps> = ({ onMenuToggle, className =
   }, [isUserMenuOpen]);
 
   return (
-    <header className={`h-12 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-5 flex-shrink-0 ${className}`}>
-      {/* Left: Menu toggle + Logo */}
-      <div className="flex items-center gap-3">
+    <header className={`h-14 bg-white border-b border-[#E5E7EB] flex items-center justify-between px-6 flex-shrink-0 ${className}`}>
+      {/* Left: Hamburger + Search */}
+      <div className="flex items-center gap-3 flex-1">
         <button
           onClick={onMenuToggle}
-          className="lg:hidden p-1.5 -ml-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+          className="lg:hidden p-2 -ml-2 rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] transition-colors"
           aria-label="Toggle navigation"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
+          <i className="lni lni-menu-hamburger-1 text-[18px]" />
         </button>
 
-        <Link to="/dashboard" className="flex items-center gap-2 no-underline">
-          <div className="w-7 h-7 rounded-lg bg-red-600 flex items-center justify-center">
-            <span className="text-white font-bold text-xs">MS</span>
-          </div>
-          <span className="hidden sm:block font-semibold text-sm text-gray-900">Mead Security</span>
-        </Link>
-      </div>
-
-      {/* Center: Search (hidden on small screens) */}
-      <div className="hidden md:flex items-center flex-1 max-w-md mx-6">
-        <div className="relative w-full">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+        {/* Search */}
+        <div className="relative w-full max-w-sm">
+          <i className="lni lni-search-1 absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-[#9CA3AF]" />
           <input
             type="text"
-            placeholder="Search..."
-            className="w-full h-8 pl-9 pr-3 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent placeholder-gray-400 transition-all"
+            placeholder="Search"
+            className="w-full h-9 pl-9 pr-4 text-[13px] bg-white border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6366F1]/20 focus:border-[#6366F1] placeholder-[#9CA3AF] transition-all"
           />
         </div>
       </div>
 
-      {/* Right: Notifications + User */}
+      {/* Right: Icon buttons + User avatar */}
       <div className="flex items-center gap-1">
-        {/* Notifications */}
+        {/* Quick actions grid */}
         <button
-          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 relative transition-colors"
-          aria-label="Notifications"
+          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] transition-colors"
+          aria-label="Quick actions"
+          title="Quick actions"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-          </svg>
-          <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full" />
+          <i className="lni lni-layout-9 text-[18px]" />
         </button>
 
-        {/* Divider */}
-        <div className="w-px h-6 bg-gray-200 mx-1.5" />
+        {/* Help */}
+        <button
+          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] transition-colors"
+          aria-label="Help"
+          title="Help"
+        >
+          <i className="lni lni-question-mark-circle text-[18px]" />
+        </button>
 
-        {/* User menu */}
-        <div className="relative" ref={menuRef}>
+        {/* Notifications */}
+        <button
+          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] relative transition-colors"
+          aria-label="Notifications"
+          title="Notifications"
+        >
+          <i className="lni lni-bell-1 text-[18px]" />
+          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#DC2626] rounded-full ring-2 ring-white" />
+        </button>
+
+        {/* Settings */}
+        <button
+          onClick={() => navigate('/admin/settings')}
+          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-[#F7F7FA] text-[#6B7280] transition-colors"
+          aria-label="Settings"
+          title="Settings"
+        >
+          <i className="lni lni-gear-1 text-[18px]" />
+        </button>
+
+        {/* User avatar / menu */}
+        <div className="relative ml-1" ref={menuRef}>
           <button
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-            className="flex items-center gap-2 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+            className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] flex items-center justify-center hover:opacity-90 transition-opacity"
+            title={userDisplayName}
           >
-            <div className="w-7 h-7 rounded-full bg-red-600 flex items-center justify-center">
-              <span className="text-white font-medium text-[11px]">{userInitials}</span>
-            </div>
-            <span className="hidden sm:block text-sm text-gray-700">{userDisplayName}</span>
-            <svg className="hidden sm:block w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+            <span className="text-white font-semibold text-[11px]">{userInitials}</span>
           </button>
 
           {isUserMenuOpen && (
-            <div className="absolute right-0 mt-1 w-52 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-[1000] animate-fade-in">
-              <div className="px-4 py-2.5 border-b border-gray-100">
-                <p className="text-sm font-medium text-gray-900">{userDisplayName}</p>
-                <p className="text-xs text-gray-500 capitalize mt-0.5">
+            <div
+              className="absolute right-0 mt-2 w-56 bg-white rounded-xl border border-[#E5E7EB] py-1.5 z-[1000] animate-fade-in"
+              style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}
+            >
+              <div className="px-4 py-3 border-b border-[#F0F0F5]">
+                <p className="text-[13px] font-semibold text-[#1A1A2E]">{userDisplayName}</p>
+                <p className="text-[11px] text-[#9CA3AF] capitalize mt-0.5">
                   {authState.currentMembership?.role || authState.user?.role || 'User'}
                 </p>
               </div>
-              <Link
-                to="/profile"
-                onClick={() => setIsUserMenuOpen(false)}
-                className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 no-underline transition-colors"
-              >
-                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                Profile
-              </Link>
-              <Link
-                to="/admin/settings"
-                onClick={() => setIsUserMenuOpen(false)}
-                className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 no-underline transition-colors"
-              >
-                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Settings
-              </Link>
-              <div className="border-t border-gray-100 mt-1 pt-1">
+              <div className="py-1">
+                <Link
+                  to="/profile"
+                  onClick={() => setIsUserMenuOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-[13px] text-[#6B7280] hover:bg-[#F7F7FA] hover:text-[#1A1A2E] no-underline transition-colors"
+                >
+                  <i className="lni lni-user-4 text-[15px]" />
+                  Profile
+                </Link>
+                <Link
+                  to="/admin/settings"
+                  onClick={() => setIsUserMenuOpen(false)}
+                  className="flex items-center gap-3 px-4 py-2.5 text-[13px] text-[#6B7280] hover:bg-[#F7F7FA] hover:text-[#1A1A2E] no-underline transition-colors"
+                >
+                  <i className="lni lni-gear-1 text-[15px]" />
+                  Settings
+                </Link>
+              </div>
+              <div className="border-t border-[#F0F0F5] pt-1">
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  className="flex items-center gap-3 w-full px-4 py-2.5 text-[13px] text-[#DC2626] hover:bg-[#FEF2F2] transition-colors"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                  </svg>
+                  <i className="lni lni-exit text-[15px]" />
                   Sign out
                 </button>
               </div>

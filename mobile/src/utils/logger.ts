@@ -1,12 +1,50 @@
 /**
- * Production-Safe Logger
- * Only logs in development, prevents sensitive data leaks in production
+ * Production-Safe Logger with Sentry Integration
+ * Only logs debug info in development, reports errors to Sentry in production
  */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+// Sentry integration - lazy loaded to handle case where package isn't installed
+let Sentry: any = null;
+try {
+  Sentry = require('@sentry/react-native');
+} catch {
+  // @sentry/react-native not installed - Sentry features disabled
+}
+
 class Logger {
   private isDevelopment = __DEV__;
+
+  /**
+   * Initialize Sentry for error tracking.
+   * Call this from App.tsx before any other code.
+   * No-op if @sentry/react-native is not installed or DSN is not set.
+   */
+  initSentry(dsn?: string) {
+    if (!Sentry || !dsn) {
+      if (this.isDevelopment) {
+        console.log('[Logger] Sentry not initialized (missing SDK or DSN)');
+      }
+      return;
+    }
+    Sentry.init({
+      dsn,
+      environment: this.isDevelopment ? 'development' : 'production',
+      tracesSampleRate: this.isDevelopment ? 1.0 : 0.1,
+      enableAutoSessionTracking: true,
+      debug: this.isDevelopment,
+    });
+  }
+
+  /**
+   * Set user context for Sentry
+   */
+  setUser(user: { id: string | number; email?: string; username?: string } | null) {
+    if (Sentry) {
+      Sentry.setUser(user ? { id: String(user.id), email: user.email, username: user.username } : null);
+    }
+  }
 
   /**
    * Debug level logging - only in development
@@ -35,11 +73,15 @@ class Logger {
     } else {
       console.warn(`[WARN] ${message}`);
     }
+    // Report warnings to Sentry as breadcrumbs
+    if (Sentry) {
+      Sentry.addBreadcrumb({ category: 'warning', message, level: 'warning' });
+    }
   }
 
   /**
    * Error level logging - shown in development and production
-   * In production, only logs the message without sensitive data
+   * In production, reports to Sentry
    */
   error(message: string, error?: any) {
     if (this.isDevelopment) {
@@ -47,6 +89,14 @@ class Logger {
     } else {
       // In production, only log the message, not the full error object
       console.error(`[ERROR] ${message}`);
+    }
+    // Report to Sentry
+    if (Sentry) {
+      if (error instanceof Error) {
+        Sentry.captureException(error, { extra: { message } });
+      } else {
+        Sentry.captureMessage(message, { level: 'error', extra: { error } });
+      }
     }
   }
 
@@ -57,6 +107,9 @@ class Logger {
     if (this.isDevelopment) {
       console.log(`[AUTH] ${action.toUpperCase()} - User ID: ${userId || 'N/A'}`);
     }
+    if (Sentry) {
+      Sentry.addBreadcrumb({ category: 'auth', message: action, data: { userId } });
+    }
   }
 
   /**
@@ -66,6 +119,14 @@ class Logger {
     if (this.isDevelopment) {
       console.log(`[API] ${method} ${endpoint}${status ? ` - ${status}` : ''}`);
     }
+    if (Sentry) {
+      Sentry.addBreadcrumb({
+        category: 'api',
+        message: `${method} ${endpoint}`,
+        data: { status },
+        level: status && status >= 400 ? 'error' : 'info',
+      });
+    }
   }
 
   /**
@@ -74,6 +135,9 @@ class Logger {
   logNavigation(screen: string, params?: any) {
     if (this.isDevelopment) {
       console.log(`[NAV] → ${screen}`, params ? this.sanitize([params])[0] : '');
+    }
+    if (Sentry) {
+      Sentry.addBreadcrumb({ category: 'navigation', message: screen });
     }
   }
 

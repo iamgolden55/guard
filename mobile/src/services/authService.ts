@@ -49,6 +49,20 @@ class AuthService {
   }
 
   /**
+   * Request account deletion (soft-delete with 30-day grace period)
+   */
+  async requestAccountDeletion(
+    token: string,
+    data: { password?: string; confirmation?: string }
+  ): Promise<{ message: string; deletion_date: string }> {
+    const response = await axios.post(API_ENDPOINTS.AUTH.DELETE_ACCOUNT, data, {
+      headers: getAuthHeaders(token),
+      timeout: 10000,
+    });
+    return response.data;
+  }
+
+  /**
    * Store authentication tokens securely
    */
   async storeTokens(tokens: AuthTokens): Promise<void> {

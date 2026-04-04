@@ -88,12 +88,12 @@ def test_trial_system():
         return False
 
     if test_company.trial_end_date:
-        expected_end = test_company.created_at + timedelta(days=30)
+        expected_end = test_company.created_at + timedelta(days=14)
         actual_end = test_company.trial_end_date
         diff_seconds = abs((actual_end - expected_end).total_seconds())
 
         if diff_seconds < 60:  # Within 1 minute is acceptable
-            print("✅ PASS: Trial end date set to 30 days from creation!")
+            print("✅ PASS: Trial end date set to 14 days from creation!")
             print(f"   Expected: ~{expected_end}")
             print(f"   Actual: {actual_end}")
         else:
@@ -129,10 +129,10 @@ def test_trial_system():
     days_remaining = test_company.get_trial_days_remaining()
     print(f"Days Remaining: {days_remaining}")
 
-    if 29 <= days_remaining <= 30:
-        print("✅ PASS: Trial days remaining is correct (29-30 days)")
+    if 13 <= days_remaining <= 14:
+        print("✅ PASS: Trial days remaining is correct (13-14 days)")
     else:
-        print(f"❌ FAIL: Expected 29-30 days, got {days_remaining}")
+        print(f"❌ FAIL: Expected 13-14 days, got {days_remaining}")
         return False
 
     print()
@@ -197,7 +197,7 @@ def test_trial_system():
     print("=" * 80)
     print()
     print("Trial system is working correctly:")
-    print("  ✅ New companies automatically get 30-day trial")
+    print("  ✅ New companies automatically get 14-day trial")
     print("  ✅ Trial end date is set correctly")
     print("  ✅ Subscription status shows 'trial_active'")
     print("  ✅ All features are enabled during trial")

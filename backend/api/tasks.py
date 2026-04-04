@@ -1902,4 +1902,51 @@ def process_monthly_leave_accruals():
     service = LeaveAccrualService()
     result = service.process_monthly_accruals()
     logger.info(f"Monthly leave accruals processed: {result}")
+
+
+# =============================================================================
+# ACCOUNT DELETION HARD-DELETE TASK
+# =============================================================================
+
+@shared_task
+def hard_delete_expired_accounts():
+    """
+    Permanently anonymize accounts that were scheduled for deletion more than 30 days ago.
+    Deletes PII (StaffProfile cascades to bank details, SIA licenses, emergency contacts, etc.)
+    and anonymizes the User record to preserve business record FK references (shifts, invoices).
+    Runs daily at 2 AM.
+    """
+    cutoff = timezone.now() - timedelta(days=30)
+    users_to_delete = User.objects.filter(
+        is_active=False,
+        deletion_scheduled_at__isnull=False,
+        deletion_scheduled_at__lte=cutoff,
+    )
+
+    deleted_count = 0
+    for user in users_to_delete:
+        try:
+            with transaction.atomic():
+                user_id = user.id
+                logger.info(f"Hard-deleting account for user_id={user_id}")
+
+                # Delete StaffProfile (cascades to emergency contacts, bank details,
+                # SIA licenses, qualifications, availability, preferred venues)
+                if hasattr(user, 'profile') and user.profile:
+                    user.profile.delete()
+
+                # Anonymize user record (preserve row for FK references in shifts/invoices)
+                user.username = f"deleted_user_{user_id}"
+                user.first_name = "Deleted"
+                user.last_name = "User"
+                user.email = f"deleted_{user_id}@removed.local"
+                user.set_unusable_password()
+                user.deletion_scheduled_at = None  # Mark as completed
+                user.save()
+
+                deleted_count += 1
+        except Exception as e:
+            logger.error(f"Failed to hard-delete user_id={user.id}: {e}")
+
+    logger.info(f"Hard-delete task completed: {deleted_count} accounts anonymized")
     return result

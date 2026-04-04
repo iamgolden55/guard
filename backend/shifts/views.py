@@ -74,7 +74,30 @@ class ShiftViewSet(viewsets.ModelViewSet):
         # Check if this is a copy operation that should allow past dates
         allow_past_dates = self.request.data.get('allow_past_dates', False)
         serializer.context['allow_past_dates'] = allow_past_dates
-        serializer.save()
+        shift = serializer.save()
+        self._send_shift_assignment_email(shift)
+
+    def _send_shift_assignment_email(self, shift):
+        """Send email notification for a newly assigned shift."""
+        try:
+            from api.services.email_notification_service import EmailNotificationService
+            if not shift.staff_user:
+                return
+            email_service = EmailNotificationService()
+            venue_name = shift.venue.name if shift.venue else 'TBD'
+            venue_address = shift.venue.address if shift.venue else None
+            email_service.send_shift_assignment_email(
+                user_id=shift.staff_user.id,
+                shift_id=shift.id,
+                venue_name=venue_name,
+                venue_address=venue_address,
+                start_time=shift.start_time.strftime('%H:%M'),
+                end_time=shift.end_time.strftime('%H:%M'),
+                formatted_date=shift.start_time.strftime('%A, %d %B %Y'),
+                hourly_rate=str(shift.hourly_rate) if shift.hourly_rate else None,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send shift assignment email for shift {shift.id}: {e}")
 
     def perform_update(self, serializer):
         shift = self.get_object()
@@ -209,8 +232,21 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 }
             }
             shift_data.append(shift_info)
-        
-        return Response(shift_data)
+
+        # Server-side pagination
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 25))
+        total = len(shift_data)
+        start = (page - 1) * page_size
+        end = start + page_size
+
+        return Response({
+            'count': total,
+            'total_pages': (total + page_size - 1) // page_size,
+            'current_page': page,
+            'page_size': page_size,
+            'results': shift_data[start:end],
+        })
 
     @action(detail=False, methods=['get'], url_path='reports/compliance')
     def compliance_reports(self, request):
@@ -1282,6 +1318,9 @@ class ShiftViewSet(viewsets.ModelViewSet):
         serializer = MultiStaffShiftSerializer(data=request.data, context=context)
         if serializer.is_valid():
             shifts = serializer.save()
+            # Send email notifications for each created shift
+            for shift in shifts:
+                self._send_shift_assignment_email(shift)
             # Return the created shifts using the regular serializer
             shift_data = ShiftSerializer(shifts, many=True).data
             return Response({
@@ -1711,6 +1750,579 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 'totalPages': total_pages,
                 'totalCount': total_staff_count
             }
+        })
+
+    # ─── Scheduler Endpoints ───────────────────────────────────────────
+
+    @action(detail=False, methods=['get'], url_path='resource_timeline')
+    def resource_timeline(self, request):
+        """
+        Returns FullCalendar-compatible resources + events for the scheduler timeline.
+        Groups by staff or venue depending on query param.
+        """
+        from api.models import Venue, StaffProfile, SIALicense, UserCompanyMembership
+        from api.utils.shift_validators import validate_shift_warnings
+        from django.db.models import Sum, F
+        from decimal import Decimal
+
+        if not request.user.role in ['manager', 'admin']:
+            return Response({"detail": "Manager or admin permissions required"}, status=status.HTTP_403_FORBIDDEN)
+
+        # Parse params
+        start = request.query_params.get('start')
+        end = request.query_params.get('end')
+        group_by = request.query_params.get('group_by', 'staff')
+        venue_ids = request.query_params.getlist('venue_ids[]', request.query_params.getlist('venue_ids'))
+        staff_ids = request.query_params.getlist('staff_ids[]', request.query_params.getlist('staff_ids'))
+        roles = request.query_params.getlist('roles[]', request.query_params.getlist('roles'))
+        shift_status = request.query_params.get('status')
+
+        if not start or not end:
+            return Response({"detail": "start and end query params required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        from datetime import datetime as dt
+        try:
+            start_dt = dt.fromisoformat(start.replace('Z', '+00:00'))
+            end_dt = dt.fromisoformat(end.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            return Response({"detail": "Invalid date format. Use ISO 8601."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Base queryset scoped to company
+        shifts_qs = self.get_queryset().filter(
+            start_time__lt=end_dt,
+            end_time__gt=start_dt,
+        ).select_related('venue', 'staff_user')
+
+        if venue_ids:
+            shifts_qs = shifts_qs.filter(venue_id__in=venue_ids)
+        if staff_ids:
+            shifts_qs = shifts_qs.filter(staff_user_id__in=staff_ids)
+        if roles:
+            shifts_qs = shifts_qs.filter(required_security_role__in=roles)
+        if shift_status:
+            shifts_qs = shifts_qs.filter(status=shift_status)
+
+        # Build resources
+        resources = []
+        company = getattr(request, 'current_company', None)
+
+        if group_by == 'venue':
+            venue_qs = Venue.objects.filter(is_active=True)
+            if company:
+                venue_qs = venue_qs.filter(company=company)
+            if venue_ids:
+                venue_qs = venue_qs.filter(id__in=venue_ids)
+
+            for v in venue_qs:
+                resources.append({
+                    'id': f'venue_{v.id}',
+                    'title': v.name,
+                    'address': v.address or '',
+                    'capacity': v.capacity,
+                    'type': 'venue',
+                })
+        else:
+            # Group by staff — show all company members
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+
+            # Resolve company: use middleware context or fall back to user's membership
+            resolved_company = company
+            if not resolved_company:
+                user_membership = UserCompanyMembership.objects.filter(
+                    user=request.user, is_active=True
+                ).select_related('company').order_by('-joined_at').first()
+                if user_membership:
+                    resolved_company = user_membership.company
+
+            if resolved_company:
+                member_ids = UserCompanyMembership.objects.filter(
+                    company=resolved_company, is_active=True
+                ).values_list('user_id', flat=True)
+                staff_qs = User.objects.filter(id__in=member_ids, is_active=True)
+            else:
+                # Last resort: show users who have shifts in range
+                staff_user_ids = shifts_qs.values_list('staff_user', flat=True).distinct()
+                staff_qs = User.objects.filter(id__in=staff_user_ids, is_active=True)
+
+            if staff_ids:
+                staff_qs = staff_qs.filter(id__in=staff_ids)
+
+            for u in staff_qs:
+                # Calculate weekly hours for this date range
+                user_shifts = shifts_qs.filter(staff_user=u)
+                weekly_hours = Decimal('0')
+                for s in user_shifts:
+                    if s.end_time:
+                        weekly_hours += Decimal(str(round((s.end_time - s.start_time).total_seconds() / 3600, 2)))
+
+                # Get qualifications
+                qualifications = []
+                try:
+                    profile = u.profile
+                    licenses = SIALicense.objects.filter(staff_profile=profile, status='valid')
+                    qualifications = [{'type': l.license_type, 'level': l.level} for l in licenses]
+                except (StaffProfile.DoesNotExist, AttributeError):
+                    pass
+
+                role_display = ''
+                if hasattr(u, 'security_roles') and u.security_roles:
+                    role_display = u.security_roles[0] if isinstance(u.security_roles, list) and u.security_roles else ''
+
+                resources.append({
+                    'id': f'staff_{u.id}',
+                    'title': f"{u.first_name} {u.last_name}".strip() or u.username,
+                    'role': role_display,
+                    'avatar': getattr(getattr(u, 'profile', None), 'profile_image_url', None) or '',
+                    'qualifications': qualifications,
+                    'weeklyHours': float(weekly_hours),
+                    'type': 'staff',
+                })
+
+            # Add an "Unassigned" resource for open shifts
+            resources.append({
+                'id': 'staff_unassigned',
+                'title': 'Open Shifts',
+                'role': '',
+                'avatar': '',
+                'qualifications': [],
+                'weeklyHours': 0,
+                'type': 'unassigned',
+            })
+
+        # Build events
+        events = []
+        for shift in shifts_qs:
+            if group_by == 'venue':
+                resource_id = f'venue_{shift.venue_id}'
+            else:
+                resource_id = f'staff_{shift.staff_user_id}' if shift.staff_user_id else 'staff_unassigned'
+
+            staff_name = ''
+            if shift.staff_user:
+                staff_name = f"{shift.staff_user.first_name} {shift.staff_user.last_name}".strip()
+
+            events.append({
+                'id': shift.id,
+                'resourceId': resource_id,
+                'title': f"{shift.venue.name}" if shift.venue else 'Unknown Venue',
+                'start': shift.start_time.isoformat(),
+                'end': shift.end_time.isoformat() if shift.end_time else None,
+                'extendedProps': {
+                    'shiftId': shift.id,
+                    'venueId': shift.venue_id,
+                    'venueName': shift.venue.name if shift.venue else '',
+                    'staffId': shift.staff_user_id,
+                    'staffName': staff_name,
+                    'status': shift.status,
+                    'isPublished': shift.is_published,
+                    'hourlyRate': str(shift.hourly_rate) if shift.hourly_rate else None,
+                    'billRate': str(shift.bill_rate) if shift.bill_rate else None,
+                    'breakDuration': shift.break_duration,
+                    'requiredRole': shift.required_security_role,
+                    'notes': shift.notes,
+                    'shiftGroup': shift.shift_group,
+                },
+            })
+
+        # Build schedule-level warnings
+        schedule_warnings = []
+        # Check each staff member for overtime in the displayed range
+        if group_by == 'staff':
+            from api.models import WorkingHoursRegulation
+            regulation = WorkingHoursRegulation.objects.filter(is_active=True).first()
+            if regulation:
+                staff_hours = {}
+                for shift in shifts_qs:
+                    if shift.staff_user_id and shift.end_time:
+                        hours = (shift.end_time - shift.start_time).total_seconds() / 3600
+                        staff_hours.setdefault(shift.staff_user_id, {'name': '', 'hours': 0})
+                        staff_hours[shift.staff_user_id]['hours'] += hours
+                        if shift.staff_user:
+                            staff_hours[shift.staff_user_id]['name'] = f"{shift.staff_user.first_name} {shift.staff_user.last_name}".strip()
+
+                for uid, data in staff_hours.items():
+                    if data['hours'] > float(regulation.max_weekly_hours):
+                        schedule_warnings.append({
+                            'staffId': uid,
+                            'type': 'overtime',
+                            'message': f"{data['name']}: {data['hours']:.1f}h scheduled (max {regulation.max_weekly_hours}h)",
+                            'severity': 'error'
+                        })
+                    elif regulation.overtime_threshold_hours and data['hours'] > float(regulation.overtime_threshold_hours):
+                        schedule_warnings.append({
+                            'staffId': uid,
+                            'type': 'overtime',
+                            'message': f"{data['name']}: {data['hours']:.1f}h scheduled (overtime threshold: {regulation.overtime_threshold_hours}h)",
+                            'severity': 'warning'
+                        })
+
+        return Response({
+            'resources': resources,
+            'events': events,
+            'warnings': schedule_warnings,
+        })
+
+    @action(detail=False, methods=['post'], url_path='validate')
+    def validate_shift(self, request):
+        """
+        Pre-flight validation for a proposed shift. Returns errors and warnings
+        without creating anything.
+        """
+        from api.utils.shift_validators import validate_shift_warnings
+        from django.contrib.auth import get_user_model
+
+        if not request.user.role in ['manager', 'admin']:
+            return Response({"detail": "Manager or admin permissions required"}, status=status.HTTP_403_FORBIDDEN)
+
+        staff_user_id = request.data.get('staff_user')
+        venue_id = request.data.get('venue')
+        start_time_str = request.data.get('start_time')
+        end_time_str = request.data.get('end_time')
+        required_role = request.data.get('required_security_role')
+        exclude_shift_id = request.data.get('exclude_shift_id')
+
+        if not start_time_str or not end_time_str:
+            return Response({"detail": "start_time and end_time are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        from datetime import datetime as dt
+        try:
+            start_time = dt.fromisoformat(start_time_str.replace('Z', '+00:00'))
+            end_time = dt.fromisoformat(end_time_str.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            return Response({"detail": "Invalid date format"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if start_time >= end_time:
+            return Response({
+                'valid': False,
+                'errors': [{'type': 'invalid_time', 'message': 'Start time must be before end time'}],
+                'warnings': [],
+            })
+
+        staff_user = None
+        if staff_user_id:
+            User = get_user_model()
+            try:
+                staff_user = User.objects.get(id=staff_user_id)
+            except User.DoesNotExist:
+                return Response({"detail": "Staff user not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        result = validate_shift_warnings(
+            staff_user=staff_user,
+            start_time=start_time,
+            end_time=end_time,
+            venue=venue_id,
+            required_role=required_role,
+            exclude_shift_id=exclude_shift_id,
+        )
+
+        return Response(result)
+
+    @action(detail=False, methods=['patch'], url_path='bulk_update')
+    def bulk_update(self, request):
+        """
+        Batch update shifts for drag-and-drop operations (reassign, resize, move).
+        Validates each shift and applies atomically.
+        """
+        from api.utils.shift_validators import validate_shift_warnings
+        from api.models import AuditLog
+        from django.db import transaction
+
+        if not request.user.role in ['manager', 'admin']:
+            return Response({"detail": "Manager or admin permissions required"}, status=status.HTTP_403_FORBIDDEN)
+
+        updates = request.data.get('updates', [])
+        if not updates:
+            return Response({"detail": "No updates provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(updates) > 50:
+            return Response({"detail": "Maximum 50 updates per request"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate all first
+        errors = []
+        validated = []
+        base_qs = self.get_queryset()
+
+        for update in updates:
+            shift_id = update.get('id')
+            if not shift_id:
+                errors.append({'id': None, 'errors': [{'type': 'missing_id', 'message': 'Shift ID is required'}]})
+                continue
+
+            try:
+                shift = base_qs.get(id=shift_id)
+            except Shift.DoesNotExist:
+                errors.append({'id': shift_id, 'errors': [{'type': 'not_found', 'message': f'Shift {shift_id} not found'}]})
+                continue
+
+            # Parse update fields
+            new_staff_id = update.get('staff_user', shift.staff_user_id)
+            new_venue_id = update.get('venue', shift.venue_id)
+            new_start_str = update.get('start_time')
+            new_end_str = update.get('end_time')
+
+            from datetime import datetime as dt
+            new_start = dt.fromisoformat(new_start_str.replace('Z', '+00:00')) if new_start_str else shift.start_time
+            new_end = dt.fromisoformat(new_end_str.replace('Z', '+00:00')) if new_end_str else shift.end_time
+
+            # Validate
+            if new_staff_id:
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                try:
+                    staff = User.objects.get(id=new_staff_id)
+                except User.DoesNotExist:
+                    errors.append({'id': shift_id, 'errors': [{'type': 'staff_not_found', 'message': f'Staff {new_staff_id} not found'}]})
+                    continue
+
+                result = validate_shift_warnings(
+                    staff_user=staff,
+                    start_time=new_start,
+                    end_time=new_end,
+                    venue=new_venue_id,
+                    required_role=shift.required_security_role,
+                    exclude_shift_id=shift_id,
+                )
+                if not result['valid']:
+                    errors.append({'id': shift_id, 'errors': result['errors']})
+                    continue
+
+            validated.append({
+                'shift': shift,
+                'staff_user_id': new_staff_id,
+                'venue_id': new_venue_id,
+                'start_time': new_start,
+                'end_time': new_end,
+                'original': {
+                    'staff_user_id': shift.staff_user_id,
+                    'venue_id': shift.venue_id,
+                    'start_time': shift.start_time,
+                    'end_time': shift.end_time,
+                },
+            })
+
+        if errors:
+            return Response({'updated': [], 'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Apply atomically
+        updated = []
+        company = getattr(request, 'current_company', None)
+
+        try:
+            with transaction.atomic():
+                for item in validated:
+                    shift = item['shift']
+                    shift.staff_user_id = item['staff_user_id']
+                    shift.venue_id = item['venue_id']
+                    shift.start_time = item['start_time']
+                    shift.end_time = item['end_time']
+                    shift.save(update_fields=['staff_user_id', 'venue_id', 'start_time', 'end_time', 'updated_at'])
+
+                    # Audit log
+                    AuditLog.objects.create(
+                        user=request.user,
+                        company=company,
+                        action='update',
+                        resource_type='shift',
+                        resource_id=str(shift.id),
+                        details={
+                            'action': 'scheduler_bulk_update',
+                            'original': {
+                                'staff_user_id': item['original']['staff_user_id'],
+                                'venue_id': item['original']['venue_id'],
+                                'start_time': item['original']['start_time'].isoformat(),
+                                'end_time': item['original']['end_time'].isoformat() if item['original']['end_time'] else None,
+                            },
+                            'updated': {
+                                'staff_user_id': item['staff_user_id'],
+                                'venue_id': item['venue_id'],
+                                'start_time': item['start_time'].isoformat(),
+                                'end_time': item['end_time'].isoformat() if item['end_time'] else None,
+                            },
+                        },
+                        ip_address=request.META.get('REMOTE_ADDR'),
+                        user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
+                    )
+
+                    updated.append({
+                        'id': shift.id,
+                        'staff_user': shift.staff_user_id,
+                        'venue': shift.venue_id,
+                        'start_time': shift.start_time.isoformat(),
+                        'end_time': shift.end_time.isoformat() if shift.end_time else None,
+                    })
+        except Exception as e:
+            return Response(
+                {'detail': f'Bulk update failed: {str(e)}', 'updated': [], 'errors': []},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response({'updated': updated, 'errors': []})
+
+    @action(detail=False, methods=['post'], url_path='publish')
+    def publish_shifts(self, request):
+        """
+        Batch publish draft shifts. Sets is_published=True and creates notifications
+        for assigned staff.
+        """
+        from api.models import AuditLog, Notification
+        from django.db import transaction
+
+        if not request.user.role in ['manager', 'admin']:
+            return Response({"detail": "Manager or admin permissions required"}, status=status.HTTP_403_FORBIDDEN)
+
+        shift_ids = request.data.get('shift_ids', [])
+        date_range = request.data.get('date_range')
+        venue_ids = request.data.get('venue_ids', [])
+
+        base_qs = self.get_queryset().filter(is_published=False)
+
+        if shift_ids:
+            shifts_to_publish = base_qs.filter(id__in=shift_ids)
+        elif date_range:
+            from datetime import datetime as dt
+            try:
+                range_start = dt.fromisoformat(date_range['start'].replace('Z', '+00:00'))
+                range_end = dt.fromisoformat(date_range['end'].replace('Z', '+00:00'))
+            except (ValueError, KeyError):
+                return Response({"detail": "Invalid date_range format"}, status=status.HTTP_400_BAD_REQUEST)
+            shifts_to_publish = base_qs.filter(start_time__gte=range_start, start_time__lt=range_end)
+            if venue_ids:
+                shifts_to_publish = shifts_to_publish.filter(venue_id__in=venue_ids)
+        else:
+            return Response({"detail": "Provide shift_ids or date_range"}, status=status.HTTP_400_BAD_REQUEST)
+
+        company = getattr(request, 'current_company', None)
+        published_count = 0
+        notifications_sent = 0
+
+        try:
+            with transaction.atomic():
+                shifts = list(shifts_to_publish.select_related('venue', 'staff_user'))
+                for shift in shifts:
+                    shift.is_published = True
+                    shift.save(update_fields=['is_published', 'updated_at'])
+                    published_count += 1
+
+                    # Create notification for assigned staff
+                    if shift.staff_user:
+                        Notification.objects.create(
+                            user=shift.staff_user,
+                            company=company,
+                            notification_type='shift_assigned',
+                            title='Shift Published',
+                            message=f"You have been assigned a shift at {shift.venue.name if shift.venue else 'Unknown'} "
+                                    f"on {shift.start_time.strftime('%a %d %b')} "
+                                    f"{shift.start_time.strftime('%H:%M')}-{shift.end_time.strftime('%H:%M') if shift.end_time else 'TBD'}",
+                            priority='normal',
+                            data={'shift_id': shift.id},
+                        )
+                        notifications_sent += 1
+
+                    # Audit log
+                    AuditLog.objects.create(
+                        user=request.user,
+                        company=company,
+                        action='status_change',
+                        resource_type='shift',
+                        resource_id=str(shift.id),
+                        details={'action': 'publish', 'staff_user_id': shift.staff_user_id},
+                        ip_address=request.META.get('REMOTE_ADDR'),
+                        user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
+                    )
+        except Exception as e:
+            return Response(
+                {'detail': f'Publish failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response({
+            'published': published_count,
+            'notifications_sent': notifications_sent,
+        })
+
+    @action(detail=False, methods=['get'], url_path='schedule_health')
+    def schedule_health(self, request):
+        """
+        Summary statistics for the visible date range — used by the scheduler health bar.
+        """
+        from api.models import WorkingHoursRegulation
+        from api.utils.shift_validators import check_shift_overlap
+        from decimal import Decimal
+
+        if not request.user.role in ['manager', 'admin']:
+            return Response({"detail": "Manager or admin permissions required"}, status=status.HTTP_403_FORBIDDEN)
+
+        start = request.query_params.get('start')
+        end = request.query_params.get('end')
+        venue_ids = request.query_params.getlist('venue_ids[]', request.query_params.getlist('venue_ids'))
+
+        if not start or not end:
+            return Response({"detail": "start and end required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        from datetime import datetime as dt
+        try:
+            start_dt = dt.fromisoformat(start.replace('Z', '+00:00'))
+            end_dt = dt.fromisoformat(end.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            return Response({"detail": "Invalid date format"}, status=status.HTTP_400_BAD_REQUEST)
+
+        shifts_qs = self.get_queryset().filter(
+            start_time__lt=end_dt,
+            end_time__gt=start_dt,
+        ).exclude(status='cancelled')
+
+        if venue_ids:
+            shifts_qs = shifts_qs.filter(venue_id__in=venue_ids)
+
+        total = shifts_qs.count()
+        draft = shifts_qs.filter(is_published=False).count()
+        published = shifts_qs.filter(is_published=True).count()
+        open_shifts = shifts_qs.filter(staff_user__isnull=True).count()
+
+        # Calculate total hours and estimated cost
+        total_hours = Decimal('0')
+        estimated_cost = Decimal('0')
+        for s in shifts_qs:
+            if s.end_time:
+                hours = Decimal(str(round((s.end_time - s.start_time).total_seconds() / 3600, 2)))
+                total_hours += hours
+                if s.hourly_rate:
+                    estimated_cost += hours * s.hourly_rate
+
+        # Count conflicts (overlapping shifts per staff)
+        conflicts = 0
+        staff_shifts = {}
+        for s in shifts_qs.filter(staff_user__isnull=False):
+            staff_shifts.setdefault(s.staff_user_id, []).append(s)
+
+        for uid, user_shifts in staff_shifts.items():
+            user_shifts.sort(key=lambda x: x.start_time)
+            for i in range(len(user_shifts) - 1):
+                if user_shifts[i].end_time and user_shifts[i].end_time > user_shifts[i + 1].start_time:
+                    conflicts += 1
+
+        # Overtime warnings
+        overtime_warnings = 0
+        regulation = WorkingHoursRegulation.objects.filter(is_active=True).first()
+        if regulation:
+            for uid, user_shifts in staff_shifts.items():
+                hours = sum(
+                    (s.end_time - s.start_time).total_seconds() / 3600
+                    for s in user_shifts if s.end_time
+                )
+                if hours > float(regulation.max_weekly_hours):
+                    overtime_warnings += 1
+
+        return Response({
+            'totalShifts': total,
+            'draftShifts': draft,
+            'publishedShifts': published,
+            'openShifts': open_shifts,
+            'conflicts': conflicts,
+            'overtimeWarnings': overtime_warnings,
+            'totalHours': float(total_hours),
+            'estimatedCost': float(estimated_cost),
         })
 
 

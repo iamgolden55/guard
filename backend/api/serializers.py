@@ -21,6 +21,8 @@ from .models import (
     EMPLOYMENT_CATEGORY_CHOICES,
     # Client billing models
     ClientInvoice, ClientInvoiceItem,
+    # Incident reporting
+    IncidentReport,
 )
 
 User = get_user_model() # Ensure User model is fetched
@@ -2858,3 +2860,31 @@ class ClientInvoiceGenerateSerializer(serializers.Serializer):
         if data['start_date'] > data['end_date']:
             raise serializers.ValidationError("start_date must be before end_date")
         return data
+
+
+class IncidentReportSerializer(serializers.ModelSerializer):
+    reported_by_name = serializers.SerializerMethodField()
+    venue_name = serializers.SerializerMethodField()
+    resolved_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = IncidentReport
+        fields = (
+            'id', 'venue', 'venue_name', 'reported_by', 'reported_by_name',
+            'shift', 'incident_time', 'description', 'severity',
+            'actions_taken', 'requires_followup', 'followup_notes',
+            'resolved', 'resolved_at', 'resolved_by', 'resolved_by_name',
+            'created_at', 'updated_at',
+        )
+        read_only_fields = ('reported_by', 'created_at', 'updated_at')
+
+    def get_reported_by_name(self, obj):
+        return f"{obj.reported_by.first_name} {obj.reported_by.last_name}".strip() or obj.reported_by.username
+
+    def get_venue_name(self, obj):
+        return obj.venue.name if obj.venue else None
+
+    def get_resolved_by_name(self, obj):
+        if obj.resolved_by:
+            return f"{obj.resolved_by.first_name} {obj.resolved_by.last_name}".strip() or obj.resolved_by.username
+        return None

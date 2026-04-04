@@ -28,7 +28,7 @@ import type {
 } from '../types/compliance';
 
 export class ComplianceService {
-  private static baseURL = '/compliance';
+  private static baseURL = '/api/v1/compliance';
 
   // Compliance Profiles
   static async getActiveProfile(): Promise<ApiResponse<ComplianceProfile>> {

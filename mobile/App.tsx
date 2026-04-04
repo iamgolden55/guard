@@ -35,8 +35,14 @@ import { useNotifications } from './src/hooks/useNotifications';
 // Sync Service
 import { syncService } from './src/services/syncService';
 
+// Logger with Sentry
+import { logger } from './src/utils/logger';
+
 // Animated Splash
 import { AnimatedSplash } from './src/components/AnimatedSplash';
+
+// Initialize Sentry for error tracking (no-op if SDK not installed or DSN not set)
+logger.initSentry(process.env.EXPO_PUBLIC_SENTRY_DSN);
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();

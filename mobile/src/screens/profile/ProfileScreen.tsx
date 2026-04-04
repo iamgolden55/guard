@@ -3,8 +3,8 @@
  * Clean, minimal profile with hero photo and feature list
  */
 
-import React from 'react';
-import { View, StyleSheet, Alert, TouchableOpacity, Image, ScrollView, Text } from 'react-native';
+import React, { useState } from 'react';
+import { View, StyleSheet, Alert, TouchableOpacity, Image, ScrollView, Text, Modal, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Body, Button } from '@components/ui';
@@ -13,7 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
 import { useAppSelector, useAppDispatch } from '../../hooks/useRedux';
-import { selectCurrentUser, fetchUserProfile } from '../../store/slices/authSlice';
+import { selectCurrentUser, fetchUserProfile, deleteAccount } from '../../store/slices/authSlice';
 import { useFocusEffect } from '@react-navigation/native';
 import { resetOnboarding } from '../../store/slices/onboardingSlice';
 import { fetchShifts } from '../../store/slices/shiftsSlice';
@@ -34,6 +34,9 @@ export const ProfileScreen = () => {
   const { logout } = useAuth();
   const { isDark } = useTheme();
   const themeColors = getColors(isDark);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Log screen view
   React.useEffect(() => {
@@ -194,6 +197,45 @@ export const ProfileScreen = () => {
         },
       ]
     );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Your account will be deactivated immediately and permanently deleted after 30 days. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => {
+            setDeletePassword('');
+            setShowDeleteModal(true);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletePassword.trim()) {
+      Alert.alert('Error', 'Please enter your password to confirm.');
+      return;
+    }
+    setDeleteLoading(true);
+    try {
+      await dispatch(deleteAccount({ password: deletePassword })).unwrap();
+      setShowDeleteModal(false);
+      Alert.alert(
+        'Account Deleted',
+        'Your account has been deactivated and will be permanently deleted in 30 days.',
+        [{ text: 'OK', onPress: () => logout() }]
+      );
+    } catch (error: any) {
+      Alert.alert('Error', error || 'Failed to delete account. Please try again.');
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   if (!user) {
@@ -430,8 +472,49 @@ export const ProfileScreen = () => {
             <Text style={[styles.accountText, { color: colors.error }]}>Logout</Text>
             <Ionicons name="chevron-forward" size={20} color={themeColors.text.tertiary} />
           </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.accountItem, { backgroundColor: isDark ? themeColors.card : '#FAFAFA' }]} onPress={handleDeleteAccount}>
+            <View style={[styles.accountIcon, { backgroundColor: isDark ? 'rgba(244,67,54,0.15)' : '#FFEBEE' }]}>
+              <Ionicons name="trash" size={20} color={colors.error} />
+            </View>
+            <Text style={[styles.accountText, { color: colors.error }]}>Delete Account</Text>
+            <Ionicons name="chevron-forward" size={20} color={themeColors.text.tertiary} />
+          </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Delete Account Password Confirmation Modal */}
+      <Modal visible={showDeleteModal} transparent animationType="fade" onRequestClose={() => setShowDeleteModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: themeColors.card }]}>
+            <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Confirm Deletion</Text>
+            <Text style={[styles.modalDescription, { color: themeColors.text.secondary }]}>
+              Enter your password to confirm account deletion. Your account will be permanently removed after 30 days.
+            </Text>
+            <TextInput
+              style={[styles.modalInput, { color: themeColors.text.primary, borderColor: themeColors.border, backgroundColor: isDark ? themeColors.background.primary : '#F5F5F5' }]}
+              placeholder="Enter your password"
+              placeholderTextColor={themeColors.text.tertiary}
+              secureTextEntry
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.modalButton, styles.modalCancelButton]} onPress={() => setShowDeleteModal(false)} disabled={deleteLoading}>
+                <Text style={[styles.modalButtonText, { color: themeColors.text.primary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, styles.modalDeleteButton]} onPress={handleConfirmDelete} disabled={deleteLoading}>
+                {deleteLoading ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={[styles.modalButtonText, { color: '#FFF' }]}>Delete Account</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -676,5 +759,55 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     // color applied inline with themeColors
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalContent: {
+    width: '100%',
+    borderRadius: 16,
+    padding: spacing.xl,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: spacing.sm,
+  },
+  modalDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: spacing.lg,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: spacing.base,
+    fontSize: 16,
+    marginBottom: spacing.lg,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: spacing.base,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelButton: {
+    backgroundColor: '#E0E0E0',
+  },
+  modalDeleteButton: {
+    backgroundColor: '#F44336',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

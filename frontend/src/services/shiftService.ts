@@ -398,18 +398,21 @@ class ShiftService {
     }
   }
 
-  async getAllShiftsForManager(): Promise<any[]> {
+  async getAllShiftsForManager(params?: { page?: number; page_size?: number }): Promise<any> {
     try {
-      // Fetch all shifts for manager/admin view with venue check summaries
-      const response = await shiftApi.get<any>('/api/v1/shifts/manager/all/');
+      const queryParams = new URLSearchParams();
+      if (params?.page) queryParams.set('page', String(params.page));
+      if (params?.page_size) queryParams.set('page_size', String(params.page_size));
+      const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
 
-      // Handle different response structures
-      let shifts = response.data;
+      const response = await shiftApi.get<any>(`/api/v1/shifts/manager/all/${query}`);
+
+      // Handle both paginated and non-paginated responses
       if (response.data.results) {
-        shifts = response.data.results; // Paginated response
+        return response.data; // Paginated response with count, results, etc.
       }
-
-      return shifts;
+      // Legacy non-paginated response
+      return { results: response.data, count: response.data.length, total_pages: 1, current_page: 1 };
     } catch (error: any) {
       console.error('Failed to fetch manager shifts:', error);
       throw error;

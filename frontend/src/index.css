@@ -3,6 +3,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@import './styles/lineicons.css';
 
 /* ==========================================================================
    Typography System - Uber-inspired with Inter + Plus Jakarta Sans
@@ -493,10 +494,10 @@ button:not(.ms-Icon) {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
 
-/* Preserve icon fonts - DO NOT override
-   CRITICAL: i tag should NEVER have text fonts - it's used for icons */
-i,
-i[class],
+/* Preserve icon fonts - DO NOT override Fluent UI icons
+   CRITICAL: Exclude .lni (LineIcons) which use their own font */
+i:not(.lni),
+i[class]:not(.lni),
 i[data-icon-name],
 .ms-Icon,
 [class*="ms-Icon"],
@@ -883,8 +884,20 @@ i[data-icon-name] {
   font-weight: normal !important;
 }
 
-/* Ensure all i tags use icon font (i tags are conventionally for icons, not italic text) */
-i {
+/* Ensure all i tags use icon font (except LineIcons which use their own font) */
+i:not(.lni) {
   font-family: 'FabricMDL2Icons', 'Segoe MDL2 Assets', 'Segoe UI Symbol' !important;
   font-style: normal !important;
+}
+
+/* LineIcons - MUST BE LAST to override all other font rules */
+i.lni,
+i.lni[class],
+i[class*="lni-"] {
+  font-family: 'Lineicons' !important;
+  font-style: normal !important;
+  font-weight: normal !important;
+  speak: never;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }

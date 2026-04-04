@@ -427,10 +427,10 @@ const StaffManagement: React.FC = () => {
       phone: staff.phone || '',
       role: staff.role,
       isActive: staff.isActive,
-      street: staff.address?.street || '',
-      city: staff.address?.city || '',
-      postalCode: staff.address?.postalCode || '',
-      country: staff.address?.country || '',
+      street: (staff as any).street || staff.address?.street || '',
+      city: (staff as any).city || staff.address?.city || '',
+      postalCode: (staff as any).postal_code || staff.address?.postalCode || '',
+      country: (staff as any).country || staff.address?.country || '',
     });
     setEditFormTab('basic');
     setShowEditStaffPanel(true);

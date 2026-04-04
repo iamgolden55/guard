@@ -16,21 +16,16 @@ const ManagerDashboard: React.FC = () => {
   const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
   const [searchText, setSearchText] = useState('');
 
-  // Load dashboard data
   useEffect(() => {
     const loadDashboardData = async () => {
       try {
         setIsLoading(true);
-
-        // Get all shifts
         const shifts = await shiftService.getShifts();
 
-        // Filter pending approvals (completed but not approved)
         const pendingApprovalShifts = shifts.filter(
           shift => shift.status === ShiftStatus.COMPLETED && !shift.managerApproved
         );
 
-        // Get recent approved/rejected shifts
         const recentApprovedShifts = shifts
           .filter(shift =>
             shift.status === ShiftStatus.APPROVED ||
@@ -41,7 +36,6 @@ const ManagerDashboard: React.FC = () => {
 
         setPendingApprovals(pendingApprovalShifts);
         setRecentShifts(recentApprovedShifts);
-
       } catch (error) {
         console.error('Failed to load dashboard data:', error);
       } finally {
@@ -52,52 +46,31 @@ const ManagerDashboard: React.FC = () => {
     loadDashboardData();
   }, []);
 
-  // Format date for display
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
-  };
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
-  // Format time for display
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-GB', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  const formatTime = (dateString: string) =>
+    new Date(dateString).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
-  // Calculate shift duration
   const getShiftDuration = (startTime: string, endTime: string | null) => {
     if (!endTime) return 'In progress';
-
-    const start = new Date(startTime).getTime();
-    const end = new Date(endTime).getTime();
-    const durationMs = end - start;
-
+    const durationMs = new Date(endTime).getTime() - new Date(startTime).getTime();
     const hours = Math.floor(durationMs / (1000 * 60 * 60));
     const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
-
     return `${hours}h ${minutes}m`;
   };
 
-  // Filter pending approvals based on search text
   const filteredApprovals = pendingApprovals.filter(shift =>
     searchText === '' ||
     shift.venue.name.toLowerCase().includes(searchText.toLowerCase())
   );
 
-  // Column definitions for pending approvals table
   const approvalColumns: ColumnDefinition<Shift>[] = [
     {
       id: 'staffName',
       header: 'Staff',
       cell: (item: Shift) => (
-        <span className="font-medium text-gray-900">Staff ID: {item.staffUser}</span>
+        <span className="font-medium text-[#1A1A2E]">Staff ID: {item.staffUser}</span>
       ),
       sortingField: 'staffUser',
     },
@@ -137,7 +110,6 @@ const ManagerDashboard: React.FC = () => {
     },
   ];
 
-  // Column definitions for recent approvals table (extends approval columns)
   const recentColumns: ColumnDefinition<Shift>[] = [
     ...approvalColumns.map(col => {
       if (col.id === 'status') {
@@ -163,23 +135,23 @@ const ManagerDashboard: React.FC = () => {
   ];
 
   return (
-    <SpaceBetween size="l">
+    <SpaceBetween size="xl">
       {/* Page header */}
       <Header
         variant="h1"
         description={`Welcome back, ${authState.user?.firstName || 'Manager'}. Here's your shift approval overview.`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
-              className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="px-4 py-2.5 text-[13px] font-medium text-[#1A1A2E] bg-white border border-[#EAEAF0] rounded-[10px] hover:bg-[#F7F7FA] transition-colors"
               onClick={() => navigate('/staff-shifts')}
             >
               View all staff shifts
             </button>
             <button
               type="button"
-              className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              className="px-4 py-2.5 text-[13px] font-medium text-white bg-[#DC2626] rounded-[10px] hover:bg-[#B91C1C] transition-colors"
               onClick={() => navigate('/approvals')}
             >
               Manage approvals
@@ -190,7 +162,53 @@ const ManagerDashboard: React.FC = () => {
         Manager dashboard
       </Header>
 
-      {/* Pending approvals */}
+      {/* Summary stats row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <div className="bg-white border border-[#EAEAF0] rounded-2xl p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-[#FFFBEB] flex items-center justify-center">
+              <svg className="w-5 h-5 text-[#D97706]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+          <p className="text-[13px] font-medium text-[#9CA3AF] mb-1">Pending approvals</p>
+          <p className="text-[32px] font-bold text-[#1A1A2E] tracking-[-0.02em] leading-10">{pendingApprovals.length}</p>
+          {pendingApprovals.length > 0 && (
+            <span className="inline-flex mt-2 items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-[#FFFBEB] text-[#D97706]">
+              Needs review
+            </span>
+          )}
+        </div>
+        <div className="bg-white border border-[#EAEAF0] rounded-2xl p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-[#ECFDF5] flex items-center justify-center">
+              <svg className="w-5 h-5 text-[#059669]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+          <p className="text-[13px] font-medium text-[#9CA3AF] mb-1">Recently approved</p>
+          <p className="text-[32px] font-bold text-[#1A1A2E] tracking-[-0.02em] leading-10">
+            {recentShifts.filter(s => s.status === ShiftStatus.APPROVED).length}
+          </p>
+        </div>
+        <div className="bg-white border border-[#EAEAF0] rounded-2xl p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-[#FEF2F2] flex items-center justify-center">
+              <svg className="w-5 h-5 text-[#DC2626]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+          </div>
+          <p className="text-[13px] font-medium text-[#9CA3AF] mb-1">Recently rejected</p>
+          <p className="text-[32px] font-bold text-[#1A1A2E] tracking-[-0.02em] leading-10">
+            {recentShifts.filter(s => s.status === ShiftStatus.REJECTED).length}
+          </p>
+        </div>
+      </div>
+
+      {/* Pending approvals table */}
       <CloudscapeTable<Shift>
         items={filteredApprovals}
         columnDefinitions={approvalColumns}
@@ -205,10 +223,10 @@ const ManagerDashboard: React.FC = () => {
             variant="h2"
             counter={`${filteredApprovals.length}`}
             actions={
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <button
                   type="button"
-                  className="px-4 h-9 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-[13px] font-medium text-white bg-[#DC2626] rounded-[10px] hover:bg-[#B91C1C] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   disabled={selectedShifts.length === 0}
                   onClick={() => {
                     const shiftId = selectedShifts[0].id;
@@ -219,7 +237,7 @@ const ManagerDashboard: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-[13px] font-medium text-[#1A1A2E] bg-white border border-[#EAEAF0] rounded-[10px] hover:bg-[#F7F7FA] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   disabled={selectedShifts.length === 0}
                   onClick={() => {
                     const shiftId = selectedShifts[0].id;
@@ -230,7 +248,7 @@ const ManagerDashboard: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  className="px-4 h-9 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 text-[13px] font-medium text-[#1A1A2E] bg-white border border-[#EAEAF0] rounded-[10px] hover:bg-[#F7F7FA] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   disabled={selectedShifts.length !== 1}
                   onClick={() => {
                     const shiftId = selectedShifts[0].id;
@@ -251,7 +269,7 @@ const ManagerDashboard: React.FC = () => {
             placeholder="Search by venue"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            className="w-full max-w-xs px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-colors"
+            className="w-full max-w-xs px-3.5 py-2.5 text-[13px] border border-[#EAEAF0] rounded-[10px] focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626] outline-none transition-colors placeholder-[#9CA3AF]"
           />
         }
         empty={
@@ -272,7 +290,7 @@ const ManagerDashboard: React.FC = () => {
         }}
       />
 
-      {/* Recent approvals */}
+      {/* Recent approvals table */}
       <CloudscapeTable<Shift>
         items={recentShifts}
         columnDefinitions={recentColumns}

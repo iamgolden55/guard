@@ -1,0 +1,163 @@
+/* ─── Scheduler Timeline Overrides ─────────────────────────────────── */
+
+/* Resource rows: enforce minimum height and spacing */
+.fc .fc-timeline-lane-frame {
+  min-height: 56px !important;
+}
+
+.fc .fc-datagrid-cell-frame {
+  min-height: 56px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* Alternating row stripes for readability */
+.fc .fc-datagrid-body tr:nth-child(even) .fc-datagrid-cell-frame {
+  background-color: #f8fafc !important;
+}
+.fc .fc-timeline-body tr:nth-child(even) .fc-timeline-lane-frame {
+  background-color: #f8fafc !important;
+}
+
+/* Resource area: subtle left column background */
+.fc .fc-datagrid-cell-frame {
+  background-color: #ffffff !important;
+}
+.fc .fc-datagrid-body tr:nth-child(even) .fc-datagrid-cell-frame {
+  background-color: #f8fafc !important;
+}
+
+/* Resource area header */
+.fc .fc-datagrid-cell-cushion {
+  padding: 6px 8px !important;
+}
+
+/* Resource column header */
+.fc .fc-col-header-cell {
+  background-color: #f1f5f9 !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  color: #475569 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+/* Timeline header slots */
+.fc .fc-timeline-slot-cushion {
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  color: #64748b !important;
+}
+
+/* Timeline header row background */
+.fc .fc-timeline-header-row th {
+  background-color: #f8fafc !important;
+}
+
+/* Toolbar buttons */
+.fc .fc-button {
+  font-size: 13px !important;
+  padding: 4px 12px !important;
+  border-radius: 6px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+}
+
+.fc .fc-button-primary {
+  background-color: #1e293b !important;
+  border-color: #1e293b !important;
+}
+
+.fc .fc-button-primary:not(:disabled).fc-button-active {
+  background-color: #0f172a !important;
+  border-color: #0f172a !important;
+}
+
+.fc .fc-button-primary:not(:disabled):hover {
+  background-color: #334155 !important;
+  border-color: #334155 !important;
+}
+
+/* Today button */
+.fc .fc-today-button {
+  background-color: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+.fc .fc-today-button:hover {
+  background-color: #e2e8f0 !important;
+}
+
+/* Title */
+.fc .fc-toolbar-title {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: #0f172a !important;
+}
+
+/* Grid lines — visible but subtle */
+.fc .fc-timeline-slot {
+  border-color: #e9edf2 !important;
+}
+
+.fc td, .fc th {
+  border-color: #e2e8f0 !important;
+}
+
+/* Row dividers — slightly stronger than cell lines */
+.fc .fc-datagrid-body tr .fc-datagrid-cell {
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+.fc .fc-timeline-body tr .fc-timeline-lane {
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+/* Today column highlight */
+.fc .fc-day-today {
+  background-color: rgba(59, 130, 246, 0.04) !important;
+}
+
+/* Current time indicator */
+.fc .fc-timeline-now-indicator-line {
+  border-color: #ef4444 !important;
+  border-width: 2px !important;
+}
+
+/* Selection highlight */
+.fc .fc-highlight {
+  background: rgba(59, 130, 246, 0.12) !important;
+  border: 1px dashed rgba(59, 130, 246, 0.5) !important;
+}
+
+/* Scrollbar styling */
+.fc .fc-scroller::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.fc .fc-scroller::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.fc .fc-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Event cursor */
+.fc-timeline-event {
+  cursor: grab !important;
+}
+
+.fc-timeline-event:active {
+  cursor: grabbing !important;
+}
+
+/* Hover effect on resource rows */
+.fc .fc-datagrid-body tr:hover .fc-datagrid-cell-frame {
+  background-color: #f1f5f9 !important;
+}
+.fc .fc-timeline-body tr:hover .fc-timeline-lane-frame {
+  background-color: #f1f5f9 !important;
+}

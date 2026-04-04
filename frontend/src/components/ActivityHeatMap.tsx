@@ -127,7 +127,7 @@ const ActivityHeatMap: React.FC<ActivityHeatMapProps> = ({
 
   if (isLoading) {
     return (
-      <div className="bg-[#F9F9F9] border border-[#F0F0F0] rounded-lg p-3 inline-block">
+      <div className="inline-block">
         <div className="flex items-center gap-4 mb-3">
           <div className="h-5 w-32 bg-gray-200 rounded animate-pulse" />
           <div className="h-4 w-24 bg-gray-200 rounded animate-pulse" />
@@ -153,12 +153,11 @@ const ActivityHeatMap: React.FC<ActivityHeatMapProps> = ({
   const { summary } = data;
 
   return (
-    <div className="bg-[#F9F9F9] border border-[#F0F0F0] rounded-lg p-3 inline-block">
+    <div className="inline-block">
       {/* Header with inline legend */}
       <div className="flex items-start justify-between gap-4 mb-3">
         <div>
-          <h3 className="text-sm font-medium text-gray-900">Shift Activity</h3>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p className="text-[13px] text-[#6B7280]">
             {summary.totalCompleted} of {summary.totalScheduled} shifts completed ({summary.completionRate}%)
           </p>
         </div>

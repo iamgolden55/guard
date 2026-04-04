@@ -28,6 +28,7 @@ const RecruitmentManagement = lazy(() => import('./pages/admin/RecruitmentManage
 const RecruitmentApplication = lazy(() => import('./pages/public/RecruitmentApplication'));
 const EmploymentTypesManagement = lazy(() => import('./pages/admin/EmploymentTypesManagement'));
 const ReportsPage = lazy(() => import('./pages/reports/ReportsPage'));
+const WorkforceScheduler = lazy(() => import('./pages/admin/scheduler/SchedulerPage'));
 const LeaveReports = lazy(() => import('./pages/admin/LeaveReports'));
 const Attendance = lazy(() => import('./pages/admin/Attendance'));
 const AnalyticsDashboard = lazy(() => import('./pages/admin/AnalyticsDashboard'));
@@ -164,6 +165,14 @@ const Router: React.FC = () => {
             }
           />
           <Route path="/admin/scheduling" element={<ShiftScheduling />} />
+          <Route
+            path="/admin/scheduler"
+            element={
+              <Suspense fallback={<LazyFallback label="Loading scheduler..." />}>
+                <WorkforceScheduler />
+              </Suspense>
+            }
+          />
           <Route path="/admin/invoices" element={<InvoiceGeneration />} />
           {/* TODO: Build dedicated PayRates page -- redirecting to invoices for now */}
           <Route path="/admin/payrates" element={<InvoiceGeneration />} />

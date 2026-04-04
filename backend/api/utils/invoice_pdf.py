@@ -316,9 +316,9 @@ def generate_invoice_pdf(invoice) -> io.BytesIO:
 
         if item.item_type == "shift":
             type_label = "Shift"
-            venue_name = _safe_str(getattr(item.venue, "name", None), "—")
+            venue_name = _safe_str(getattr(item.venue, "name", None) if item.venue else None, "—")
             description = venue_name
-            if item.shift and item.shift.is_special_event:
+            if item.shift and getattr(item.shift, 'is_special_event', False):
                 type_label = "Event"
                 description = f"{venue_name} (Special Event)"
             qty = f"{item.hours_worked or 0:.2f} hrs"
@@ -377,7 +377,10 @@ def generate_invoice_pdf(invoice) -> io.BytesIO:
     # ------------------------------------------------------------------
     # Breakdown summary
     # ------------------------------------------------------------------
-    breakdown = invoice.get_payment_breakdown()
+    try:
+        breakdown = invoice.get_payment_breakdown()
+    except Exception:
+        breakdown = {}
 
     summary_rows = []
     s_sum_label = ParagraphStyle("SumL", parent=styles["Normal"], fontSize=9, leading=12, textColor=BRAND_DARK)

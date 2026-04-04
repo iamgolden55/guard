@@ -8,38 +8,46 @@ interface StatusIndicatorProps {
   className?: string;
 }
 
-const statusConfig: Record<StatusType, { dotClass: string; textClass: string; icon?: string }> = {
+const statusConfig: Record<StatusType, { bg: string; text: string; dot: string }> = {
   success: {
-    dotClass: 'bg-green-600',
-    textClass: 'text-green-700',
+    bg: 'bg-[#ECFDF5]',
+    text: 'text-[#059669]',
+    dot: 'bg-[#059669]',
   },
   warning: {
-    dotClass: 'bg-amber-500',
-    textClass: 'text-amber-700',
+    bg: 'bg-[#FFFBEB]',
+    text: 'text-[#D97706]',
+    dot: 'bg-[#D97706]',
   },
   error: {
-    dotClass: 'bg-red-600',
-    textClass: 'text-red-700',
+    bg: 'bg-[#FEF2F2]',
+    text: 'text-[#DC2626]',
+    dot: 'bg-[#DC2626]',
   },
   info: {
-    dotClass: 'bg-blue-600',
-    textClass: 'text-blue-700',
+    bg: 'bg-[#EFF6FF]',
+    text: 'text-[#2563EB]',
+    dot: 'bg-[#2563EB]',
   },
   stopped: {
-    dotClass: 'bg-gray-500',
-    textClass: 'text-gray-600',
+    bg: 'bg-[#F3F4F6]',
+    text: 'text-[#6B7280]',
+    dot: 'bg-[#6B7280]',
   },
   pending: {
-    dotClass: 'bg-gray-400',
-    textClass: 'text-gray-600',
+    bg: 'bg-[#F3F4F6]',
+    text: 'text-[#6B7280]',
+    dot: 'bg-[#9CA3AF]',
   },
   'in-progress': {
-    dotClass: 'bg-blue-500',
-    textClass: 'text-blue-700',
+    bg: 'bg-[#EFF6FF]',
+    text: 'text-[#2563EB]',
+    dot: 'bg-[#2563EB]',
   },
   loading: {
-    dotClass: 'bg-blue-500 animate-pulse',
-    textClass: 'text-blue-700',
+    bg: 'bg-[#FEF2F2]',
+    text: 'text-[#DC2626]',
+    dot: 'bg-[#DC2626] animate-pulse',
   },
 };
 
@@ -47,12 +55,12 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({ type, children, class
   const config = statusConfig[type];
 
   return (
-    <span className={`inline-flex items-center gap-1.5 text-sm ${config.textClass} ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[12px] font-medium ${config.bg} ${config.text} ${className}`}>
       <span
-        className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${config.dotClass}`}
+        className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${config.dot}`}
         aria-hidden="true"
       />
-      <span>{children}</span>
+      <span className="capitalize">{children}</span>
     </span>
   );
 };

@@ -195,6 +195,222 @@ def get_staff_schedule_conflicts(staff_user, proposed_shifts):
     return {'conflicts': conflicts, 'valid_shifts': valid_shifts}
 
 
+def validate_shift_warnings(staff_user, start_time, end_time, venue=None, required_role=None, exclude_shift_id=None):
+    """
+    Pre-flight validation that returns soft warnings (not errors) for a proposed shift.
+    Used by the scheduler validate endpoint to show warnings before committing.
+
+    Returns:
+        dict: {
+            'valid': bool (False only if hard errors exist),
+            'errors': [{'type': str, 'message': str}],
+            'warnings': [{'type': str, 'message': str, 'severity': 'warning'|'info'}]
+        }
+    """
+    from api.models import Shift, WorkingHoursRegulation, ContractorUnavailability, SIALicense
+    from django.db.models import Sum, Q
+    from datetime import timedelta
+    import decimal
+
+    errors = []
+    warnings = []
+
+    if not staff_user:
+        return {'valid': True, 'errors': [], 'warnings': []}
+
+    user_id = staff_user.id if hasattr(staff_user, 'id') else staff_user
+
+    # Ensure datetimes are timezone-aware
+    if timezone.is_naive(start_time):
+        start_time = timezone.make_aware(start_time)
+    if timezone.is_naive(end_time):
+        end_time = timezone.make_aware(end_time)
+
+    # --- Hard errors ---
+
+    # 1. Overlap check
+    has_overlap, overlapping = check_shift_overlap(staff_user, start_time, end_time, exclude_shift_id)
+    if has_overlap:
+        first = overlapping.select_related('venue').first()
+        venue_name = first.venue.name if first and first.venue else 'Unknown'
+        errors.append({
+            'type': 'overlap',
+            'message': f"Overlaps with existing shift at {venue_name}: "
+                       f"{first.start_time.strftime('%H:%M')}-{first.end_time.strftime('%H:%M')}"
+        })
+
+    # --- Soft warnings ---
+
+    # Get regulation (default to GB if not found)
+    regulation = WorkingHoursRegulation.objects.filter(is_active=True).first()
+
+    if regulation:
+        # 2. Weekly hours / overtime check
+        week_start = start_time - timedelta(days=start_time.weekday())
+        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        if timezone.is_naive(week_start):
+            week_start = timezone.make_aware(week_start)
+        week_end = week_start + timedelta(days=7)
+
+        weekly_shifts = Shift.objects.filter(
+            staff_user_id=user_id,
+            start_time__gte=week_start,
+            start_time__lt=week_end,
+        ).exclude(status='cancelled')
+        if exclude_shift_id:
+            weekly_shifts = weekly_shifts.exclude(id=exclude_shift_id)
+
+        existing_weekly_hours = decimal.Decimal('0')
+        for s in weekly_shifts:
+            if s.end_time:
+                duration = (s.end_time - s.start_time).total_seconds() / 3600
+                existing_weekly_hours += decimal.Decimal(str(round(duration, 2)))
+
+        proposed_duration = decimal.Decimal(str(round((end_time - start_time).total_seconds() / 3600, 2)))
+        total_weekly = existing_weekly_hours + proposed_duration
+
+        if total_weekly > regulation.max_weekly_hours:
+            errors.append({
+                'type': 'max_weekly_hours',
+                'message': f"Would exceed maximum weekly hours: {total_weekly}h / {regulation.max_weekly_hours}h max"
+            })
+        elif regulation.overtime_threshold_hours and total_weekly > regulation.overtime_threshold_hours:
+            warnings.append({
+                'type': 'overtime',
+                'message': f"Overtime: {total_weekly}h this week (threshold: {regulation.overtime_threshold_hours}h)",
+                'severity': 'warning'
+            })
+
+        # 3. Rest period check
+        prev_shift = Shift.objects.filter(
+            staff_user_id=user_id,
+            end_time__lt=start_time,
+        ).exclude(status='cancelled')
+        if exclude_shift_id:
+            prev_shift = prev_shift.exclude(id=exclude_shift_id)
+        prev_shift = prev_shift.order_by('-end_time').first()
+
+        if prev_shift and prev_shift.end_time:
+            rest_hours = (start_time - prev_shift.end_time).total_seconds() / 3600
+            if rest_hours < float(regulation.min_rest_between_shifts_hours):
+                warnings.append({
+                    'type': 'short_rest',
+                    'message': f"Only {rest_hours:.1f}h rest since last shift (min {regulation.min_rest_between_shifts_hours}h required)",
+                    'severity': 'warning'
+                })
+
+        # Also check rest after this shift
+        next_shift = Shift.objects.filter(
+            staff_user_id=user_id,
+            start_time__gt=end_time,
+        ).exclude(status='cancelled')
+        if exclude_shift_id:
+            next_shift = next_shift.exclude(id=exclude_shift_id)
+        next_shift = next_shift.order_by('start_time').first()
+
+        if next_shift:
+            rest_hours = (next_shift.start_time - end_time).total_seconds() / 3600
+            if rest_hours < float(regulation.min_rest_between_shifts_hours):
+                warnings.append({
+                    'type': 'short_rest_after',
+                    'message': f"Only {rest_hours:.1f}h rest before next shift (min {regulation.min_rest_between_shifts_hours}h required)",
+                    'severity': 'warning'
+                })
+
+        # 4. Consecutive days check
+        shift_date = start_time.date()
+        consecutive = 0
+        check_date = shift_date - timedelta(days=1)
+        while consecutive < regulation.max_consecutive_days + 1:
+            has_shift = Shift.objects.filter(
+                staff_user_id=user_id,
+                start_time__date=check_date,
+            ).exclude(status='cancelled')
+            if exclude_shift_id:
+                has_shift = has_shift.exclude(id=exclude_shift_id)
+            if has_shift.exists():
+                consecutive += 1
+                check_date -= timedelta(days=1)
+            else:
+                break
+
+        if consecutive >= regulation.max_consecutive_days:
+            warnings.append({
+                'type': 'consecutive_days',
+                'message': f"Would be {consecutive + 1} consecutive days (max {regulation.max_consecutive_days})",
+                'severity': 'warning'
+            })
+
+    # 5. Availability check
+    shift_date = start_time.date()
+    unavailability = ContractorUnavailability.objects.filter(
+        staff_user_id=user_id,
+        start_date__lte=shift_date,
+        end_date__gte=shift_date,
+    ).first()
+    if unavailability:
+        warnings.append({
+            'type': 'unavailable',
+            'message': f"Staff marked unavailable {unavailability.start_date} - {unavailability.end_date}"
+                       + (f" ({unavailability.reason})" if unavailability.reason else ""),
+            'severity': 'warning'
+        })
+
+    # Check leave requests
+    try:
+        from leave_management.models import LeaveRequest as LeaveManagementRequest
+        leave = LeaveManagementRequest.objects.filter(
+            staff_user_id=user_id,
+            status='approved',
+            start_date__lte=shift_date,
+            end_date__gte=shift_date,
+        ).first()
+        if leave:
+            warnings.append({
+                'type': 'on_leave',
+                'message': f"Staff has approved leave on this date",
+                'severity': 'warning'
+            })
+    except ImportError:
+        pass
+
+    # 6. Qualification check
+    if required_role:
+        # Map shift role to SIA license type
+        role_to_license = {
+            'ds': 'ds', 'sg': 'sg', 'cctv': 'cctv', 'cp': 'cp', 'k9': 'k9',
+        }
+        license_type = role_to_license.get(required_role)
+        if license_type:
+            from api.models import StaffProfile
+            try:
+                profile = StaffProfile.objects.get(user_id=user_id)
+                valid_license = SIALicense.objects.filter(
+                    staff_profile=profile,
+                    license_type=license_type,
+                    status='valid',
+                    expiry_date__gte=shift_date,
+                ).exists()
+                if not valid_license:
+                    warnings.append({
+                        'type': 'missing_qualification',
+                        'message': f"Staff lacks valid {dict(SIALicense.LICENSE_TYPE_CHOICES).get(license_type, license_type)} license",
+                        'severity': 'warning'
+                    })
+            except StaffProfile.DoesNotExist:
+                warnings.append({
+                    'type': 'no_profile',
+                    'message': "Staff has no profile — cannot verify qualifications",
+                    'severity': 'info'
+                })
+
+    return {
+        'valid': len(errors) == 0,
+        'errors': errors,
+        'warnings': warnings,
+    }
+
+
 def clean_duplicate_shifts(dry_run=True):
     """
     Find and optionally remove duplicate shifts from the database.

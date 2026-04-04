@@ -42,6 +42,7 @@ export const API_ENDPOINTS = {
     REFRESH_TOKEN: `${API_PREFIX}/token/refresh/`,
     PROFILE: `${API_PREFIX}/profiles/me`,
     CHANGE_PASSWORD: `${API_PREFIX}/change-password/`,
+    DELETE_ACCOUNT: `${API_PREFIX}/accounts/delete-account/`,
     // Social authentication
     APPLE: `${API_PREFIX}/auth/apple/`,
     GOOGLE: `${API_PREFIX}/auth/google/`,
