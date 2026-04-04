@@ -181,8 +181,9 @@ const AdminDashboard: React.FC = () => {
           action={
             <button
               onClick={() => navigate('/admin/employment-types')}
-              className="text-[13px] font-semibold text-[#92400E] underline hover:no-underline"
+              className="inline-flex items-center gap-2 px-4 py-2 text-[12px] font-semibold text-white bg-[#D97706] rounded-[10px] hover:bg-[#B45309] transition-colors"
             >
+              <i className="lni lni-gear-1 text-[12px]" />
               Set up employment types
             </button>
           }

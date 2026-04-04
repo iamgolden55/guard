@@ -12,26 +12,55 @@ interface AlertProps {
   className?: string;
 }
 
-const alertStyles: Record<AlertType, { container: string; icon: string; iconPath: string }> = {
+const alertConfig: Record<AlertType, {
+  bg: string;
+  border: string;
+  accent: string;
+  iconBg: string;
+  iconColor: string;
+  headerColor: string;
+  textColor: string;
+  lniIcon: string;
+}> = {
   success: {
-    container: 'bg-[#ECFDF5] border-[#A7F3D0] text-[#065F46]',
-    icon: 'text-[#059669]',
-    iconPath: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+    bg: 'bg-white',
+    border: 'border-[#E5E7EB]',
+    accent: '#059669',
+    iconBg: 'bg-[#ECFDF5]',
+    iconColor: 'text-[#059669]',
+    headerColor: 'text-[#065F46]',
+    textColor: 'text-[#6B7280]',
+    lniIcon: 'lni-check-circle-1',
   },
   warning: {
-    container: 'bg-[#FFFBEB] border-[#FDE68A] text-[#92400E]',
-    icon: 'text-[#D97706]',
-    iconPath: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z',
+    bg: 'bg-white',
+    border: 'border-[#E5E7EB]',
+    accent: '#D97706',
+    iconBg: 'bg-[#FFFBEB]',
+    iconColor: 'text-[#D97706]',
+    headerColor: 'text-[#92400E]',
+    textColor: 'text-[#6B7280]',
+    lniIcon: 'lni-info',
   },
   error: {
-    container: 'bg-[#FEF2F2] border-[#FECACA] text-[#991B1B]',
-    icon: 'text-[#DC2626]',
-    iconPath: 'M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z',
+    bg: 'bg-white',
+    border: 'border-[#E5E7EB]',
+    accent: '#DC2626',
+    iconBg: 'bg-[#FEF2F2]',
+    iconColor: 'text-[#DC2626]',
+    headerColor: 'text-[#991B1B]',
+    textColor: 'text-[#6B7280]',
+    lniIcon: 'lni-xmark-circle',
   },
   info: {
-    container: 'bg-[#EFF6FF] border-[#BFDBFE] text-[#1E40AF]',
-    icon: 'text-[#2563EB]',
-    iconPath: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+    bg: 'bg-white',
+    border: 'border-[#E5E7EB]',
+    accent: '#2563EB',
+    iconBg: 'bg-[#EFF6FF]',
+    iconColor: 'text-[#2563EB]',
+    headerColor: 'text-[#1E40AF]',
+    textColor: 'text-[#6B7280]',
+    lniIcon: 'lni-info',
   },
 };
 
@@ -45,7 +74,7 @@ const Alert: React.FC<AlertProps> = ({
   className = '',
 }) => {
   const [dismissed, setDismissed] = useState(false);
-  const styles = alertStyles[type];
+  const config = alertConfig[type];
 
   if (dismissed) return null;
 
@@ -56,35 +85,38 @@ const Alert: React.FC<AlertProps> = ({
 
   return (
     <div
-      className={`flex items-start gap-3 p-5 border rounded-2xl ${styles.container} ${className}`}
+      className={`relative flex items-start gap-4 p-5 ${config.bg} ${config.border} border rounded-[16px] overflow-hidden ${className}`}
       role="alert"
+      style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02)' }}
     >
-      <svg
-        className={`w-5 h-5 flex-shrink-0 mt-0.5 ${styles.icon}`}
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={styles.iconPath} />
-      </svg>
+      {/* Left accent bar */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-[3px]"
+        style={{ background: config.accent }}
+      />
 
-      <div className="flex-1 min-w-0">
-        {header && (
-          <p className="text-[13px] font-semibold mb-1">{header}</p>
-        )}
-        <div className="text-[13px]">{children}</div>
-        {action && <div className="mt-2.5">{action}</div>}
+      {/* Icon tile */}
+      <div className={`w-9 h-9 rounded-[10px] ${config.iconBg} flex items-center justify-center flex-shrink-0`}>
+        <i className={`lni ${config.lniIcon} text-[16px] ${config.iconColor}`} />
       </div>
 
+      {/* Content */}
+      <div className="flex-1 min-w-0 pt-0.5">
+        {header && (
+          <p className={`text-[14px] font-semibold ${config.headerColor} mb-0.5`}>{header}</p>
+        )}
+        <div className={`text-[13px] ${config.textColor} leading-relaxed`}>{children}</div>
+        {action && <div className="mt-3">{action}</div>}
+      </div>
+
+      {/* Dismiss */}
       {dismissible && (
         <button
           onClick={handleDismiss}
-          className="flex-shrink-0 p-1.5 rounded-lg hover:bg-black/5 transition-colors"
+          className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F3F4F6] text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
           aria-label="Dismiss"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <i className="lni lni-xmark text-[12px]" />
         </button>
       )}
     </div>
