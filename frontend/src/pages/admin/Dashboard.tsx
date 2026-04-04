@@ -11,7 +11,7 @@ import type { DeputyStatus, User, Shift, Invoice, ActivityHeatMapData, HeatMapDa
 import {
   Clock, CheckCircle, Gauge, Users, MapPin, DollarSign,
   CalendarDays, ShieldCheck, AlertTriangle, Settings,
-  ArrowRight, Zap, Award, Shield, Info,
+  ArrowRight, Zap, Award, Shield, Info, X,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -931,68 +931,195 @@ const CoverageRisk: React.FC = () => {
 // Feature Banner
 // ═══════════════════════════════════════════════════
 
-const FeatureBanner: React.FC<{ navigate: (path: string) => void }> = ({ navigate }) => (
-  <div
-    className="relative overflow-hidden bg-gradient-to-r from-[#1A1A2E] to-[#2D2B55] rounded-[20px] p-8 md:p-10"
-    style={{ boxShadow: '0 4px 24px rgba(26,26,46,0.15)' }}
-  >
-    {/* Content */}
-    <div className="relative z-10 max-w-md">
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 text-[11px] font-medium text-white/80 mb-4">
-        <Zap size={12} className="text-[#FBBF24]" />
-        New feature
-      </span>
-      <h3 className="text-[20px] md:text-[22px] font-bold text-white leading-tight font-['Plus_Jakarta_Sans']">
-        Automated compliance tracking
-      </h3>
-      <p className="text-[13px] text-white/60 mt-2 leading-relaxed">
-        Keep SIA licences, qualifications, and training certificates up to date automatically. Get alerts before anything expires.
-      </p>
-      <div className="flex flex-wrap gap-3 mt-5">
-        <button
-          onClick={() => navigate('/compliance')}
-          className="inline-flex items-center gap-2 px-5 py-2.5 text-[13px] font-semibold text-[#1A1A2E] bg-white rounded-xl hover:bg-[#F3F4F6] transition-colors"
-        >
-          Get started
-        </button>
-        <button className="inline-flex items-center gap-2 px-5 py-2.5 text-[13px] font-medium text-white/70 hover:text-white transition-colors">
-          Learn more
-          <ArrowRight size={12} />
-        </button>
-      </div>
-    </div>
+const FeatureBanner: React.FC<{ navigate: (path: string) => void }> = ({ navigate }) => {
+  const [showModal, setShowModal] = useState(false);
 
-    {/* Decorative illustration — layered shields & geometric shapes */}
-    <div className="absolute right-0 top-0 bottom-0 w-[50%] md:w-[45%] pointer-events-none hidden sm:block" aria-hidden="true">
-      {/* Large shield outline */}
-      <div className="absolute" style={{ right: '20px', top: '50%', transform: 'translateY(-50%) rotate(8deg)' }}>
-        <div className="w-[120px] h-[140px] rounded-3xl border-2 border-white/[0.08]" />
-      </div>
-      {/* Medium shield filled */}
-      <div className="absolute" style={{ right: '70px', top: '50%', transform: 'translateY(-55%) rotate(-5deg)' }}>
-        <div className="w-[100px] h-[120px] rounded-2xl bg-white/[0.05] border border-white/[0.06]" />
-      </div>
-      {/* Small accent card */}
-      <div className="absolute" style={{ right: '130px', top: '50%', transform: 'translateY(-45%) rotate(12deg)' }}>
-        <div className="w-[70px] h-[90px] rounded-xl bg-gradient-to-br from-[#6366F1]/20 to-[#8B5CF6]/10 border border-white/[0.06]" />
+  return (
+    <>
+      <div
+        className="relative overflow-hidden bg-gradient-to-r from-[#1A1A2E] to-[#2D2B55] rounded-[20px] p-8 md:p-10"
+        style={{ boxShadow: '0 4px 24px rgba(26,26,46,0.15)' }}
+      >
+        <div className="relative z-10 max-w-md">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 text-[11px] font-medium text-white/80 mb-4">
+            <Zap size={12} className="text-[#FBBF24]" />
+            New feature
+          </span>
+          <h3 className="text-[20px] md:text-[22px] font-bold text-white leading-tight font-['Plus_Jakarta_Sans']">
+            Automated compliance tracking
+          </h3>
+          <p className="text-[13px] text-white/60 mt-2 leading-relaxed">
+            Keep SIA licences, qualifications, and training certificates up to date automatically. Get alerts before anything expires.
+          </p>
+          <div className="flex flex-wrap gap-3 mt-5">
+            <button
+              onClick={() => navigate('/compliance')}
+              className="inline-flex items-center gap-2 px-5 py-2.5 text-[13px] font-semibold text-[#1A1A2E] bg-white rounded-xl hover:bg-[#F3F4F6] transition-colors"
+            >
+              Get started
+            </button>
+            <button
+              onClick={() => setShowModal(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 text-[13px] font-medium text-white/70 hover:text-white transition-colors"
+            >
+              Learn more
+              <ArrowRight size={12} />
+            </button>
+          </div>
+        </div>
+
+        {/* Decorative illustration */}
+        <div className="absolute right-0 top-0 bottom-0 w-[50%] md:w-[45%] pointer-events-none hidden sm:block" aria-hidden="true">
+          <div className="absolute" style={{ right: '20px', top: '50%', transform: 'translateY(-50%) rotate(8deg)' }}>
+            <div className="w-[120px] h-[140px] rounded-3xl border-2 border-white/[0.08]" />
+          </div>
+          <div className="absolute" style={{ right: '70px', top: '50%', transform: 'translateY(-55%) rotate(-5deg)' }}>
+            <div className="w-[100px] h-[120px] rounded-2xl bg-white/[0.05] border border-white/[0.06]" />
+          </div>
+          <div className="absolute" style={{ right: '130px', top: '50%', transform: 'translateY(-45%) rotate(12deg)' }}>
+            <div className="w-[70px] h-[90px] rounded-xl bg-gradient-to-br from-[#6366F1]/20 to-[#8B5CF6]/10 border border-white/[0.06]" />
+          </div>
+          <div className="absolute w-10 h-10 rounded-xl bg-[#059669]/15 flex items-center justify-center" style={{ right: '40px', top: '20px', transform: 'rotate(-8deg)' }}>
+            <ShieldCheck size={18} className="text-[#34D399]/40" strokeWidth={1.5} />
+          </div>
+          <div className="absolute w-8 h-8 rounded-lg bg-[#FBBF24]/15 flex items-center justify-center" style={{ right: '150px', bottom: '25px', transform: 'rotate(6deg)' }}>
+            <Award size={14} className="text-[#FBBF24]/40" strokeWidth={1.5} />
+          </div>
+          <div className="absolute w-2 h-2 rounded-full bg-[#6366F1]/30" style={{ right: '100px', top: '15px' }} />
+          <div className="absolute w-3 h-3 rounded-full bg-[#06B6D4]/20" style={{ right: '180px', top: '40px' }} />
+          <div className="absolute w-2 h-2 rounded-full bg-[#FBBF24]/25" style={{ right: '60px', bottom: '20px' }} />
+          <div className="absolute w-1.5 h-1.5 rounded-full bg-[#34D399]/30" style={{ right: '200px', bottom: '50px' }} />
+        </div>
       </div>
 
-      {/* Floating accent elements */}
-      <div className="absolute w-10 h-10 rounded-xl bg-[#059669]/15 flex items-center justify-center" style={{ right: '40px', top: '20px', transform: 'rotate(-8deg)' }}>
-        <ShieldCheck size={18} className="text-[#34D399]/40" strokeWidth={1.5} />
-      </div>
-      <div className="absolute w-8 h-8 rounded-lg bg-[#FBBF24]/15 flex items-center justify-center" style={{ right: '150px', bottom: '25px', transform: 'rotate(6deg)' }}>
-        <Award size={14} className="text-[#FBBF24]/40" strokeWidth={1.5} />
-      </div>
+      {/* ── COMPLIANCE LEARN MORE MODAL ── */}
+      {showModal && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)} />
 
-      {/* Glow dots */}
-      <div className="absolute w-2 h-2 rounded-full bg-[#6366F1]/30" style={{ right: '100px', top: '15px' }} />
-      <div className="absolute w-3 h-3 rounded-full bg-[#06B6D4]/20" style={{ right: '180px', top: '40px' }} />
-      <div className="absolute w-2 h-2 rounded-full bg-[#FBBF24]/25" style={{ right: '60px', bottom: '20px' }} />
-      <div className="absolute w-1.5 h-1.5 rounded-full bg-[#34D399]/30" style={{ right: '200px', bottom: '50px' }} />
-    </div>
-  </div>
-);
+          {/* Modal */}
+          <div
+            className="relative bg-white rounded-[20px] w-full max-w-2xl max-h-[85vh] overflow-hidden animate-scale-in"
+            style={{ boxShadow: '0 24px 80px rgba(0,0,0,0.15)' }}
+          >
+            {/* Header with gradient */}
+            <div className="relative overflow-hidden bg-gradient-to-r from-[#1A1A2E] to-[#2D2B55] px-8 pt-8 pb-10">
+              <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.8) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+              <button
+                onClick={() => setShowModal(false)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+              >
+                <X size={16} />
+              </button>
+              <div className="relative z-10">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 text-[11px] font-medium text-white/80 mb-3">
+                  <ShieldCheck size={12} className="text-[#34D399]" />
+                  Compliance Module
+                </span>
+                <h2 className="text-[24px] font-extrabold text-white font-['Plus_Jakarta_Sans'] tracking-[-0.02em]">
+                  Automated Compliance Tracking
+                </h2>
+                <p className="text-[14px] text-white/60 mt-2 max-w-lg">
+                  Everything you need to stay compliant with UK security industry regulations.
+                </p>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="px-8 py-6 overflow-y-auto max-h-[calc(85vh-180px)]">
+              <div className="space-y-6">
+
+                {/* What it does */}
+                <div>
+                  <h3 className="text-[16px] font-bold text-[#1A1A2E] font-['Plus_Jakarta_Sans'] mb-3">What it does</h3>
+                  <p className="text-[14px] text-[#6B7280] leading-relaxed">
+                    The compliance tracking system continuously monitors your workforce against UK employment law and SIA regulations. It automatically checks working hours, rest periods, licence validity, and training certifications — alerting you before anything falls out of compliance.
+                  </p>
+                </div>
+
+                {/* Key features grid */}
+                <div>
+                  <h3 className="text-[16px] font-bold text-[#1A1A2E] font-['Plus_Jakarta_Sans'] mb-3">Key features</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                      { icon: Clock, color: '#D97706', bg: '#FFFBEB', title: 'Working Time Regulations', desc: 'Automatically enforces 48-hour weekly limits, 11-hour rest periods, and night shift restrictions.' },
+                      { icon: ShieldCheck, color: '#059669', bg: '#ECFDF5', title: 'SIA Licence Monitoring', desc: 'Tracks licence expiry dates and sends alerts 90, 60, and 30 days before expiration.' },
+                      { icon: AlertTriangle, color: '#DC2626', bg: '#FEF2F2', title: 'Violation Detection', desc: 'Real-time detection of overtime, missed breaks, and scheduling conflicts with instant notifications.' },
+                      { icon: Award, color: '#6366F1', bg: '#EEF2FF', title: 'Training & Qualifications', desc: 'Monitor first aid, fire safety, and other certifications. Auto-flag when refresher training is due.' },
+                    ].map((feature, i) => (
+                      <div key={i} className="flex gap-3 p-4 rounded-xl border border-[#F3F4F6] hover:border-[#E5E7EB] transition-colors">
+                        <div className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ backgroundColor: feature.bg, color: feature.color }}>
+                          <feature.icon size={16} strokeWidth={1.8} />
+                        </div>
+                        <div>
+                          <p className="text-[13px] font-semibold text-[#1A1A2E] mb-0.5">{feature.title}</p>
+                          <p className="text-[12px] text-[#6B7280] leading-relaxed">{feature.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* How it works */}
+                <div>
+                  <h3 className="text-[16px] font-bold text-[#1A1A2E] font-['Plus_Jakarta_Sans'] mb-3">How it works</h3>
+                  <div className="space-y-3">
+                    {[
+                      { step: '1', title: 'Automatic monitoring', desc: 'The system runs compliance checks every time a shift is created, modified, or completed.' },
+                      { step: '2', title: 'Smart alerts', desc: 'Managers receive notifications when potential violations are detected — before they become actual breaches.' },
+                      { step: '3', title: 'Resolution tracking', desc: 'Each violation is logged with severity, assigned for resolution, and tracked until closed.' },
+                      { step: '4', title: 'Reporting & audit trail', desc: 'Generate compliance reports for any time period. Full audit trail for regulatory inspections.' },
+                    ].map((item, i) => (
+                      <div key={i} className="flex gap-4 items-start">
+                        <div className="w-7 h-7 rounded-full bg-[#1A1A2E] flex items-center justify-center flex-shrink-0">
+                          <span className="text-white text-[11px] font-bold">{item.step}</span>
+                        </div>
+                        <div>
+                          <p className="text-[13px] font-semibold text-[#1A1A2E]">{item.title}</p>
+                          <p className="text-[12px] text-[#6B7280] leading-relaxed">{item.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Regulations covered */}
+                <div className="bg-[#F9FAFB] rounded-xl p-5 border border-[#F3F4F6]">
+                  <h3 className="text-[14px] font-bold text-[#1A1A2E] font-['Plus_Jakarta_Sans'] mb-2">Regulations covered</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {['Working Time Regulations 1998', 'SIA Licence Requirements', 'Health & Safety at Work Act', 'Night Work Directives', 'Rest Period Requirements', 'Annual Leave Entitlements'].map((reg) => (
+                      <span key={reg} className="inline-flex items-center px-3 py-1.5 rounded-lg bg-white border border-[#E5E7EB] text-[11px] font-medium text-[#374151]">
+                        {reg}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer CTA */}
+              <div className="flex items-center gap-3 mt-6 pt-5 border-t border-[#F3F4F6]">
+                <button
+                  onClick={() => { setShowModal(false); navigate('/compliance'); }}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 text-[13px] font-semibold text-white bg-[#1A1A2E] rounded-xl hover:bg-[#374151] transition-colors"
+                >
+                  <ShieldCheck size={14} />
+                  Open compliance dashboard
+                </button>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="px-5 py-2.5 text-[13px] font-medium text-[#6B7280] hover:text-[#1A1A2E] transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
 
 
 export default AdminDashboard;
