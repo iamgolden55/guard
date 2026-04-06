@@ -651,6 +651,99 @@ class UserViewSet(viewsets.ModelViewSet):
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=False, methods=['get'], url_path='team-members')
+    def team_members(self, request):
+        """
+        Get team members for the Team screen (accessible to all authenticated users).
+
+        Returns company colleagues with SAFE fields only:
+        - Name, profile photo, security roles, employment type, SIA license type
+        - Current active shift info (venue name, check-in time)
+
+        NEVER exposes: NIN, DOB, address, bank details, emergency contacts, phone.
+        """
+        user = request.user
+
+        # Get user's company (all roles, not just admin/manager)
+        membership = user.company_memberships.filter(
+            is_active=True
+        ).select_related('company').first()
+
+        if not membership:
+            return Response([], status=status.HTTP_200_OK)
+
+        company = membership.company
+
+        # Get all active company members (all roles)
+        company_user_ids = company.memberships.filter(
+            is_active=True
+        ).values_list('user_id', flat=True)
+
+        team_users = User.objects.filter(
+            id__in=company_user_ids,
+            is_active=True,
+        ).select_related('profile', 'profile__employment_type').prefetch_related(
+            'profile__sia_licenses',
+        )
+
+        # Get currently active shifts for these users (checked in, not checked out)
+        active_shifts = Shift.objects.filter(
+            staff_user_id__in=company_user_ids,
+            status__in=['in_progress', 'active', 'checked_in'],
+            check_in_time__isnull=False,
+            check_out_time__isnull=True,
+        ).select_related('venue').only(
+            'staff_user_id', 'venue__name', 'check_in_time', 'required_security_role'
+        )
+
+        # Build a lookup: user_id -> active shift info
+        active_shift_map = {}
+        for shift in active_shifts:
+            active_shift_map[shift.staff_user_id] = {
+                'venue_name': shift.venue.name if shift.venue else None,
+                'check_in_time': shift.check_in_time.isoformat() if shift.check_in_time else None,
+                'role_on_shift': shift.required_security_role,
+            }
+
+        results = []
+        for member in team_users:
+            profile = getattr(member, 'profile', None)
+            is_approved = profile.is_approved if profile else False
+
+            # Only show approved staff (or admins/managers who don't need approval)
+            if member.role == 'staff' and not is_approved:
+                continue
+
+            active_shift = active_shift_map.get(member.id)
+
+            # SIA license types (non-sensitive)
+            sia_license_types = []
+            if profile:
+                sia_license_types = list(
+                    profile.sia_licenses.filter(status='active').values_list('license_type', flat=True)
+                )
+
+            # Employment type name only
+            employment_type_name = None
+            if profile and profile.employment_type:
+                employment_type_name = profile.employment_type.name
+
+            results.append({
+                'id': member.id,
+                'first_name': member.first_name,
+                'last_name': member.last_name,
+                'role': member.role,
+                'security_roles': member.security_roles or [],
+                'profile_image_url': profile.profile_image_url if profile else None,
+                'employment_type': employment_type_name,
+                'sia_license_types': sia_license_types,
+                'is_on_shift': active_shift is not None,
+                'active_shift': active_shift,
+                'is_current_user': member.id == user.id,
+            })
+
+        return Response(results)
+
     @action(detail=False, methods=['get'], url_path='eligible-for-transfer')
     def eligible_for_transfer(self, request):
         """
