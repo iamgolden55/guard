@@ -686,15 +686,16 @@ class UserViewSet(viewsets.ModelViewSet):
             'profile__sia_licenses',
         )
 
-        # Get currently active shifts for these users (checked in, not checked out)
+        # Get currently active shifts for these users (checked in, not checked out).
+        # NOTE: do NOT use .only() here — Shift.__init__ reads self.status and
+        # self.staff_user_id to snapshot their original values, and a deferred
+        # field access there triggers refresh_from_db → infinite recursion.
         active_shifts = Shift.objects.filter(
             staff_user_id__in=company_user_ids,
             status__in=['in_progress', 'active', 'checked_in'],
             check_in_time__isnull=False,
             check_out_time__isnull=True,
-        ).select_related('venue').only(
-            'staff_user_id', 'venue__name', 'check_in_time', 'required_security_role'
-        )
+        ).select_related('venue')
 
         # Build a lookup: user_id -> active shift info
         active_shift_map = {}
