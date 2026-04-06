@@ -47,7 +47,7 @@ export const ForgotPasswordScreen: React.FC = () => {
       logger.info('[ForgotPassword] Sending password reset request', { email: email.trim() });
 
       // Call backend password reset endpoint
-      await api.post('/password-reset/request/', { email: email.trim() });
+      await api.post('/api/v1/password-reset/request/', { email: email.trim() });
 
       setEmailSent(true);
       logger.info('[ForgotPassword] Password reset email sent successfully');

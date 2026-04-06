@@ -15,6 +15,7 @@ import os
 from datetime import timedelta
 from dotenv import load_dotenv
 import dj_database_url
+import sentry_sdk
 
 # Load environment variables
 load_dotenv()
@@ -33,6 +34,17 @@ if not SECRET_KEY:
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
+
+# Sentry Error Tracking
+SENTRY_DSN = os.getenv('SENTRY_DSN')
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        send_default_pii=True,
+        traces_sample_rate=0.2 if not DEBUG else 1.0,
+        profiles_sample_rate=0.1 if not DEBUG else 1.0,
+        environment='development' if DEBUG else 'production',
+    )
 
 ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,172.16.32.165,10.0.4.21,10.0.4.27,192.168.0.127,192.168.1.82,10.167.91.217').split(',')
 
@@ -222,15 +234,6 @@ CORS_ALLOWED_ORIGINS = [
     "https://guard-ten.vercel.app",
     # Production admin dashboard (custom domain)
     "https://admin.meadsecurity.co.uk",
-    # Mobile app development
-    "http://10.0.4.21:8081",
-    "http://10.0.4.21:8082",
-    "http://10.0.4.21:19000",
-    "http://10.0.4.21:19001",
-    "http://10.0.4.27:8081",
-    "http://10.0.4.27:8082",
-    "http://10.0.4.27:19000",
-    "http://10.0.4.27:19001",
 ]
 
 # CORS headers and methods configuration
@@ -425,6 +428,12 @@ AUTH_USER_MODEL = 'api.User'
 
 # Google Maps API Key
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
+
+# Social Authentication
+APPLE_CLIENT_ID = os.getenv('APPLE_CLIENT_ID')
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
+GOOGLE_IOS_CLIENT_ID = os.getenv('GOOGLE_IOS_CLIENT_ID')
+GOOGLE_ANDROID_CLIENT_ID = os.getenv('GOOGLE_ANDROID_CLIENT_ID')
 
 # ==========================================
 # CELERY CONFIGURATION

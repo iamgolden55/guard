@@ -29,6 +29,9 @@ x-api-env: &api-env
   # PostHog (set in docker/.env or leave empty to disable)
   POSTHOG_API_KEY: ${POSTHOG_API_KEY:-}
   POSTHOG_HOST: ${POSTHOG_HOST:-https://eu.i.posthog.com}
+  # Social Authentication
+  APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
 
 x-api-build: &api-build
   build:

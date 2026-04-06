@@ -47,12 +47,9 @@ type LoginScreenNavigationProp = NativeStackNavigationProp<AuthStackParamList, '
 const googleConfig = Constants.expoConfig?.extra?.google || {};
 
 // Check if Google Sign-In is properly configured
-// DISABLED: Google OAuth not configured yet - set to false to hide button
-const isGoogleConfigured = false;
-// To enable, set this to:
-// const isGoogleConfigured = Boolean(
-//   googleConfig.iosClientId || googleConfig.androidClientId || googleConfig.expoClientId
-// );
+const isGoogleConfigured = Boolean(
+  googleConfig.iosClientId || googleConfig.androidClientId || googleConfig.expoClientId
+);
 
 export const LoginScreen = () => {
   const navigation = useNavigation<LoginScreenNavigationProp>();
@@ -77,63 +74,88 @@ export const LoginScreen = () => {
     biometricEnabled,
   } = useAuth();
 
-  // Google Auth Session hook - DISABLED until Google OAuth is configured
-  // To enable: Add Google client IDs to app.config.js under extra.google
-  // const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
-  //   expoClientId: googleConfig.expoClientId,
-  //   iosClientId: googleConfig.iosClientId,
-  //   androidClientId: googleConfig.androidClientId,
-  //   webClientId: googleConfig.webClientId,
-  //   scopes: ['profile', 'email'],
-  // });
-  const googleRequest = null;
-  const googleResponse = null;
-  const googlePromptAsync = null;
+  // Google Auth Session hook
+  // IMPORTANT: useAuthRequest throws on mount if iosClientId is undefined on iOS.
+  // Pass a placeholder when not configured so the hook doesn't crash the screen.
+  // The Google button is hidden via `isGoogleConfigured` so the placeholder is never used.
+  const PLACEHOLDER_CLIENT_ID = '000000000000-placeholder.apps.googleusercontent.com';
+  const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
+    expoClientId: googleConfig.expoClientId || PLACEHOLDER_CLIENT_ID,
+    iosClientId: googleConfig.iosClientId || PLACEHOLDER_CLIENT_ID,
+    androidClientId: googleConfig.androidClientId || PLACEHOLDER_CLIENT_ID,
+    webClientId: googleConfig.webClientId || PLACEHOLDER_CLIENT_ID,
+    scopes: ['profile', 'email'],
+  });
 
   // Check if biometric and Apple Sign-In are available on mount
   useEffect(() => {
     const checkAvailability = async () => {
-      const biometricSupported = await checkBiometricSupport();
-      setShowBiometric(biometricSupported && biometricEnabled);
+      try {
+        const biometricSupported = await checkBiometricSupport();
+        setShowBiometric(biometricSupported && biometricEnabled);
+      } catch (error) {
+        console.warn('[LoginScreen] Biometric check failed:', error);
+        setShowBiometric(false);
+      }
 
-      const appleAvailable = await socialAuthService.isAppleSignInAvailable();
-      setIsAppleAvailable(appleAvailable);
+      try {
+        const appleAvailable = await socialAuthService.isAppleSignInAvailable();
+        setIsAppleAvailable(appleAvailable);
+      } catch (error) {
+        console.warn('[LoginScreen] Apple Sign-In availability check failed:', error);
+        setIsAppleAvailable(false);
+      }
     };
     checkAvailability();
   }, [biometricEnabled]);
 
-  // Handle Google auth response - DISABLED until Google OAuth is configured
-  // useEffect(() => {
-  //   const handleGoogleResponse = async () => {
-  //     if (googleResponse?.type === 'success') {
-  //       setIsGoogleLoading(true);
-  //       try {
-  //         const { authentication } = googleResponse;
-  //         if (authentication?.idToken && authentication?.accessToken) {
-  //           const result = await socialAuthService.exchangeGoogleToken(
-  //             authentication.idToken,
-  //             authentication.accessToken
-  //           );
-  //           if (result.success && result.tokens) {
-  //             await authService.storeTokens(result.tokens);
-  //             const userProfile = await authService.fetchUserProfile(result.tokens.access);
-  //             logger.logAuth('google', userProfile?.id);
-  //           } else {
-  //             Alert.alert('Sign In Failed', result.error || 'Unable to sign in with Google');
-  //           }
-  //         }
-  //       } catch (error: any) {
-  //         logger.error('Google Sign-In error', error);
-  //         Alert.alert('Error', 'Unable to complete Google sign in. Please try again.');
-  //       } finally {
-  //         setIsGoogleLoading(false);
-  //       }
-  //     } else if (googleResponse?.type === 'error') {
-  //       Alert.alert('Error', 'Google sign in failed. Please try again.');
-  //     }
-  //   };
-  //   handleGoogleResponse();
-  // }, [googleResponse]);
+  // Handle Google auth response
+  useEffect(() => {
+    const handleGoogleResponse = async () => {
+      if (googleResponse?.type === 'success') {
+        setIsGoogleLoading(true);
+        try {
+          const { authentication } = googleResponse;
+          if (authentication?.idToken && authentication?.accessToken) {
+            const result = await socialAuthService.exchangeGoogleToken(
+              authentication.idToken,
+              authentication.accessToken
+            );
+            if (result.success && result.tokens) {
+              await authService.storeTokens(result.tokens);
+              const userProfile = await authService.fetchUserProfile(result.tokens.access);
+
+              // Update Redux state to trigger navigation
+              dispatch(
+                setCredentials({
+                  user: userProfile,
+                  accessToken: result.tokens.access,
+                  refreshToken: result.tokens.refresh,
+                })
+              );
+
+              // Register push notification token (non-blocking)
+              notificationService.registerPushToken().catch((error) => {
+                console.log('[LoginScreen] Push token registration failed (non-critical):', error);
+              });
+
+              logger.logAuth('google', userProfile?.id);
+            } else {
+              Alert.alert('Sign In Failed', result.error || 'Unable to sign in with Google');
+            }
+          }
+        } catch (error: any) {
+          logger.error('Google Sign-In error', error);
+          Alert.alert('Error', 'Unable to complete Google sign in. Please try again.');
+        } finally {
+          setIsGoogleLoading(false);
+        }
+      } else if (googleResponse?.type === 'error') {
+        Alert.alert('Error', 'Google sign in failed. Please try again.');
+      }
+    };
+    handleGoogleResponse();
+  }, [googleResponse]);
 
   const handleLogin = async () => {
     // Validation

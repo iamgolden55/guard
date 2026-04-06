@@ -4,9 +4,9 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 module.exports = {
   expo: {
-    name: "Security Staff Portal",
+    name: "Mead Security",
     slug: "security-staff-mobile",
-    version: "1.0.0",
+    version: "1.1.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
@@ -24,14 +24,13 @@ module.exports = {
       backgroundColor: "#007AFF"
     },
     ios: {
-      supportsTablet: true,
+      supportsTablet: false,
       bundleIdentifier: "com.meadsecurity.staffapp",
-      buildNumber: "1",
+      buildNumber: "6",
       infoPlist: {
         NSCameraUsageDescription: "This app requires camera access to capture venue entrance photos during shift check-in and incident evidence photos.",
         NSPhotoLibraryUsageDescription: "This app requires photo library access to attach existing photos to incident reports.",
         NSLocationWhenInUseUsageDescription: "This app requires location access to verify you are at the venue during shift check-in and check-out.",
-        NSLocationAlwaysUsageDescription: "This app requires location access to verify you are at the venue during shift check-in and check-out.",
         NSFaceIDUsageDescription: "This app uses Face ID for secure and convenient login.",
         NSMicrophoneUsageDescription: "This app requires microphone access for voice-to-text incident reporting."
       },
@@ -69,8 +68,15 @@ module.exports = {
       "expo-location",
       "expo-notifications",
       "expo-local-authentication",
+      "expo-apple-authentication",
+      "expo-web-browser",
       "@react-native-community/datetimepicker",
-      "expo-font"
+      "expo-font",
+      ["@sentry/react-native/expo", {
+        organization: "mead-security",
+        project: "security-staff-mobile",
+        uploadSourceMaps: false,
+      }],
     ],
     install: {
       exclude: [
@@ -96,6 +102,13 @@ module.exports = {
       },
       // Environment variables accessible via expo-constants
       apiBaseUrl: process.env.API_BASE_URL || "http://localhost:8000",
+      // Google OAuth configuration
+      google: {
+        expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
+        iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+        androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+        webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      },
     }
   }
 };

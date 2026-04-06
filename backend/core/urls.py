@@ -54,10 +54,15 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
-    # Only expose API docs in development
+    # Only expose API docs and debug tools in development
+    def trigger_error(request):
+        """Sentry verification endpoint - triggers a test error."""
+        division_by_zero = 1 / 0
+
     urlpatterns += [
         path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
         path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+        path('sentry-debug/', trigger_error, name='sentry-debug'),
     ]
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 

@@ -330,7 +330,7 @@ export const FEATURES = {
 
 // App Metadata
 export const APP_METADATA = {
-  name: 'Security Staff Portal',
+  name: 'Mead Security',
   version: Constants.expoConfig?.version ?? '1.0.0',
   buildNumber: Constants.expoConfig?.ios?.buildNumber ?? '1',
   bundleId: Constants.expoConfig?.ios?.bundleIdentifier ?? 'com.meadsecurity.staffapp',

@@ -26,12 +26,24 @@
     },
     "production": {
       "distribution": "store",
+      "env": {
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "API_BASE_URL": "https://mead-security-api.onrender.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "794878525232-7g5tdn88dns82acc61i85dad84b75rh8.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "794878525232-p8pcb1t1gdu7p8u9kbbcehis7rd8qt2o.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "794878525232-85tdc6u0gmambljdof7lr85ubqnf4iog.apps.googleusercontent.com",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://e4b339efa4f4e8c7197351920ce83265@o4511169678737408.ingest.de.sentry.io/4511169816887376"
+      },
       "ios": {
         "resourceClass": "m-medium"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6757438301"
+      }
+    }
   }
 }

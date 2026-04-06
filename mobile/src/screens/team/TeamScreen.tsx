@@ -4,8 +4,8 @@
  * Features: List view with sections, presence indicators, quick actions, subscription-aware features
  */
 
-import React, { useState, useMemo } from 'react';
-import { View, ScrollView, RefreshControl, StyleSheet, Alert, Linking } from 'react-native';
+import React, { useState, useMemo, useCallback } from 'react';
+import { View, ScrollView, RefreshControl, StyleSheet, Alert, Linking, ActivityIndicator } from 'react-native';
 import { Container, Body, Card } from '@components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -23,90 +23,108 @@ import { spacing } from '../../theme';
 import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 import { useSubscription } from '../../contexts/SubscriptionContext';
+import { useFocusEffect } from '@react-navigation/native';
+import { useAppSelector } from '../../hooks/useRedux';
+import { API_ENDPOINTS, getAuthHeaders } from '../../config/api.config';
+import axios from 'axios';
+
+interface TeamMemberAPI {
+  id: number;
+  first_name: string;
+  last_name: string;
+  role: string;
+  security_roles: string[];
+  profile_image_url: string | null;
+  employment_type: string | null;
+  sia_license_types: string[];
+  is_on_shift: boolean;
+  active_shift: {
+    venue_name: string | null;
+    check_in_time: string | null;
+    role_on_shift: string;
+  } | null;
+  is_current_user: boolean;
+}
+
+/**
+ * Map API team member to UI data model.
+ * Presence is derived from shift status — no mock statuses.
+ */
+function mapToListData(member: TeamMemberAPI): TeamMemberListData {
+  const presenceStatus: PresenceStatus = member.is_on_shift ? 'available' : 'offline';
+
+  const roleParts: string[] = [];
+  if (member.role === 'manager' || member.role === 'admin') {
+    roleParts.push(member.role.charAt(0).toUpperCase() + member.role.slice(1));
+  }
+  if (member.security_roles.length > 0) {
+    const roleLabels: Record<string, string> = {
+      ds: 'Door Supervisor',
+      sg: 'Security Guard',
+      cctv: 'CCTV Operator',
+      cp: 'Close Protection',
+      steward: 'Steward',
+      k9: 'Dog Handler',
+      retail: 'Retail Security',
+      static: 'Static Guard',
+      mobile: 'Mobile Patrol',
+      event: 'Event Security',
+    };
+    const mapped = member.security_roles.map((r) => roleLabels[r] || r);
+    roleParts.push(...mapped);
+  }
+
+  return {
+    id: member.id,
+    name: `${member.first_name} ${member.last_name}`.trim() || 'Unknown',
+    role: roleParts.join(' · ') || member.employment_type || 'Staff',
+    photo: member.profile_image_url || undefined,
+    presenceStatus,
+    currentVenue: member.active_shift?.venue_name || undefined,
+    statusMessage: member.is_on_shift ? 'On duty' : undefined,
+  };
+}
 
 export const TeamScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<FilterOption>('all');
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [teamMembers, setTeamMembers] = useState<TeamMemberListData[]>([]);
+  const [rawMembers, setRawMembers] = useState<TeamMemberAPI[]>([]);
   const { subscription } = useSubscription();
   const { isDark } = useTheme();
   const teamsColors = getTeamsColors(isDark);
+  const accessToken = useAppSelector((state) => state.auth.accessToken);
 
-  // Mock team members with Teams-style data
-  const [teamMembers] = useState<TeamMemberListData[]>([
-    {
-      id: 1,
-      name: 'Sarah Johnson',
-      role: 'Shift Manager',
-      phone: '+44 7700 900123',
-      email: 'sarah.j@example.com',
-      presenceStatus: 'available',
-      currentVenue: 'Main Entrance',
-      statusMessage: 'Available for calls',
-    },
-    {
-      id: 2,
-      name: 'Mike Thompson',
-      role: 'Door Supervisor',
-      phone: '+44 7700 900456',
-      email: 'mike.t@example.com',
-      presenceStatus: 'in_call',
-      currentVenue: 'VIP Section',
-      activity: 'In a call',
-    },
-    {
-      id: 3,
-      name: 'Emma Williams',
-      role: 'Door Supervisor',
-      phone: '+44 7700 900789',
-      presenceStatus: 'available',
-      currentVenue: 'Main Entrance',
-    },
-    {
-      id: 4,
-      name: 'James Anderson',
-      role: 'Security Guard',
-      phone: '+44 7700 900321',
-      email: 'james.a@example.com',
-      presenceStatus: 'away',
-      currentVenue: 'Back Entrance',
-      statusMessage: 'On break',
-    },
-    {
-      id: 5,
-      name: 'Lisa Martinez',
-      role: 'Security Guard',
-      phone: '+44 7700 900654',
-      presenceStatus: 'busy',
-      currentVenue: 'Parking Lot',
-      statusMessage: 'Do not disturb',
-    },
-    {
-      id: 6,
-      name: 'David Chen',
-      role: 'Door Supervisor',
-      phone: '+44 7700 900987',
-      email: 'david.c@example.com',
-      presenceStatus: 'offline',
-    },
-    {
-      id: 7,
-      name: 'Rachel Foster',
-      role: 'Security Guard',
-      presenceStatus: 'presenting',
-      currentVenue: 'Conference Room',
-      activity: 'Presenting',
-    },
-    {
-      id: 8,
-      name: 'Tom Bradley',
-      role: 'Shift Manager',
-      phone: '+44 7700 900111',
-      presenceStatus: 'available',
-      currentVenue: 'Reception',
-    },
-  ]);
+  // Fetch team members from API
+  const fetchTeamMembers = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const response = await axios.get<TeamMemberAPI[]>(API_ENDPOINTS.TEAM.MEMBERS, {
+        headers: getAuthHeaders(accessToken),
+      });
+      const members = response.data;
+      setRawMembers(members);
+      setTeamMembers(members.map(mapToListData));
+    } catch (error: any) {
+      logger.error('[Team] Failed to fetch team members', error);
+      if (!refreshing) {
+        Alert.alert('Error', 'Unable to load team members. Pull down to retry.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
+  // Refresh on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      fetchTeamMembers();
+    }, [fetchTeamMembers])
+  );
 
   // Log screen view
   React.useEffect(() => {
@@ -114,13 +132,12 @@ export const TeamScreen = () => {
       tier: subscription?.tier,
       totalMembers: teamMembers.length,
     });
-  }, [subscription]);
+  }, [subscription, teamMembers.length]);
 
   // Filter members by search query and filter option
   const filteredMembers = useMemo(() => {
     let members = teamMembers;
 
-    // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       members = members.filter(
@@ -131,9 +148,12 @@ export const TeamScreen = () => {
       );
     }
 
-    // Apply presence filter
-    if (selectedFilter !== 'all') {
-      members = members.filter((member) => member.presenceStatus === selectedFilter);
+    if (selectedFilter === 'available') {
+      members = members.filter((m) => m.presenceStatus === 'available');
+    } else if (selectedFilter === 'offline') {
+      members = members.filter((m) => m.presenceStatus === 'offline');
+    } else if (selectedFilter !== 'all') {
+      members = members.filter((m) => m.presenceStatus === selectedFilter);
     }
 
     return members;
@@ -141,45 +161,33 @@ export const TeamScreen = () => {
 
   // Group members by section
   const groupedMembers = useMemo(() => {
-    // Define presence priority for "On Shift" section
-    const onShiftStatuses: PresenceStatus[] = ['available', 'busy', 'in_call', 'presenting'];
-
-    const groups = {
-      onShift: filteredMembers.filter((m) =>
-        m.currentVenue && onShiftStatuses.includes(m.presenceStatus)
-      ),
-      away: filteredMembers.filter((m) => m.presenceStatus === 'away'),
+    return {
+      onShift: filteredMembers.filter((m) => m.presenceStatus === 'available'),
       offline: filteredMembers.filter((m) => m.presenceStatus === 'offline'),
     };
-
-    return groups;
   }, [filteredMembers]);
 
-  // Calculate stats
+  // Calculate stats from real data
   const stats = useMemo(() => {
-    const activeCount = teamMembers.filter((m) =>
-      m.presenceStatus === 'available' || m.presenceStatus === 'busy' || m.presenceStatus === 'in_call'
-    ).length;
-
+    const onShiftMembers = rawMembers.filter((m) => m.is_on_shift);
     const venues = new Set(
-      teamMembers.filter((m) => m.currentVenue).map((m) => m.currentVenue)
+      onShiftMembers
+        .map((m) => m.active_shift?.venue_name)
+        .filter(Boolean)
     );
 
     return {
-      activeCount,
-      totalCount: teamMembers.length,
+      activeCount: onShiftMembers.length,
+      totalCount: rawMembers.length,
       venuesCount: venues.size,
     };
-  }, [teamMembers]);
+  }, [rawMembers]);
 
   // Handle pull to refresh
   const handleRefresh = async () => {
     logger.info('Refreshing team list');
     setRefreshing(true);
-
-    // TODO: Fetch team members from API
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
+    await fetchTeamMembers();
     setRefreshing(false);
     logger.info('Team list refreshed');
   };
@@ -199,36 +207,21 @@ export const TeamScreen = () => {
   const handleMemberPress = (member: TeamMemberListData) => {
     logger.info('Team member tapped', { memberId: member.id });
 
-    const actions = [
-      { text: 'Cancel', style: 'cancel' as const },
-      member.phone && {
-        text: 'Call',
-        onPress: () => Linking.openURL(`tel:${member.phone}`),
-      },
-      member.email && {
-        text: 'Email',
-        onPress: () => Linking.openURL(`mailto:${member.email}`),
-      },
-      {
-        text: 'View Profile',
-        onPress: () => logger.info('View profile pressed'),
-      },
-    ].filter(Boolean);
+    const actions: any[] = [{ text: 'Cancel', style: 'cancel' }];
+
+    actions.push({
+      text: 'View Profile',
+      onPress: () => logger.info('View profile pressed', { memberId: member.id }),
+    });
 
     Alert.alert(
       member.name,
-      `${member.role}${member.currentVenue ? `\n${member.currentVenue}` : ''}\n${member.phone || 'No phone'}`,
-      actions as any
+      `${member.role}${member.currentVenue ? `\nVenue: ${member.currentVenue}` : ''}`,
+      actions
     );
   };
 
   // Handle quick action on member card
-  const handleCallPress = (member: TeamMemberListData) => {
-    if (member.phone) {
-      Linking.openURL(`tel:${member.phone}`);
-    }
-  };
-
   const handleChatPress = (member: TeamMemberListData) => {
     logger.info('Chat with member', { memberId: member.id });
     Alert.alert('Chat', `Start chat with ${member.name}`);
@@ -274,13 +267,25 @@ export const TeamScreen = () => {
         setSelectedFilter('available');
         break;
       case 'venues':
-        Alert.alert('Venues', `Currently covering ${stats.venuesCount} venues`);
+        Alert.alert('Venues', `Currently covering ${stats.venuesCount} venue${stats.venuesCount !== 1 ? 's' : ''}`);
         break;
       case 'total':
         setSelectedFilter('all');
         break;
     }
   };
+
+  // Render loading state
+  if (loading && teamMembers.length === 0) {
+    return (
+      <Container scrollable={false} safeArea={false} style={{ padding: 0, backgroundColor: teamsColors.background.secondary }}>
+        <View style={[styles.container, styles.loadingContainer, { backgroundColor: teamsColors.background.secondary }]}>
+          <ActivityIndicator size="large" color={teamsColors.primary} />
+          <Body style={{ color: teamsColors.text.secondary, marginTop: spacing.md }}>Loading team...</Body>
+        </View>
+      </Container>
+    );
+  }
 
   // Render empty state
   const renderEmptyState = () => (
@@ -320,7 +325,6 @@ export const TeamScreen = () => {
               key={member.id}
               member={member}
               onPress={() => handleMemberPress(member)}
-              onCallPress={member.phone ? () => handleCallPress(member) : undefined}
               onChatPress={() => handleChatPress(member)}
               onVideoPress={() => handleVideoPress(member)}
               onMorePress={() => handleMorePress(member)}
@@ -384,8 +388,7 @@ export const TeamScreen = () => {
           {filteredMembers.length > 0 ? (
             <View style={styles.listContainer}>
               {renderSection('On Shift', groupedMembers.onShift, 'shield-checkmark', 'onShift')}
-              {renderSection('Away', groupedMembers.away, 'time', 'away')}
-              {renderSection('Offline', groupedMembers.offline, 'ellipse-outline', 'offline')}
+              {renderSection('Off Duty', groupedMembers.offline, 'ellipse-outline', 'offline')}
             </View>
           ) : (
             <View style={styles.emptyContainer}>{renderEmptyState()}</View>
@@ -403,6 +406,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   scrollView: {
     flex: 1,
   },
@@ -416,14 +423,12 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     paddingVertical: spacing['3xl'],
-    // backgroundColor applied inline with teamsColors
   },
   emptyIcon: {
     marginBottom: spacing.lg,
   },
   emptyText: {
     textAlign: 'center',
-    // color applied inline with teamsColors
   },
   bottomSpacer: {
     height: spacing['3xl'],

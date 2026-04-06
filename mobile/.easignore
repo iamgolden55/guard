@@ -1,0 +1,28 @@
+# .easignore - overrides .gitignore for EAS uploads
+# Everything in .gitignore is ignored unless listed here
+
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+*.pem
+.env*.local
+*.tsbuildinfo
+/ios
+/android
+
+# IMPORTANT: .env is NOT listed here so it gets uploaded to EAS builds
+# This is required for EXPO_PUBLIC_* vars and API_BASE_URL to be available

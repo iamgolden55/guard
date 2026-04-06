@@ -60,7 +60,12 @@ class SocialAuthService {
     if (Platform.OS !== 'ios') {
       return false;
     }
-    return await AppleAuthentication.isAvailableAsync();
+    try {
+      return await AppleAuthentication.isAvailableAsync();
+    } catch (error) {
+      console.warn('[SocialAuth] Apple Sign-In availability check failed:', error);
+      return false;
+    }
   }
 
   /**

@@ -9,9 +9,17 @@ import type { AuthStackParamList } from '../types/navigation';
 
 // Screens
 import { WelcomeScreen } from '../screens/auth/WelcomeScreen';
-import { LoginScreen } from '../screens/auth/LoginScreen';
+import { LoginScreen as LoginScreenRaw } from '../screens/auth/LoginScreen';
 import { RegisterScreen } from '../screens/auth/RegisterScreen';
 import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+
+// Wrap LoginScreen in ErrorBoundary so crashes don't kill the app
+const LoginScreen = () => (
+  <ErrorBoundary fallbackLabel="The sign-in screen encountered an error">
+    <LoginScreenRaw />
+  </ErrorBoundary>
+);
 // import { BiometricSetupScreen } from '../screens/auth/BiometricSetupScreen';
 
 const Stack = createStackNavigator<AuthStackParamList>();

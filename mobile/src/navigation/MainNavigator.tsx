@@ -93,17 +93,19 @@ export const MainNavigator = () => {
           <Stack.Screen name="LeaveRequestDetail" component={LeaveRequestDetailScreen} />
           <Stack.Screen name="ContractorUnavailability" component={ContractorUnavailabilityScreen} />
 
-          {/* Test/Debug Screens */}
-          <Stack.Screen
-            name="NotificationTest"
-            component={NotificationTestScreen}
-            options={{
-              headerShown: true,
-              headerTitle: 'Notification Testing',
-              headerBackTitle: 'Back',
-              presentation: 'card',
-            }}
-          />
+          {/* Test/Debug Screens - only in development */}
+          {__DEV__ && (
+            <Stack.Screen
+              name="NotificationTest"
+              component={NotificationTestScreen}
+              options={{
+                headerShown: true,
+                headerTitle: 'Notification Testing',
+                headerBackTitle: 'Back',
+                presentation: 'card',
+              }}
+            />
+          )}
 
           {/* Incident Screens */}
           <Stack.Screen

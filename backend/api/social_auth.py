@@ -8,6 +8,8 @@ import requests
 import logging
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -107,21 +109,42 @@ def verify_apple_token(identity_token, nonce=None):
 
 def verify_google_token(id_token_str):
     """
-    Verify Google ID token and extract user info
-    Returns decoded token data or None if invalid
+    Verify Google ID token and extract user info.
+    Tries all configured client IDs (web, iOS, Android) since mobile tokens
+    use platform-specific audiences.
+    Returns decoded token data or None if invalid.
     """
     try:
-        # SECURITY: Always verify audience — fail closed if not configured
-        google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', None)
-        if not google_client_id:
-            logger.error("GOOGLE_CLIENT_ID not configured — rejecting Google auth")
+        # Collect all configured client IDs
+        valid_client_ids = [
+            cid for cid in [
+                getattr(settings, 'GOOGLE_CLIENT_ID', None),
+                getattr(settings, 'GOOGLE_IOS_CLIENT_ID', None),
+                getattr(settings, 'GOOGLE_ANDROID_CLIENT_ID', None),
+            ] if cid
+        ]
+
+        if not valid_client_ids:
+            logger.error("No Google client IDs configured — rejecting Google auth")
             return None
 
-        idinfo = id_token.verify_oauth2_token(
-            id_token_str,
-            google_requests.Request(),
-            google_client_id
-        )
+        # Try each client ID — mobile tokens have platform-specific audience
+        idinfo = None
+        for cid in valid_client_ids:
+            try:
+                idinfo = id_token.verify_oauth2_token(
+                    id_token_str,
+                    google_requests.Request(),
+                    cid,
+                    clock_skew_in_seconds=5
+                )
+                break  # Token verified successfully
+            except ValueError:
+                continue  # Try next client ID
+
+        if not idinfo:
+            logger.error("Google token failed verification against all client IDs")
+            return None
 
         # Verify the issuer
         if idinfo['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
@@ -130,9 +153,6 @@ def verify_google_token(id_token_str):
 
         return idinfo
 
-    except ValueError as e:
-        logger.error("Invalid Google token: %s", str(e))
-        return None
     except Exception as e:
         logger.error("Error verifying Google token: %s", str(e))
         return None
@@ -173,6 +193,7 @@ def get_or_create_social_user(email, first_name=None, last_name=None, provider='
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@ratelimit(key='ip', rate='20/m', method='POST', block=True)
 def apple_auth(request):
     """
     Authenticate user with Apple Sign-In
@@ -235,6 +256,18 @@ def apple_auth(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
+    # Block users without a company membership — they must apply through recruitment
+    has_membership = user.company_memberships.filter(is_active=True).exists()
+    if not has_membership:
+        if created:
+            # Clean up the orphan user we just created
+            user.delete()
+            logger.info("Deleted orphan social auth user (no company): %s", user_email)
+        return Response(
+            {'error': 'No account found. Please apply through the recruitment form to join a company.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
     # Generate tokens
     tokens = get_tokens_for_user(user)
 
@@ -254,6 +287,7 @@ def apple_auth(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@ratelimit(key='ip', rate='20/m', method='POST', block=True)
 def google_auth(request):
     """
     Authenticate user with Google Sign-In
@@ -312,6 +346,18 @@ def google_auth(request):
         logger.warning("Google auth attempt for deactivated account: %s", email)
         return Response(
             {'error': 'Your account has been deactivated. Please contact support.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    # Block users without a company membership — they must apply through recruitment
+    has_membership = user.company_memberships.filter(is_active=True).exists()
+    if not has_membership:
+        if created:
+            # Clean up the orphan user we just created
+            user.delete()
+            logger.info("Deleted orphan social auth user (no company): %s", email)
+        return Response(
+            {'error': 'No account found. Please apply through the recruitment form to join a company.'},
             status=status.HTTP_403_FORBIDDEN
         )
 

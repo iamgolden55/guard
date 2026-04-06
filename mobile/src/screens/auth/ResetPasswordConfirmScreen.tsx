@@ -166,7 +166,7 @@ export const ResetPasswordConfirmScreen: React.FC = () => {
       setIsSubmitting(true);
       logger.info('[ResetPassword] Submitting password reset');
 
-      await api.post('/password-reset/confirm/', {
+      await api.post('/api/v1/password-reset/confirm/', {
         token,
         new_password: newPassword,
         confirm_password: confirmPassword,

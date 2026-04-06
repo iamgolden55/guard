@@ -93,6 +93,11 @@ export const API_ENDPOINTS = {
     STATS: `${API_PREFIX}/invoices/stats/`,
   },
 
+  // Team
+  TEAM: {
+    MEMBERS: `${API_PREFIX}/users/team-members/`,
+  },
+
   // Staff Profile
   PROFILE: {
     GET: `${API_PREFIX}/staff/profile/`,

@@ -36,7 +36,7 @@ export const WelcomeScreen = () => {
 
       {/* Welcome Text */}
       <View style={styles.textContainer}>
-        <Text style={styles.title}>Security Staff Portal</Text>
+        <Text style={styles.title}>Mead Security</Text>
         <Text style={styles.subtitle}>
           The workforce management platform for security companies. Sign up free to manage shifts, staff, and compliance.
         </Text>
