@@ -1,5 +1,5 @@
 import React from 'react';
-import { EVENT_COLORS } from '../../constants';
+import { getEventColors } from '../../constants';
 import type { EventType } from '../../types';
 
 interface EventPillProps {
@@ -17,7 +17,7 @@ export const EventPill: React.FC<EventPillProps> = ({
   onClick,
   isSelected = false
 }) => {
-  const colors = EVENT_COLORS[type];
+  const colors = getEventColors(type);
 
   return (
     <button

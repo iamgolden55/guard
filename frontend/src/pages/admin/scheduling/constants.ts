@@ -51,8 +51,18 @@ export const SHIFT_STATUS_TO_EVENT_TYPE: Record<string, EventType> = {
   open: 'open',
   published: 'published',
   completed: 'general',
-  cancelled: 'general'
+  cancelled: 'general',
+  active: 'work',
+  in_progress: 'work',
+  pending_approval: 'general',
+  approved: 'work',
+  rejected: 'general',
+  no_show: 'general'
 };
+
+// Safe accessor — returns 'general' colors for unknown event types
+export const getEventColors = (type: string) =>
+  EVENT_COLORS[type as EventType] || EVENT_COLORS.general;
 
 // Day view configuration
 export const DAY_VIEW_CONFIG = {

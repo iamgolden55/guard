@@ -1,7 +1,7 @@
 import React from 'react';
 import { Clock16Regular, Location16Regular, Person16Regular, CalendarLtr24Regular } from '@fluentui/react-icons';
 import type { CalendarEvent } from '../../types';
-import { EVENT_COLORS } from '../../constants';
+import { getEventColors } from '../../constants';
 import { formatTime } from '../../utils/timeUtils';
 
 interface EventDetailsProps {
@@ -29,7 +29,7 @@ export const EventDetails: React.FC<EventDetailsProps> = ({
     );
   }
 
-  const colors = EVENT_COLORS[event.type];
+  const colors = getEventColors(event.type);
   const startTime = `${event.start.getHours().toString().padStart(2, '0')}:${event.start.getMinutes().toString().padStart(2, '0')}`;
   const endTime = `${event.end.getHours().toString().padStart(2, '0')}:${event.end.getMinutes().toString().padStart(2, '0')}`;
 

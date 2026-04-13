@@ -1,5 +1,5 @@
 import React from 'react';
-import { EVENT_COLORS, MODERN_STYLES } from '../../constants';
+import { getEventColors, MODERN_STYLES } from '../../constants';
 import type { PositionedEvent } from '../../types';
 import { formatTime } from '../../utils/timeUtils';
 
@@ -14,7 +14,7 @@ export const TimelineEventBlock: React.FC<TimelineEventBlockProps> = ({
   onClick,
   isSelected = false
 }) => {
-  const colors = EVENT_COLORS[event.type];
+  const colors = getEventColors(event.type);
   const startTime = `${event.start.getHours().toString().padStart(2, '0')}:${event.start.getMinutes().toString().padStart(2, '0')}`;
   const endTime = `${event.end.getHours().toString().padStart(2, '0')}:${event.end.getMinutes().toString().padStart(2, '0')}`;
   const { eventBlock } = MODERN_STYLES;
