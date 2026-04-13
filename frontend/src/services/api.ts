@@ -45,8 +45,14 @@ api.interceptors.request.use(
       }
     }
 
-    // Auth is handled exclusively via httpOnly cookies (withCredentials: true).
-    // No Authorization header from localStorage — that would negate XSS protection.
+    // HYBRID AUTH: Add Authorization header from localStorage as fallback.
+    // Safari and other browsers with ITP block cross-site cookies, so
+    // withCredentials alone isn't enough for cross-origin (Vercel→Render).
+    // The Authorization header ensures requests are authenticated regardless.
+    const accessToken = localStorage.getItem('access_token');
+    if (accessToken && config.headers) {
+      config.headers['Authorization'] = `Bearer ${accessToken}`;
+    }
 
     return config;
   },
