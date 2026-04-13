@@ -515,22 +515,90 @@ class ShiftViewSet(viewsets.ModelViewSet):
         
         return Response(performance_data)
 
+    @action(detail=False, methods=['get'], url_path='active')
+    def active_shifts(self, request):
+        """Get all currently active (in_progress) shifts regardless of whether end time has passed.
+
+        Unlike incomplete_shifts, this returns ALL in_progress shifts - including those
+        where the scheduled end time hasn't been reached yet. This allows admins to see
+        and manage shifts that are currently being worked.
+        """
+        if not request.user.is_authenticated:
+            return Response(
+                {"detail": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # Check if user has manager or admin permissions
+        if not (request.user.role in ['manager', 'admin'] or request.user.is_staff):
+            return Response(
+                {"detail": "Manager or admin permissions required"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        now = timezone.now()
+
+        # SECURITY FIX: Use get_queryset() for company-scoped filtering
+        active_shifts = self.get_queryset().filter(
+            status='in_progress',
+            check_in_time__isnull=False,
+            check_out_time__isnull=True
+        ).select_related('venue', 'staff_user').order_by('start_time')
+
+        shifts_data = []
+        for shift in active_shifts:
+            # Calculate elapsed time since check-in
+            elapsed_seconds = (now - shift.check_in_time).total_seconds()
+            elapsed_hours = round(elapsed_seconds / 3600, 2)
+
+            # Calculate scheduled duration
+            scheduled_duration = (shift.end_time - shift.start_time).total_seconds() / 3600
+
+            # Determine if shift is past scheduled end time
+            is_overdue = now > shift.end_time
+            overdue_hours = round((now - shift.end_time).total_seconds() / 3600, 2) if is_overdue else 0
+
+            shifts_data.append({
+                'id': shift.id,
+                'staff_details': {
+                    'id': shift.staff_user.id if shift.staff_user else None,
+                    'first_name': shift.staff_user.first_name if shift.staff_user else 'Unassigned',
+                    'last_name': shift.staff_user.last_name if shift.staff_user else '',
+                    'email': shift.staff_user.email if shift.staff_user else ''
+                } if shift.staff_user else None,
+                'venue_details': {
+                    'id': shift.venue.id,
+                    'name': shift.venue.name,
+                    'address': getattr(shift.venue, 'address', ''),
+                } if shift.venue else None,
+                'start_time': shift.start_time,
+                'end_time': shift.end_time,
+                'check_in_time': shift.check_in_time,
+                'elapsed_hours': elapsed_hours,
+                'scheduled_duration': round(scheduled_duration, 2),
+                'is_overdue': is_overdue,
+                'overdue_hours': overdue_hours,
+                'status': shift.status
+            })
+
+        return Response(shifts_data)
+
     @action(detail=False, methods=['get'], url_path='incomplete')
     def incomplete_shifts(self, request):
         """Get shifts that need manager attention (incomplete check-ins/check-outs)"""
         from django.utils import timezone
         from datetime import timedelta
-        
+
         if not request.user.is_authenticated:
             return Response(
-                {"detail": "Authentication required"}, 
+                {"detail": "Authentication required"},
                 status=status.HTTP_401_UNAUTHORIZED
             )
-            
+
         # Check if user has manager or admin permissions
         if not (request.user.role in ['manager', 'admin'] or request.user.is_staff):
             return Response(
-                {"detail": "Manager or admin permissions required"}, 
+                {"detail": "Manager or admin permissions required"},
                 status=status.HTTP_403_FORBIDDEN
             )
         

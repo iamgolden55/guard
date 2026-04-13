@@ -215,25 +215,10 @@ class AuthService {
         localStorage.setItem('user', JSON.stringify(mappedUser));
         return mappedUser;
       } catch (apiError) {
-        console.error('API profile fetch failed, using localStorage fallback:', apiError);
-
-        // Fallback to localStorage if API call fails
-        const userStr = localStorage.getItem('user');
-        if (!userStr) throw new Error('No user data found');
-
-        const user = JSON.parse(userStr) as User;
-        console.log('Retrieved user profile from localStorage:', user);
-
-        // Sprint 3: Try to refresh token via cookies (no refreshToken parameter needed)
-        try {
-          await this.refreshToken();
-          // Token refresh successful, user session is valid
-        } catch (refreshError) {
-          console.error('Token refresh failed during profile validation:', refreshError);
-          throw new Error('Session expired');
-        }
-
-        return user;
+        console.error('API profile fetch failed:', apiError);
+        // Don't retry here - let the api.ts interceptor handle token refresh
+        // This prevents competing refresh attempts that cause infinite loops
+        throw apiError;
       }
     } catch (error) {
       console.error('GetUserProfile error:', error);

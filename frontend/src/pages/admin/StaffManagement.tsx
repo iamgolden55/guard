@@ -43,7 +43,8 @@ import { MainLayout } from '../../layouts';
 import { UserRole } from '../../types';
 import api from '../../services/api';
 import profileService from '../../services/profileService';
-import { employmentTypeService, EmploymentType } from '../../services/employmentTypeService';
+import { employmentTypeService, type EmploymentType } from '../../services/employmentTypeService';
+import { useToast } from '../../components/shared/ToastNotificationSystem';
 
 // Icons
 const addIcon: IIconProps = { iconName: 'PersonAdd' };
@@ -129,8 +130,33 @@ const SIA_LICENSE_TYPE_DISPLAY: { [key: string]: string } = {
   key: 'Key Holding',
 };
 
+// SIA License dropdown options for editing
+const SIA_LICENSE_TYPE_OPTIONS: IDropdownOption[] = [
+  { key: 'ds', text: 'Door Supervisor' },
+  { key: 'sg', text: 'Security Guard' },
+  { key: 'cctv', text: 'CCTV Operator' },
+  { key: 'cp', text: 'Close Protection' },
+  { key: 'k9', text: 'Dog Handler' },
+  { key: 'vs', text: 'Vehicle Security' },
+  { key: 'key', text: 'Key Holding' },
+];
+
+const SIA_LICENSE_LEVEL_OPTIONS: IDropdownOption[] = [
+  { key: 'trainee', text: 'Trainee' },
+  { key: 'qualified', text: 'Qualified' },
+  { key: 'advanced', text: 'Advanced' },
+  { key: 'instructor', text: 'Instructor' },
+];
+
+const SIA_LICENSE_STATUS_OPTIONS: IDropdownOption[] = [
+  { key: 'valid', text: 'Valid' },
+  { key: 'expired', text: 'Expired' },
+  { key: 'pending', text: 'Pending' },
+];
+
 const StaffManagement: React.FC = () => {
   const navigate = useNavigate();
+  const toast = useToast();
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [filteredStaff, setFilteredStaff] = useState<Staff[]>([]);
   const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
@@ -157,6 +183,26 @@ const StaffManagement: React.FC = () => {
   const [showAssignEmploymentTypePanel, setShowAssignEmploymentTypePanel] = useState(false);
   const [selectedEmploymentType, setSelectedEmploymentType] = useState<number | null>(null);
   const [assignmentLoading, setAssignmentLoading] = useState(false);
+
+  // Two-step delete confirmation state
+  const [showPhraseConfirmDialog, setShowPhraseConfirmDialog] = useState(false);
+  const [confirmationPhrase, setConfirmationPhrase] = useState('');
+
+  // SIA License editing state
+  const [showEditLicenseDialog, setShowEditLicenseDialog] = useState(false);
+  const [editingLicense, setEditingLicense] = useState<any>(null);
+  const [licenseFormData, setLicenseFormData] = useState({
+    license_number: '',
+    license_type: 'sg',
+    level: 'qualified',
+    issue_date: '',
+    expiry_date: '',
+    status: 'pending',
+    document_url: ''
+  });
+  const [savingLicense, setSavingLicense] = useState(false);
+  const [showCreateLicenseDialog, setShowCreateLicenseDialog] = useState(false);
+  const [createLicenseForProfileId, setCreateLicenseForProfileId] = useState<number | null>(null);
 
   // Form state for new/edit staff
   const [formData, setFormData] = useState({
@@ -500,7 +546,7 @@ const StaffManagement: React.FC = () => {
       console.log('Toggling status for staff ID:', staff.id, 'Current status:', staff.isActive);
 
       // Call the API to update the user's active status
-      await api.patch(`/users/${staff.id}/`, {
+      await api.patch(`/api/v1/users/${staff.id}/`, {
         is_active: !staff.isActive
       });
 
@@ -512,8 +558,14 @@ const StaffManagement: React.FC = () => {
         setStaffList(updatedStaff);
         setFilteredStaff(updatedStaff);
 
-        // Show success message
+        // Show success toast
         setError(null);
+        const newStatus = !staff.isActive;
+        if (newStatus) {
+          toast.showSuccess('Staff Activated', `${staff.firstName} ${staff.lastName} has been activated.`);
+        } else {
+          toast.showSuccess('Staff Deactivated', `${staff.firstName} ${staff.lastName} has been deactivated.`);
+        }
       } catch (stateError) {
         console.error('Error updating UI state after status toggle:', stateError);
         // Reload the page as fallback
@@ -521,9 +573,9 @@ const StaffManagement: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to toggle status:', err);
-      setError('Failed to update user status. Please try again.');
+      toast.showError('Status Update Failed', 'Failed to update user status. Please try again.');
     }
-  }, [staffList]);
+  }, [staffList, toast]);
 
   const handleDeleteStaff = useCallback((staff: Staff) => {
     setSelectedStaff(staff);
@@ -536,7 +588,7 @@ const StaffManagement: React.FC = () => {
 
     try {
       // Fetch detailed staff profile information
-      const response = await api.get(`/staff-profiles/?user=${staff.id}`);
+      const response = await api.get(`/api/v1/staff-profiles/?user=${staff.id}`);
       const profileData = response.data.results?.[0] || response.data[0];
 
       if (profileData) {
@@ -566,7 +618,7 @@ const StaffManagement: React.FC = () => {
 
   const handleApproveLicense = useCallback(async (licenseId: number) => {
     try {
-      await api.patch(`/sia-licenses/${licenseId}/`, {
+      await api.patch(`/api/v1/sia-licenses/${licenseId}/`, {
         status: 'valid'
       });
 
@@ -595,7 +647,7 @@ const StaffManagement: React.FC = () => {
     if (!confirmed) return;
 
     try {
-      await api.patch(`/sia-licenses/${licenseId}/`, {
+      await api.patch(`/api/v1/sia-licenses/${licenseId}/`, {
         status: 'expired'
       });
 
@@ -618,8 +670,104 @@ const StaffManagement: React.FC = () => {
     }
   }, [detailedStaff]);
 
+  // SIA License editing handlers
+  const handleEditLicense = useCallback((license: any) => {
+    setEditingLicense(license);
+    setLicenseFormData({
+      license_number: license.license_number || '',
+      license_type: license.license_type || 'sg',
+      level: license.level || 'qualified',
+      issue_date: license.issue_date || '',
+      expiry_date: license.expiry_date || '',
+      status: license.status || 'pending',
+      document_url: license.document_url || ''
+    });
+    setShowEditLicenseDialog(true);
+  }, []);
+
+  const handleSaveLicense = useCallback(async () => {
+    if (!editingLicense) return;
+
+    setSavingLicense(true);
+    try {
+      await api.patch(`/api/v1/sia-licenses/${editingLicense.id}/`, licenseFormData);
+
+      // Update local state
+      if (detailedStaff) {
+        const updatedLicenses = detailedStaff.sia_licenses.map((license: any) =>
+          license.id === editingLicense.id ? { ...license, ...licenseFormData } : license
+        );
+        setDetailedStaff({
+          ...detailedStaff,
+          sia_licenses: updatedLicenses
+        });
+      }
+
+      setShowEditLicenseDialog(false);
+      setEditingLicense(null);
+      alert('SIA License updated successfully!');
+    } catch (error) {
+      console.error('Error updating license:', error);
+      alert('Failed to update license. Please try again.');
+    } finally {
+      setSavingLicense(false);
+    }
+  }, [editingLicense, licenseFormData, detailedStaff]);
+
+  const handleCreateLicense = useCallback((staffProfileId: number) => {
+    setCreateLicenseForProfileId(staffProfileId);
+    setLicenseFormData({
+      license_number: '',
+      license_type: 'sg',
+      level: 'qualified',
+      issue_date: '',
+      expiry_date: '',
+      status: 'pending',
+      document_url: ''
+    });
+    setShowCreateLicenseDialog(true);
+  }, []);
+
+  const handleSubmitNewLicense = useCallback(async () => {
+    if (!createLicenseForProfileId) return;
+
+    setSavingLicense(true);
+    try {
+      const response = await api.post('/api/v1/sia-licenses/', {
+        ...licenseFormData,
+        staff_profile: createLicenseForProfileId
+      });
+
+      // Update local state with the new license
+      if (detailedStaff) {
+        setDetailedStaff({
+          ...detailedStaff,
+          sia_licenses: [...(detailedStaff.sia_licenses || []), response.data]
+        });
+      }
+
+      setShowCreateLicenseDialog(false);
+      setCreateLicenseForProfileId(null);
+      alert('SIA License created successfully!');
+    } catch (error) {
+      console.error('Error creating license:', error);
+      alert('Failed to create license. Please try again.');
+    } finally {
+      setSavingLicense(false);
+    }
+  }, [createLicenseForProfileId, licenseFormData, detailedStaff]);
+
+  const handleLicenseFormChange = useCallback((field: string, value: string) => {
+    setLicenseFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  }, []);
+
   const confirmDeleteStaff = useCallback(async () => {
     if (!selectedStaff) return;
+
+    const staffName = `${selectedStaff.firstName} ${selectedStaff.lastName}`;
 
     try {
       console.log('Deleting staff ID:', selectedStaff.id);
@@ -633,23 +781,33 @@ const StaffManagement: React.FC = () => {
         setStaffList(updatedStaff);
         setFilteredStaff(filteredStaff.filter(s => s.id !== selectedStaff.id));
         setShowDeleteDialog(false);
+        setShowPhraseConfirmDialog(false);
+        setConfirmationPhrase('');
         setSelectedStaff(null);
 
-        // Show success message
+        // Show success toast
         setError(null);
+        toast.showSuccess('Staff Member Deleted', `${staffName} has been permanently removed.`);
       } catch (stateError) {
         console.error('Error updating UI state after staff deletion:', stateError);
-        // Still close dialog even if state update fails
+        // Still close dialogs even if state update fails
         setShowDeleteDialog(false);
+        setShowPhraseConfirmDialog(false);
+        setConfirmationPhrase('');
         setSelectedStaff(null);
+        toast.showSuccess('Staff Member Deleted', `${staffName} has been permanently removed.`);
         // Reload the page as fallback
         window.location.reload();
       }
     } catch (err) {
       console.error('Failed to delete staff:', err);
       setError('Failed to delete staff. Please try again.');
+      toast.showError('Delete Failed', 'Failed to delete staff member. Please try again.');
+      // Close the phrase confirmation dialog on error so user can retry
+      setShowPhraseConfirmDialog(false);
+      setConfirmationPhrase('');
     }
-  }, [selectedStaff, staffList, filteredStaff]);
+  }, [selectedStaff, staffList, filteredStaff, toast]);
 
   const handleAddStaff = useCallback(() => {
     setFormData({
@@ -683,7 +841,7 @@ const StaffManagement: React.FC = () => {
       console.log('Submitting new staff data:', userData);
 
       // Call the API to create a new user
-      const response = await api.post('/users/', userData);
+      const response = await api.post('/api/v1/users/', userData);
 
       console.log('API response for new staff:', response.data);
 
@@ -744,7 +902,7 @@ const StaffManagement: React.FC = () => {
       console.log('Updating staff data for ID:', selectedStaff.id, userData);
 
       // Call the API to update the user
-      await api.patch(`/users/${selectedStaff.id}/`, userData);
+      await api.patch(`/api/v1/users/${selectedStaff.id}/`, userData);
 
       try {
         // If API call was successful, update the local state
@@ -773,8 +931,9 @@ const StaffManagement: React.FC = () => {
         setShowEditStaffPanel(false);
         setSelectedStaff(null);
 
-        // Show success message
+        // Show success toast
         setError(null);
+        toast.showSuccess('Staff Updated', `${formData.firstName} ${formData.lastName}'s profile has been updated.`);
       } catch (stateError) {
         console.error('Error updating UI state after staff update:', stateError);
         // Still close the panel even if state update fails
@@ -785,9 +944,9 @@ const StaffManagement: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to update staff:', err);
-      setError('Failed to update staff. Please try again.');
+      toast.showError('Update Failed', 'Failed to update staff. Please try again.');
     }
-  }, [selectedStaff, formData, staffList]);
+  }, [selectedStaff, formData, staffList, toast]);
 
   const handleRefresh = useCallback(() => {
     loadStaff();
@@ -808,7 +967,7 @@ const StaffManagement: React.FC = () => {
     setReviewError(null);
     try {
       // Fetch full profile details using the ID from the list item
-      const response = await api.get<StaffProfileDetail>(`/staff-profiles/${staffListItem.id}/`);
+      const response = await api.get<StaffProfileDetail>(`/api/v1/staff-profiles/${staffListItem.id}/`);
       console.log("Full staff details received for review:", response.data);
       setReviewingStaff(response.data);
     } catch (err) {
@@ -871,6 +1030,10 @@ const StaffManagement: React.FC = () => {
       setStaffList(updatedStaff);
       setFilteredStaff(updatedStaff);
 
+      // Show success toast
+      const employmentTypeName = employmentTypes.find(et => et.id === selectedEmploymentType)?.name || 'Employment type';
+      toast.showSuccess('Employment Type Assigned', `${selectedStaff.firstName} ${selectedStaff.lastName} is now assigned as ${employmentTypeName}.`);
+
       // Close the panel
       setShowAssignEmploymentTypePanel(false);
       setSelectedStaff(null);
@@ -880,11 +1043,11 @@ const StaffManagement: React.FC = () => {
       setError(null);
     } catch (err) {
       console.error('Failed to assign employment type:', err);
-      setError('Failed to assign employment type. Please try again.');
+      toast.showError('Assignment Failed', 'Failed to assign employment type. Please try again.');
     } finally {
       setAssignmentLoading(false);
     }
-  }, [selectedStaff, selectedEmploymentType, staffList, employmentTypes]);
+  }, [selectedStaff, selectedEmploymentType, staffList, employmentTypes, toast]);
 
   // Command bar items
   const commandBarItems: ICommandBarItemProps[] = [
@@ -1307,29 +1470,105 @@ const StaffManagement: React.FC = () => {
         </Stack>
       </Panel>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog
-        hidden={!showDeleteDialog}
-        onDismiss={() => setShowDeleteDialog(false)}
-        dialogContentProps={{
-          type: DialogType.normal,
-          title: 'Confirm Deletion',
-          subText: selectedStaff ?
-            `Are you sure you want to delete ${selectedStaff.firstName} ${selectedStaff.lastName}? This action cannot be undone.` :
-            'Are you sure you want to delete this staff member? This action cannot be undone.'
-        }}
-      >
-        <DialogFooter>
-          <PrimaryButton
-            text="Delete"
-            onClick={confirmDeleteStaff}
-          />
-          <DefaultButton
-            text="Cancel"
+      {/* Delete Confirmation Modal - Step 1 */}
+      {showDeleteDialog && selectedStaff && (
+        <div className="fixed inset-0 z-[1000] overflow-y-auto animate-in fade-in duration-200">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
             onClick={() => setShowDeleteDialog(false)}
           />
-        </DialogFooter>
-      </Dialog>
+          <div className="relative min-h-screen flex items-center justify-center p-4">
+            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+              <div className="text-center">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 mb-2">Confirm Deletion</h3>
+                <p className="text-gray-600 mb-6">
+                  Are you sure you want to delete <strong>{selectedStaff.firstName} {selectedStaff.lastName}</strong>? This action cannot be undone.
+                </p>
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => setShowDeleteDialog(false)}
+                    className="px-5 py-2.5 border-2 border-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-all duration-200 active:scale-95"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowDeleteDialog(false);
+                      setShowPhraseConfirmDialog(true);
+                    }}
+                    className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-all duration-200 active:scale-95"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Phrase Confirmation Modal - Step 2 */}
+      {showPhraseConfirmDialog && selectedStaff && (
+        <div className="fixed inset-0 z-[1000] overflow-y-auto animate-in fade-in duration-200">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
+            onClick={() => {
+              setShowPhraseConfirmDialog(false);
+              setConfirmationPhrase('');
+            }}
+          />
+          <div className="relative min-h-screen flex items-center justify-center p-4">
+            <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+              <div className="text-center">
+                <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 mb-2">Final Confirmation</h3>
+                <p className="text-gray-600 mb-4">
+                  To permanently delete <strong>{selectedStaff.firstName} {selectedStaff.lastName}</strong>, type <strong className="text-red-600">DELETE</strong> below.
+                </p>
+                <input
+                  type="text"
+                  value={confirmationPhrase}
+                  onChange={(e) => setConfirmationPhrase(e.target.value)}
+                  placeholder="Type DELETE to confirm"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg text-center font-mono text-lg uppercase tracking-wider focus:border-red-500 focus:ring-2 focus:ring-red-200 focus:outline-none transition-all duration-200 mb-6"
+                  autoFocus
+                />
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => {
+                      setShowPhraseConfirmDialog(false);
+                      setConfirmationPhrase('');
+                    }}
+                    className="px-5 py-2.5 border-2 border-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-all duration-200 active:scale-95"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDeleteStaff}
+                    disabled={confirmationPhrase.toLowerCase() !== 'delete'}
+                    className={`px-5 py-2.5 rounded-lg font-semibold transition-all duration-200 ${
+                      confirmationPhrase.toLowerCase() === 'delete'
+                        ? 'bg-red-600 text-white hover:bg-red-700 active:scale-95'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    Delete Permanently
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Staff Review Panel - Updated */}
       <Panel
@@ -1416,241 +1655,333 @@ const StaffManagement: React.FC = () => {
         )}
       </Panel>
 
-      {/* Staff Details Panel */}
-      <Panel
-        isOpen={showDetailsPanel}
-        onDismiss={() => setShowDetailsPanel(false)}
-        headerText="Staff Details"
-        closeButtonAriaLabel="Close"
-        type={PanelType.medium}
-      >
-        {detailsLoading ? (
-          <Spinner size={SpinnerSize.medium} label="Loading staff details..." />
-        ) : detailedStaff ? (
-          <Stack tokens={{ childrenGap: 20 }} style={{ padding: '20px 0' }}>
-            {/* Basic Information */}
-            <Stack tokens={{ childrenGap: 10 }}>
-              <Text variant="large" style={{ fontWeight: 'bold', color: '#0078d4' }}>
-                Basic Information
-              </Text>
-              <Stack tokens={{ childrenGap: 8 }}>
-                <Stack horizontal>
-                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Name:</Text>
-                  <Text>{detailedStaff.user?.first_name} {detailedStaff.user?.last_name}</Text>
-                </Stack>
-                <Stack horizontal>
-                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Email:</Text>
-                  <Text>{detailedStaff.user?.email}</Text>
-                </Stack>
-                <Stack horizontal>
-                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Phone:</Text>
-                  <Text>{detailedStaff.phone_number || 'Not provided'}</Text>
-                </Stack>
-                <Stack horizontal>
-                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Role:</Text>
-                  <Text>{detailedStaff.user?.role}</Text>
-                </Stack>
-                <Stack horizontal>
-                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Status:</Text>
-                  <div
-                    style={{
-                      backgroundColor: detailedStaff.user?.is_active ? '#10B981' : '#9CA3AF',
-                      color: 'white',
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      display: 'inline-block',
-                      fontSize: '12px',
-                      fontWeight: 'bold'
-                    }}
-                  >
-                    {detailedStaff.user?.is_active ? 'Active' : 'Inactive'}
-                  </div>
-                </Stack>
-                <Stack horizontal>
-                  <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Approval:</Text>
-                  <div
-                    style={{
-                      backgroundColor: detailedStaff.is_approved ? '#10B981' : '#F59E0B',
-                      color: 'white',
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      display: 'inline-block',
-                      fontSize: '12px',
-                      fontWeight: 'bold'
-                    }}
-                  >
-                    {detailedStaff.is_approved ? 'Approved' : 'Pending'}
-                  </div>
-                </Stack>
-              </Stack>
-            </Stack>
-
-            {/* Security Roles */}
-            <Stack tokens={{ childrenGap: 10 }}>
-              <Text variant="large" style={{ fontWeight: 'bold', color: '#0078d4' }}>
-                Security Roles
-              </Text>
-              {detailedStaff.security_roles?.length > 0 ? (
-                <Stack tokens={{ childrenGap: 4 }}>
-                  {detailedStaff.security_roles.map((role: string, index: number) => {
-                    const roleLabels: { [key: string]: string } = {
-                      'ds': 'Door Supervisor',
-                      'sg': 'Security Guard',
-                      'cctv': 'CCTV Operator',
-                      'cp': 'Close Protection',
-                      'steward': 'Steward/Marshal',
-                      'k9': 'Dog Handler',
-                      'retail': 'Retail Security',
-                      'static': 'Static Guard',
-                      'mobile': 'Mobile Patrol',
-                      'event': 'Event Security'
-                    };
-                    return (
-                      <div
-                        key={index}
-                        style={{
-                          backgroundColor: '#e3f2fd',
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          display: 'inline-block',
-                          marginRight: '8px',
-                          marginBottom: '4px'
-                        }}
-                      >
-                        <Text variant="small">{roleLabels[role] || role}</Text>
-                      </div>
-                    );
-                  })}
-                </Stack>
-              ) : (
-                <Text style={{ color: '#9CA3AF' }}>No security roles assigned</Text>
-              )}
-            </Stack>
-
-            {/* SIA Licenses */}
-            <Stack tokens={{ childrenGap: 10 }}>
-              <Text variant="large" style={{ fontWeight: 'bold', color: '#0078d4' }}>
-                SIA Licenses ({detailedStaff.sia_licenses?.length || 0})
-              </Text>
-              {detailedStaff.sia_licenses?.length > 0 ? (
-                <Stack tokens={{ childrenGap: 15 }}>
-                  {detailedStaff.sia_licenses.map((license: any, index: number) => (
-                    <Stack
-                      key={index}
-                      style={{
-                        border: '1px solid #e0e0e0',
-                        borderRadius: '8px',
-                        padding: '12px',
-                        backgroundColor: '#f9f9f9'
+      {/* Staff Details Modal - Modern Design */}
+      {showDetailsPanel && (
+        <div className="fixed inset-0 z-[1000] overflow-y-auto">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowDetailsPanel(false)} />
+          <div className="relative min-h-screen flex items-center justify-center p-4">
+            <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+                <button
+                  onClick={() => setShowDetailsPanel(false)}
+                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                  </svg>
+                  <span className="font-medium">Back to Staff</span>
+                </button>
+                {detailedStaff && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        if (detailedStaff?.user) {
+                          const staffItem: Staff = {
+                            id: detailedStaff.user.id,
+                            firstName: detailedStaff.user.first_name,
+                            lastName: detailedStaff.user.last_name,
+                            email: detailedStaff.user.email,
+                            role: detailedStaff.user.role as UserRole,
+                            isActive: detailedStaff.user.is_active,
+                            dateJoined: new Date().toISOString(),
+                            phone: detailedStaff.phone_number
+                          };
+                          handleEditStaff(staffItem);
+                          setShowDetailsPanel(false);
+                        }
                       }}
-                      tokens={{ childrenGap: 8 }}
+                      className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg font-semibold hover:bg-gray-800 transition-colors"
                     >
-                      <Stack horizontal>
-                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>License #{index + 1}:</Text>
-                        <Text>{license.license_number}</Text>
-                      </Stack>
-                      <Stack horizontal>
-                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Type:</Text>
-                        <Text>{SIA_LICENSE_TYPE_DISPLAY[license.license_type] || license.license_type}</Text>
-                      </Stack>
-                      <Stack horizontal>
-                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Status:</Text>
-                        <div
-                          style={{
-                            backgroundColor: license.status === 'valid' ? '#10B981' :
-                              license.status === 'expired' ? '#EF4444' : '#F59E0B',
-                            color: 'white',
-                            padding: '2px 8px',
-                            borderRadius: '12px',
-                            display: 'inline-block',
-                            fontSize: '12px',
-                            fontWeight: 'bold'
-                          }}
-                        >
-                          {license.status}
-                        </div>
-                      </Stack>
-                      <Stack horizontal>
-                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Issue Date:</Text>
-                        <Text>{license.issue_date}</Text>
-                      </Stack>
-                      <Stack horizontal>
-                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Expiry Date:</Text>
-                        <Text>{license.expiry_date}</Text>
-                      </Stack>
-                      {license.document_url && (
-                        <Stack horizontal>
-                          <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Document:</Text>
-                          <Link href={license.document_url} target="_blank">
-                            View Document
-                          </Link>
-                        </Stack>
-                      )}
-                      {license.status === 'pending' && (
-                        <Stack horizontal tokens={{ childrenGap: 10 }}>
-                          <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Actions:</Text>
-                          <Stack horizontal tokens={{ childrenGap: 8 }}>
-                            <PrimaryButton
-                              text="Approve License"
-                              onClick={() => handleApproveLicense(license.id)}
-                              iconProps={{ iconName: 'CheckMark' }}
-                              styles={{ root: { minWidth: 'auto', padding: '4px 12px' } }}
-                            />
-                            <DefaultButton
-                              text="Mark Expired"
-                              onClick={() => handleRejectLicense(license.id)}
-                              iconProps={{ iconName: 'Cancel' }}
-                              styles={{ root: { minWidth: 'auto', padding: '4px 12px' } }}
-                            />
-                          </Stack>
-                        </Stack>
-                      )}
-                    </Stack>
-                  ))}
-                </Stack>
-              ) : (
-                <Text style={{ color: '#9CA3AF' }}>No SIA licenses on file</Text>
-              )}
-            </Stack>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Edit
+                    </button>
+                  </div>
+                )}
+              </div>
 
-            {/* Personal Details */}
-            {(detailedStaff.date_of_birth || detailedStaff.national_insurance_number ||
-              detailedStaff.street || detailedStaff.city) && (
-                <Stack tokens={{ childrenGap: 10 }}>
-                  <Text variant="large" style={{ fontWeight: 'bold', color: '#0078d4' }}>
-                    Personal Details
-                  </Text>
-                  <Stack tokens={{ childrenGap: 8 }}>
-                    {detailedStaff.date_of_birth && (
-                      <Stack horizontal>
-                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Date of Birth:</Text>
-                        <Text>{detailedStaff.date_of_birth}</Text>
-                      </Stack>
-                    )}
-                    {detailedStaff.national_insurance_number && (
-                      <Stack horizontal>
-                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>NI Number:</Text>
-                        <Text>{detailedStaff.national_insurance_number}</Text>
-                      </Stack>
-                    )}
-                    {(detailedStaff.street || detailedStaff.city) && (
-                      <Stack horizontal>
-                        <Text style={{ minWidth: 120, fontWeight: 'bold' }}>Address:</Text>
-                        <Text>
-                          {[detailedStaff.street, detailedStaff.city, detailedStaff.postal_code, detailedStaff.country]
-                            .filter(Boolean)
-                            .join(', ')}
-                        </Text>
-                      </Stack>
-                    )}
-                  </Stack>
-                </Stack>
-              )}
-          </Stack>
-        ) : (
-          <Text>Unable to load staff details</Text>
-        )}
-      </Panel>
+              {/* Content */}
+              <div className="p-6">
+                {detailsLoading ? (
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
+                    <p className="mt-4 text-gray-600 font-medium">Loading staff details...</p>
+                  </div>
+                ) : detailedStaff ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Left Column */}
+                    <div>
+                      {/* Profile Header */}
+                      <div className="flex items-start gap-4 mb-6">
+                        <div className="w-16 h-16 bg-gradient-to-br from-red-500 to-red-600 rounded-2xl flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+                          {detailedStaff.user?.first_name?.charAt(0) || 'S'}{detailedStaff.user?.last_name?.charAt(0) || 'M'}
+                        </div>
+                        <div className="flex-1">
+                          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+                            {detailedStaff.user?.first_name} {detailedStaff.user?.last_name}
+                          </h1>
+                          <p className="text-gray-500">{detailedStaff.user?.email}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                              detailedStaff.user?.is_active ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-700'
+                            }`}>
+                              <span className={`w-2 h-2 rounded-full ${detailedStaff.user?.is_active ? 'bg-white animate-pulse' : 'bg-gray-500'}`} />
+                              {detailedStaff.user?.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                              detailedStaff.is_approved ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                            }`}>
+                              {detailedStaff.is_approved ? 'Approved' : 'Pending Approval'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Contact Information */}
+                      <div className="p-4 bg-gray-50 rounded-xl mb-6">
+                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Contact Information</h3>
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-3 text-gray-600">
+                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            <a href={`mailto:${detailedStaff.user?.email}`} className="hover:text-red-600 transition-colors">
+                              {detailedStaff.user?.email}
+                            </a>
+                          </div>
+                          <div className="flex items-center gap-3 text-gray-600">
+                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                            {detailedStaff.phone_number ? (
+                              <a href={`tel:${detailedStaff.phone_number}`} className="hover:text-red-600 transition-colors">
+                                {detailedStaff.phone_number}
+                              </a>
+                            ) : (
+                              <span className="text-gray-400">Not provided</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-gray-600">
+                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            <span className="capitalize">{detailedStaff.user?.role || 'Staff'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Personal Details */}
+                      {(detailedStaff.date_of_birth || detailedStaff.national_insurance_number || detailedStaff.street || detailedStaff.city) && (
+                        <div className="p-4 bg-gray-50 rounded-xl mb-6">
+                          <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Personal Details</h3>
+                          <div className="space-y-3">
+                            {detailedStaff.date_of_birth && (
+                              <div className="flex items-center gap-3">
+                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                <span className="text-gray-600">Born: <strong className="text-gray-900">{detailedStaff.date_of_birth}</strong></span>
+                              </div>
+                            )}
+                            {detailedStaff.national_insurance_number && (
+                              <div className="flex items-center gap-3">
+                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span className="text-gray-600">NI: <strong className="text-gray-900 font-mono">{detailedStaff.national_insurance_number}</strong></span>
+                              </div>
+                            )}
+                            {(detailedStaff.street || detailedStaff.city) && (
+                              <div className="flex items-start gap-3">
+                                <svg className="w-5 h-5 text-gray-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                <span className="text-gray-600">
+                                  {[detailedStaff.street, detailedStaff.city, detailedStaff.postal_code, detailedStaff.country]
+                                    .filter(Boolean)
+                                    .join(', ')}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Security Roles */}
+                      <div className="p-4 bg-gray-50 rounded-xl">
+                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Security Roles</h3>
+                        {detailedStaff.security_roles?.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {detailedStaff.security_roles.map((role: string, index: number) => {
+                              const roleLabels: { [key: string]: string } = {
+                                'ds': 'Door Supervisor',
+                                'sg': 'Security Guard',
+                                'cctv': 'CCTV Operator',
+                                'cp': 'Close Protection',
+                                'steward': 'Steward/Marshal',
+                                'k9': 'Dog Handler',
+                                'retail': 'Retail Security',
+                                'static': 'Static Guard',
+                                'mobile': 'Mobile Patrol',
+                                'event': 'Event Security'
+                              };
+                              return (
+                                <span
+                                  key={index}
+                                  className="inline-flex items-center px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm font-medium"
+                                >
+                                  {roleLabels[role] || role}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-gray-400 text-sm">No security roles assigned</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right Column - SIA Licenses */}
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+                          SIA Licenses ({detailedStaff.sia_licenses?.length || 0})
+                        </h3>
+                        <button
+                          onClick={() => handleCreateLicense(detailedStaff.id)}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                          Add License
+                        </button>
+                      </div>
+
+                      {detailedStaff.sia_licenses?.length > 0 ? (
+                        <div className="space-y-4">
+                          {detailedStaff.sia_licenses.map((license: any, index: number) => (
+                            <div
+                              key={index}
+                              className="border-2 border-gray-200 rounded-xl p-4 hover:border-red-300 transition-colors"
+                            >
+                              {/* License Header */}
+                              <div className="flex items-start justify-between mb-3">
+                                <div>
+                                  <p className="font-mono text-lg font-bold text-gray-900">{license.license_number}</p>
+                                  <p className="text-sm text-gray-500">{SIA_LICENSE_TYPE_DISPLAY[license.license_type] || license.license_type}</p>
+                                </div>
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                                  license.status === 'valid' ? 'bg-emerald-600 text-white' :
+                                  license.status === 'expired' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'
+                                }`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    license.status === 'valid' ? 'bg-white animate-pulse' : 'bg-white/50'
+                                  }`} />
+                                  {license.status}
+                                </span>
+                              </div>
+
+                              {/* License Details */}
+                              <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
+                                <div>
+                                  <p className="text-gray-500">Issue Date</p>
+                                  <p className="font-medium text-gray-900">{license.issue_date}</p>
+                                </div>
+                                <div>
+                                  <p className="text-gray-500">Expiry Date</p>
+                                  <p className="font-medium text-gray-900">{license.expiry_date}</p>
+                                </div>
+                                {license.level && (
+                                  <div>
+                                    <p className="text-gray-500">Level</p>
+                                    <p className="font-medium text-gray-900 capitalize">{license.level}</p>
+                                  </div>
+                                )}
+                                {license.document_url && (
+                                  <div>
+                                    <p className="text-gray-500">Document</p>
+                                    <a
+                                      href={license.document_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-medium text-red-600 hover:text-red-700 transition-colors"
+                                    >
+                                      View Document
+                                    </a>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* License Actions */}
+                              <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                                <button
+                                  onClick={() => handleEditLicense(license)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  Edit
+                                </button>
+                                {license.status === 'pending' && (
+                                  <>
+                                    <button
+                                      onClick={() => handleApproveLicense(license.id)}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                      Approve
+                                    </button>
+                                    <button
+                                      onClick={() => handleRejectLicense(license.id)}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                      Reject
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-12 bg-gray-50 rounded-xl">
+                          <svg className="w-12 h-12 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <p className="text-gray-500 mb-4">No SIA licenses on file</p>
+                          <button
+                            onClick={() => handleCreateLicense(detailedStaff.id)}
+                            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            Add First License
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-16">
+                    <p className="text-gray-500">Unable to load staff details</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Employment Type Assignment Panel */}
       <Panel
@@ -1720,6 +2051,169 @@ const StaffManagement: React.FC = () => {
           )}
         </Stack>
       </Panel>
+
+      {/* Edit License Dialog */}
+      <Dialog
+        hidden={!showEditLicenseDialog}
+        onDismiss={() => {
+          setShowEditLicenseDialog(false);
+          setEditingLicense(null);
+        }}
+        dialogContentProps={{
+          type: DialogType.normal,
+          title: 'Edit SIA License',
+          subText: 'Update the license details below.'
+        }}
+        modalProps={{
+          isBlocking: true,
+          styles: { main: { maxWidth: 500 } }
+        }}
+      >
+        <Stack tokens={{ childrenGap: 15 }} style={{ padding: '10px 0' }}>
+          <TextField
+            label="License Number"
+            required
+            value={licenseFormData.license_number}
+            onChange={(_, newValue) => handleLicenseFormChange('license_number', newValue || '')}
+          />
+          <Dropdown
+            label="License Type"
+            required
+            options={SIA_LICENSE_TYPE_OPTIONS}
+            selectedKey={licenseFormData.license_type}
+            onChange={(_, option) => handleLicenseFormChange('license_type', option?.key as string)}
+          />
+          <Dropdown
+            label="Level"
+            options={SIA_LICENSE_LEVEL_OPTIONS}
+            selectedKey={licenseFormData.level}
+            onChange={(_, option) => handleLicenseFormChange('level', option?.key as string)}
+          />
+          <TextField
+            label="Issue Date"
+            required
+            type="date"
+            value={licenseFormData.issue_date}
+            onChange={(_, newValue) => handleLicenseFormChange('issue_date', newValue || '')}
+          />
+          <TextField
+            label="Expiry Date"
+            required
+            type="date"
+            value={licenseFormData.expiry_date}
+            onChange={(_, newValue) => handleLicenseFormChange('expiry_date', newValue || '')}
+          />
+          <Dropdown
+            label="Status"
+            required
+            options={SIA_LICENSE_STATUS_OPTIONS}
+            selectedKey={licenseFormData.status}
+            onChange={(_, option) => handleLicenseFormChange('status', option?.key as string)}
+          />
+          <TextField
+            label="Document URL"
+            value={licenseFormData.document_url}
+            onChange={(_, newValue) => handleLicenseFormChange('document_url', newValue || '')}
+            placeholder="https://..."
+          />
+        </Stack>
+        <DialogFooter>
+          <DefaultButton
+            text="Cancel"
+            onClick={() => {
+              setShowEditLicenseDialog(false);
+              setEditingLicense(null);
+            }}
+          />
+          <PrimaryButton
+            text={savingLicense ? 'Saving...' : 'Save Changes'}
+            onClick={handleSaveLicense}
+            disabled={savingLicense || !licenseFormData.license_number || !licenseFormData.issue_date || !licenseFormData.expiry_date}
+          />
+        </DialogFooter>
+      </Dialog>
+
+      {/* Create License Dialog */}
+      <Dialog
+        hidden={!showCreateLicenseDialog}
+        onDismiss={() => {
+          setShowCreateLicenseDialog(false);
+          setCreateLicenseForProfileId(null);
+        }}
+        dialogContentProps={{
+          type: DialogType.normal,
+          title: 'Add New SIA License',
+          subText: 'Enter the license details below.'
+        }}
+        modalProps={{
+          isBlocking: true,
+          styles: { main: { maxWidth: 500 } }
+        }}
+      >
+        <Stack tokens={{ childrenGap: 15 }} style={{ padding: '10px 0' }}>
+          <TextField
+            label="License Number"
+            required
+            value={licenseFormData.license_number}
+            onChange={(_, newValue) => handleLicenseFormChange('license_number', newValue || '')}
+            placeholder="e.g., 1234567890123456"
+          />
+          <Dropdown
+            label="License Type"
+            required
+            options={SIA_LICENSE_TYPE_OPTIONS}
+            selectedKey={licenseFormData.license_type}
+            onChange={(_, option) => handleLicenseFormChange('license_type', option?.key as string)}
+          />
+          <Dropdown
+            label="Level"
+            options={SIA_LICENSE_LEVEL_OPTIONS}
+            selectedKey={licenseFormData.level}
+            onChange={(_, option) => handleLicenseFormChange('level', option?.key as string)}
+          />
+          <TextField
+            label="Issue Date"
+            required
+            type="date"
+            value={licenseFormData.issue_date}
+            onChange={(_, newValue) => handleLicenseFormChange('issue_date', newValue || '')}
+          />
+          <TextField
+            label="Expiry Date"
+            required
+            type="date"
+            value={licenseFormData.expiry_date}
+            onChange={(_, newValue) => handleLicenseFormChange('expiry_date', newValue || '')}
+          />
+          <Dropdown
+            label="Status"
+            required
+            options={SIA_LICENSE_STATUS_OPTIONS}
+            selectedKey={licenseFormData.status}
+            onChange={(_, option) => handleLicenseFormChange('status', option?.key as string)}
+          />
+          <TextField
+            label="Document URL"
+            value={licenseFormData.document_url}
+            onChange={(_, newValue) => handleLicenseFormChange('document_url', newValue || '')}
+            placeholder="https://..."
+          />
+        </Stack>
+        <DialogFooter>
+          <DefaultButton
+            text="Cancel"
+            onClick={() => {
+              setShowCreateLicenseDialog(false);
+              setCreateLicenseForProfileId(null);
+            }}
+          />
+          <PrimaryButton
+            text={savingLicense ? 'Creating...' : 'Create License'}
+            onClick={handleSubmitNewLicense}
+            disabled={savingLicense || !licenseFormData.license_number || !licenseFormData.issue_date || !licenseFormData.expiry_date}
+          />
+        </DialogFooter>
+      </Dialog>
     </MainLayout>
   );
 };

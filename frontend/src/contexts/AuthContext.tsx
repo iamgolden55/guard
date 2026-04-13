@@ -371,8 +371,25 @@ function AuthProvider({ children }: { children: ReactNode }) {
         onboardingFetchedRef.current = true;
         console.log('DEBUG: Session validation successful');
       } catch (error) {
-        console.log('DEBUG: Session validation failed, attempting token refresh');
+        console.log('DEBUG: Session validation failed');
 
+        // Check if user was already cleared by api.ts interceptor (session invalidated)
+        const userStillExists = localStorage.getItem('user');
+        if (!userStillExists) {
+          console.log('DEBUG: User already cleared by interceptor, skipping recovery');
+          setAuthState({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            onboardingLoading: false,
+            error: null,
+            onboarding: { isCompleted: null, currentStep: null, completedSteps: [], hasCompany: false },
+            currentMembership: null
+          });
+          return;
+        }
+
+        console.log('DEBUG: Attempting token refresh');
         // Sprint 3: Try to refresh the token once before logging out (cookie-based)
         const refreshSuccessful = await refreshUserToken();
 

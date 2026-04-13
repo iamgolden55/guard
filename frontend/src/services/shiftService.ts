@@ -434,6 +434,24 @@ class ShiftService {
     }
   }
 
+  async getActiveShifts(): Promise<any[]> {
+    try {
+      // Fetch currently active (in_progress) shifts - includes shifts before end time
+      const response = await shiftApi.get<any>('/api/v1/shifts/active/');
+
+      // Handle different response structures
+      let shifts = response.data;
+      if (response.data.results) {
+        shifts = response.data.results; // Paginated response
+      }
+
+      return shifts;
+    } catch (error: any) {
+      console.error('Failed to fetch active shifts:', error);
+      throw error;
+    }
+  }
+
   async getShiftById(shiftId: number): Promise<Shift> {
     const response = await shiftApi.get<Shift>(`/api/v1/shifts/${shiftId}/`);
     return response.data;

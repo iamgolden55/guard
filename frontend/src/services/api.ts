@@ -7,10 +7,13 @@ const API_URL = import.meta.env.VITE_API_URL;
 let isRefreshing = false;
 let refreshPromise: Promise<any> | null = null;
 
+// Flag to prevent multiple auth failure handlers from running simultaneously
+let isSessionInvalidating = false;
+
 // Create an Axios instance with default config
 // Sprint 3: Use relative URLs to leverage Vite proxy in development
 const api: AxiosInstance = axios.create({
-  baseURL: import.meta.env.DEV ? '' : API_URL, // Empty baseURL in dev to use Vite proxy
+  baseURL: '', // Use relative URLs — Vite proxy in dev, Vercel rewrite in prod
   headers: {
     'Content-Type': 'application/json',
   },
@@ -84,6 +87,11 @@ api.interceptors.response.use(
       return Promise.reject(enhancedError);
     }
 
+    // Check if session is already being invalidated - prevent multiple handlers
+    if (isSessionInvalidating) {
+      return Promise.reject(error);
+    }
+
     // HYBRID AUTH: Check if error is 401 and we haven't already tried refreshing
     if (originalRequest && error.response?.status === 401 && !originalRequest.headers?.['X-Retry']) {
       // If already refreshing, wait for the existing refresh to complete
@@ -112,10 +120,8 @@ api.interceptors.response.use(
           // HYBRID AUTH: Send refresh token in body as fallback for Safari
           const refreshToken = localStorage.getItem('refresh_token');
 
-          // FIX: Use proper API URL in production (relative URL goes to frontend domain otherwise)
-          const refreshUrl = import.meta.env.DEV
-            ? '/api/v1/auth/refresh/'
-            : `${API_URL}/api/v1/auth/refresh/`;
+          // Use relative URL — Vite proxy in dev, Vercel rewrite in prod
+          const refreshUrl = '/api/v1/auth/refresh/';
 
           const response = await axios.post(
             refreshUrl,
@@ -162,9 +168,13 @@ api.interceptors.response.use(
       } catch (refreshError: any) {
         console.error('Token refresh failed:', refreshError?.response?.data || refreshError);
 
-        // Clear tokens on refresh failure
+        // Set flag to prevent other handlers from trying
+        isSessionInvalidating = true;
+
+        // Clear ALL auth tokens on refresh failure (including user - critical fix!)
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
 
         // Redirect to login page immediately (no setTimeout race condition)
         console.log('Redirecting to login page due to authentication failure');

@@ -55,7 +55,40 @@ export interface FilterState {
   status: string | null;
 }
 
-export type ViewMode = 'month' | 'week';
+export type ViewMode = 'month' | 'day';
+
+export type EventType = 'work' | 'open' | 'published' | 'general' | 'personal' | 'break';
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  type: EventType;
+  description?: string;
+  attendees?: { id: number; name: string; avatar?: string }[];
+  shift?: ScheduleShift;
+}
+
+export interface PositionedEvent extends CalendarEvent {
+  top: number;
+  height: number;
+  left: number;
+  width: number;
+  column: number;
+  totalColumns: number;
+}
+
+export interface TimeSlot {
+  hour: number;
+  label: string;
+  isHalfHour?: boolean;
+}
+
+export interface TimeBounds {
+  startHour: number;
+  endHour: number;
+}
 
 export const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 export const DAYS_OF_WEEK_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;

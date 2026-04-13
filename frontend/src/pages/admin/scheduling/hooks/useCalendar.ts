@@ -76,12 +76,53 @@ export function useCalendar(initialDate: Date = new Date()) {
     });
   }, [currentDate]);
 
+  // Week number calculation
+  const weekNumber = useMemo(() => {
+    const d = new Date(Date.UTC(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  }, [currentDate]);
+
+  // Day display label (e.g., "Tuesday, January 28, 2026")
+  const dayDisplayLabel = useMemo(() => {
+    return currentDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  }, [currentDate]);
+
+  // Navigate to previous day
+  const goToPreviousDay = useCallback(() => {
+    setCurrentDate(prev => {
+      const newDate = new Date(prev);
+      newDate.setDate(newDate.getDate() - 1);
+      return newDate;
+    });
+  }, []);
+
+  // Navigate to next day
+  const goToNextDay = useCallback(() => {
+    setCurrentDate(prev => {
+      const newDate = new Date(prev);
+      newDate.setDate(newDate.getDate() + 1);
+      return newDate;
+    });
+  }, []);
+
   return {
     currentDate,
     calendarDays,
     monthYearDisplay,
+    weekNumber,
+    dayDisplayLabel,
     goToPreviousMonth,
     goToNextMonth,
+    goToPreviousDay,
+    goToNextDay,
     goToToday,
     goToMonth,
     isCurrentMonth,
