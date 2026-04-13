@@ -29,8 +29,16 @@ class AuthService {
       // Store user data (non-sensitive, used for UI state only)
       localStorage.setItem('user', JSON.stringify(formattedResponse.user));
 
-      // Tokens are set as httpOnly cookies by the backend via Set-Cookie headers.
-      // No localStorage token storage — that would negate httpOnly XSS protection.
+      // HYBRID AUTH: Store tokens in localStorage as fallback for Safari/browsers
+      // that block cross-site cookies (ITP). Cookies are still the primary auth
+      // mechanism, but the request interceptor adds an Authorization header from
+      // localStorage for cross-origin requests where cookies are blocked.
+      if (response.data.access) {
+        localStorage.setItem('access_token', response.data.access);
+      }
+      if (response.data.refresh) {
+        localStorage.setItem('refresh_token', response.data.refresh);
+      }
 
       return formattedResponse;
     } catch (error) {
@@ -44,14 +52,21 @@ class AuthService {
     return response.data;
   }
 
-  // Sprint 3: Cookie-based token refresh (no parameters needed, refresh token is in httpOnly cookie)
+  // Token refresh — sends refresh token from localStorage body + cookie
   async refreshToken(): Promise<void> {
     try {
-      // Sprint 3: Call cookie-based refresh endpoint (refresh token is in httpOnly cookie)
-      await api.post<RefreshTokenResponse>('/api/v1/auth/refresh/', {});
+      const refreshToken = localStorage.getItem('refresh_token');
+      const response = await api.post<RefreshTokenResponse>('/api/v1/auth/refresh/',
+        refreshToken ? { refresh: refreshToken } : {}
+      );
 
-      // Sprint 3: No need to store tokens - backend sets them as httpOnly cookies
-      // Just return successfully
+      // Store new tokens in localStorage for the Authorization header fallback
+      if ((response as any).data?.access) {
+        localStorage.setItem('access_token', (response as any).data.access);
+      }
+      if ((response as any).data?.refresh) {
+        localStorage.setItem('refresh_token', (response as any).data.refresh);
+      }
     } catch (error) {
       console.error('Refresh token API error:', error);
       throw error;
@@ -99,8 +114,10 @@ class AuthService {
       // Continue with local cleanup even if API call fails
     }
 
-    // Clear user data from localStorage (tokens are cleared by backend via cookie expiry)
+    // Clear all auth data from localStorage
     localStorage.removeItem('user');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
   }
 
   // Sprint 3: Check if user is authenticated (based on user presence, not tokens)
