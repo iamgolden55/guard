@@ -152,12 +152,15 @@ api.interceptors.response.use(
         // Set flag to prevent other handlers from trying
         isSessionInvalidating = true;
 
-        // Clear user data on refresh failure (tokens are in httpOnly cookies, cleared by backend)
+        // Clear ALL auth data on refresh failure
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
         localStorage.removeItem('user');
 
-        // Redirect to login page immediately (no setTimeout race condition)
-        console.log('Redirecting to login page due to authentication failure');
-        window.location.href = '/login?expired=true';
+        // Only redirect if not already on the login page (prevents redirect loops)
+        if (!window.location.pathname.startsWith('/login')) {
+          window.location.href = '/login?expired=true';
+        }
 
         return Promise.reject(refreshError);
       }

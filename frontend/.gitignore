@@ -26,4 +26,4 @@ dist-ssr
 # Environment files with secrets
 .env
 .env.local
-.env.production
+# Note: .env.production is committed (no secrets — only public VITE_ vars that are baked into the client bundle anyway)
