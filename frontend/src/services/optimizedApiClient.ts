@@ -139,7 +139,7 @@ class OptimizedApiClient {
 
   constructor(config: Partial<ApiClientConfig> = {}) {
     this.config = {
-      baseURL: import.meta.env.VITE_API_URL,
+      baseURL: '', // Use relative URLs — Vite proxy in dev, Vercel rewrite in prod
       timeout: 10000, // 10 seconds
       enableCaching: true,
       enableDeduplication: true,

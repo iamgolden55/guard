@@ -37,7 +37,7 @@ const PasswordResetConfirmPage: React.FC = () => {
 
       try {
         const response = await axios.get(
-          `${import.meta.env.VITE_API_URL}/api/v1/password-reset/validate/${token}/`
+          `/api/v1/password-reset/validate/${token}/`
         );
         setIsValidToken(response.data.valid);
         setEmail(response.data.email || '');
@@ -78,7 +78,7 @@ const PasswordResetConfirmPage: React.FC = () => {
       setIsLoading(true);
       setError(null);
       try {
-        await axios.post(`${import.meta.env.VITE_API_URL}/api/v1/password-reset/confirm/`, {
+        await axios.post(`/api/v1/password-reset/confirm/`, {
           token,
           new_password: values.new_password,
           confirm_password: values.confirm_password

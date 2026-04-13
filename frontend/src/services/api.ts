@@ -14,7 +14,7 @@ let isSessionInvalidating = false;
 // Create an Axios instance with default config
 // Sprint 3: Use relative URLs to leverage Vite proxy in development
 const api: AxiosInstance = axios.create({
-  baseURL: import.meta.env.DEV ? '' : API_URL, // Empty baseURL in dev to use Vite proxy
+  baseURL: '', // Use relative URLs — Vite proxy in dev, Vercel rewrite in prod
   headers: {
     'Content-Type': 'application/json',
   },
@@ -108,10 +108,8 @@ api.interceptors.response.use(
 
       refreshPromise = (async () => {
         try {
-          // FIX: Use proper API URL in production (relative URL goes to frontend domain otherwise)
-          const refreshUrl = import.meta.env.DEV
-            ? '/api/v1/auth/refresh/'
-            : `${API_URL}/api/v1/auth/refresh/`;
+          // Use relative URL — Vite proxy in dev, Vercel rewrite in prod
+          const refreshUrl = '/api/v1/auth/refresh/';
 
           // Refresh token is in httpOnly cookie — sent automatically via withCredentials
           const response = await axios.post(
