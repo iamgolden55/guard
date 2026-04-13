@@ -439,13 +439,32 @@ function AuthProvider({ children }: { children: ReactNode }) {
     setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // Sprint 3: Login returns only user object (tokens are in httpOnly cookies)
+      // Step 1: Authenticate - only this step can produce "invalid credentials"
       const response = await authService.login({ username, password });
 
-      // Fetch onboarding status for the logged in user (no token parameter needed)
-      const onboardingStatus = await fetchOnboardingStatus(response.user);
-      // Fetch company membership (no token parameter needed)
-      const companyMembership = await fetchCompanyMembership();
+      // Step 2: Post-login fetches — errors here must NOT show "invalid credentials"
+      let onboardingStatus: OnboardingStatus;
+      try {
+        onboardingStatus = await fetchOnboardingStatus(response.user);
+      } catch (e) {
+        console.error('Post-login onboarding fetch failed (defaulting to completed):', e);
+        // Default to completed so the user reaches the dashboard rather than
+        // being incorrectly redirected to onboarding due to a transient API error
+        onboardingStatus = {
+          isCompleted: true,
+          currentStep: 5,
+          completedSteps: [1, 2, 3, 4, 5],
+          hasCompany: true
+        };
+      }
+
+      let companyMembership: CompanyMembership | null;
+      try {
+        companyMembership = await fetchCompanyMembership();
+      } catch (e) {
+        console.error('Post-login company fetch failed:', e);
+        companyMembership = null;
+      }
 
       // Set refs earlier and prevent validation effect immediately
       onboardingFetchedRef.current = true; // Prevent validation effect immediately
@@ -463,13 +482,16 @@ function AuthProvider({ children }: { children: ReactNode }) {
       }));
 
       isLoggingInRef.current = false; // Allow token validation useEffect to run again
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login failed:', error);
       isLoggingInRef.current = false; // Reset flag on error
+
+      // Extract the actual error message from the API response
+      const apiMessage = error?.response?.data?.message || error?.response?.data?.detail;
       setAuthState(prev => ({
         ...prev,
         isLoading: false,
-        error: 'Invalid username or password'
+        error: apiMessage || 'Invalid username or password'
       }));
     }
   };

@@ -69,8 +69,20 @@ const AuthGuard: React.FC<AuthGuardProps> = ({
       return children ? <>{children}</> : <Outlet />;
     }
 
-    // If onboarding is not completed (null means not loaded, false means loaded but incomplete)
-    if (authState.onboarding.isCompleted !== true) {
+    // If onboarding status hasn't loaded yet, show loading instead of redirecting
+    if (authState.onboarding.isCompleted === null) {
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <Spinner size={SpinnerSize.large} />
+            <p className="mt-4 text-gray-600">Loading...</p>
+          </div>
+        </div>
+      );
+    }
+
+    // Only redirect to onboarding if explicitly not completed (false, not null)
+    if (authState.onboarding.isCompleted === false) {
       // Redirect to appropriate onboarding step (use 1 as fallback if currentStep is null)
       const currentStep = authState.onboarding.currentStep ?? 1;
       return <Navigate to={`/onboarding/step/${currentStep}`} replace />;
