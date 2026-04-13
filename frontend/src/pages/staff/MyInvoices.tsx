@@ -36,11 +36,12 @@ const MyInvoices: React.FC = () => {
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceDisplay | null>(null);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
 
-  const getStatusType = (status: InvoiceStatus): 'success' | 'warning' | 'error' => {
+  const getStatusType = (status: InvoiceStatus): 'success' | 'warning' | 'error' | 'info' => {
     switch (status) {
       case InvoiceStatus.PAID: return 'success';
       case InvoiceStatus.PENDING: return 'warning';
       case InvoiceStatus.OVERDUE: return 'error';
+      default: return 'info';
     }
   };
 

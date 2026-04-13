@@ -52,7 +52,7 @@ const statusConfig: Record<StatusType, { bg: string; text: string; dot: string }
 };
 
 const StatusIndicator: React.FC<StatusIndicatorProps> = ({ type, children, className = '' }) => {
-  const config = statusConfig[type];
+  const config = statusConfig[type] || statusConfig.info;
 
   return (
     <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[12px] font-medium ${config.bg} ${config.text} ${className}`}>

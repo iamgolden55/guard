@@ -50,7 +50,7 @@ const FlashbarItemComponent: React.FC<{
   item: FlashbarItem;
   onDismiss?: (id: string) => void;
 }> = ({ item, onDismiss }) => {
-  const styles = flashStyles[item.type];
+  const styles = flashStyles[item.type] || flashStyles.info;
 
   useEffect(() => {
     if (item.autoDismiss !== false && item.type === 'success') {
