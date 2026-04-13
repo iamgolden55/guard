@@ -112,23 +112,36 @@ function AuthProvider({ children }: { children: ReactNode }) {
         // Fallback to localStorage if API call fails
         const savedProgress = onboardingService.getProgress();
 
-        const fallbackResult = {
-          isCompleted: savedProgress?.isCompleted || false,
-          currentStep: savedProgress?.currentStep || 1,
-          completedSteps: savedProgress?.completedSteps || [],
-          companyId: savedProgress?.companyId,
-          hasCompany: !!savedProgress?.companyId
-        };
+        // If localStorage has explicit progress data, use it
+        if (savedProgress) {
+          return {
+            isCompleted: savedProgress.isCompleted || false,
+            currentStep: savedProgress.currentStep || 1,
+            completedSteps: savedProgress.completedSteps || [],
+            companyId: savedProgress.companyId,
+            hasCompany: !!savedProgress.companyId
+          };
+        }
 
-        return fallbackResult;
+        // No API data AND no localStorage data — don't block the user
+        // with onboarding. Default to completed so they reach the dashboard.
+        // If they truly need onboarding, the dashboard will handle it.
+        console.warn('No onboarding data available (API failed, no localStorage). Defaulting to completed.');
+        return {
+          isCompleted: true,
+          currentStep: 5,
+          completedSteps: [1, 2, 3, 4, 5],
+          hasCompany: true
+        };
       }
     } catch (error) {
       console.error('Failed to fetch onboarding status:', error);
+      // Same fallback — don't block users when we can't determine status
       return {
-        isCompleted: false,
-        currentStep: 1,
-        completedSteps: [],
-        hasCompany: false
+        isCompleted: true,
+        currentStep: 5,
+        completedSteps: [1, 2, 3, 4, 5],
+        hasCompany: true
       };
     } finally {
       // Clear loading state
