@@ -540,10 +540,14 @@ class CookieTokenRefreshView(APIView):
             # Get refresh token from cookie
             refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
 
+            # HYBRID AUTH: Fall back to request body for Safari/browsers that block cross-site cookies
+            if not refresh_token:
+                refresh_token = request.data.get('refresh')
+
             if not refresh_token:
                 return Response({
                     'message': 'Refresh token not found',
-                    'detail': 'No refresh token found in cookies. Please log in again.'
+                    'detail': 'No refresh token found in cookies or request body. Please log in again.'
                 }, status=status.HTTP_401_UNAUTHORIZED)
 
             # Create RefreshToken instance and validate
@@ -565,8 +569,12 @@ class CookieTokenRefreshView(APIView):
                 # Generate new refresh token
                 refresh_token = str(token)
 
+            # HYBRID AUTH: Return tokens in response body for Safari/browsers
+            # that block cross-site cookies (mirrors LoginView response format)
             response = Response({
                 'message': 'Token refreshed successfully',
+                'access': access_token,
+                'refresh': refresh_token,
             }, status=status.HTTP_200_OK)
 
             # Set new access token cookie
