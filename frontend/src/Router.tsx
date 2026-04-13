@@ -18,31 +18,48 @@ import { AdminDashboard, InvoiceGeneration, ShiftScheduling, Settings, FinanceIn
 import FinanceIntegrationsOAuthCallback from './pages/admin/FinanceIntegrationsOAuthCallback';
 import CompanySetupPage from './pages/admin/CompanySetupPage';
 
+// Wrapper for lazy imports: auto-reloads the page once if a chunk fails to load
+// (happens after deployments when old chunk hashes are no longer on the CDN)
+function lazyWithRetry(importFn: () => Promise<any>) {
+  return lazy(() =>
+    importFn().catch((error: any) => {
+      const hasReloaded = sessionStorage.getItem('chunk_reload');
+      if (!hasReloaded) {
+        sessionStorage.setItem('chunk_reload', '1');
+        window.location.reload();
+        return new Promise(() => {}); // never resolves — page is reloading
+      }
+      sessionStorage.removeItem('chunk_reload');
+      throw error; // already retried, let it fail
+    })
+  );
+}
+
 // Lazy load heavy admin components to improve navigation performance
-const StaffShifts = lazy(() => import('./pages/manager/StaffShifts'));
-const Approvals = lazy(() => import('./pages/manager/Approvals'));
-const StaffManagement = lazy(() => import('./pages/admin/StaffManagement'));
-const VenueManagement = lazy(() => import('./pages/admin/VenueManagement'));
-const DeputyIntegration = lazy(() => import('./pages/admin/DeputyIntegration'));
-const RecruitmentManagement = lazy(() => import('./pages/admin/RecruitmentManagement'));
-const RecruitmentApplication = lazy(() => import('./pages/public/RecruitmentApplication'));
-const EmploymentTypesManagement = lazy(() => import('./pages/admin/EmploymentTypesManagement'));
-const ReportsPage = lazy(() => import('./pages/reports/ReportsPage'));
-const WorkforceScheduler = lazy(() => import('./pages/admin/scheduler/SchedulerPage'));
-const LeaveReports = lazy(() => import('./pages/admin/LeaveReports'));
-const Attendance = lazy(() => import('./pages/admin/Attendance'));
-const AnalyticsDashboard = lazy(() => import('./pages/admin/AnalyticsDashboard'));
-const BankHolidayManagement = lazy(() => import('./pages/admin/BankHolidayManagement'));
-const ComplianceSettings = lazy(() => import('./components/compliance/ComplianceSettings'));
+const StaffShifts = lazyWithRetry(() => import('./pages/manager/StaffShifts'));
+const Approvals = lazyWithRetry(() => import('./pages/manager/Approvals'));
+const StaffManagement = lazyWithRetry(() => import('./pages/admin/StaffManagement'));
+const VenueManagement = lazyWithRetry(() => import('./pages/admin/VenueManagement'));
+const DeputyIntegration = lazyWithRetry(() => import('./pages/admin/DeputyIntegration'));
+const RecruitmentManagement = lazyWithRetry(() => import('./pages/admin/RecruitmentManagement'));
+const RecruitmentApplication = lazyWithRetry(() => import('./pages/public/RecruitmentApplication'));
+const EmploymentTypesManagement = lazyWithRetry(() => import('./pages/admin/EmploymentTypesManagement'));
+const ReportsPage = lazyWithRetry(() => import('./pages/reports/ReportsPage'));
+const WorkforceScheduler = lazyWithRetry(() => import('./pages/admin/scheduler/SchedulerPage'));
+const LeaveReports = lazyWithRetry(() => import('./pages/admin/LeaveReports'));
+const Attendance = lazyWithRetry(() => import('./pages/admin/Attendance'));
+const AnalyticsDashboard = lazyWithRetry(() => import('./pages/admin/AnalyticsDashboard'));
+const BankHolidayManagement = lazyWithRetry(() => import('./pages/admin/BankHolidayManagement'));
+const ComplianceSettings = lazyWithRetry(() => import('./components/compliance/ComplianceSettings'));
 
 // Leave Management Pages - Lazy Loading
-const TeamOverview = lazy(() => import('./pages/manager/TeamOverview'));
-const LeavePolicies = lazy(() => import('./pages/admin/LeavePolicies'));
+const TeamOverview = lazyWithRetry(() => import('./pages/manager/TeamOverview'));
+const LeavePolicies = lazyWithRetry(() => import('./pages/admin/LeavePolicies'));
 // Leave reports re-enabled above
-const LeaveSettings = lazy(() => import('./pages/admin/LeaveSettings'));
+const LeaveSettings = lazyWithRetry(() => import('./pages/admin/LeaveSettings'));
 
 // Onboarding Components - Lazy Loading
-const OnboardingWizard = lazy(() => import('./components/onboarding/OnboardingWizard'));
+const OnboardingWizard = lazyWithRetry(() => import('./components/onboarding/OnboardingWizard'));
 
 // Leave Management Components
 import { LeaveManagement } from './pages/leave';
