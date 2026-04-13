@@ -21,14 +21,16 @@ class CompanyService {
    */
   async getCurrentCompanyContext(): Promise<CompanyContextResponse | null> {
     try {
+      console.log('getCurrentCompanyContext: calling API...', `${this.baseUrl}/current/`);
       const response = await api.get(`${this.baseUrl}/current/`);
+      console.log('getCurrentCompanyContext: API returned status', response.status, 'has membership:', !!response.data?.membership);
       // If the API returns null company and membership, return null
       if (response.data.company === null && response.data.membership === null) {
         return null;
       }
       return response.data;
-    } catch (error) {
-      console.error('Failed to get current company context:', error);
+    } catch (error: any) {
+      console.error('getCurrentCompanyContext FAILED:', error?.response?.status, error?.response?.data || error?.message);
       // Return null instead of throwing for users without companies
       return null;
     }

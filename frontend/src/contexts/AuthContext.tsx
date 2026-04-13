@@ -170,27 +170,36 @@ function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Sprint 3: Function to fetch current company membership (cookies handle auth)
+  // Fetch current company membership via API
   const fetchCompanyMembership = useCallback(async (): Promise<CompanyMembership | null> => {
     try {
-      // Sprint 3: No need to set Authorization header - cookies are sent automatically
       const response = await companyService.getCurrentCompanyContext();
+      console.log('fetchCompanyMembership raw response:', JSON.stringify(response)?.substring(0, 300));
 
       // Handle null response (user doesn't have a company yet)
-      if (!response || !response.membership) {
+      if (!response) {
+        console.warn('fetchCompanyMembership: response is null/undefined');
+        return null;
+      }
+
+      // The API returns { status, company, membership } but the TypeScript type
+      // doesn't include membership. Access it via the raw response data.
+      const membership = (response as any).membership;
+      if (!membership) {
+        console.warn('fetchCompanyMembership: no membership in response. Keys:', Object.keys(response));
         return null;
       }
 
       return {
-        id: response.membership.id,
-        role: response.membership.role,
-        isOwner: response.membership.is_owner,
-        isActive: response.membership.is_active,
-        companyId: response.membership.company,
-        companyName: response.membership.company_name
+        id: membership.id,
+        role: membership.role,
+        isOwner: membership.is_owner,
+        isActive: membership.is_active,
+        companyId: membership.company,
+        companyName: membership.company_name
       };
     } catch (error) {
-      // Expected for new users without company membership
+      console.error('fetchCompanyMembership error:', error);
       return null;
     }
   }, []);
