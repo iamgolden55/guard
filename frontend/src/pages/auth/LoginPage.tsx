@@ -13,10 +13,22 @@ const LoginPage: React.FC = () => {
   const [loginError, setLoginError] = React.useState<string | null>(null);
   const [showPassword, setShowPassword] = React.useState(false);
 
-  const searchParams = new URLSearchParams(window.location.search);
-  const sessionExpired = searchParams.get('expired') === 'true';
   const from = location.state?.from?.pathname || '/';
   const hasRedirectedRef = React.useRef(false);
+
+  // Check for expired param once on mount, then clean the URL so it doesn't persist
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('expired') === 'true') {
+      setLoginError('Your session has expired. Please log in again.');
+      // Remove ?expired=true from URL so refreshing the page doesn't re-show it
+      params.delete('expired');
+      const cleanUrl = params.toString()
+        ? `${window.location.pathname}?${params.toString()}`
+        : window.location.pathname;
+      window.history.replaceState({}, '', cleanUrl);
+    }
+  }, []);
 
   React.useEffect(() => {
     if (hasRedirectedRef.current) return;
@@ -30,10 +42,6 @@ const LoginPage: React.FC = () => {
       }
     }
   }, [authState.isAuthenticated, authState.isLoading, authState.onboardingLoading, authState.onboarding.isCompleted, authState.onboarding.currentStep, navigate, from]);
-
-  React.useEffect(() => {
-    if (sessionExpired) setLoginError('Your session has expired. Please log in again.');
-  }, [sessionExpired]);
 
   const formik = useFormik({
     initialValues: { username: '', password: '' },

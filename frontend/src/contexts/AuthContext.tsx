@@ -365,15 +365,17 @@ function AuthProvider({ children }: { children: ReactNode }) {
         const refreshSuccessful = await refreshUserToken();
 
         if (!refreshSuccessful) {
-          // Sprint 3: Clear user data (tokens are in httpOnly cookies, cleared by backend)
+          // Clear all auth data — stale session
           localStorage.removeItem('user');
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
 
           setAuthState({
             user: null,
             isAuthenticated: false,
             isLoading: false,
             onboardingLoading: false,
-            error: 'Session expired. Please login again.',
+            error: null,
             onboarding: {
               isCompleted: null, // null = not loaded
               currentStep: null, // null = not loaded
@@ -408,15 +410,17 @@ function AuthProvider({ children }: { children: ReactNode }) {
             onboardingFetchedRef.current = true;
           } catch (secondError) {
             console.error('Profile fetch failed after token refresh:', secondError);
-            // Sprint 3: Clear user data (tokens in httpOnly cookies)
+            // Clear all auth data — stale session
             localStorage.removeItem('user');
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
 
             setAuthState({
               user: null,
               isAuthenticated: false,
               isLoading: false,
               onboardingLoading: false,
-              error: 'Session expired. Please login again.',
+              error: null,
               onboarding: {
                 isCompleted: null, // null = not loaded
                 currentStep: null, // null = not loaded
