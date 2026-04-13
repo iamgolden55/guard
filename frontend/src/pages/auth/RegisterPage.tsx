@@ -22,7 +22,7 @@ const RegisterPage: React.FC = () => {
   React.useEffect(() => {
     if (authState.isAuthenticated) {
       // If onboarding is not completed, redirect to onboarding
-      if (!authState.onboarding.isCompleted) {
+      if (authState.onboarding.isCompleted === false) {
         const currentStep = authState.onboarding.currentStep || 1;
         navigate(`/onboarding/step/${currentStep}`);
       } else {

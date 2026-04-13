@@ -32,7 +32,7 @@ const CompanySetupPage: React.FC = () => {
 
   // Determine user's situation
   const getUserSituation = () => {
-    if (!authState.onboarding.isCompleted) {
+    if (authState.onboarding.isCompleted === false) {
       return {
         title: 'Onboarding Incomplete',
         message: 'Your account setup is not complete. Please complete the onboarding process to access your dashboard.',

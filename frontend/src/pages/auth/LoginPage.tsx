@@ -34,7 +34,9 @@ const LoginPage: React.FC = () => {
     if (hasRedirectedRef.current) return;
     if (authState.isAuthenticated && !authState.isLoading && !authState.onboardingLoading) {
       hasRedirectedRef.current = true;
-      if (!authState.onboarding.isCompleted) {
+      // Only redirect to onboarding if explicitly incomplete (false).
+      // null = not loaded yet, true = completed — both go to dashboard.
+      if (authState.onboarding.isCompleted === false) {
         const currentStep = authState.onboarding.currentStep || 1;
         navigate(`/onboarding/step/${currentStep}`);
       } else {

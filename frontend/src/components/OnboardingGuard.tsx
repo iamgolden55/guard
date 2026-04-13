@@ -33,8 +33,20 @@ const OnboardingGuard: React.FC<OnboardingGuardProps> = ({ children }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // If onboarding is not completed (null means not loaded, false means loaded but incomplete)
-  if (authState.onboarding.isCompleted !== true) {
+  // If onboarding status is null (not loaded yet), show loading
+  if (authState.onboarding.isCompleted === null) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Spinner size={SpinnerSize.large} />
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Only redirect if onboarding is explicitly not completed (false)
+  if (authState.onboarding.isCompleted === false) {
     console.log('OnboardingGuard: Onboarding not completed. Status:', authState.onboarding);
     // Allow access to onboarding routes themselves
     if (location.pathname.startsWith('/onboarding')) {
