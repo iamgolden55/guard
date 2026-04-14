@@ -48,6 +48,14 @@ class ShiftsService {
       status: shift.status,
       check_in_time: shift.check_in_time,
       check_out_time: shift.check_out_time,
+      notes: shift.notes,
+      hourly_rate:
+        shift.hourly_rate == null
+          ? null
+          : typeof shift.hourly_rate === 'number'
+          ? shift.hourly_rate
+          : parseFloat(shift.hourly_rate),
+      is_special_event: !!shift.is_special_event,
       sync_status: 'synced',
       // Multi-staff shift fields
       shift_group: shift.shift_group || null,
@@ -138,6 +146,89 @@ class ShiftsService {
   }
 
   /**
+   * Fetch all company shifts for managers/admins with pagination + optional status filter.
+   * Hits GET /api/v1/shifts/manager/all/ — which enforces manager/admin role server-side.
+   */
+  async getAllCompanyShifts(
+    params: PaginationParams & { status?: string } = {}
+  ): Promise<PaginatedResponse<Shift>> {
+    try {
+      const { page = 1, pageSize = 20, status } = params;
+
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        page_size: pageSize.toString(),
+      });
+      if (status) {
+        queryParams.set('status', status);
+      }
+
+      const response = await apiService.get<any>(
+        `/api/v1/shifts/manager/all/?${queryParams.toString()}`
+      );
+
+      // manager/all may return a raw array or a paginated envelope. The
+      // envelope uses {count, total_pages, current_page, page_size, results}
+      // (no next/previous URLs), so synthesize `next` from the page math so
+      // the existing reducer's `hasMore: response.next !== null` logic works.
+      if (Array.isArray(response)) {
+        return {
+          count: response.length,
+          next: null,
+          previous: null,
+          results: response.map((shift: any) => this.transformShift(shift)),
+        };
+      }
+
+      if (!response || !Array.isArray(response.results)) {
+        console.error('[ShiftsService] Invalid manager/all response:', response);
+        return { count: 0, next: null, previous: null, results: [] };
+      }
+
+      const currentPage = Number(response.current_page ?? page);
+      const totalPages = Number(response.total_pages ?? 1);
+      const hasMore = Number.isFinite(currentPage) && Number.isFinite(totalPages)
+        ? currentPage < totalPages
+        : false;
+
+      return {
+        count: Number(response.count ?? response.results.length),
+        next: hasMore ? 'more' : null,
+        previous: currentPage > 1 ? 'prev' : null,
+        results: response.results.map((shift: any) => this.transformShift(shift)),
+      };
+    } catch (error) {
+      console.error('[ShiftsService] Error fetching company shifts:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new shift (admin/manager only).
+   * POST /api/v1/shifts/  — backend scopes venue to the caller's company
+   * and emails the assigned staff user automatically.
+   */
+  async createShift(payload: {
+    staff_user: number;
+    venue: number;
+    start_time: string;
+    end_time: string;
+    required_security_role?: string;
+    notes?: string;
+    hourly_rate?: number;
+    status?: string;
+    is_published?: boolean;
+  }): Promise<Shift> {
+    try {
+      const response = await apiService.post<any>('/api/v1/shifts/', payload);
+      return this.transformShift(response);
+    } catch (error) {
+      console.error('[ShiftsService] Error creating shift:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Fetch all shifts (legacy method for backward compatibility)
    * @deprecated Use fetchShifts with pagination instead
    */
@@ -212,18 +303,97 @@ class ShiftsService {
   }
 
   /**
+   * Create multiple shifts sharing one venue/time with different staff (admin/manager).
+   * POST /api/v1/shifts/create_multi_staff/ — backend returns all created shifts and the
+   * generated shift_group UUID so they can be grouped visually.
+   */
+  async createMultiStaffShifts(payload: {
+    venue: number;
+    staff_users: number[];
+    start_time: string;
+    end_time: string;
+    required_security_role?: string;
+    notes?: string;
+    hourly_rate?: number | null;
+    is_special_event?: boolean;
+    status?: string;
+  }): Promise<{ message: string; shifts: Shift[]; shift_group: string }> {
+    try {
+      const response = await apiService.post<any>(
+        '/api/v1/shifts/create_multi_staff/',
+        payload
+      );
+      const shifts = Array.isArray(response?.shifts)
+        ? response.shifts.map((s: any) => this.transformShift(s))
+        : [];
+      return {
+        message: response?.message ?? '',
+        shifts,
+        shift_group: response?.shift_group ?? '',
+      };
+    } catch (error) {
+      console.error('[ShiftsService] Error creating multi-staff shifts:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Approve (or reject) a shift as a manager/admin.
+   * POST /api/v1/shifts/{id}/approve/ — backend requires `managerSignature`
+   * (text is accepted) when `approved` is true.
+   */
+  async approveShift(
+    shiftId: number,
+    payload: { approved: boolean; managerSignature?: string; managerNotes?: string }
+  ): Promise<Shift> {
+    try {
+      const response = await apiService.post<any>(
+        `/api/v1/shifts/${shiftId}/approve/`,
+        payload
+      );
+      return this.transformShift(response);
+    } catch (error) {
+      console.error('[ShiftsService] Error approving shift:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Patch a shift (admin/manager reschedule or note update).
+   * PATCH /api/v1/shifts/{id}/
+   */
+  async updateShift(
+    shiftId: number,
+    patch: {
+      start_time?: string;
+      end_time?: string;
+      notes?: string;
+      hourly_rate?: number | null;
+      is_special_event?: boolean;
+    }
+  ): Promise<Shift> {
+    try {
+      const response = await apiService.patch<any>(`/api/v1/shifts/${shiftId}/`, patch);
+      return this.transformShift(response);
+    } catch (error) {
+      console.error('[ShiftsService] Error updating shift:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Cancel a shift
    */
   async cancelShift(shiftId: number): Promise<Shift> {
     try {
-      const response = await apiService.post<Shift>(
+      const response = await apiService.post<any>(
         `/api/v1/shifts/${shiftId}/cancel/`
       );
 
       // Cancel notifications since shift is cancelled
       await notificationService.cancelShiftReminders(shiftId);
 
-      return response;
+      return this.transformShift(response);
     } catch (error) {
       console.error('[ShiftsService] Error canceling shift:', error);
       throw error;

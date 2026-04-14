@@ -26,6 +26,8 @@ export type MainStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList>;
   // Modal Screens
   ShiftDetails: { shift?: Shift; shiftId?: number }; // Accept either full shift object OR just ID
+  CreateShift: undefined;
+  EditShift: { shiftId: number };
   AvailableShifts: undefined;
   ShiftExchanges: undefined;
   CheckInFlow: {
@@ -74,12 +76,31 @@ export type MainStackParamList = {
   ContractorUnavailability: undefined;
   Earnings: undefined;
   InvoiceDetail: { invoiceId: number };
+  TeamMemberProfile: {
+    memberId: number;
+    name: string;
+    role: string;
+    photo?: string;
+    presenceStatus: string;
+    currentVenue?: string;
+    statusMessage?: string;
+    securityRoles: string[];
+    employmentType?: string;
+    siaLicenseTypes: string[];
+    isOnShift: boolean;
+    activeShift?: {
+      venue_name: string | null;
+      check_in_time: string | null;
+      role_on_shift: string;
+    } | null;
+  };
 };
 
 // Tab Navigator (bottom tabs)
 export type TabParamList = {
   Home: undefined;
   Calendar: undefined;
+  Manage: undefined;
   Team: undefined;
   Profile: undefined;
 };

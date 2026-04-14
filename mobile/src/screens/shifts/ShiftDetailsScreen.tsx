@@ -3,7 +3,7 @@
  * Clean, product-focused shift details with hero map
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   ScrollView,
@@ -27,8 +27,14 @@ import { TransferDetailsCard } from '../../components/shift';
 import { colors, getColors, spacing } from '../../theme';
 import { useTheme } from '../../hooks/useTheme';
 import { Shift, checkInShift, checkOutShift } from '../../store/slices/shiftsSlice';
-import { useAppDispatch } from '../../hooks/useRedux';
-import { useNavigation } from '@react-navigation/native';
+import { useAppDispatch, useAppSelector } from '../../hooks/useRedux';
+import { useAuth } from '../../hooks/useAuth';
+import {
+  approveShiftThunk,
+  cancelShiftThunk,
+  selectManageShiftsMutating,
+} from '../../store/slices/manageShiftsSlice';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
 import { locationService } from '../../services/locationService';
@@ -64,6 +70,9 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
   const dispatch = useAppDispatch();
   const { isDark } = useTheme();
   const themeColors = getColors(isDark);
+  const { user } = useAuth();
+  const isManager = user?.role === 'admin' || user?.role === 'manager';
+  const isAdminMutating = useAppSelector(selectManageShiftsMutating);
 
   // Handle both cases: full shift object OR just ID
   const [shift, setShift] = useState<Shift | null>(route.params.shift || null);
@@ -83,52 +92,44 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
 
-  // ALWAYS refresh shift data from backend to ensure we have the latest status
-  // This fixes the bug where stale data shows wrong buttons (check-in vs check-out)
-  useEffect(() => {
-    const fetchShiftData = async () => {
+  // Refresh shift data from backend every time the screen gains focus.
+  // Uses the single-shift endpoint (/shifts/{id}/) which the backend scopes
+  // by role: staff see their own, managers/admins see their company's — so
+  // this works for both staff check-in flows and admin management.
+  useFocusEffect(
+    useCallback(() => {
       const shiftId = route.params.shiftId || route.params.shift?.id;
       if (!shiftId) return;
 
-      // Only show loading spinner if we don't have any shift data yet
-      if (!shift) {
-        setIsLoadingShift(true);
-      }
+      let cancelled = false;
 
-      try {
-        console.log('[ShiftDetails] Refreshing shift data for ID:', shiftId);
-        const response = await shiftsService.fetchShifts({
-          page: 1,
-          pageSize: 100
-        });
+      const fetchShiftData = async () => {
+        if (!shift) setIsLoadingShift(true);
 
-        // Find the shift in the response
-        const fetchedShift = response.results.find(s => s.id === shiftId);
-
-        if (fetchedShift) {
+        try {
+          console.log('[ShiftDetails] Refreshing shift data for ID:', shiftId);
+          const fetchedShift = await shiftsService.fetchShift(shiftId);
+          if (cancelled) return;
           console.log('[ShiftDetails] ✅ Shift data loaded, status:', fetchedShift.status);
           setShift(fetchedShift);
-        } else {
-          console.warn('[ShiftDetails] ⚠️ Shift not found');
-          if (!shift) {
-            Alert.alert('Error', 'Shift not found');
+        } catch (error) {
+          console.error('[ShiftDetails] ❌ Error fetching shift:', error);
+          if (!cancelled && !shift) {
+            Alert.alert('Error', 'Failed to load shift details');
             navigation.goBack();
           }
+        } finally {
+          if (!cancelled) setIsLoadingShift(false);
         }
-      } catch (error) {
-        console.error('[ShiftDetails] ❌ Error fetching shift:', error);
-        // Only show error and navigate back if we don't have any shift data
-        if (!shift) {
-          Alert.alert('Error', 'Failed to load shift details');
-          navigation.goBack();
-        }
-      } finally {
-        setIsLoadingShift(false);
-      }
-    };
+      };
 
-    fetchShiftData();
-  }, [route.params.shiftId, route.params.shift?.id]);
+      fetchShiftData();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [route.params.shiftId, route.params.shift?.id])
+  );
 
   // Calculate distance to venue with real-time updates
   useEffect(() => {
@@ -1082,6 +1083,143 @@ export const ShiftDetailsScreen: React.FC<ShiftDetailsScreenProps> = ({
 
       {/* Action Buttons - Fixed at Bottom */}
       <View style={[styles.footer, { backgroundColor: themeColors.background.primary, borderTopColor: themeColors.border.light }]}>
+        {/* Admin/Manager action row — appears for managers/admins on actionable shifts */}
+        {isManager && (shift.status === 'pending_approval' || shift.status === 'scheduled' || shift.status === 'open') && (
+          <View style={styles.secondaryActionsRow}>
+            {shift.status === 'pending_approval' && (
+              <>
+                <TouchableOpacity
+                  disabled={isAdminMutating}
+                  style={[
+                    styles.secondaryActionButton,
+                    { backgroundColor: themeColors.background.secondary, opacity: isAdminMutating ? 0.6 : 1 },
+                  ]}
+                  onPress={() => {
+                    const managerName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'Manager';
+                    const signature = `Approved by ${managerName} at ${new Date().toISOString()}`;
+                    Alert.alert(
+                      'Approve shift',
+                      `Your name and the current time will be recorded as the approval attestation.`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Approve',
+                          onPress: async () => {
+                            try {
+                              await dispatch(approveShiftThunk({
+                                shiftId: shift.id,
+                                approved: true,
+                                managerSignature: signature,
+                              })).unwrap();
+                              Alert.alert('Shift approved', '', [
+                                { text: 'OK', onPress: () => navigation.goBack() },
+                              ]);
+                            } catch (err: any) {
+                              Alert.alert('Failed to approve', typeof err === 'string' ? err : 'Please try again.');
+                            }
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Ionicons name="checkmark-circle-outline" size={20} color={colors.success} />
+                  <Text style={[styles.secondaryActionText, { color: colors.success }]}>Approve</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  disabled={isAdminMutating}
+                  style={[
+                    styles.secondaryActionButton,
+                    styles.dangerAction,
+                    { backgroundColor: themeColors.background.secondary, opacity: isAdminMutating ? 0.6 : 1 },
+                  ]}
+                  onPress={() => {
+                    Alert.alert(
+                      'Reject shift',
+                      'This marks the shift as rejected. Staff will be notified.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Reject',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              await dispatch(approveShiftThunk({
+                                shiftId: shift.id,
+                                approved: false,
+                              })).unwrap();
+                              Alert.alert('Shift rejected', '', [
+                                { text: 'OK', onPress: () => navigation.goBack() },
+                              ]);
+                            } catch (err: any) {
+                              Alert.alert('Failed to reject', typeof err === 'string' ? err : 'Please try again.');
+                            }
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Ionicons name="close-circle-outline" size={20} color={colors.error} />
+                  <Text style={[styles.secondaryActionText, styles.dangerActionText]}>Reject</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {(shift.status === 'scheduled' || shift.status === 'open') && (
+              <>
+                <TouchableOpacity
+                  disabled={isAdminMutating}
+                  style={[
+                    styles.secondaryActionButton,
+                    { backgroundColor: themeColors.background.secondary, opacity: isAdminMutating ? 0.6 : 1 },
+                  ]}
+                  onPress={() => navigation.navigate('EditShift', { shiftId: shift.id })}
+                >
+                  <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+                  <Text style={styles.secondaryActionText}>Reschedule</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  disabled={isAdminMutating}
+                  style={[
+                    styles.secondaryActionButton,
+                    styles.dangerAction,
+                    { backgroundColor: themeColors.background.secondary, opacity: isAdminMutating ? 0.6 : 1 },
+                  ]}
+                  onPress={() => {
+                    Alert.alert(
+                      'Cancel shift',
+                      'This removes the shift from the assigned staff member\'s schedule.',
+                      [
+                        { text: 'Keep shift', style: 'cancel' },
+                        {
+                          text: 'Cancel shift',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              await dispatch(cancelShiftThunk(shift.id)).unwrap();
+                              Alert.alert('Shift cancelled', '', [
+                                { text: 'OK', onPress: () => navigation.goBack() },
+                              ]);
+                            } catch (err: any) {
+                              Alert.alert('Failed to cancel', typeof err === 'string' ? err : 'Please try again.');
+                            }
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Ionicons name="close-circle-outline" size={20} color={colors.error} />
+                  <Text style={[styles.secondaryActionText, styles.dangerActionText]}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+
         {/* Check-In Button - Only show when within check-in window */}
         {shift.status === 'scheduled' && canCheckIn() && (
           <Button

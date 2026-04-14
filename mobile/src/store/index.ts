@@ -16,6 +16,7 @@ import { combineReducers } from 'redux';
 // Import slices
 import authReducer from './slices/authSlice';
 import shiftsReducer from './slices/shiftsSlice';
+import manageShiftsReducer from './slices/manageShiftsSlice';
 import incidentsReducer from './slices/incidentsSlice';
 import syncReducer from './slices/syncSlice';
 import leaveReducer from './slices/leaveSlice';
@@ -64,6 +65,7 @@ const persistConfig = {
 const rootReducer = combineReducers({
   auth: authReducer,
   shifts: shiftsReducer,
+  manageShifts: manageShiftsReducer,
   incidents: incidentsReducer,
   sync: syncReducer,
   leave: leaveReducer,

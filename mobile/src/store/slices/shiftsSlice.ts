@@ -57,6 +57,8 @@ export interface Shift {
   break_start_time?: string;
   break_end_time?: string;
   notes?: string;
+  hourly_rate?: number | null;
+  is_special_event?: boolean;
   sync_status: 'synced' | 'pending' | 'failed';
 
   // Multi-staff shift fields

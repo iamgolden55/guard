@@ -14,11 +14,16 @@ import { TabNavigator } from './TabNavigator';
 // Components
 import { NetworkStatusBanner, SyncStatusBanner } from '../components/common';
 
+// Team Screens
+import { TeamMemberProfileScreen } from '../screens/team/TeamMemberProfileScreen';
+
 // Shift Screens
 import { ShiftDetailsScreen } from '../screens/shifts/ShiftDetailsScreen';
 import { CheckInFlowScreen } from '../screens/shifts/CheckInFlowScreen';
 import { UberAvailableShiftsScreen } from '../screens/shifts/uber/UberAvailableShiftsScreen';
 import { UberShiftExchangesScreen } from '../screens/shifts/uber/UberShiftExchangesScreen';
+import { CreateShiftScreen } from '../screens/shifts/manage/CreateShiftScreen';
+import { EditShiftScreen } from '../screens/shifts/manage/EditShiftScreen';
 
 // Venue Screens
 import { VenueTermsScreen } from '../screens/venue/VenueTermsScreen';
@@ -70,6 +75,30 @@ export const MainNavigator = () => {
           <Stack.Screen name="CheckInFlow" component={CheckInFlowScreen} />
           <Stack.Screen name="AvailableShifts" component={UberAvailableShiftsScreen} />
           <Stack.Screen name="ShiftExchanges" component={UberShiftExchangesScreen} />
+          <Stack.Screen
+            name="CreateShift"
+            component={CreateShiftScreen}
+            options={{
+              headerShown: true,
+              headerTitle: 'Create Shift',
+              headerBackTitle: 'Back',
+              presentation: 'card',
+              headerStyle: { backgroundColor: '#FFFFFF' },
+              headerTintColor: '#000000',
+            }}
+          />
+          <Stack.Screen
+            name="EditShift"
+            component={EditShiftScreen}
+            options={{
+              headerShown: true,
+              headerTitle: 'Reschedule Shift',
+              headerBackTitle: 'Back',
+              presentation: 'card',
+              headerStyle: { backgroundColor: '#FFFFFF' },
+              headerTintColor: '#000000',
+            }}
+          />
           <Stack.Screen name="VenueTerms" component={VenueTermsScreen} />
 
           {/* Shift Checks Screens */}
@@ -81,6 +110,7 @@ export const MainNavigator = () => {
           {/* Profile Screens */}
           <Stack.Screen name="VirtualID" component={VirtualIDScreen} />
           <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+          <Stack.Screen name="TeamMemberProfile" component={TeamMemberProfileScreen} />
                     <Stack.Screen name="SyncQueue" component={SyncQueueScreen} />
                     <Stack.Screen name="Earnings" component={EarningsScreen} />
                     <Stack.Screen name="InvoiceDetail" component={InvoiceDetailScreen} />
