@@ -144,7 +144,9 @@ class DatabaseService {
       const index = incidents.findIndex((i) => i.id === id);
 
       if (index === -1) {
-        console.error('[Database] Incident not found:', id);
+        // Can legitimately happen when a sync-queue retry outlives its
+        // local record (e.g. storage cleared, duplicate submit replaced it).
+        console.warn('[Database] Incident not found when updating, skipping:', id);
         return;
       }
 
