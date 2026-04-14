@@ -35,6 +35,8 @@ from .views import (
     ContractorUnavailabilityViewSet, BankHolidayViewSet, StaffLeaveDailyRateViewSet,
     # Email unsubscribe view
     EmailUnsubscribeView,
+    # Incident reporting views
+    IncidentReportViewSet,
 )
 from .social_auth import apple_auth, google_auth
 
@@ -91,6 +93,9 @@ router.register('notifications/preferences', NotificationPreferencesViewSet, bas
 router.register('contractor-unavailability', ContractorUnavailabilityViewSet, basename='contractor-unavailability')
 router.register('bank-holidays', BankHolidayViewSet, basename='bank-holidays')
 router.register('staff-leave-rates', StaffLeaveDailyRateViewSet, basename='staff-leave-rates')
+
+# Incident reporting endpoints
+router.register('incidents', IncidentReportViewSet, basename='incidents')
 
 urlpatterns = [
     path('', include(router.urls)),

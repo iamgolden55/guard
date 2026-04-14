@@ -48,7 +48,9 @@ from .models import (
     # Password reset models
     PasswordResetToken,
     # Leave/Availability models
-    ContractorUnavailability, BankHoliday, StaffLeaveDailyRate
+    ContractorUnavailability, BankHoliday, StaffLeaveDailyRate,
+    # Incident reporting
+    IncidentReport,
 )
 from .serializers import (
     UserSerializer, StaffProfileSerializer, EmergencyContactSerializer,
@@ -71,7 +73,9 @@ from .serializers import (
     SNSDeviceTokenSerializer, NotificationPreferencesSerializer,
     # Leave/Availability serializers
     ContractorUnavailabilitySerializer, ContractorUnavailabilityCreateSerializer,
-    BankHolidaySerializer, StaffLeaveDailyRateSerializer, StaffLeaveDailyRateUpdateSerializer
+    BankHolidaySerializer, StaffLeaveDailyRateSerializer, StaffLeaveDailyRateUpdateSerializer,
+    # Incident reporting
+    IncidentReportSerializer,
 )
 
 User = get_user_model()
@@ -7442,3 +7446,56 @@ class EmailUnsubscribeView(APIView):
             'message': message,
             'unsubscribed_type': unsubscribe_type
         })
+
+
+class IncidentReportViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for incident report management.
+    Staff can create and view their own reports.
+    Managers/admins can view and resolve all reports for their company.
+    """
+    serializer_class = IncidentReportSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['admin', 'manager']:
+            company = self.get_user_company(self.request)
+            if company:
+                company_user_ids = company.memberships.filter(
+                    is_active=True
+                ).values_list('user_id', flat=True)
+                return IncidentReport.objects.filter(
+                    reported_by_id__in=company_user_ids
+                ).select_related('venue', 'reported_by', 'shift', 'resolved_by')
+            return IncidentReport.objects.none()
+        return IncidentReport.objects.filter(
+            reported_by=user
+        ).select_related('venue', 'reported_by', 'shift', 'resolved_by')
+
+    def get_user_company(self, request):
+        if hasattr(request, 'current_company') and request.current_company:
+            return request.current_company
+        membership = request.user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').first()
+        return membership.company if membership else None
+
+    def perform_create(self, serializer):
+        serializer.save(reported_by=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def resolve(self, request, pk=None):
+        """Mark an incident as resolved"""
+        incident = self.get_object()
+        if request.user.role not in ['admin', 'manager']:
+            return Response(
+                {'error': 'Only managers and admins can resolve incidents'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        incident.resolved = True
+        incident.resolved_at = timezone.now()
+        incident.resolved_by = request.user
+        incident.followup_notes = request.data.get('followup_notes', incident.followup_notes)
+        incident.save()
+        return Response(IncidentReportSerializer(incident).data)
