@@ -2777,6 +2777,9 @@ class IncidentReportSerializer(serializers.ModelSerializer):
             # Mobile clients don't send `venue` (they send only `shift`);
             # it's derived from shift.venue in validate() below.
             'venue': {'required': False, 'allow_null': True},
+            # Mobile may launch the incident form without a shift context;
+            # validate() resolves the user's active shift when omitted.
+            'shift': {'required': False, 'allow_null': True},
             # Mobile sends `occurred_at`; we mirror it into `incident_time`
             # in validate() since the DB column is non-nullable.
             'incident_time': {'required': False, 'allow_null': True},
@@ -2786,9 +2789,23 @@ class IncidentReportSerializer(serializers.ModelSerializer):
         # Mirror occurred_at -> incident_time when only the mobile field is sent.
         if not data.get('incident_time') and data.get('occurred_at'):
             data['incident_time'] = data['occurred_at']
+        # Resolve the user's current shift when the client omits it.
+        if not data.get('shift'):
+            request = self.context.get('request')
+            user = getattr(request, 'user', None) if request else None
+            if user and user.is_authenticated:
+                active_shift = user.shifts.filter(
+                    status__in=['active', 'in_progress', 'scheduled']
+                ).order_by('-start_time').first()
+                if active_shift:
+                    data['shift'] = active_shift
         # Derive venue from shift when the client omits it (mobile payload).
         if not data.get('venue') and data.get('shift'):
             data['venue'] = data['shift'].venue
+        if not data.get('shift'):
+            raise serializers.ValidationError({
+                'shift': 'No shift provided and no active shift found for the current user.'
+            })
         if not data.get('incident_time'):
             raise serializers.ValidationError({
                 'incident_time': 'Either incident_time or occurred_at is required.'
