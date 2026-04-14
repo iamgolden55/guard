@@ -187,7 +187,9 @@ class SyncService {
     } catch (error: any) {
       logger.error('[SyncService] Action failed', {
         type: queueItem.type,
-        error: error.message
+        error: error.message,
+        status: error.statusCode,
+        response: error.response,
       });
       await this.handleActionFailure(queueItem, error);
     }
@@ -311,7 +313,7 @@ class SyncService {
       if (entityType === 'shifts') {
         await database.updateShift(Number(entityId), { sync_status: status });
       } else if (entityType === 'incidents') {
-        await database.updateIncident(entityId, { syncStatus: status });
+        await database.updateIncident(Number(entityId), { sync_status: status });
       }
     } catch (error) {
       logger.error('[SyncService] Error updating entity sync status', { error });

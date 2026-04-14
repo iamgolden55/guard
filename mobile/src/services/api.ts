@@ -20,12 +20,19 @@ export class ApiError extends Error {
     public endpoint: string,
     responseData?: any
   ) {
-    // Use response data message if available, otherwise use statusText
+    // Use response data message if available, otherwise stringify field-level
+    // DRF validation errors so they actually make it into logs/Sentry.
+    const fieldErrors = responseData && typeof responseData === 'object' && !Array.isArray(responseData)
+      ? Object.entries(responseData)
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+          .join('; ')
+      : null;
     const errorMessage = responseData?.detail ||
                         responseData?.error ||
                         responseData?.message ||
                         (Array.isArray(responseData) ? responseData.join(', ') : null) ||
                         (typeof responseData === 'string' ? responseData : null) ||
+                        fieldErrors ||
                         statusText;
 
     super(`HTTP ${statusCode}: ${errorMessage}`);

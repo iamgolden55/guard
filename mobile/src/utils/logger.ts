@@ -34,6 +34,11 @@ class Logger {
       tracesSampleRate: this.isDevelopment ? 1.0 : 0.1,
       enableAutoSessionTracking: true,
       debug: this.isDevelopment,
+      // Silence native Session Replay "unreliable environment" warning
+      // that fires loudly in Metro on iOS Simulator. No replay is
+      // captured in these environments regardless of this flag.
+      replaysSessionSampleRate: 0,
+      replaysOnErrorSampleRate: 0,
     });
   }
 

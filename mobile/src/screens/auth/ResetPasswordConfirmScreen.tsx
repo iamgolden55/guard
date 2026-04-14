@@ -21,7 +21,7 @@ import { Container, Heading2, Body, Caption, Button } from '@components/ui';
 import { colors, spacing, layout } from '../../theme';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { logger } from '../../utils/logger';
-import { api } from '../../services/api';
+import { apiService } from '../../services/api';
 
 type ResetPasswordConfirmRouteParams = {
   token: string;
@@ -96,15 +96,17 @@ export const ResetPasswordConfirmScreen: React.FC = () => {
 
     try {
       logger.info('[ResetPassword] Validating token');
-      const response = await api.get(`/password-reset/validate/${token}/`);
+      const response = await apiService.get<{ valid: boolean; email?: string; message?: string }>(
+        `/api/v1/password-reset/validate/${token}/`
+      );
 
-      if (response.data.valid) {
+      if (response.valid) {
         setIsValidToken(true);
-        setEmail(response.data.email || '');
+        setEmail(response.email || '');
         logger.info('[ResetPassword] Token validated successfully');
       } else {
         setIsValidToken(false);
-        Alert.alert('Invalid Token', response.data.message || 'This reset link is invalid or has expired.');
+        Alert.alert('Invalid Token', response.message || 'This reset link is invalid or has expired.');
       }
     } catch (error: any) {
       logger.error('[ResetPassword] Token validation failed', { error });
@@ -166,7 +168,7 @@ export const ResetPasswordConfirmScreen: React.FC = () => {
       setIsSubmitting(true);
       logger.info('[ResetPassword] Submitting password reset');
 
-      await api.post('/api/v1/password-reset/confirm/', {
+      await apiService.post('/api/v1/password-reset/confirm/', {
         token,
         new_password: newPassword,
         confirm_password: confirmPassword,
@@ -229,9 +231,12 @@ export const ResetPasswordConfirmScreen: React.FC = () => {
               This password reset link is invalid or has expired. Please request a new one.
             </Body>
 
-            <Button variant="primary" onPress={() => navigation.navigate('ForgotPassword' as never)} style={styles.submitButton}>
-              Request New Link
-            </Button>
+            <Button
+              title="Request New Link"
+              variant="primary"
+              onPress={() => navigation.navigate('ForgotPassword' as never)}
+              style={styles.submitButton}
+            />
 
             <TouchableOpacity onPress={() => navigation.navigate('Login' as never)} style={styles.backLink}>
               <Body color={colors.primary}>← Back to Login</Body>
@@ -385,13 +390,13 @@ export const ResetPasswordConfirmScreen: React.FC = () => {
 
             {/* Submit Button */}
             <Button
+              title={isSubmitting ? 'Resetting Password...' : 'Reset Password'}
               variant="primary"
               onPress={handleSubmit}
               disabled={isSubmitting || passwordStrength.score < 4}
+              loading={isSubmitting}
               style={styles.submitButton}
-            >
-              {isSubmitting ? 'Resetting Password...' : 'Reset Password'}
-            </Button>
+            />
 
             {/* Back to Login Link */}
             <TouchableOpacity onPress={() => navigation.navigate('Login' as never)} style={styles.backLink}>
