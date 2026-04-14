@@ -86,11 +86,6 @@ export const IncidentReportScreen: React.FC = () => {
     });
   };
 
-  const handleVoiceReport = () => {
-    logger.info('[IncidentReport] Voice report selected');
-    navigation.navigate('VoiceReport', { shiftId });
-  };
-
   const handleDetailedReport = () => {
     logger.info('[IncidentReport] Detailed report selected');
     navigation.navigate('IncidentForm', { shiftId });
@@ -156,27 +151,6 @@ export const IncidentReportScreen: React.FC = () => {
           <Text style={[styles.sectionTitle, { color: uberColors.text.primary }]}>
             Other Options
           </Text>
-
-          <TouchableOpacity
-            style={[
-              styles.optionCard,
-              { backgroundColor: uberColors.background.surface, borderColor: uberColors.border.light },
-              uberShadows.soft
-            ]}
-            onPress={handleVoiceReport}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.optionIcon, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
-              <Ionicons name="mic" size={24} color={uberColors.primary} />
-            </View>
-            <View style={styles.optionContent}>
-              <Text style={[styles.optionTitle, { color: uberColors.text.primary }]}>Voice Report</Text>
-              <Text style={[styles.optionDescription, { color: uberColors.text.secondary }]}>
-                Record a voice message for hands-free reporting
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={uberColors.text.muted} />
-          </TouchableOpacity>
 
           <TouchableOpacity
             style={[
