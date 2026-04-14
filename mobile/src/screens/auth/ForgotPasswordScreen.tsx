@@ -18,7 +18,7 @@ import { Container, Heading2, Body, Caption, Button } from '@components/ui';
 import { colors, spacing, layout } from '../../theme';
 import { useNavigation } from '@react-navigation/native';
 import { logger } from '../../utils/logger';
-import { api } from '../../services/api';
+import { apiService } from '../../services/api';
 
 export const ForgotPasswordScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -47,7 +47,7 @@ export const ForgotPasswordScreen: React.FC = () => {
       logger.info('[ForgotPassword] Sending password reset request', { email: email.trim() });
 
       // Call backend password reset endpoint
-      await api.post('/password-reset/request/', { email: email.trim() });
+      await apiService.post('/api/v1/password-reset/request/', { email: email.trim() });
 
       setEmailSent(true);
       logger.info('[ForgotPassword] Password reset email sent successfully');
@@ -91,12 +91,11 @@ export const ForgotPasswordScreen: React.FC = () => {
 
             {/* Back to Login Button */}
             <Button
+              title="Back to Login"
               variant="primary"
               onPress={handleBackToLogin}
               style={styles.submitButton}
-            >
-              Back to Login
-            </Button>
+            />
 
             {/* Resend Link */}
             <TouchableOpacity
@@ -159,13 +158,13 @@ export const ForgotPasswordScreen: React.FC = () => {
 
           {/* Submit Button */}
           <Button
+            title={isSubmitting ? 'Sending...' : 'Send Reset Instructions'}
             variant="primary"
             onPress={handleSubmit}
             disabled={isSubmitting}
+            loading={isSubmitting}
             style={styles.submitButton}
-          >
-            {isSubmitting ? 'Sending...' : 'Send Reset Instructions'}
-          </Button>
+          />
 
           {/* Help Text */}
           <View style={styles.helpBox}>

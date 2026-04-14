@@ -311,7 +311,7 @@ class SyncService {
       if (entityType === 'shifts') {
         await database.updateShift(Number(entityId), { sync_status: status });
       } else if (entityType === 'incidents') {
-        await database.updateIncident(entityId, { syncStatus: status });
+        await database.updateIncident(Number(entityId), { sync_status: status });
       }
     } catch (error) {
       logger.error('[SyncService] Error updating entity sync status', { error });

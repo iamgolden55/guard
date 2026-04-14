@@ -56,7 +56,7 @@ class IncidentService {
 
       // Add to sync queue
       await syncService.addToQueue({
-        type: 'create',
+        type: 'create_incident',
         entityType: 'incidents',
         entityId: localIncident.id?.toString() || 'temp',
         payload: localIncident,
