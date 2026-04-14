@@ -2765,8 +2765,39 @@ class IncidentReportSerializer(serializers.ModelSerializer):
             'actions_taken', 'requires_followup', 'followup_notes',
             'resolved', 'resolved_at', 'resolved_by', 'resolved_by_name',
             'created_at', 'updated_at',
+            # Mobile-app fields (migration 0035)
+            'incident_type', 'title', 'location_description',
+            'latitude', 'longitude', 'occurred_at', 'reported_at',
+            'photos', 'videos', 'voice_note', 'witnesses',
+            'persons_involved', 'police_notified', 'ambulance_called',
+            'police_reference', 'status',
         )
         read_only_fields = ('reported_by', 'created_at', 'updated_at')
+        extra_kwargs = {
+            # Mobile clients don't send `venue` (they send only `shift`);
+            # it's derived from shift.venue in validate() below.
+            'venue': {'required': False, 'allow_null': True},
+            # Mobile sends `occurred_at`; we mirror it into `incident_time`
+            # in validate() since the DB column is non-nullable.
+            'incident_time': {'required': False, 'allow_null': True},
+        }
+
+    def validate(self, data):
+        # Mirror occurred_at -> incident_time when only the mobile field is sent.
+        if not data.get('incident_time') and data.get('occurred_at'):
+            data['incident_time'] = data['occurred_at']
+        # Derive venue from shift when the client omits it (mobile payload).
+        if not data.get('venue') and data.get('shift'):
+            data['venue'] = data['shift'].venue
+        if not data.get('incident_time'):
+            raise serializers.ValidationError({
+                'incident_time': 'Either incident_time or occurred_at is required.'
+            })
+        if not data.get('venue'):
+            raise serializers.ValidationError({
+                'venue': 'Either venue or a shift with a venue is required.'
+            })
+        return data
 
     def get_reported_by_name(self, obj):
         return f"{obj.reported_by.first_name} {obj.reported_by.last_name}".strip() or obj.reported_by.username

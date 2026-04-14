@@ -3284,14 +3284,29 @@ class IncidentReport(models.Model):
         ('high', 'High'),
         ('critical', 'Critical')
     )
-    
+    INCIDENT_TYPES = (
+        ('security_breach', 'Security Breach'),
+        ('medical_emergency', 'Medical Emergency'),
+        ('fire_alarm', 'Fire Alarm'),
+        ('suspicious_activity', 'Suspicious Activity'),
+        ('property_damage', 'Property Damage'),
+        ('assault', 'Assault'),
+        ('other', 'Other'),
+    )
+    STATUS_CHOICES = (
+        ('draft', 'Draft'),
+        ('submitted', 'Submitted'),
+        ('under_review', 'Under Review'),
+        ('resolved', 'Resolved'),
+    )
+
     venue = models.ForeignKey(Venue, on_delete=models.CASCADE, related_name='incident_reports')
     reported_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reported_incidents')
     shift = models.ForeignKey(Shift, on_delete=models.CASCADE, related_name='incident_reports')
     incident_time = models.DateTimeField()
     description = models.TextField()
     severity = models.CharField(max_length=20, choices=SEVERITY_LEVELS)
-    actions_taken = models.TextField()
+    actions_taken = models.TextField(blank=True)
     requires_followup = models.BooleanField(default=False)
     followup_notes = models.TextField(null=True, blank=True)
     resolved = models.BooleanField(default=False)
@@ -3300,12 +3315,33 @@ class IncidentReport(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Mobile-app fields (migration 0035)
+    incident_type = models.CharField(max_length=50, choices=INCIDENT_TYPES, default='other')
+    title = models.CharField(max_length=255, blank=True, null=True)
+    location_description = models.TextField(blank=True, null=True)
+    latitude = models.FloatField(blank=True, null=True)
+    longitude = models.FloatField(blank=True, null=True)
+    occurred_at = models.DateTimeField(blank=True, null=True)
+    reported_at = models.DateTimeField(default=timezone.now)
+    photos = models.JSONField(default=list, blank=True)
+    videos = models.JSONField(default=list, blank=True)
+    voice_note = models.TextField(blank=True, null=True)
+    witnesses = models.JSONField(default=list, blank=True)
+    persons_involved = models.JSONField(default=list, blank=True)
+    police_notified = models.BooleanField(default=False)
+    ambulance_called = models.BooleanField(default=False)
+    police_reference = models.CharField(max_length=100, blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='submitted')
+
     class Meta:
         db_table = 'incident_reports'
-        ordering = ['-incident_time']
+        ordering = ['-occurred_at', '-incident_time']
         indexes = [
             models.Index(fields=['venue', 'incident_time']),
             models.Index(fields=['severity', 'resolved']),
+            models.Index(fields=['venue', 'occurred_at']),
+            models.Index(fields=['incident_type', 'status']),
+            models.Index(fields=['status', 'occurred_at']),
         ]
 
     def __str__(self):
