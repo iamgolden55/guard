@@ -6,7 +6,7 @@ import MetricCard from '../../components/MetricCard';
 import { BulkPayrollGeneration, Card, SwipeableTabs } from '../../components';
 import IncompleteShiftsWidget from '../../components/IncompleteShiftsWidget';
 import { useAuth } from '../../contexts/AuthContext';
-import { shiftService, invoiceService, deputyService, venueService, employmentTypeService, exchangeService } from '../../services';
+import { shiftService, invoiceService, venueService, employmentTypeService, exchangeService } from '../../services';
 import api from '../../services/api';
 import type { DeputyStatus, User, Shift, Invoice } from '../../types';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -68,7 +68,6 @@ const AnalyticsDashboard: React.FC = () => {
         const [
           shiftsResult,
           invoicesResult,
-          deputyStatusDataResult,
           usersResult,
           venuesResult,
           employmentTypesResult,
@@ -77,7 +76,6 @@ const AnalyticsDashboard: React.FC = () => {
         ] = await Promise.allSettled([
           shiftService.getShifts(),
           invoiceService.getInvoices(),
-          deputyService.getDeputyStatus(),
           api.get<User[]>('/api/v1/users/'),
           venueService.getAllVenues(),
           employmentTypeService.getEmploymentTypes(),
@@ -103,19 +101,13 @@ const AnalyticsDashboard: React.FC = () => {
         const invoicesData = invoicesResult.status === 'fulfilled' && Array.isArray(invoicesResult.value) ? invoicesResult.value : [];
         const pendingInvoices = invoicesData.filter((invoice: Invoice) => invoice.status === 'pending').length;
 
-        let deputyStatusData: DeputyStatus | null = null;
-        if (deputyStatusDataResult.status === 'fulfilled') {
-          deputyStatusData = deputyStatusDataResult.value;
-        } else {
-          deputyStatusData = {
-            isConnected: false,
-            lastSyncDate: null,
-            employeeCount: 0,
-            timesheetCount: 0,
-            errorMessage: 'Failed to connect to Deputy'
-          };
-        }
-        setDeputyStatus(deputyStatusData);
+        setDeputyStatus({
+          isConnected: false,
+          lastSyncDate: null,
+          employeeCount: 0,
+          timesheetCount: 0,
+          errorMessage: null
+        });
 
         let totalStaff = 0;
         if (usersResult.status === 'fulfilled') {

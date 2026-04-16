@@ -5,9 +5,9 @@ import { SpaceBetween, Alert } from '../../components/cloudscape';
 import ActiveShiftsWidget from '../../components/ActiveShiftsWidget';
 import ActivityHeatMap from '../../components/ActivityHeatMap';
 import { useAuth } from '../../contexts/AuthContext';
-import { shiftService, invoiceService, deputyService, venueService, employmentTypeService, exchangeService } from '../../services';
+import { shiftService, invoiceService, venueService, employmentTypeService, exchangeService } from '../../services';
 import api from '../../services/api';
-import type { DeputyStatus, User, Shift, Invoice, ActivityHeatMapData, HeatMapDayData } from '../../types';
+import type { User, Shift, Invoice, ActivityHeatMapData, HeatMapDayData } from '../../types';
 import {
   Clock, CheckCircle, Gauge, Users, MapPin, DollarSign,
   CalendarDays, ShieldCheck, AlertTriangle, Settings,
@@ -61,13 +61,12 @@ const AdminDashboard: React.FC = () => {
         startDate.setDate(startDate.getDate() - 30);
 
         const [
-          shiftsResult, invoicesResult, deputyStatusDataResult,
+          shiftsResult, invoicesResult,
           usersResult, venuesResult, employmentTypesResult,
           pendingApprovalsResult, attendanceResult
         ] = await Promise.allSettled([
           shiftService.getShifts(),
           invoiceService.getInvoices(),
-          deputyService.getDeputyStatus(),
           api.get<User[]>('/api/v1/users/'),
           venueService.getAllVenues(),
           employmentTypeService.getEmploymentTypes(),

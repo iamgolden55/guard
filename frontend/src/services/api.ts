@@ -511,7 +511,7 @@ export interface PendingEarnings {
 // Fetch pending earnings for staff
 export const fetchPendingEarnings = async (): Promise<PendingEarnings> => {
   try {
-    const response = await api.get('/users/me/pending-earnings/');
+    const response = await api.get('/api/v1/users/me/pending-earnings/');
     return response.data;
   } catch (error: any) {
     console.error('Error fetching pending earnings:', error);
@@ -544,7 +544,7 @@ export interface WeeklyEarnings {
 // Fetch weekly earnings for staff (includes estimated earnings from scheduled shifts)
 export const fetchWeeklyEarnings = async (): Promise<WeeklyEarnings> => {
   try {
-    const response = await api.get('/users/me/weekly-earnings/');
+    const response = await api.get('/api/v1/users/me/weekly-earnings/');
     return response.data;
   } catch (error: any) {
     console.error('Error fetching weekly earnings:', error);
