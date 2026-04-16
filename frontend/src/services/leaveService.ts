@@ -177,20 +177,20 @@ export interface CreateBlackoutPeriodRequest {
 
 // Base API endpoints for leave management
 const LEAVE_ENDPOINTS = {
-  LEAVE_TYPES: '/leave/types/',
-  LEAVE_POLICIES: '/leave/policies/',
-  LEAVE_ENTITLEMENTS: '/leave/entitlements/',
-  LEAVE_REQUESTS: '/leave/requests/',
-  LEAVE_BALANCES: '/leave/balances/',
-  LEAVE_APPROVALS: '/leave/approvals/',
-  LEAVE_CALENDAR: '/leave/calendar/',
-  LEAVE_STATISTICS: '/leave/reports/',
-  LEAVE_ANALYTICS: '/leave/reports',
-  TEAM_OVERVIEW: '/leave/team-overview/',
-  TEAM_BALANCES: '/leave/team-overview/team_balances/',
-  TEAM_CALENDAR: '/leave/team-overview/team_calendar/',
-  LEAVE_SETTINGS: '/leave/settings/',
-  BLACKOUT_PERIODS: '/leave/blackout-periods/'
+  LEAVE_TYPES: '/api/v1/leave/types/',
+  LEAVE_POLICIES: '/api/v1/leave/policies/',
+  LEAVE_ENTITLEMENTS: '/api/v1/leave/entitlements/',
+  LEAVE_REQUESTS: '/api/v1/leave/requests/',
+  LEAVE_BALANCES: '/api/v1/leave/balances/',
+  LEAVE_APPROVALS: '/api/v1/leave/approvals/',
+  LEAVE_CALENDAR: '/api/v1/leave/calendar/',
+  LEAVE_STATISTICS: '/api/v1/leave/reports/',
+  LEAVE_ANALYTICS: '/api/v1/leave/reports',
+  TEAM_OVERVIEW: '/api/v1/leave/team-overview/',
+  TEAM_BALANCES: '/api/v1/leave/team-overview/team_balances/',
+  TEAM_CALENDAR: '/api/v1/leave/team-overview/team_calendar/',
+  LEAVE_SETTINGS: '/api/v1/leave/settings/',
+  BLACKOUT_PERIODS: '/api/v1/leave/blackout-periods/'
 } as const;
 
 class LeaveService {
@@ -642,7 +642,7 @@ class LeaveService {
    */
   async downloadSupportingDocument(requestId: number, documentId: number): Promise<Blob> {
     const response = await api.get(
-      `/leave/requests/${requestId}/documents/${documentId}/download`,
+      `/api/v1/leave/requests/${requestId}/documents/${documentId}/download`,
       { responseType: 'blob' }
     );
     return response.data;
