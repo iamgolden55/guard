@@ -23,6 +23,13 @@ export async function initMonitoring() {
       tracesSampleRate: import.meta.env.PROD ? 0.1 : 1.0,
       replaysSessionSampleRate: 0.1,
       replaysOnErrorSampleRate: 1.0,
+      beforeSend(event) {
+        const frames = event.exception?.values?.[0]?.stacktrace?.frames;
+        if (frames?.some((f) => f.filename?.includes("/_next-live/"))) {
+          return null;
+        }
+        return event;
+      },
     });
   }
 
