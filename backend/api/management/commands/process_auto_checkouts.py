@@ -24,9 +24,11 @@ class Command(BaseCommand):
                 self.style.WARNING('DRY RUN MODE - No changes will be made')
             )
 
-        # Find shifts eligible for auto-checkout
+        # Find shifts eligible for auto-checkout. 'active' is included to cover
+        # shifts where check-in happened but the status->in_progress transition
+        # was skipped; can_auto_checkout() still gates on check_in_time for those.
         eligible_shifts = Shift.objects.filter(
-            status='in_progress',
+            status__in=['active', 'in_progress'],
             check_out_time__isnull=True,
             auto_checkout=False
         ).select_related('staff_user', 'venue')

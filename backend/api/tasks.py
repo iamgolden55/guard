@@ -1795,3 +1795,29 @@ async def _send_cancellation_notification(job_id: str, user_id: int):
     await channel_layer.group_send(f'reports_user_{user_id}', notification)
     # Send to job-specific group
     await channel_layer.group_send(f'report_job_{job_id}', notification)
+
+
+@shared_task(name='api.tasks.process_auto_checkouts')
+def process_auto_checkouts():
+    """Close overdue shifts that never got checked out.
+
+    Runs on Celery Beat every 15 min. Iterates candidate shifts (active
+    or in_progress, no check_out_time, auto_checkout flag not set) and
+    lets Shift.can_auto_checkout()/perform_auto_checkout() decide eligibility.
+    """
+    from .models import Shift
+
+    eligible = Shift.objects.filter(
+        status__in=['active', 'in_progress'],
+        check_out_time__isnull=True,
+        auto_checkout=False,
+    ).select_related('staff_user', 'venue')
+
+    processed = 0
+    for shift in eligible:
+        if shift.can_auto_checkout():
+            if shift.perform_auto_checkout():
+                processed += 1
+
+    logger.info(f"process_auto_checkouts: processed {processed} shifts")
+    return processed

@@ -2239,9 +2239,17 @@ class Shift(models.Model):
         """Determine if this shift is eligible for force timeout (bypassing venue checks)"""
         from django.utils import timezone
         from datetime import timedelta
-        
-        # Must be in progress and not already checked out
-        if self.status != 'in_progress' or self.check_out_time is not None:
+
+        # Already checked out — nothing to do
+        if self.check_out_time is not None:
+            return False
+        # Normally 'in_progress'; also accept 'active' when the guard actually checked in
+        # but the status->in_progress transition was skipped (seen in prod for shift #10).
+        if self.status == 'in_progress':
+            pass
+        elif self.status == 'active' and self.check_in_time:
+            pass
+        else:
             return False
             
         # Must be past scheduled end time
@@ -2279,10 +2287,18 @@ class Shift(models.Model):
             # Fallback to defaults if settings unavailable
             grace_period_minutes = 30
         
-        # Must be in progress and not already checked out
-        if self.status != 'in_progress' or self.check_out_time is not None:
+        # Already checked out — nothing to do
+        if self.check_out_time is not None:
             return False
-            
+        # Normally 'in_progress'; also accept 'active' when the guard actually checked in
+        # but the status->in_progress transition was skipped.
+        if self.status == 'in_progress':
+            pass
+        elif self.status == 'active' and self.check_in_time:
+            pass
+        else:
+            return False
+
         # Must be past scheduled end time + grace period
         if not self.end_time:
             return False

@@ -76,6 +76,10 @@ app.conf.update(
             'schedule': 6.0 * 60 * 60,  # Run every 6 hours
             'options': {'queue': 'cleanup'}
         },
+        'process-auto-checkouts': {
+            'task': 'api.tasks.process_auto_checkouts',
+            'schedule': 15.0 * 60,  # Run every 15 minutes
+        },
         # NOTE: Periodic shift notification tasks disabled to prevent duplicates.
         # Primary scheduled tasks (schedule_shift_reminders) handle all reminders.
         # These backup tasks were causing duplicate notifications with -1 minute offset.
