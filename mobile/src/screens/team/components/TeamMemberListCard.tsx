@@ -155,16 +155,18 @@ export const TeamMemberListCard: React.FC<TeamMemberListCardProps> = ({
           )}
 
           {/* More Menu */}
-          <TouchableOpacity
-            style={styles.moreButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              onMorePress?.();
-            }}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="ellipsis-horizontal" size={20} color={teamsColors.text.secondary} />
-          </TouchableOpacity>
+          {onMorePress && (
+            <TouchableOpacity
+              style={styles.moreButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                onMorePress();
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="ellipsis-horizontal" size={20} color={teamsColors.text.secondary} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </TouchableOpacity>

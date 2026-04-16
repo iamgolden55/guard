@@ -64,24 +64,28 @@ export const TeamQuickActions: React.FC<TeamQuickActionsProps> = ({
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background.primary }]}>
       {/* Team Chat - Premium Feature */}
-      <FeatureGate feature="teamChat" showUpgradePrompt={false}>
-        <TouchableOpacity style={[styles.actionCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]} onPress={handleChatPress} activeOpacity={0.7}>
-          <View style={[styles.iconCircle, { backgroundColor: colors.primary + '15' }]}>
-            <Ionicons name="chatbubbles" size={24} color={colors.primary} />
-          </View>
-          <BodySmall style={[styles.actionLabel, { color: themeColors.text.primary }]}>Team Chat</BodySmall>
-        </TouchableOpacity>
-      </FeatureGate>
+      {onChatPress && (
+        <FeatureGate feature="teamChat" showUpgradePrompt={false}>
+          <TouchableOpacity style={[styles.actionCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]} onPress={handleChatPress} activeOpacity={0.7}>
+            <View style={[styles.iconCircle, { backgroundColor: colors.primary + '15' }]}>
+              <Ionicons name="chatbubbles" size={24} color={colors.primary} />
+            </View>
+            <BodySmall style={[styles.actionLabel, { color: themeColors.text.primary }]}>Team Chat</BodySmall>
+          </TouchableOpacity>
+        </FeatureGate>
+      )}
 
       {/* Broadcast Message - Premium Feature */}
-      <FeatureGate feature="broadcastMessages" showUpgradePrompt={false}>
-        <TouchableOpacity style={[styles.actionCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]} onPress={handleBroadcastPress} activeOpacity={0.7}>
-          <View style={[styles.iconCircle, { backgroundColor: '#8B5CF6' + '15' }]}>
-            <Ionicons name="megaphone" size={24} color="#8B5CF6" />
-          </View>
-          <BodySmall style={[styles.actionLabel, { color: themeColors.text.primary }]}>Broadcast</BodySmall>
-        </TouchableOpacity>
-      </FeatureGate>
+      {onBroadcastPress && (
+        <FeatureGate feature="broadcastMessages" showUpgradePrompt={false}>
+          <TouchableOpacity style={[styles.actionCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]} onPress={handleBroadcastPress} activeOpacity={0.7}>
+            <View style={[styles.iconCircle, { backgroundColor: '#8B5CF6' + '15' }]}>
+              <Ionicons name="megaphone" size={24} color="#8B5CF6" />
+            </View>
+            <BodySmall style={[styles.actionLabel, { color: themeColors.text.primary }]}>Broadcast</BodySmall>
+          </TouchableOpacity>
+        </FeatureGate>
+      )}
 
       {/* Emergency Alert - All Tiers */}
       <TouchableOpacity style={[styles.actionCard, { backgroundColor: themeColors.card, borderColor: themeColors.border }]} onPress={handleEmergencyPress} activeOpacity={0.7}>

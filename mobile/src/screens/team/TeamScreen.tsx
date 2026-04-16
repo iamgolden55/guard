@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { View, ScrollView, RefreshControl, StyleSheet, Alert, Linking, ActivityIndicator } from 'react-native';
+import { View, ScrollView, RefreshControl, StyleSheet, Alert, Share, ActivityIndicator } from 'react-native';
 import { Container, Body, Card } from '@components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -23,7 +23,9 @@ import { spacing } from '../../theme';
 import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 import { useSubscription } from '../../contexts/SubscriptionContext';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { MainStackParamList } from '../../types/navigation';
 import { useAppSelector } from '../../hooks/useRedux';
 import { API_ENDPOINTS, getAuthHeaders } from '../../config/api.config';
 import axios from 'axios';
@@ -97,6 +99,7 @@ export const TeamScreen = () => {
   const { isDark } = useTheme();
   const teamsColors = getTeamsColors(isDark);
   const accessToken = useAppSelector((state) => state.auth.accessToken);
+  const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
 
   // Fetch team members from API
   const fetchTeamMembers = useCallback(async () => {
@@ -203,59 +206,41 @@ export const TeamScreen = () => {
     setCollapsedSections(newCollapsed);
   };
 
-  // Handle member press
+  // Handle member press — navigate to profile
   const handleMemberPress = (member: TeamMemberListData) => {
     logger.info('Team member tapped', { memberId: member.id });
-
-    const actions: any[] = [{ text: 'Cancel', style: 'cancel' }];
-
-    actions.push({
-      text: 'View Profile',
-      onPress: () => logger.info('View profile pressed', { memberId: member.id }),
+    const raw = rawMembers.find((m) => m.id === member.id);
+    navigation.navigate('TeamMemberProfile', {
+      memberId: member.id,
+      name: member.name,
+      role: member.role,
+      photo: member.photo,
+      presenceStatus: member.presenceStatus,
+      currentVenue: member.currentVenue,
+      statusMessage: member.statusMessage,
+      securityRoles: raw?.security_roles ?? [],
+      employmentType: raw?.employment_type ?? undefined,
+      siaLicenseTypes: raw?.sia_license_types ?? [],
+      isOnShift: raw?.is_on_shift ?? false,
+      activeShift: raw?.active_shift ?? null,
     });
-
-    Alert.alert(
-      member.name,
-      `${member.role}${member.currentVenue ? `\nVenue: ${member.currentVenue}` : ''}`,
-      actions
-    );
-  };
-
-  // Handle quick action on member card
-  const handleChatPress = (member: TeamMemberListData) => {
-    logger.info('Chat with member', { memberId: member.id });
-    Alert.alert('Chat', `Start chat with ${member.name}`);
-  };
-
-  const handleVideoPress = (member: TeamMemberListData) => {
-    logger.info('Video call with member', { memberId: member.id });
-    Alert.alert('Video Call', `Start video call with ${member.name}`);
-  };
-
-  const handleMorePress = (member: TeamMemberListData) => {
-    logger.info('More options for member', { memberId: member.id });
-    Alert.alert('More Options', `Additional options for ${member.name}`);
   };
 
   // Quick action handlers (banner actions)
-  const handleTeamChatPress = () => {
-    logger.info('Team chat opened');
-    Alert.alert('Team Chat', 'Team chat feature coming soon!');
-  };
-
-  const handleBroadcastPress = () => {
-    logger.info('Broadcast message opened');
-    Alert.alert('Broadcast', 'Send a message to all active team members');
-  };
-
   const handleEmergencyPress = () => {
     logger.info('Emergency alert sent to team');
     Alert.alert('Emergency', 'Emergency alert sent to all team members');
   };
 
-  const handleSharePress = () => {
-    logger.info('Share status pressed');
-    Alert.alert('Share Status', 'Share your current status with the team');
+  const handleSharePress = async () => {
+    try {
+      const isOnShift = rawMembers.some((m) => m.is_current_user && m.is_on_shift);
+      await Share.share({
+        message: `I'm currently ${isOnShift ? 'on shift' : 'off duty'}. Sent via Mead Security.`,
+      });
+    } catch (error) {
+      logger.error('Share failed', error);
+    }
   };
 
   // Handle stat press in banner
@@ -325,9 +310,6 @@ export const TeamScreen = () => {
               key={member.id}
               member={member}
               onPress={() => handleMemberPress(member)}
-              onChatPress={() => handleChatPress(member)}
-              onVideoPress={() => handleVideoPress(member)}
-              onMorePress={() => handleMorePress(member)}
               isDark={isDark}
             />
           ))}
@@ -377,8 +359,6 @@ export const TeamScreen = () => {
 
           {/* Quick Actions */}
           <TeamQuickActions
-            onChatPress={handleTeamChatPress}
-            onBroadcastPress={handleBroadcastPress}
             onEmergencyPress={handleEmergencyPress}
             onSharePress={handleSharePress}
             isDark={isDark}
