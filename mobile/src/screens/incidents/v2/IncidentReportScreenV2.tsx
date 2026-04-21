@@ -1,7 +1,7 @@
 /**
  * IncidentReportScreenV2 — Phase 4 re-skin of the incident type picker.
- * Preserves navigation wiring to IncidentForm / VoiceReport with route
- * param shiftId and prefilled type/severity handoff.
+ * Preserves navigation wiring to IncidentForm with route param shiftId and
+ * prefilled type/severity handoff.
  */
 
 import React from 'react';
@@ -148,10 +148,6 @@ export const IncidentReportScreenV2: React.FC = () => {
     navigation.navigate('IncidentForm', { shiftId });
   };
 
-  const handleVoiceReport = () => {
-    navigation.navigate('VoiceReport', { shiftId });
-  };
-
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.canvas }]}>
       <ScrollView
@@ -258,85 +254,10 @@ export const IncidentReportScreenV2: React.FC = () => {
           ))}
         </View>
 
-        {/* Voice CTA */}
+        {/* Detailed form */}
         <Eyebrow style={{ marginTop: 20, marginLeft: 4, marginBottom: 10 }}>
           Other options
         </Eyebrow>
-        <Pressable
-          onPress={handleVoiceReport}
-          style={({ pressed }) => ({
-            padding: 14,
-            borderRadius: theme.radii.xl,
-            backgroundColor: theme.colors.surface.card,
-            borderWidth: 1,
-            borderColor: theme.colors.surface.hairline,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 12,
-            opacity: pressed ? 0.85 : 1,
-            marginBottom: 10,
-          })}
-        >
-          <View
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 12,
-              backgroundColor: theme.colors.accentSoft,
-              borderWidth: 1,
-              borderColor: theme.colors.accentBorder,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-              <Path
-                d="M9 3 h6 a3 3 0 0 1 3 3 v8 a3 3 0 0 1 -3 3 h-6 a3 3 0 0 1 -3 -3 v-8 a3 3 0 0 1 3 -3 z M5 11 a7 7 0 0 0 14 0 M12 18 v3"
-                stroke={theme.colors.accent}
-                strokeWidth={1.6}
-                fill="none"
-                strokeLinecap="round"
-              />
-            </Svg>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text
-              allowFontScaling={false}
-              style={{
-                fontSize: 15,
-                color: theme.colors.text.primary,
-                fontWeight: '500',
-                letterSpacing: -0.2,
-              }}
-            >
-              Dictate report
-            </Text>
-            <Text
-              allowFontScaling={false}
-              style={{
-                marginTop: 2,
-                fontSize: 12,
-                color: theme.colors.text.secondary,
-              }}
-            >
-              Hands-free when things are urgent
-            </Text>
-          </View>
-          <Text
-            allowFontScaling={false}
-            style={{
-              fontFamily: theme.fonts.mono,
-              fontSize: 10,
-              letterSpacing: 1.8,
-              textTransform: 'uppercase',
-              color: theme.colors.accent,
-              fontWeight: '500',
-            }}
-          >
-            Open
-          </Text>
-        </Pressable>
-
         <Pressable
           onPress={handleDetailedReport}
           style={({ pressed }) => ({

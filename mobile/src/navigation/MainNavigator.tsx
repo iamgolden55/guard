@@ -50,7 +50,6 @@ import { ContractorUnavailabilityScreenV2 as ContractorUnavailabilityScreen } fr
 // Incident Screens
 import { IncidentReportScreenV2 as IncidentReportScreen } from '../screens/incidents/v2';
 import { IncidentFormScreenV2 as IncidentFormScreen } from '../screens/incidents/v2';
-import { VoiceReportScreenV2 as VoiceReportScreen } from '../screens/incidents/v2';
 import { IncidentDetailScreen } from '../screens/incidents/IncidentDetailScreen';
 
 // Shift Checks Screens
@@ -131,7 +130,6 @@ export const MainNavigator = () => {
             component={IncidentReportScreen}
           />
           <Stack.Screen name="IncidentForm" component={IncidentFormScreen} />
-          <Stack.Screen name="VoiceReport" component={VoiceReportScreen} />
           <Stack.Screen name="IncidentDetail" component={IncidentDetailScreen} />
 
           {/*

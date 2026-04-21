@@ -48,7 +48,6 @@ export type MainStackParamList = {
   CheckOutFlow: { shiftId: number };
   IncidentReport: { shiftId?: number };
   IncidentForm: { shiftId?: number; prefilledType?: string; prefilledSeverity?: string };
-  VoiceReport: { shiftId?: number };
   IncidentDetail: { incidentId: number };
   ShiftChecks: { shiftId: number };
   FireExitCheck: { shiftId: number; checkType?: string };
