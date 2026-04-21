@@ -70,7 +70,7 @@ export const fetchUserProfile = createAsyncThunk<
 // Async thunk for updating profile
 export const updateProfile = createAsyncThunk<
   User,
-  { firstName?: string; lastName?: string; email?: string; phone_number?: string },
+  { firstName?: string; lastName?: string; email?: string; phone_number?: string | null },
   { state: RootState; rejectValue: string }
 >(
   'auth/updateProfile',

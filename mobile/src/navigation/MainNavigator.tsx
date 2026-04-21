@@ -15,40 +15,42 @@ import { TabNavigator } from './TabNavigator';
 import { NetworkStatusBanner, SyncStatusBanner } from '../components/common';
 
 // Team Screens
-import { TeamMemberProfileScreen } from '../screens/team/TeamMemberProfileScreen';
+import { TeamMemberProfileScreenV2 as TeamMemberProfileScreen } from '../screens/team/v2';
 
 // Shift Screens
-import { ShiftDetailsScreen } from '../screens/shifts/ShiftDetailsScreen';
-import { CheckInFlowScreen } from '../screens/shifts/CheckInFlowScreen';
-import { UberAvailableShiftsScreen } from '../screens/shifts/uber/UberAvailableShiftsScreen';
-import { UberShiftExchangesScreen } from '../screens/shifts/uber/UberShiftExchangesScreen';
-import { CreateShiftScreen } from '../screens/shifts/manage/CreateShiftScreen';
-import { EditShiftScreen } from '../screens/shifts/manage/EditShiftScreen';
+import {
+  CheckInFlowV2 as CheckInFlowScreen,
+  ShiftDetailsScreenV2 as ShiftDetailsScreen,
+  AvailableShiftsScreenV2 as UberAvailableShiftsScreen,
+  ShiftExchangesScreenV2 as UberShiftExchangesScreen,
+} from '../screens/shifts/v2';
+import { CreateShiftScreenV2 as CreateShiftScreen } from '../screens/shifts/manage/v2';
+import { EditShiftScreenV2 as EditShiftScreen } from '../screens/shifts/manage/v2';
 
 // Venue Screens
 import { VenueTermsScreen } from '../screens/venue/VenueTermsScreen';
 
 // Profile Screens
-import { VirtualIDScreen } from '../screens/profile/VirtualIDScreen';
-import { EditProfileScreen } from '../screens/profile/EditProfileScreen';
+import { VirtualIDScreenV2 as VirtualIDScreen } from '../screens/profile/v2';
+import { EditProfileScreenV2 as EditProfileScreen } from '../screens/profile/v2';
 import { SyncQueueScreen } from '../screens/profile/SyncQueueScreen';
-import { EarningsScreen } from '../screens/profile/EarningsScreen';
-import { InvoiceDetailScreen } from '../screens/profile/InvoiceDetailScreen';
+import { EarningsScreenV2 as EarningsScreen } from '../screens/profile/v2';
+import { InvoiceDetailScreenV2 as InvoiceDetailScreen } from '../screens/profile/v2';
 
 // Test/Debug Screens
 import { NotificationTestScreen } from '../screens/NotificationTestScreen';
 
 // Leave Management Screens
-import { LeaveBalanceScreen } from '../screens/leave/LeaveBalanceScreen';
-import { LeaveRequestScreen } from '../screens/leave/LeaveRequestScreen';
-import { LeaveHistoryScreen } from '../screens/leave/LeaveHistoryScreen';
+import { LeaveBalanceScreenV2 as LeaveBalanceScreen } from '../screens/leave/v2';
+import { LeaveRequestScreenV2 as LeaveRequestScreen } from '../screens/leave/v2';
+import { LeaveHistoryScreenV2 as LeaveHistoryScreen } from '../screens/leave/v2';
 import { LeaveRequestDetailScreen } from '../screens/leave/LeaveRequestDetailScreen';
-import { ContractorUnavailabilityScreen } from '../screens/leave/ContractorUnavailabilityScreen';
+import { ContractorUnavailabilityScreenV2 as ContractorUnavailabilityScreen } from '../screens/leave/v2';
 
 // Incident Screens
-import { IncidentReportScreen } from '../screens/incidents/IncidentReportScreen';
-import { IncidentFormScreen } from '../screens/incidents/IncidentFormScreen';
-import { VoiceReportScreen } from '../screens/incidents/VoiceReportScreen';
+import { IncidentReportScreenV2 as IncidentReportScreen } from '../screens/incidents/v2';
+import { IncidentFormScreenV2 as IncidentFormScreen } from '../screens/incidents/v2';
+import { VoiceReportScreenV2 as VoiceReportScreen } from '../screens/incidents/v2';
 import { IncidentDetailScreen } from '../screens/incidents/IncidentDetailScreen';
 
 // Shift Checks Screens
@@ -78,26 +80,12 @@ export const MainNavigator = () => {
           <Stack.Screen
             name="CreateShift"
             component={CreateShiftScreen}
-            options={{
-              headerShown: true,
-              headerTitle: 'Create Shift',
-              headerBackTitle: 'Back',
-              presentation: 'card',
-              headerStyle: { backgroundColor: '#FFFFFF' },
-              headerTintColor: '#000000',
-            }}
+            options={{ presentation: 'card' }}
           />
           <Stack.Screen
             name="EditShift"
             component={EditShiftScreen}
-            options={{
-              headerShown: true,
-              headerTitle: 'Reschedule Shift',
-              headerBackTitle: 'Back',
-              presentation: 'card',
-              headerStyle: { backgroundColor: '#FFFFFF' },
-              headerTintColor: '#000000',
-            }}
+            options={{ presentation: 'card' }}
           />
           <Stack.Screen name="VenueTerms" component={VenueTermsScreen} />
 
@@ -141,16 +129,6 @@ export const MainNavigator = () => {
           <Stack.Screen
             name="IncidentReport"
             component={IncidentReportScreen}
-            options={{
-              headerShown: true,
-              headerTitle: 'Report Incident',
-              headerBackTitle: 'Back',
-              presentation: 'card',
-              headerStyle: {
-                backgroundColor: '#FFFFFF',
-              },
-              headerTintColor: '#000000',
-            }}
           />
           <Stack.Screen name="IncidentForm" component={IncidentFormScreen} />
           <Stack.Screen name="VoiceReport" component={VoiceReportScreen} />

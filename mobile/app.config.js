@@ -21,12 +21,16 @@ module.exports = {
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
-      backgroundColor: "#007AFF"
+      // Dark canvas matches the V2 launch animation so there's no
+      // white/blue flash between native splash and LaunchScreenV2.
+      // The old splash-icon.png (teal padlock) will briefly appear on
+      // this dark bg until the PNG is replaced with a dark-theme asset.
+      backgroundColor: "#0b0b0e"
     },
     ios: {
       supportsTablet: false,
       bundleIdentifier: "com.meadsecurity.staffapp",
-      buildNumber: "6",
+      buildNumber: "8",
       infoPlist: {
         NSCameraUsageDescription: "This app requires camera access to capture venue entrance photos during shift check-in and incident evidence photos.",
         NSPhotoLibraryUsageDescription: "This app requires photo library access to attach existing photos to incident reports.",
@@ -41,7 +45,7 @@ module.exports = {
     android: {
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
-        backgroundColor: "#007AFF"
+        backgroundColor: "#0b0b0e"
       },
       package: "com.meadsecurity.staffapp",
       versionCode: 1,

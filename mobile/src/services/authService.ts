@@ -308,44 +308,17 @@ class AuthService {
       );
 
       const profileData = response.data;
+      const normalizedProfile = this.transformProfileResponse(profileData);
 
-      // Check if response is StaffProfile format (has nested user object)
-      if (profileData.user && profileData.user.id) {
-        console.log('[AuthService] Transforming StaffProfile response to User structure');
-        console.log('[AuthService] StaffProfile ID:', profileData.id);
-        console.log('[AuthService] User ID:', profileData.user.id);
-
-        // Get the first SIA license if available (backend returns array)
-        const firstSiaLicense = profileData.siaLicenses?.[0] || profileData.sia_licenses?.[0];
-
-        // Extract user data and move StaffProfile data to staff_profile property
-        const userData = {
-          ...profileData.user,
-          staff_profile: {
-            id: profileData.id,
-            phone_number: profileData.phone_number || '',
-            profile_image_url: profileData.profile_image_url || null,
-            emergency_contact_name: profileData.emergency_contact_name,
-            emergency_contact_phone: profileData.emergency_contact_phone,
-            // Map SIA license from the first license in the array
-            sia_license_number: firstSiaLicense?.license_number || firstSiaLicense?.licenseNumber || '',
-            sia_license_expiry: firstSiaLicense?.expiry_date || firstSiaLicense?.expiryDate || '',
-            sia_licenses: profileData.siaLicenses || profileData.sia_licenses || [],
-            is_approved: profileData.is_approved ?? profileData.isApproved,
-            security_roles: profileData.securityRoles || profileData.security_roles || [],
-            // Employment type for contractor vs employee filtering
-            employment_type: profileData.employment_type || profileData.employmentType || null,
-          }
-        };
-
-        console.log('[AuthService] Transformed user ID:', userData.id);
-        console.log('[AuthService] Employment type:', userData.staff_profile?.employment_type);
-        return userData;
+      if (normalizedProfile?.staff_profile) {
+        console.log('[AuthService] Normalized profile to app user shape');
+        console.log('[AuthService] User ID:', normalizedProfile.id);
+        console.log('[AuthService] Employment type:', normalizedProfile.staff_profile?.employment_type);
+      } else {
+        console.log('[AuthService] Profile already in User format');
       }
 
-      // If already in User format (e.g., admin users), return as-is
-      console.log('[AuthService] Profile already in User format');
-      return profileData;
+      return normalizedProfile;
     } catch (error) {
       console.error('[AuthService] Failed to fetch user profile:', error);
       throw new Error('Failed to fetch user profile');
@@ -356,9 +329,23 @@ class AuthService {
    * Helper to transform StaffProfile response to User structure
    */
   private transformProfileResponse(profileData: any): any {
-    if (profileData.user && profileData.user.id) {
-      const firstSiaLicense = profileData.siaLicenses?.[0] || profileData.sia_licenses?.[0];
+    const firstSiaLicense = profileData?.siaLicenses?.[0] || profileData?.sia_licenses?.[0];
+    const employmentType =
+      (profileData?.employment_type &&
+      typeof profileData.employment_type === 'object' &&
+      !Array.isArray(profileData.employment_type))
+        ? profileData.employment_type
+        : (profileData?.employment_type_details &&
+          typeof profileData.employment_type_details === 'object' &&
+          !Array.isArray(profileData.employment_type_details))
+          ? profileData.employment_type_details
+          : (profileData?.employmentType &&
+            typeof profileData.employmentType === 'object' &&
+            !Array.isArray(profileData.employmentType))
+            ? profileData.employmentType
+            : null;
 
+    if (profileData.user && profileData.user.id) {
       return {
         ...profileData.user,
         staff_profile: {
@@ -372,10 +359,42 @@ class AuthService {
           sia_licenses: profileData.siaLicenses || profileData.sia_licenses || [],
           is_approved: profileData.is_approved ?? profileData.isApproved,
           security_roles: profileData.securityRoles || profileData.security_roles || [],
-          employment_type: profileData.employment_type || profileData.employmentType || null,
+          employment_type: employmentType,
         }
       };
     }
+
+    // PATCH /profiles/me for staff users returns a flat StaffProfile serializer
+    // shape. Normalize it back into the User + staff_profile shape the app uses.
+    if (profileData && (profileData.phone_number !== undefined || profileData.firstName !== undefined)) {
+      return {
+        id: profileData.user ?? profileData.id,
+        username: profileData.username || '',
+        email: profileData.email || '',
+        first_name: profileData.firstName || profileData.first_name || '',
+        last_name: profileData.lastName || profileData.last_name || '',
+        role: profileData.role || 'staff',
+        security_roles: profileData.securityRoles || profileData.security_roles || [],
+        staff_profile: {
+          id: profileData.id,
+          phone_number: profileData.phone_number || profileData.phoneNumber || '',
+          profile_image_url: profileData.profile_image_url || profileData.profileImageUrl || null,
+          emergency_contact_name:
+            profileData.emergency_contact_name || profileData.emergencyContact?.name,
+          emergency_contact_phone:
+            profileData.emergency_contact_phone || profileData.emergencyContact?.phoneNumber,
+          sia_license_number:
+            firstSiaLicense?.license_number || firstSiaLicense?.licenseNumber || '',
+          sia_license_expiry:
+            firstSiaLicense?.expiry_date || firstSiaLicense?.expiryDate || '',
+          sia_licenses: profileData.siaLicenses || profileData.sia_licenses || [],
+          is_approved: profileData.is_approved ?? profileData.isApproved,
+          security_roles: profileData.securityRoles || profileData.security_roles || [],
+          employment_type: employmentType,
+        },
+      };
+    }
+
     return profileData;
   }
 
@@ -448,12 +467,12 @@ class AuthService {
     firstName?: string;
     lastName?: string;
     email?: string;
-    phone_number?: string;
+    phone_number?: string | null;
   }): Promise<any> {
     try {
       console.log('[AuthService] Updating profile with data:', data);
       
-      const response = await axios.patch(
+      await axios.patch(
         API_ENDPOINTS.AUTH.PROFILE,
         data,
         {
@@ -462,10 +481,9 @@ class AuthService {
         }
       );
 
-      console.log('[AuthService] Profile update response:', response.data);
-
-      // Transform the response same way as fetchUserProfile
-      return this.transformProfileResponse(response.data);
+      // Fetch the canonical profile shape after save so auth state always
+      // remains in the User + staff_profile structure used across the app.
+      return await this.fetchUserProfile(token);
     } catch (error: any) {
       console.error('[AuthService] Failed to update profile:', error);
       if (error.response?.data) {

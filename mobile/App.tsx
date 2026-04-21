@@ -8,7 +8,7 @@ import './globals';
 
 import React, { useEffect, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -38,8 +38,11 @@ import { syncService } from './src/services/syncService';
 // Logger with Sentry
 import { logger } from './src/utils/logger';
 
-// Animated Splash
-import { AnimatedSplash } from './src/components/AnimatedSplash';
+// Animated Splash — V2 dark premium (Breathing horizon). The original
+// Lottie-based `AnimatedSplash` still lives at src/components/AnimatedSplash
+// and can be restored by reverting this import + the <LaunchScreenV2> usage
+// below.
+import LaunchScreenV2 from './src/screens/launch/LaunchScreenV2';
 
 // Initialize Sentry for error tracking (no-op if SDK not installed or DSN not set)
 logger.initSentry(process.env.EXPO_PUBLIC_SENTRY_DSN);
@@ -73,14 +76,23 @@ function AppContent() {
     clearOldFailedItems();
   }, []);
 
+  // While the launch animation is showing, keep the root dark so the native
+  // Expo splash blends into LaunchScreenV2's canvas without a white flash.
+  const rootBg = showSplash ? '#0b0b0e' : colors.background.primary;
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background.primary }}>
-      <StatusBar style={statusBarStyle} />
+    <View style={{ flex: 1, backgroundColor: rootBg }}>
+      <StatusBar style={showSplash ? 'light' : statusBarStyle} />
       <AppNavigator />
       {showSplash && (
-        <AnimatedSplash
-          onAnimationFinish={() => setShowSplash(false)}
-        />
+        <View
+          pointerEvents="box-none"
+          style={{ ...StyleSheet.absoluteFillObject, zIndex: 9999 }}
+        >
+          <LaunchScreenV2
+            ctaLabel="Get started"
+            onFinish={() => setShowSplash(false)}
+          />
+        </View>
       )}
     </View>
   );

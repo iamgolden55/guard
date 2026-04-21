@@ -7,11 +7,13 @@ import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import type { AuthStackParamList } from '../types/navigation';
 
-// Screens
-import { WelcomeScreen } from '../screens/auth/WelcomeScreen';
-import { LoginScreen as LoginScreenRaw } from '../screens/auth/LoginScreen';
-import { RegisterScreen } from '../screens/auth/RegisterScreen';
-import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
+// Screens — V2 redesign (dark premium). Old light versions still live at
+// ../screens/auth/{Welcome,Login,Register,ForgotPassword}Screen.tsx and can
+// be restored by reverting just this import block.
+import { WelcomeScreenV2 as WelcomeScreen } from '../screens/auth/v2';
+import { LoginScreenV2 as LoginScreenRaw } from '../screens/auth/v2';
+import { RegisterScreenV2 as RegisterScreen } from '../screens/auth/v2';
+import { ForgotPasswordScreenV2 as ForgotPasswordScreen } from '../screens/auth/v2';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
 // Wrap LoginScreen in ErrorBoundary so crashes don't kill the app
@@ -30,66 +32,28 @@ export const AuthNavigator = () => {
       initialRouteName="Welcome"
       screenOptions={{
         headerShown: false,
-        cardStyle: { backgroundColor: '#FFFFFF' },
+        cardStyle: { backgroundColor: '#0b0b0e' },
       }}
     >
       <Stack.Screen
         name="Welcome"
         component={WelcomeScreen}
-        options={{
-          animationEnabled: true,
-        }}
+        options={{ animationEnabled: true }}
       />
       <Stack.Screen
         name="Login"
         component={LoginScreen}
-        options={{
-          animationEnabled: true,
-          headerShown: true,
-          headerTitle: '',
-          headerBackTitle: 'Back',
-          headerBackTitleStyle: {
-            fontSize: 18,
-            fontWeight: 'bold',
-          },
-          headerStyle: {
-            backgroundColor: '#FFFFFF',
-            elevation: 0,
-            shadowOpacity: 0,
-            borderBottomWidth: 0,
-          },
-          headerTintColor: '#000000',
-          headerBackTitleVisible: true,
-        }}
+        options={{ animationEnabled: true }}
       />
       <Stack.Screen
         name="Register"
         component={RegisterScreen}
-        options={{
-          animationEnabled: true,
-          headerShown: true,
-          headerTitle: '',
-          headerBackTitle: 'Back',
-          headerBackTitleStyle: {
-            fontSize: 18,
-            fontWeight: 'bold',
-          },
-          headerStyle: {
-            backgroundColor: '#FFFFFF',
-            elevation: 0,
-            shadowOpacity: 0,
-            borderBottomWidth: 0,
-          },
-          headerTintColor: '#000000',
-          headerBackTitleVisible: true,
-        }}
+        options={{ animationEnabled: true }}
       />
       <Stack.Screen
         name="ForgotPassword"
         component={ForgotPasswordScreen}
-        options={{
-          animationEnabled: true,
-        }}
+        options={{ animationEnabled: true }}
       />
       {/*
       <Stack.Screen
