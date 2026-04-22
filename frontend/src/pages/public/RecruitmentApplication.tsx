@@ -7,7 +7,6 @@ import {
   PrimaryButton,
   DefaultButton,
   Checkbox,
-  DatePicker,
   Dropdown,
   IDropdownOption,
   MessageBar,
@@ -384,27 +383,21 @@ const RecruitmentApplication: React.FC = () => {
                 required
               />
               
-              <DatePicker
-                label="Date of Birth *"
-                value={formData.date_of_birth ? new Date(formData.date_of_birth + 'T00:00:00') : undefined}
-                onSelectDate={(date) => {
-                  if (date) {
-                    // Format date to YYYY-MM-DD without timezone issues
-                    const year = date.getFullYear();
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const day = String(date.getDate()).padStart(2, '0');
-                    handleFieldChange('date_of_birth', `${year}-${month}-${day}`);
-                  } else {
-                    handleFieldChange('date_of_birth', '');
-                  }
-                }}
-                placeholder="Select date"
-                maxDate={new Date()}
-                isRequired
-              />
-              {formErrors.date_of_birth && (
-                <Text style={{ color: '#d13438', fontSize: '12px' }}>{formErrors.date_of_birth}</Text>
-              )}
+              <Stack tokens={{ childrenGap: 5 }}>
+                <Label required>Date of Birth</Label>
+                <input
+                  type="date"
+                  value={formData.date_of_birth || ''}
+                  onChange={(e) => handleFieldChange('date_of_birth', e.target.value)}
+                  min="1920-01-01"
+                  max={new Date().toISOString().split('T')[0]}
+                  required
+                  className="h-10 px-3 border border-gray-300 rounded-lg text-sm w-full focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+                {formErrors.date_of_birth && (
+                  <Text style={{ color: '#d13438', fontSize: '12px' }}>{formErrors.date_of_birth}</Text>
+                )}
+              </Stack>
               
               <TextField
                 label="Email Address *"
@@ -490,27 +483,20 @@ const RecruitmentApplication: React.FC = () => {
                     <Text style={{ color: '#d13438', fontSize: '12px' }}>{formErrors.licence_types}</Text>
                   )}
                   
-                  <DatePicker
-                    label="Licence Expiry Date *"
-                    value={formData.licence_expiry_date ? new Date(formData.licence_expiry_date + 'T00:00:00') : undefined}
-                    onSelectDate={(date) => {
-                      if (date) {
-                        // Format date to YYYY-MM-DD without timezone issues
-                        const year = date.getFullYear();
-                        const month = String(date.getMonth() + 1).padStart(2, '0');
-                        const day = String(date.getDate()).padStart(2, '0');
-                        handleFieldChange('licence_expiry_date', `${year}-${month}-${day}`);
-                      } else {
-                        handleFieldChange('licence_expiry_date', '');
-                      }
-                    }}
-                    placeholder="Select date"
-                    minDate={new Date()}
-                    isRequired
-                  />
-                  {formErrors.licence_expiry_date && (
-                    <Text style={{ color: '#d13438', fontSize: '12px' }}>{formErrors.licence_expiry_date}</Text>
-                  )}
+                  <Stack tokens={{ childrenGap: 5 }}>
+                    <Label required>Licence Expiry Date</Label>
+                    <input
+                      type="date"
+                      value={formData.licence_expiry_date || ''}
+                      onChange={(e) => handleFieldChange('licence_expiry_date', e.target.value)}
+                      min={new Date().toISOString().split('T')[0]}
+                      required
+                      className="h-10 px-3 border border-gray-300 rounded-lg text-sm w-full focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    />
+                    {formErrors.licence_expiry_date && (
+                      <Text style={{ color: '#d13438', fontSize: '12px' }}>{formErrors.licence_expiry_date}</Text>
+                    )}
+                  </Stack>
                 </Stack>
               )}
               
