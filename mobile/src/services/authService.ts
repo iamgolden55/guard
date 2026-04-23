@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import * as LocalAuthentication from 'expo-local-authentication';
+import * as WebBrowser from 'expo-web-browser';
 import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 import { API_ENDPOINTS, getAuthHeaders } from '../config/api.config';
@@ -154,6 +155,14 @@ class AuthService {
     } catch (error) {
       // Log but don't prevent logout
       console.warn('[AuthService] Failed to unregister push token:', error);
+    }
+
+    // Tear down any in-flight OAuth WebBrowser session so the next social sign-in
+    // starts from a clean slate rather than resuming the previous user's flow.
+    try {
+      WebBrowser.dismissAuthSession();
+    } catch {
+      // no-op — safe if no session is open
     }
 
     await SecureStore.deleteItemAsync('accessToken');

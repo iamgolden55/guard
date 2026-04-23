@@ -23,6 +23,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AntDesign, FontAwesome, Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
+import { Prompt } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
 
@@ -85,6 +86,9 @@ export const LoginScreen = () => {
     androidClientId: googleConfig.androidClientId || PLACEHOLDER_CLIENT_ID,
     webClientId: googleConfig.webClientId || PLACEHOLDER_CLIENT_ID,
     scopes: ['profile', 'email'],
+    // Force Google account chooser so a previously signed-in Google session
+    // cannot silently re-authenticate the wrong user after logout.
+    prompt: Prompt.SelectAccount,
   });
 
   // Check if biometric and Apple Sign-In are available on mount
