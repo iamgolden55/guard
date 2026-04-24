@@ -33,6 +33,30 @@ interface IncompleteShift {
   priority: 'low' | 'medium' | 'high' | 'critical';
 }
 
+const padDateTimePart = (value: number): string => value.toString().padStart(2, '0');
+
+const formatLocalDateTimeInputValue = (value: string | Date): string => {
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return [
+    `${date.getFullYear()}-${padDateTimePart(date.getMonth() + 1)}-${padDateTimePart(date.getDate())}`,
+    `${padDateTimePart(date.getHours())}:${padDateTimePart(date.getMinutes())}`,
+  ].join('T');
+};
+
+const datetimeLocalValueToIso = (value: string): string => {
+  if (!value) {
+    return '';
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+};
+
 const Approvals: React.FC = () => {
   const [activeTab, setActiveTab] = useState('exchange-approvals');
 
@@ -911,9 +935,9 @@ const Approvals: React.FC = () => {
                     </label>
                     <input
                       type="datetime-local"
-                      value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
-                      onChange={(e) => setManualCheckinTime(e.target.value ? new Date(e.target.value).toISOString() : '')}
-                      max={new Date().toISOString().slice(0, 16)}
+                      value={manualCheckinTime ? formatLocalDateTimeInputValue(manualCheckinTime) : ''}
+                      onChange={(e) => setManualCheckinTime(datetimeLocalValueToIso(e.target.value))}
+                      max={formatLocalDateTimeInputValue(new Date())}
                       className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     />
                     <p className="text-xs text-gray-500 mt-1">Adjust if the staff member arrived at a different time than now</p>
@@ -957,9 +981,9 @@ const Approvals: React.FC = () => {
                         </label>
                         <input
                           type="datetime-local"
-                          value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
+                          value={manualCheckoutTime ? formatLocalDateTimeInputValue(manualCheckoutTime) : ''}
                           onChange={(e) => {
-                            const newCheckoutTime = e.target.value ? new Date(e.target.value).toISOString() : '';
+                            const newCheckoutTime = datetimeLocalValueToIso(e.target.value);
                             setManualCheckoutTime(newCheckoutTime);
 
                             // Auto-calculate hours if we have check-in time
@@ -970,7 +994,7 @@ const Approvals: React.FC = () => {
                               }
                             }
                           }}
-                          max={new Date().toISOString().slice(0, 16)}
+                          max={formatLocalDateTimeInputValue(new Date())}
                           className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                         />
                         <p className="text-xs text-gray-500 mt-1">Adjust if the staff member departed at a different time than now</p>
@@ -993,8 +1017,8 @@ const Approvals: React.FC = () => {
                       </label>
                       <input
                         type="datetime-local"
-                        value={manualCheckinTime ? new Date(manualCheckinTime).toISOString().slice(0, 16) : ''}
-                        onChange={(e) => setManualCheckinTime(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                        value={manualCheckinTime ? formatLocalDateTimeInputValue(manualCheckinTime) : ''}
+                        onChange={(e) => setManualCheckinTime(datetimeLocalValueToIso(e.target.value))}
                         className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                       />
                       <p className="text-xs text-gray-500 mt-1">Administrative start time for this shift</p>
@@ -1006,8 +1030,8 @@ const Approvals: React.FC = () => {
                       </label>
                       <input
                         type="datetime-local"
-                        value={manualCheckoutTime ? new Date(manualCheckoutTime).toISOString().slice(0, 16) : ''}
-                        onChange={(e) => setManualCheckoutTime(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                        value={manualCheckoutTime ? formatLocalDateTimeInputValue(manualCheckoutTime) : ''}
+                        onChange={(e) => setManualCheckoutTime(datetimeLocalValueToIso(e.target.value))}
                         className="w-full h-10 px-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                       />
                       <p className="text-xs text-gray-500 mt-1">Administrative end time for this shift</p>
