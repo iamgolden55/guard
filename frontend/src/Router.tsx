@@ -8,6 +8,7 @@ import DashboardPage from "./features/dashboard/DashboardPage";
 import AttendancePage from "./features/attendance/AttendancePage";
 import InvoicesPage from "./features/invoices/InvoicesPage";
 import PayrollPage from "./features/payroll/PayrollPage";
+import SchedulingPage from "./features/scheduling/SchedulingPage";
 import ThemeSmokePage from "./features/dev/ThemeSmokePage";
 import { Card, SectionHeader, textStyles } from "./design-system";
 
@@ -43,7 +44,6 @@ export default function Router() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/scheduling" element={<PagePlaceholder title="Scheduling" />} />
           <Route path="/staff" element={<PagePlaceholder title="Staff" />} />
           <Route path="/leave" element={<PagePlaceholder title="Leave" />} />
           <Route path="/venues" element={<PagePlaceholder title="Venues" />} />
@@ -55,6 +55,7 @@ export default function Router() {
 
         {/* Routes with their own page-level header bring no AppLayout topbar. */}
         <Route element={<FullScreenAppLayout />}>
+          <Route path="/scheduling" element={<SchedulingPage />} />
           <Route path="/attendance" element={<AttendancePage />} />
           <Route path="/invoices" element={<InvoicesPage />} />
           <Route path="/payroll" element={<PayrollPage />} />

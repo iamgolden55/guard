@@ -55,7 +55,13 @@ export type IconName =
   | "flag"
   | "lock"
   | "bank"
-  | "refresh";
+  | "refresh"
+  | "chevrons-left"
+  | "grip"
+  | "pin"
+  | "repeat"
+  | "eye-off"
+  | "briefcase";
 
 const PATHS: Record<IconName, ReactElement> = {
   "squares-2x2": (
@@ -283,6 +289,28 @@ const PATHS: Record<IconName, ReactElement> = {
     <>
       <path d="M3 12a9 9 0 0115-6.7L21 8M21 12a9 9 0 01-15 6.7L3 16" />
       <path d="M21 3v5h-5M3 21v-5h5" />
+    </>
+  ),
+  "chevrons-left": <path d="M11 6l-6 6 6 6M18 6l-6 6 6 6" />,
+  grip: (
+    <>
+      <circle cx="9" cy="5" r="1.2" />
+      <circle cx="15" cy="5" r="1.2" />
+      <circle cx="9" cy="12" r="1.2" />
+      <circle cx="15" cy="12" r="1.2" />
+      <circle cx="9" cy="19" r="1.2" />
+      <circle cx="15" cy="19" r="1.2" />
+    </>
+  ),
+  pin: <path d="M12 17v5M7 3h10v6l3 4H4l3-4V3z" />,
+  repeat: <path d="M17 2l3 3-3 3M3 11V9a4 4 0 014-4h13M7 22l-3-3 3-3M21 13v2a4 4 0 01-4 4H4" />,
+  "eye-off": (
+    <path d="M3 3l18 18M10 10a3 3 0 004 4M6.5 6.5C4 8 2 12 2 12s4 7 10 7c2 0 3.8-.7 5.3-1.6M12 5c6 0 10 7 10 7-.4.7-1 1.5-1.7 2.3" />
+  ),
+  briefcase: (
+    <>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M3 13h18" />
     </>
   ),
 };
