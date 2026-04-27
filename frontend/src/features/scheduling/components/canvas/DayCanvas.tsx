@@ -1,6 +1,8 @@
 // DayCanvas — Gantt-style timeline for one day, rows = venues OR officers.
 // Ported 1:1 from project/scheduling-canvas.jsx:214-340.
-import { useEffect, useRef } from "react";
+// Phase 7.6: rows are droppable so a ShiftBlock can be dragged onto them.
+import { useEffect, useRef, type ReactNode } from "react";
+import { useDroppable } from "@dnd-kit/core";
 import { Icon } from "../../../../design-system/Icon";
 import { tokens } from "../../../../design-system/tokens";
 import {
@@ -199,16 +201,16 @@ export function DayCanvas({
             <HourHeader currentHour={nowHour} />
 
             {rows.map((r) => (
-              <div
+              <DroppableRow
                 key={r.key}
-                style={{
-                  position: "relative",
-                  height: 72,
-                  borderBottom: `1px solid ${tokens.color.ink100}`,
-                  background: r.unavail
+                rowKey={r.key}
+                axis={canvasAxis}
+                disabled={!!r.unavail}
+                background={
+                  r.unavail
                     ? "repeating-linear-gradient(135deg, #faf9f8, #faf9f8 8px, #f3f2f1 8px, #f3f2f1 10px)"
-                    : "white",
-                }}
+                    : "white"
+                }
               >
                 {Array.from({ length: HOURS_END - HOURS_START }).map((_, i) => (
                   <div
@@ -249,7 +251,7 @@ export function DayCanvas({
                 {r.shifts.map((s) => (
                   <ShiftBlock key={s.id} shift={s} onOpen={onOpenShift} colorBy={colorBy} />
                 ))}
-              </div>
+              </DroppableRow>
             ))}
 
             {nowHour != null && (
@@ -298,6 +300,46 @@ export function DayCanvas({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface DroppableRowProps {
+  rowKey: string;
+  axis: CanvasAxis;
+  disabled: boolean;
+  background: string;
+  children: ReactNode;
+}
+
+function DroppableRow({ rowKey, axis, disabled, background, children }: DroppableRowProps) {
+  const { setNodeRef, isOver, active } = useDroppable({
+    id: `row:${axis}:${rowKey}`,
+    data: { kind: "row", axis, rowKey },
+    disabled,
+  });
+  // Only highlight when an existing shift block is being dragged.
+  const dragging = !!active;
+  const draggingShift = (active?.data.current as { kind?: string } | undefined)?.kind === "shift-block";
+  const showHover = isOver && draggingShift && !disabled;
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        position: "relative",
+        height: 72,
+        borderBottom: `1px solid ${tokens.color.ink100}`,
+        background,
+        outline: showHover ? `2px solid ${tokens.color.success}` : undefined,
+        outlineOffset: showHover ? -2 : undefined,
+        boxShadow: showHover ? `inset 0 0 0 9999px ${tokens.color.success}10` : undefined,
+        transition: "box-shadow .12s ease",
+        // Faint indicator while a shift drag is active so the user sees
+        // available drop targets even before hovering.
+        opacity: dragging && draggingShift && disabled ? 0.5 : 1,
+      }}
+    >
+      {children}
     </div>
   );
 }

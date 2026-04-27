@@ -13,7 +13,7 @@ import {
 } from "@dnd-kit/core";
 import { tokens } from "../../design-system/tokens";
 import { Avatar } from "../../design-system/primitives/Avatar";
-import { officerById, OFFICERS, type Shift } from "./data/mocks";
+import { officerById, OFFICERS, venueById, VENUES, type Shift } from "./data/mocks";
 import { SchedulingHeader } from "./components/SchedulingHeader";
 import { WeekStrip, type ViewMode } from "./components/WeekStrip";
 import { ViolationsBanner } from "./components/ViolationsBanner";
@@ -50,7 +50,7 @@ export default function SchedulingPage() {
 }
 
 function SchedulingShell() {
-  const { shifts, assignOfficer, showToast, toast, dismissToast } = useScheduling();
+  const { shifts, assignOfficer, moveShift, showToast, toast, dismissToast } = useScheduling();
 
   const todayIdx = WEEK.days.findIndex((d) => d.today);
   const [currentDay, setCurrentDay] = useState<number>(todayIdx >= 0 ? todayIdx : 0);
@@ -59,6 +59,7 @@ function SchedulingShell() {
   const [leftPanel, setLeftPanel] = useState<LeftPanelMode>(() => readMode("expanded"));
   const [drawerShift, setDrawerShift] = useState<Shift | null>(null);
   const [activeOfficerId, setActiveOfficerId] = useState<string | null>(null);
+  const [activeShiftId, setActiveShiftId] = useState<string | null>(null);
 
   const setLeftPanelPersist = (m: LeftPanelMode) => {
     setLeftPanel(m);
@@ -74,52 +75,164 @@ function SchedulingShell() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const handleDragStart = (e: DragStartEvent) => {
-    const data = e.active.data.current as { officerId?: string } | undefined;
-    if (data?.officerId) setActiveOfficerId(data.officerId);
+    const data = e.active.data.current as
+      | { officerId?: string; shiftId?: string; kind?: string }
+      | undefined;
+    if (data?.kind === "shift-block" && data.shiftId) {
+      setActiveShiftId(data.shiftId);
+    } else if (data?.officerId) {
+      setActiveOfficerId(data.officerId);
+    }
   };
 
   const handleDragEnd = (e: DragEndEvent) => {
+    const activeData = e.active.data.current as
+      | { officerId?: string; shiftId?: string; kind?: string }
+      | undefined;
+    const overData = e.over?.data.current as
+      | { kind?: string; shiftId?: string; axis?: "venue" | "officer"; rowKey?: string }
+      | undefined;
+
     setActiveOfficerId(null);
-    const officerId = (e.active.data.current as { officerId?: string } | undefined)?.officerId;
-    const dropData = e.over?.data.current as { shiftId?: string; kind?: string } | undefined;
-    if (!officerId || !dropData?.shiftId) return;
+    setActiveShiftId(null);
 
-    const officer = OFFICERS.find((o) => o.id === officerId);
-    const shift = shifts.find((s) => s.id === dropData.shiftId);
-    if (!officer || !shift) return;
-    if (shift.status !== "open") return;
+    if (!activeData) return;
 
-    const result = checkAssignment(officer, shift, shifts);
+    // Case A: officer card → open shift block (assignment)
+    if (activeData.officerId && overData?.kind === "shift" && overData.shiftId) {
+      const officer = OFFICERS.find((o) => o.id === activeData.officerId);
+      const shift = shifts.find((s) => s.id === overData.shiftId);
+      if (!officer || !shift || shift.status !== "open") return;
 
-    if (!result.ok) {
-      showToast({
-        tone: "danger",
-        title: `Cannot assign ${officer.name}`,
-        body: `${result.hard.length} hard block${result.hard.length === 1 ? "" : "s"} — resolve before assigning.`,
-        violations: result.all,
-      });
+      const result = checkAssignment(officer, shift, shifts);
+
+      if (!result.ok) {
+        showToast({
+          tone: "danger",
+          title: `Cannot assign ${officer.name}`,
+          body: `${result.hard.length} hard block${result.hard.length === 1 ? "" : "s"} — resolve before assigning.`,
+          violations: result.all,
+        });
+        return;
+      }
+
+      assignOfficer(shift.id, officer.id);
+
+      if (result.soft.length > 0) {
+        showToast({
+          tone: "warning",
+          title: `Assigned ${officer.name} (with warnings)`,
+          body: `${result.soft.length} soft warning${result.soft.length === 1 ? "" : "s"} — admin can acknowledge.`,
+          violations: result.soft,
+        });
+      } else {
+        showToast({
+          tone: "success",
+          title: `Assigned ${officer.name}`,
+          body: "Saved as draft — publish week when you're ready.",
+        });
+      }
       return;
     }
 
-    assignOfficer(shift.id, officer.id);
+    // Case B: shift block → row (reassign to a different venue or officer)
+    if (
+      activeData.kind === "shift-block" &&
+      activeData.shiftId &&
+      overData?.kind === "row" &&
+      overData.rowKey
+    ) {
+      const shift = shifts.find((s) => s.id === activeData.shiftId);
+      if (!shift) return;
 
-    if (result.soft.length > 0) {
-      showToast({
-        tone: "warning",
-        title: `Assigned ${officer.name} (with warnings)`,
-        body: `${result.soft.length} soft warning${result.soft.length === 1 ? "" : "s"} — admin can acknowledge.`,
-        violations: result.soft,
-      });
-    } else {
-      showToast({
-        tone: "success",
-        title: `Assigned ${officer.name}`,
-        body: "Saved as draft — publish week when you're ready.",
-      });
+      // No-op if dropped on the same row.
+      const sameRow =
+        (overData.axis === "venue" && shift.venueId === overData.rowKey) ||
+        (overData.axis === "officer" && shift.officerId === overData.rowKey);
+      if (sameRow) return;
+
+      if (overData.axis === "venue") {
+        const newVenue = venueById(overData.rowKey);
+        if (!newVenue) return;
+        // Officer-side check is unchanged; we simulate the move by passing
+        // a synthetic "moved" shift to the validator.
+        const officer = officerById(shift.officerId);
+        if (officer) {
+          const moved: Shift = { ...shift, venueId: newVenue.id };
+          const result = checkAssignment(officer, moved, shifts);
+          if (!result.ok) {
+            showToast({
+              tone: "danger",
+              title: `Cannot move shift`,
+              body: `${officer.name} → ${newVenue.name} blocked by ${result.hard.length} rule${result.hard.length === 1 ? "" : "s"}.`,
+              violations: result.all,
+            });
+            return;
+          }
+          moveShift(shift.id, { venueId: newVenue.id });
+          if (result.soft.length > 0) {
+            showToast({
+              tone: "warning",
+              title: `Moved to ${newVenue.name} (with warnings)`,
+              violations: result.soft,
+            });
+          } else {
+            showToast({
+              tone: "success",
+              title: `Moved to ${newVenue.name}`,
+              body: "Saved as draft.",
+            });
+          }
+        } else {
+          // No officer assigned — just move the venue, no officer-level checks.
+          moveShift(shift.id, { venueId: newVenue.id });
+          showToast({
+            tone: "success",
+            title: `Moved to ${newVenue.name}`,
+            body: "Saved as draft.",
+          });
+        }
+        return;
+      }
+
+      if (overData.axis === "officer") {
+        const newOfficer = officerById(overData.rowKey);
+        if (!newOfficer) return;
+        const moved: Shift = { ...shift, officerId: newOfficer.id };
+        const result = checkAssignment(newOfficer, moved, shifts);
+        if (!result.ok) {
+          showToast({
+            tone: "danger",
+            title: `Cannot reassign to ${newOfficer.name}`,
+            body: `${result.hard.length} hard block${result.hard.length === 1 ? "" : "s"} — resolve before reassigning.`,
+            violations: result.all,
+          });
+          return;
+        }
+        moveShift(shift.id, { officerId: newOfficer.id });
+        if (result.soft.length > 0) {
+          showToast({
+            tone: "warning",
+            title: `Reassigned to ${newOfficer.name} (with warnings)`,
+            violations: result.soft,
+          });
+        } else {
+          showToast({
+            tone: "success",
+            title: `Reassigned to ${newOfficer.name}`,
+            body: "Saved as draft.",
+          });
+        }
+        return;
+      }
     }
   };
 
   const activeOfficer = activeOfficerId ? officerById(activeOfficerId) : undefined;
+  const activeShift = activeShiftId ? shifts.find((s) => s.id === activeShiftId) : undefined;
+  const activeShiftVenue = activeShift ? venueById(activeShift.venueId) : undefined;
+  const activeShiftOfficer = activeShift ? officerById(activeShift.officerId) : undefined;
+  void VENUES; // silence unused if VENUES isn't otherwise referenced
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -199,6 +312,45 @@ function SchedulingShell() {
               }}
             >
               {activeOfficer.sia.level}
+            </span>
+          </div>
+        )}
+
+        {activeShift && activeShiftVenue && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "8px 12px",
+              borderRadius: 8,
+              background: activeShiftVenue.color,
+              color: "white",
+              boxShadow: "0 12px 24px -6px rgba(32,31,30,0.25)",
+              fontFamily: tokens.font.body,
+              cursor: "grabbing",
+              minWidth: 200,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 12.5,
+                fontWeight: 700,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {activeShiftOfficer?.name ?? "Open shift"}
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                opacity: 0.85,
+                fontFamily: tokens.font.mono,
+              }}
+            >
+              {activeShiftVenue.name}
             </span>
           </div>
         )}

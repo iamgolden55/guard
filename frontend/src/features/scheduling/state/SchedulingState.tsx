@@ -22,6 +22,7 @@ import { SHIFTS as SEED_SHIFTS, type Shift, type Violation } from "../data/mocks
 type Action =
   | { type: "assign"; shiftId: string; officerId: string }
   | { type: "unassign"; shiftId: string }
+  | { type: "move"; shiftId: string; patch: Partial<Pick<Shift, "officerId" | "venueId">> }
   | { type: "set"; shifts: Shift[] };
 
 function reducer(state: Shift[], action: Action): Shift[] {
@@ -44,6 +45,18 @@ function reducer(state: Shift[], action: Action): Shift[] {
     case "unassign": {
       return state.map((s) =>
         s.id === action.shiftId ? { ...s, officerId: null, status: "open" as const } : s,
+      );
+    }
+    case "move": {
+      return state.map((s) =>
+        s.id === action.shiftId
+          ? {
+              ...s,
+              ...action.patch,
+              published: false, // re-arrangement → draft, must republish
+              violations: undefined,
+            }
+          : s,
       );
     }
     default:
@@ -71,6 +84,7 @@ interface SchedulingContextValue {
   shifts: Shift[];
   assignOfficer: (shiftId: string, officerId: string) => void;
   unassign: (shiftId: string) => void;
+  moveShift: (shiftId: string, patch: Partial<Pick<Shift, "officerId" | "venueId">>) => void;
   toast: SchedulingToast | null;
   showToast: (t: Omit<SchedulingToast, "id">) => void;
   dismissToast: () => void;
@@ -90,6 +104,13 @@ export function SchedulingProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "unassign", shiftId });
   }, []);
 
+  const moveShift = useCallback(
+    (shiftId: string, patch: Partial<Pick<Shift, "officerId" | "venueId">>) => {
+      dispatch({ type: "move", shiftId, patch });
+    },
+    [],
+  );
+
   const showToast = useCallback((t: Omit<SchedulingToast, "id">) => {
     const id = Date.now() + Math.random();
     setToast({ ...t, id });
@@ -101,8 +122,8 @@ export function SchedulingProvider({ children }: { children: ReactNode }) {
   const dismissToast = useCallback(() => setToast(null), []);
 
   const value = useMemo<SchedulingContextValue>(
-    () => ({ shifts, assignOfficer, unassign, toast, showToast, dismissToast }),
-    [shifts, assignOfficer, unassign, toast, showToast, dismissToast],
+    () => ({ shifts, assignOfficer, unassign, moveShift, toast, showToast, dismissToast }),
+    [shifts, assignOfficer, unassign, moveShift, toast, showToast, dismissToast],
   );
 
   return <SchedulingContext.Provider value={value}>{children}</SchedulingContext.Provider>;

@@ -1,7 +1,10 @@
 // ShiftBlock — absolutely-positioned block on the day canvas timeline.
 // Ported 1:1 from project/scheduling-canvas.jsx:113-209.
-// Phase 7.5: open shifts also act as drop targets for officer drag-drop.
-import { useDroppable } from "@dnd-kit/core";
+// Phase 7.5: open shifts are drop targets for officer drag-drop.
+// Phase 7.6: assigned shifts are draggable so they can be reassigned to
+// another row.
+import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import { Icon } from "../../../../design-system/Icon";
 import { tokens } from "../../../../design-system/tokens";
 import {
@@ -26,13 +29,36 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
   const venue = venueById(shift.venueId);
   const officer = officerById(shift.officerId);
 
-  // Open shifts are drop targets. Other shifts are not (yet — reassign
-  // by drag is Phase 7.6).
-  const { setNodeRef, isOver, active } = useDroppable({
-    id: `shift:${shift.id}`,
+  // Open shifts are drop targets for officer cards.
+  const {
+    setNodeRef: setDropRef,
+    isOver,
+    active,
+  } = useDroppable({
+    id: `shift-drop:${shift.id}`,
     data: { shiftId: shift.id, kind: "shift" },
     disabled: shift.status !== "open",
   });
+
+  // Assigned (non-open, non-completed) shifts are draggable so they can be
+  // re-arranged to another row.
+  const draggableEnabled = shift.officerId !== null && shift.status !== "completed";
+  const {
+    setNodeRef: setDragRef,
+    attributes,
+    listeners,
+    transform,
+    isDragging,
+  } = useDraggable({
+    id: `shift-drag:${shift.id}`,
+    data: { shiftId: shift.id, kind: "shift-block" },
+    disabled: !draggableEnabled,
+  });
+
+  const setNodeRef = (el: HTMLButtonElement | null) => {
+    setDropRef(el);
+    setDragRef(el);
+  };
 
   if (!venue) return null;
 
@@ -63,6 +89,8 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
       ref={setNodeRef}
       type="button"
       onClick={() => onOpen(shift)}
+      {...(draggableEnabled ? listeners : {})}
+      {...(draggableEnabled ? attributes : {})}
       style={{
         position: "absolute",
         top: 6,
@@ -74,6 +102,10 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
         background: hovering ? tokens.color.successSoft : bgColor,
         outline: hovering ? `2px solid ${tokens.color.success}` : undefined,
         outlineOffset: hovering ? -2 : undefined,
+        opacity: isDragging ? 0.45 : 1,
+        transform: CSS.Translate.toString(transform),
+        touchAction: draggableEnabled ? "none" : undefined,
+        cursor: draggableEnabled ? (isDragging ? "grabbing" : "grab") : "pointer",
         border:
           shift.status === "open"
             ? `1.5px dashed ${hovering ? tokens.color.success : tokens.color.ink500}`
@@ -97,7 +129,6 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
             : shift.status === "open"
               ? "none"
               : "0 1px 2px rgba(32,31,30,0.12)",
-        cursor: "pointer",
         backgroundImage: draftPattern
           ? "repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,255,255,0.18) 6px, rgba(255,255,255,0.18) 9px)"
           : undefined,
