@@ -3,6 +3,7 @@ import AuthGuard from "./components/AuthGuard";
 import AppLayout from "./layouts/AppLayout";
 import AuthLayout from "./layouts/AuthLayout";
 import LoginPage from "./features/auth/LoginPage";
+import DashboardPage from "./features/dashboard/DashboardPage";
 import ThemeSmokePage from "./features/dev/ThemeSmokePage";
 import { Card, SectionHeader, textStyles } from "./design-system";
 
@@ -37,7 +38,7 @@ export default function Router() {
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<PagePlaceholder title="Dashboard" />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/scheduling" element={<PagePlaceholder title="Scheduling" />} />
           <Route path="/attendance" element={<PagePlaceholder title="Attendance" />} />
           <Route path="/invoices" element={<PagePlaceholder title="Invoices" />} />

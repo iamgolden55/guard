@@ -7,3 +7,4 @@ export {
 } from "./accents";
 export { Icon, type IconName, type IconProps } from "./Icon";
 export * from "./primitives";
+export * from "./charts";
