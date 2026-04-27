@@ -4,11 +4,11 @@ import { tokens } from "../../../design-system/tokens";
 import {
   fmtRange,
   officerById,
-  shiftsByDay,
   venueById,
   WEEK,
   type Shift,
 } from "../data/mocks";
+import { shiftsForDay, useScheduling } from "../state/SchedulingState";
 import type { ColorBy } from "./canvas/ShiftBlock";
 
 const DAY_W = 170;
@@ -22,6 +22,7 @@ export interface WeekViewProps {
 }
 
 export function WeekView({ colorBy = "venue", onOpenShift }: WeekViewProps) {
+  const { shifts } = useScheduling();
   const hoursArr = Array.from({ length: END_H - START_H }, (_, i) => START_H + i);
 
   return (
@@ -115,7 +116,7 @@ export function WeekView({ colorBy = "venue", onOpenShift }: WeekViewProps) {
         </div>
 
         {WEEK.days.map((d, di) => {
-          const dayShifts = shiftsByDay(di);
+          const dayShifts = shiftsForDay(shifts, di);
           return (
             <div
               key={di}

@@ -7,20 +7,20 @@ import { tokens } from "../../../design-system/tokens";
 import {
   fmtRange,
   OFFICERS,
-  officerWeeklyHrs,
-  SHIFTS,
   siaState,
   UNAVAIL,
   venueById,
   WEEK,
   type Shift,
 } from "../data/mocks";
+import { officerWeeklyHrs, useScheduling } from "../state/SchedulingState";
 
 export interface RosterViewProps {
   onOpenShift: (s: Shift) => void;
 }
 
 export function RosterView({ onOpenShift }: RosterViewProps) {
+  const { shifts } = useScheduling();
   return (
     <div
       style={{
@@ -102,7 +102,7 @@ export function RosterView({ onOpenShift }: RosterViewProps) {
 
           {OFFICERS.map((o) => {
             const sia = siaState(o.sia);
-            const hrsWk = officerWeeklyHrs(o.id);
+            const hrsWk = officerWeeklyHrs(shifts, o.id);
             return (
               <Fragment key={o.id}>
                 <div
@@ -158,7 +158,9 @@ export function RosterView({ onOpenShift }: RosterViewProps) {
                   </div>
                 </div>
                 {WEEK.days.map((d, di) => {
-                  const shifts = SHIFTS.filter((s) => s.officerId === o.id && s.day === di);
+                  const cellShifts = shifts.filter(
+                    (s) => s.officerId === o.id && s.day === di,
+                  );
                   const unavail = UNAVAIL.find((u) => u.officerId === o.id && u.day === di);
                   return (
                     <div
@@ -193,7 +195,7 @@ export function RosterView({ onOpenShift }: RosterViewProps) {
                           {unavail.type === "leave" ? "Leave" : "N/A"}
                         </div>
                       ) : (
-                        shifts.map((s) => {
+                        cellShifts.map((s) => {
                           const venue = venueById(s.venueId);
                           if (!venue) return null;
                           const hard = (s.violations || []).some((v) => v.tier === "hard");

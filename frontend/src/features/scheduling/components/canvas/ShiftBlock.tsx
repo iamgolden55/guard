@@ -1,5 +1,7 @@
 // ShiftBlock — absolutely-positioned block on the day canvas timeline.
 // Ported 1:1 from project/scheduling-canvas.jsx:113-209.
+// Phase 7.5: open shifts also act as drop targets for officer drag-drop.
+import { useDroppable } from "@dnd-kit/core";
 import { Icon } from "../../../../design-system/Icon";
 import { tokens } from "../../../../design-system/tokens";
 import {
@@ -23,6 +25,15 @@ export interface ShiftBlockProps {
 export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps) {
   const venue = venueById(shift.venueId);
   const officer = officerById(shift.officerId);
+
+  // Open shifts are drop targets. Other shifts are not (yet — reassign
+  // by drag is Phase 7.6).
+  const { setNodeRef, isOver, active } = useDroppable({
+    id: `shift:${shift.id}`,
+    data: { shiftId: shift.id, kind: "shift" },
+    disabled: shift.status !== "open",
+  });
+
   if (!venue) return null;
 
   const left = (shift.start - HOURS_START) * HOUR_W + 2;
@@ -43,8 +54,13 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
 
   const draftPattern = !shift.published && shift.status !== "open";
 
+  // Drop-target highlighting for open shifts during a drag.
+  const hovering = isOver && shift.status === "open";
+  const dragActive = !!active && shift.status === "open";
+
   return (
     <button
+      ref={setNodeRef}
       type="button"
       onClick={() => onOpen(shift)}
       style={{
@@ -55,10 +71,12 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
         width,
         minWidth: 60,
         borderRadius: 7,
-        background: bgColor,
+        background: hovering ? tokens.color.successSoft : bgColor,
+        outline: hovering ? `2px solid ${tokens.color.success}` : undefined,
+        outlineOffset: hovering ? -2 : undefined,
         border:
           shift.status === "open"
-            ? `1.5px dashed ${tokens.color.ink500}`
+            ? `1.5px dashed ${hovering ? tokens.color.success : tokens.color.ink500}`
             : hardViol
               ? `2px solid ${tokens.color.danger}`
               : softViol
@@ -72,7 +90,13 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
-        boxShadow: shift.status === "open" ? "none" : "0 1px 2px rgba(32,31,30,0.12)",
+        boxShadow: hovering
+          ? `0 0 0 3px ${tokens.color.success}33`
+          : dragActive && shift.status === "open"
+            ? `0 0 0 2px ${tokens.color.ink300}`
+            : shift.status === "open"
+              ? "none"
+              : "0 1px 2px rgba(32,31,30,0.12)",
         cursor: "pointer",
         backgroundImage: draftPattern
           ? "repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,255,255,0.18) 6px, rgba(255,255,255,0.18) 9px)"

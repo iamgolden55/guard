@@ -8,13 +8,12 @@ import {
   HOURS_END,
   HOURS_START,
   OFFICERS,
-  officerWeeklyHrs,
-  shiftsByDay,
   UNAVAIL,
   VENUES,
   WEEK,
   type Shift,
 } from "../../data/mocks";
+import { officerWeeklyHrs, shiftsForDay, useScheduling } from "../../state/SchedulingState";
 import { HOUR_W, HourHeader } from "./HourHeader";
 import { OfficerRowHeader, VenueRowHeader } from "./RowHeaders";
 import { ShiftBlock, type ColorBy } from "./ShiftBlock";
@@ -35,8 +34,9 @@ export function DayCanvas({
   onOpenShift,
 }: DayCanvasProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const { shifts } = useScheduling();
   const day = WEEK.days[currentDay];
-  const dayShifts = shiftsByDay(currentDay);
+  const dayShifts = shiftsForDay(shifts, currentDay);
 
   const nowHour = day?.today ? 14.45 : null;
 
@@ -66,7 +66,7 @@ export function DayCanvas({
             header: (
               <OfficerRowHeader
                 o={o}
-                weeklyHrs={officerWeeklyHrs(o.id)}
+                weeklyHrs={officerWeeklyHrs(shifts, o.id)}
                 unavailToday={!!unavail}
               />
             ),

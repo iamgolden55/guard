@@ -3,11 +3,12 @@
 import { Button } from "../../../design-system/primitives/Button";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
-import { SHIFTS } from "../data/mocks";
+import { useScheduling } from "../state/SchedulingState";
 
 export function ViolationsBanner() {
-  const hards = SHIFTS.filter((s) => (s.violations || []).some((v) => v.tier === "hard"));
-  const softs = SHIFTS.filter((s) => (s.violations || []).some((v) => v.tier === "soft"));
+  const { shifts } = useScheduling();
+  const hards = shifts.filter((s) => (s.violations || []).some((v) => v.tier === "hard"));
+  const softs = shifts.filter((s) => (s.violations || []).some((v) => v.tier === "soft"));
   if (hards.length === 0 && softs.length === 0) return null;
 
   const hasHard = hards.length > 0;

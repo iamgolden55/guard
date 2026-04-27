@@ -5,7 +5,8 @@ import { useAccent } from "../../../contexts/AccentContext";
 import { Button } from "../../../design-system/primitives/Button";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
-import { shiftsByDay, WEEK } from "../data/mocks";
+import { WEEK } from "../data/mocks";
+import { shiftsForDay, useScheduling } from "../state/SchedulingState";
 import type { CanvasAxis } from "./canvas/DayCanvas";
 
 export type ViewMode = "day" | "week" | "month" | "roster";
@@ -28,6 +29,7 @@ export function WeekStrip({
   setCanvasAxis,
 }: WeekStripProps) {
   const { palette } = useAccent();
+  const { shifts } = useScheduling();
   return (
     <div
       style={{
@@ -94,7 +96,7 @@ export function WeekStrip({
       >
         {WEEK.days.map((d, i) => {
           const active = currentDay === i && viewMode === "day";
-          const dayShifts = shiftsByDay(i);
+          const dayShifts = shiftsForDay(shifts, i);
           const hasHard = dayShifts.some((s) =>
             (s.violations || []).some((v) => v.tier === "hard"),
           );

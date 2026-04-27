@@ -1,7 +1,8 @@
 // MonthView — 5×7 coverage heatmap.
 // Ported 1:1 from project/scheduling-app.jsx MonthView (lines 101-171).
 import { tokens } from "../../../design-system/tokens";
-import { shiftsByDay, WEEK, type Shift } from "../data/mocks";
+import { WEEK, type Shift } from "../data/mocks";
+import { shiftsForDay, useScheduling } from "../state/SchedulingState";
 
 interface MonthCell {
   i: number;
@@ -21,12 +22,13 @@ export interface MonthViewProps {
 }
 
 export function MonthView({ onOpenShift: _onOpenShift }: MonthViewProps) {
+  const { shifts } = useScheduling();
   const cells: MonthCell[] = [];
   const monthStart = -14;
   for (let i = 0; i < 35; i++) {
     const dayOffset = monthStart + i;
     const inWeek = dayOffset >= 0 && dayOffset < 7;
-    const dayShifts = inWeek ? shiftsByDay(dayOffset) : [];
+    const dayShifts = inWeek ? shiftsForDay(shifts, dayOffset) : [];
     const dayInfo = inWeek ? WEEK.days[dayOffset] : undefined;
     const hasBH = !!(inWeek && dayInfo?.bankHoliday);
     const published = dayShifts.filter((s) => s.published).length;

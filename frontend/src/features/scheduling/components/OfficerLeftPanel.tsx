@@ -1,6 +1,8 @@
 // OfficerLeftPanel — left rail with Open shifts + Staff tabs.
 // Ported 1:1 from project/scheduling-canvas.jsx:377-539.
 import { useState } from "react";
+import { useDraggable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import { useAccent } from "../../../contexts/AccentContext";
 import { Avatar } from "../../../design-system/primitives/Avatar";
 import { Icon } from "../../../design-system/Icon";
@@ -9,13 +11,13 @@ import {
   fmtRange,
   hrs,
   OFFICERS,
-  officerWeeklyHrs,
-  SHIFTS,
+  type SchedulingOfficer,
   siaState,
   venueById,
   WEEK,
   type Shift,
 } from "../data/mocks";
+import { officerWeeklyHrs, useScheduling } from "../state/SchedulingState";
 
 export type LeftPanelMode = "expanded" | "collapsed";
 
@@ -27,12 +29,13 @@ export interface OfficerLeftPanelProps {
 
 export function OfficerLeftPanel({ mode, setMode, onOpenShift }: OfficerLeftPanelProps) {
   const { palette } = useAccent();
+  const { shifts } = useScheduling();
   const [tab, setTab] = useState<"open" | "people">("open");
   const [search, setSearch] = useState("");
 
-  const openShifts = SHIFTS.filter((s) => s.status === "open").sort(
-    (a, b) => a.day - b.day || a.start - b.start,
-  );
+  const openShifts = shifts
+    .filter((s) => s.status === "open")
+    .sort((a, b) => a.day - b.day || a.start - b.start);
 
   const filteredOfficers = OFFICERS.filter((o) => {
     if (!search.trim()) return true;
@@ -256,114 +259,9 @@ export function OfficerLeftPanel({ mode, setMode, onOpenShift }: OfficerLeftPane
                 </button>
               );
             })
-          : filteredOfficers.map((o) => {
-              const sia = siaState(o.sia);
-              const hrsWk = officerWeeklyHrs(o.id);
-              const full = hrsWk >= o.cap;
-              return (
-                <div
-                  key={o.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "10px 10px",
-                    borderRadius: 8,
-                    marginBottom: 3,
-                    cursor: "grab",
-                    background: "white",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = tokens.color.ink50;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "white";
-                  }}
-                >
-                  <Avatar name={o.name} hue={o.hue} size={32} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <span
-                        style={{
-                          fontSize: 12.5,
-                          fontWeight: 600,
-                          color: tokens.color.ink900,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
-                        {o.name}
-                      </span>
-                      {sia && (
-                        <span
-                          title={sia.label}
-                          style={{
-                            fontSize: 9,
-                            fontWeight: 700,
-                            padding: "1px 4px",
-                            borderRadius: 3,
-                            background:
-                              sia.tone === "danger" ? tokens.color.dangerSoft : tokens.color.warnSoft,
-                            color: sia.tone === "danger" ? tokens.color.dangerInk : tokens.color.warnInk,
-                            letterSpacing: "0.04em",
-                          }}
-                        >
-                          {sia.short}
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 10.5,
-                        color: tokens.color.ink500,
-                        marginTop: 1,
-                        display: "flex",
-                        gap: 5,
-                        alignItems: "center",
-                      }}
-                    >
-                      <span>
-                        {o.sia.level} · {o.role}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 5,
-                        height: 3,
-                        background: tokens.color.ink100,
-                        borderRadius: 2,
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${Math.min(100, (hrsWk / o.cap) * 100)}%`,
-                          height: "100%",
-                          background: full
-                            ? tokens.color.danger
-                            : hrsWk / o.cap > 0.85
-                              ? tokens.color.warn
-                              : palette.primary,
-                        }}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 9.5,
-                        color: full ? tokens.color.dangerInk : tokens.color.ink500,
-                        marginTop: 3,
-                        fontFamily: tokens.font.mono,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {hrsWk}h / {o.cap}h {full && "· at cap"}
-                    </div>
-                  </div>
-                  <Icon name="grip" size={14} />
-                </div>
-              );
-            })}
+          : filteredOfficers.map((o) => (
+              <DraggableOfficerCard key={o.id} o={o} weeklyHrs={officerWeeklyHrs(shifts, o.id)} />
+            ))}
       </div>
 
       <div
@@ -374,10 +272,134 @@ export function OfficerLeftPanel({ mode, setMode, onOpenShift }: OfficerLeftPane
         }}
       >
         <div style={{ fontSize: 10.5, color: tokens.color.ink600, lineHeight: 1.45 }}>
-          Drag onto a row to assign. Hard blocks (expired SIA, leave) will prevent the drop.
-          <span style={{ color: tokens.color.ink500 }}> · drag-drop ships in Phase 7.5</span>
+          Drag an officer onto an open shift to assign. Hard blocks (expired SIA, leave, conflict)
+          will reject the drop.
         </div>
       </div>
     </aside>
+  );
+}
+
+interface DraggableOfficerCardProps {
+  o: SchedulingOfficer;
+  weeklyHrs: number;
+}
+
+export function DraggableOfficerCard({ o, weeklyHrs }: DraggableOfficerCardProps) {
+  const { palette } = useAccent();
+  const sia = siaState(o.sia);
+  const full = weeklyHrs >= o.cap;
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `officer:${o.id}`,
+    data: { officerId: o.id },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "10px 10px",
+        borderRadius: 8,
+        marginBottom: 3,
+        cursor: isDragging ? "grabbing" : "grab",
+        background: "white",
+        opacity: isDragging ? 0.4 : 1,
+        transform: CSS.Translate.toString(transform),
+        touchAction: "none",
+        userSelect: "none",
+      }}
+      onMouseEnter={(e) => {
+        if (!isDragging) e.currentTarget.style.background = tokens.color.ink50;
+      }}
+      onMouseLeave={(e) => {
+        if (!isDragging) e.currentTarget.style.background = "white";
+      }}
+    >
+      <Avatar name={o.name} hue={o.hue} size={32} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span
+            style={{
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: tokens.color.ink900,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {o.name}
+          </span>
+          {sia && (
+            <span
+              title={sia.label}
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                padding: "1px 4px",
+                borderRadius: 3,
+                background: sia.tone === "danger" ? tokens.color.dangerSoft : tokens.color.warnSoft,
+                color: sia.tone === "danger" ? tokens.color.dangerInk : tokens.color.warnInk,
+                letterSpacing: "0.04em",
+              }}
+            >
+              {sia.short}
+            </span>
+          )}
+        </div>
+        <div
+          style={{
+            fontSize: 10.5,
+            color: tokens.color.ink500,
+            marginTop: 1,
+            display: "flex",
+            gap: 5,
+            alignItems: "center",
+          }}
+        >
+          <span>
+            {o.sia.level} · {o.role}
+          </span>
+        </div>
+        <div
+          style={{
+            marginTop: 5,
+            height: 3,
+            background: tokens.color.ink100,
+            borderRadius: 2,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${Math.min(100, (weeklyHrs / o.cap) * 100)}%`,
+              height: "100%",
+              background: full
+                ? tokens.color.danger
+                : weeklyHrs / o.cap > 0.85
+                  ? tokens.color.warn
+                  : palette.primary,
+            }}
+          />
+        </div>
+        <div
+          style={{
+            fontSize: 9.5,
+            color: full ? tokens.color.dangerInk : tokens.color.ink500,
+            marginTop: 3,
+            fontFamily: tokens.font.mono,
+            fontWeight: 600,
+          }}
+        >
+          {weeklyHrs}h / {o.cap}h {full && "· at cap"}
+        </div>
+      </div>
+      <Icon name="grip" size={14} />
+    </div>
   );
 }

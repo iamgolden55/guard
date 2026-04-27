@@ -5,7 +5,7 @@ import { useAccent } from "../../../contexts/AccentContext";
 import { Button } from "../../../design-system/primitives/Button";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
-import { WEEK_COUNTS } from "../data/mocks";
+import { useScheduling, weekCounts } from "../state/SchedulingState";
 
 export interface SchedulingHeaderProps {
   onPublish: () => void;
@@ -14,8 +14,10 @@ export interface SchedulingHeaderProps {
 
 export function SchedulingHeader({ onPublish, onNewShift }: SchedulingHeaderProps) {
   const { palette } = useAccent();
-  const draftCount = WEEK_COUNTS.draft;
-  const hardCount = WEEK_COUNTS.hardViols;
+  const { shifts } = useScheduling();
+  const counts = weekCounts(shifts);
+  const draftCount = counts.draft;
+  const hardCount = counts.hardViols;
 
   return (
     <header
