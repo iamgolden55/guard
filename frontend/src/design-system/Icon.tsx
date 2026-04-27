@@ -50,7 +50,12 @@ export type IconName =
   | "user"
   | "print"
   | "panel-left"
-  | "panel-right";
+  | "panel-right"
+  | "shield-x"
+  | "flag"
+  | "lock"
+  | "bank"
+  | "refresh";
 
 const PATHS: Record<IconName, ReactElement> = {
   "squares-2x2": (
@@ -253,6 +258,31 @@ const PATHS: Record<IconName, ReactElement> = {
     <>
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <path d="M15 4v16" />
+    </>
+  ),
+  "shield-x": (
+    <>
+      <path d="M12 3l8 3v6c0 4.5-3.5 8-8 9-4.5-1-8-4.5-8-9V6l8-3z" />
+      <path d="M9 9l6 6M15 9l-6 6" />
+    </>
+  ),
+  flag: <path d="M5 21V4M5 4h12l-2 4 2 4H5" />,
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 018 0v3" />
+    </>
+  ),
+  bank: (
+    <>
+      <path d="M3 10l9-6 9 6" />
+      <path d="M5 10v9M9 10v9M15 10v9M19 10v9M3 21h18" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M3 12a9 9 0 0115-6.7L21 8M21 12a9 9 0 01-15 6.7L3 16" />
+      <path d="M21 3v5h-5M3 21v-5h5" />
     </>
   ),
 };
