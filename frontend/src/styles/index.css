@@ -1,9 +1,14 @@
+@import "../design-system/tokens.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Phase 0: minimal globals only.
-   Phase 1 wires the MS_TOKENS CSS variables here. */
+@keyframes ms-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 html,
 body {
