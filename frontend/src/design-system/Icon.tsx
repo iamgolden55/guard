@@ -30,7 +30,13 @@ export type IconName =
   | "arrow-down"
   | "filter"
   | "more"
-  | "menu";
+  | "menu"
+  | "chevron-down"
+  | "edit"
+  | "eye"
+  | "file"
+  | "info"
+  | "pause";
 
 const PATHS: Record<IconName, ReactElement> = {
   "squares-2x2": (
@@ -139,6 +145,32 @@ const PATHS: Record<IconName, ReactElement> = {
     </>
   ),
   menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+  "chevron-down": <path d="M6 9l6 6 6-6" />,
+  edit: <path d="M4 20h4L20 8l-4-4L4 16v4z" />,
+  eye: (
+    <>
+      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  file: (
+    <>
+      <path d="M7 3h8l4 4v14H7V3z" />
+      <path d="M15 3v4h4" />
+    </>
+  ),
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v6M12 7.5v.01" />
+    </>
+  ),
+  pause: (
+    <>
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </>
+  ),
 };
 
 export interface IconProps {

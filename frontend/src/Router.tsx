@@ -2,8 +2,10 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AuthGuard from "./components/AuthGuard";
 import AppLayout from "./layouts/AppLayout";
 import AuthLayout from "./layouts/AuthLayout";
+import FullScreenAppLayout from "./layouts/FullScreenAppLayout";
 import LoginPage from "./features/auth/LoginPage";
 import DashboardPage from "./features/dashboard/DashboardPage";
+import AttendancePage from "./features/attendance/AttendancePage";
 import ThemeSmokePage from "./features/dev/ThemeSmokePage";
 import { Card, SectionHeader, textStyles } from "./design-system";
 
@@ -34,13 +36,12 @@ export default function Router() {
       {/* Dev-only token swatch page (no auth, no chrome) */}
       <Route path="/dev/theme" element={<ThemeSmokePage />} />
 
-      {/* Protected app */}
+      {/* Protected app — standard layout */}
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/scheduling" element={<PagePlaceholder title="Scheduling" />} />
-          <Route path="/attendance" element={<PagePlaceholder title="Attendance" />} />
           <Route path="/invoices" element={<PagePlaceholder title="Invoices" />} />
           <Route path="/payroll" element={<PagePlaceholder title="Payroll" />} />
           <Route path="/staff" element={<PagePlaceholder title="Staff" />} />
@@ -50,6 +51,11 @@ export default function Router() {
           <Route path="/incidents" element={<PagePlaceholder title="Incidents" />} />
           <Route path="/recruitment" element={<PagePlaceholder title="Recruitment" />} />
           <Route path="/integrations" element={<PagePlaceholder title="Integrations" />} />
+        </Route>
+
+        {/* Routes with their own page-level header bring no AppLayout topbar. */}
+        <Route element={<FullScreenAppLayout />}>
+          <Route path="/attendance" element={<AttendancePage />} />
         </Route>
       </Route>
 
