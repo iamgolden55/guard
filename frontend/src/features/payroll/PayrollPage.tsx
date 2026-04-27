@@ -80,6 +80,9 @@ export default function PayrollPage() {
 
       <main
         style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
           padding: 28,
           display: "flex",
           flexDirection: "column",

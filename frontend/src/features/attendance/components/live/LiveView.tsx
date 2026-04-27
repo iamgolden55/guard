@@ -9,14 +9,22 @@ export interface LiveViewProps {
   groupBy?: GroupBy;
   showPhotos?: boolean;
   onSelect: (shift: AttendanceShift) => void;
+  leftRailOpen?: boolean;
+  venueGridOpen?: boolean;
 }
 
-export function LiveView({ groupBy = "venue", showPhotos = true, onSelect }: LiveViewProps) {
+export function LiveView({
+  groupBy = "venue",
+  showPhotos = true,
+  onSelect,
+  leftRailOpen = true,
+  venueGridOpen = true,
+}: LiveViewProps) {
   return (
     <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-      <LiveLeftRail onSelect={onSelect} />
+      {leftRailOpen && <LiveLeftRail onSelect={onSelect} />}
       <TimelineRiver groupBy={groupBy} showPhotos={showPhotos} onSelect={onSelect} />
-      <VenueGrid onSelect={onSelect} />
+      {venueGridOpen && <VenueGrid onSelect={onSelect} />}
     </div>
   );
 }

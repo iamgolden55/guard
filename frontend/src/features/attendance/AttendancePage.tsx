@@ -1,6 +1,6 @@
 // AttendancePage — composes header, view-switcher, and drawer.
 // Tab state is local; deeplinking via ?tab= is a Phase 4.5 polish.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AttendanceHeader } from "./components/AttendanceHeader";
 import { AttendanceDrawer } from "./components/AttendanceDrawer";
 import { LiveView } from "./components/live/LiveView";
@@ -14,10 +14,44 @@ import {
 
 export type AttendanceTab = "live" | "exceptions" | "timesheets";
 
+const LEFT_RAIL_KEY = "ms-attendance-left-rail";
+const VENUE_GRID_KEY = "ms-attendance-venue-grid";
+
+function readBool(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key);
+    if (v === "1") return true;
+    if (v === "0") return false;
+  } catch {
+    // ignore
+  }
+  return fallback;
+}
+
 export default function AttendancePage() {
   const [view, setView] = useState<AttendanceTab>("live");
   const [selectedShift, setSelectedShift] = useState<AttendanceShift | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [leftRailOpen, setLeftRailOpen] = useState<boolean>(() => readBool(LEFT_RAIL_KEY, true));
+  const [venueGridOpen, setVenueGridOpen] = useState<boolean>(() =>
+    readBool(VENUE_GRID_KEY, true),
+  );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LEFT_RAIL_KEY, leftRailOpen ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [leftRailOpen]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VENUE_GRID_KEY, venueGridOpen ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [venueGridOpen]);
 
   const handleSelectShift = (s: AttendanceShift) => {
     setSelectedShift(s);
@@ -39,8 +73,21 @@ export default function AttendancePage() {
 
   return (
     <>
-      <AttendanceHeader view={view} onViewChange={setView} />
-      {view === "live" && <LiveView onSelect={handleSelectShift} />}
+      <AttendanceHeader
+        view={view}
+        onViewChange={setView}
+        leftRailOpen={leftRailOpen}
+        venueGridOpen={venueGridOpen}
+        onToggleLeftRail={() => setLeftRailOpen((v) => !v)}
+        onToggleVenueGrid={() => setVenueGridOpen((v) => !v)}
+      />
+      {view === "live" && (
+        <LiveView
+          onSelect={handleSelectShift}
+          leftRailOpen={leftRailOpen}
+          venueGridOpen={venueGridOpen}
+        />
+      )}
       {view === "exceptions" && <ExceptionsView onSelect={handleSelectShift} />}
       {view === "timesheets" && <TimesheetsView onSelect={handleSelectTimesheet} />}
       <AttendanceDrawer

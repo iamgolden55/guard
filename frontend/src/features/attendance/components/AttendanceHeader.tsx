@@ -31,9 +31,22 @@ export interface AttendanceHeaderProps {
   view: AttendanceTab;
   onViewChange: (next: AttendanceTab) => void;
   livePulse?: boolean;
+  /** Live-tab only: collapse the KPI/roster left rail and the venue board right rail. */
+  leftRailOpen?: boolean;
+  venueGridOpen?: boolean;
+  onToggleLeftRail?: () => void;
+  onToggleVenueGrid?: () => void;
 }
 
-export function AttendanceHeader({ view, onViewChange, livePulse = true }: AttendanceHeaderProps) {
+export function AttendanceHeader({
+  view,
+  onViewChange,
+  livePulse = true,
+  leftRailOpen,
+  venueGridOpen,
+  onToggleLeftRail,
+  onToggleVenueGrid,
+}: AttendanceHeaderProps) {
   const { palette } = useAccent();
   const readyCount = TIMESHEETS.filter((t) => t.status === "ready").length;
 
@@ -119,6 +132,21 @@ export function AttendanceHeader({ view, onViewChange, livePulse = true }: Atten
               LIVE · {NOW_LABEL}
             </span>
           </div>
+        )}
+
+        {view === "live" && onToggleLeftRail && (
+          <PaneToggleButton
+            side="left"
+            open={leftRailOpen ?? true}
+            onClick={onToggleLeftRail}
+          />
+        )}
+        {view === "live" && onToggleVenueGrid && (
+          <PaneToggleButton
+            side="right"
+            open={venueGridOpen ?? true}
+            onClick={onToggleVenueGrid}
+          />
         )}
 
         <button
@@ -231,5 +259,45 @@ export function AttendanceHeader({ view, onViewChange, livePulse = true }: Atten
         </div>
       </div>
     </header>
+  );
+}
+
+interface PaneToggleButtonProps {
+  side: "left" | "right";
+  open: boolean;
+  onClick: () => void;
+}
+
+function PaneToggleButton({ side, open, onClick }: PaneToggleButtonProps) {
+  const label =
+    side === "left"
+      ? open
+        ? "Hide KPI rail"
+        : "Show KPI rail"
+      : open
+        ? "Hide venue board"
+        : "Show venue board";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      style={{
+        width: 38,
+        height: 38,
+        borderRadius: 8,
+        background: open ? tokens.color.ink100 : "transparent",
+        border: open ? "none" : `1px solid ${tokens.color.ink200}`,
+        color: open ? tokens.color.ink800 : tokens.color.ink500,
+        display: "grid",
+        placeItems: "center",
+        cursor: "pointer",
+        flexShrink: 0,
+        transition: "background .15s, color .15s",
+      }}
+    >
+      <Icon name={side === "left" ? "panel-left" : "panel-right"} size={17} />
+    </button>
   );
 }
