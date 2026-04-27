@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -177,15 +177,57 @@ export default function LoginPage() {
             )}
           </label>
 
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginTop: -4,
+              marginBottom: 4,
+            }}
+          >
+            <Link
+              to="/reset-password"
+              style={{
+                fontSize: 12,
+                color: tokens.color.ink600,
+                fontWeight: 500,
+                textDecoration: "none",
+              }}
+            >
+              Forgot password?
+            </Link>
+          </div>
+
           <Button
             type="submit"
             variant="primary"
             size="lg"
             disabled={isSubmitting || authState.isLoading}
-            style={{ marginTop: 8, width: "100%" }}
+            style={{ marginTop: 4, width: "100%" }}
           >
             {isSubmitting ? "Signing in…" : "Sign in"}
           </Button>
+
+          <div
+            style={{
+              textAlign: "center",
+              marginTop: 8,
+              fontSize: 12,
+              color: tokens.color.ink600,
+            }}
+          >
+            New here?{" "}
+            <Link
+              to="/register"
+              style={{
+                color: tokens.color.primary,
+                fontWeight: 600,
+                textDecoration: "none",
+              }}
+            >
+              Create an account
+            </Link>
+          </div>
         </form>
       </Card>
     </div>

@@ -4,6 +4,9 @@ import AppLayout from "./layouts/AppLayout";
 import AuthLayout from "./layouts/AuthLayout";
 import FullScreenAppLayout from "./layouts/FullScreenAppLayout";
 import LoginPage from "./features/auth/LoginPage";
+import RegisterPage from "./features/auth/RegisterPage";
+import PasswordResetRequestPage from "./features/auth/PasswordResetRequestPage";
+import PasswordResetConfirmPage from "./features/auth/PasswordResetConfirmPage";
 import DashboardPage from "./features/dashboard/DashboardPage";
 import AttendancePage from "./features/attendance/AttendancePage";
 import InvoicesPage from "./features/invoices/InvoicesPage";
@@ -34,6 +37,12 @@ export default function Router() {
       {/* Public auth routes */}
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/reset-password" element={<PasswordResetRequestPage />} />
+        <Route
+          path="/reset-password/confirm/:token"
+          element={<PasswordResetConfirmPage />}
+        />
       </Route>
 
       {/* Dev-only token swatch page (no auth, no chrome) */}
