@@ -36,7 +36,19 @@ export type IconName =
   | "eye"
   | "file"
   | "info"
-  | "pause";
+  | "pause"
+  | "send"
+  | "mail"
+  | "copy"
+  | "external"
+  | "stack"
+  | "warning"
+  | "history"
+  | "arrow-right"
+  | "credit-card"
+  | "building"
+  | "user"
+  | "print";
 
 const PATHS: Record<IconName, ReactElement> = {
   "squares-2x2": (
@@ -169,6 +181,64 @@ const PATHS: Record<IconName, ReactElement> = {
     <>
       <rect x="6" y="4" width="4" height="16" rx="1" />
       <rect x="14" y="4" width="4" height="16" rx="1" />
+    </>
+  ),
+  send: <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />,
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 7l9 7 9-7" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V5a2 2 0 012-2h10" />
+    </>
+  ),
+  external: <path d="M14 3h7v7M21 3l-9 9M5 5h6v14H5z" />,
+  stack: (
+    <>
+      <path d="M12 3l9 5-9 5-9-5 9-5z" />
+      <path d="M3 13l9 5 9-5M3 17l9 5 9-5" />
+    </>
+  ),
+  warning: (
+    <>
+      <path d="M12 3l10 18H2L12 3z" />
+      <path d="M12 10v5" />
+      <circle cx="12" cy="18" r=".8" fill="currentColor" />
+    </>
+  ),
+  history: (
+    <>
+      <path d="M3 12a9 9 0 109-9c-2.7 0-5.1 1.2-6.7 3.1" />
+      <path d="M3 4v5h5M12 7v5l3 2" />
+    </>
+  ),
+  "arrow-right": <path d="M5 12h14M13 5l7 7-7 7" />,
+  "credit-card": (
+    <>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <path d="M2 11h20" />
+    </>
+  ),
+  building: (
+    <>
+      <rect x="4" y="3" width="16" height="18" rx="1" />
+      <path d="M9 7h.01M15 7h.01M9 11h.01M15 11h.01M9 15h.01M15 15h.01M10 21v-4h4v4" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+    </>
+  ),
+  print: (
+    <>
+      <path d="M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-4a2 2 0 012-2h16a2 2 0 012 2v4a2 2 0 01-2 2h-2" />
+      <rect x="6" y="14" width="12" height="8" rx="1" />
     </>
   ),
 };
