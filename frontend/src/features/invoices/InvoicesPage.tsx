@@ -36,6 +36,20 @@ const ACTION_LABELS: Record<InvoiceActionId, string> = {
   export: "Re-syncing to Xero…",
 };
 
+const LEFT_PANE_KEY = "ms-invoices-left-pane";
+const RIGHT_PANE_KEY = "ms-invoices-right-pane";
+
+function readBool(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key);
+    if (v === "1") return true;
+    if (v === "0") return false;
+  } catch {
+    // ignore
+  }
+  return fallback;
+}
+
 export default function InvoicesPage() {
   const { palette } = useAccent();
   const [tab, setTab] = useState<InvoicesTab>("outbox");
@@ -45,6 +59,24 @@ export default function InvoicesPage() {
   const [actionToast, setActionToast] = useState<string | null>(null);
   const [template] = useState<InvoiceTemplate>("modern");
   const [paperEffect] = useState(true);
+  const [leftPaneOpen, setLeftPaneOpen] = useState<boolean>(() => readBool(LEFT_PANE_KEY, true));
+  const [rightPaneOpen, setRightPaneOpen] = useState<boolean>(() => readBool(RIGHT_PANE_KEY, true));
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LEFT_PANE_KEY, leftPaneOpen ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [leftPaneOpen]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RIGHT_PANE_KEY, rightPaneOpen ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [rightPaneOpen]);
 
   const invoices = ledger === "client" ? CLIENT_INVOICES : STAFF_INVOICES;
   const stats = ledger === "client" ? CLIENT_STATS : STAFF_STATS;
@@ -79,21 +111,27 @@ export default function InvoicesPage() {
         stats={stats}
         onNew={() => handleAct("issue")}
         onStatement={() => handleAct("remind")}
+        leftPaneOpen={leftPaneOpen}
+        rightPaneOpen={rightPaneOpen}
+        onToggleLeftPane={() => setLeftPaneOpen((v) => !v)}
+        onToggleRightPane={() => setRightPaneOpen((v) => !v)}
       />
 
       {tab === "outbox" && (
         <div style={{ display: "flex", flex: 1, minWidth: 0 }}>
-          <InvLeftPane
-            invoices={invoices}
-            stats={stats}
-            statusFilter={statusFilter}
-            setStatusFilter={setStatusFilter}
-            search={search}
-            setSearch={setSearch}
-            selectedId={selectedId}
-            setSelectedId={setSelectedId}
-            ledger={ledger}
-          />
+          {leftPaneOpen && (
+            <InvLeftPane
+              invoices={invoices}
+              stats={stats}
+              statusFilter={statusFilter}
+              setStatusFilter={setStatusFilter}
+              search={search}
+              setSearch={setSearch}
+              selectedId={selectedId}
+              setSelectedId={setSelectedId}
+              ledger={ledger}
+            />
+          )}
 
           <main
             style={{
@@ -126,7 +164,7 @@ export default function InvoicesPage() {
             </div>
           </main>
 
-          <InvRightPane inv={selected} onAct={handleAct} />
+          {rightPaneOpen && <InvRightPane inv={selected} onAct={handleAct} />}
         </div>
       )}
 

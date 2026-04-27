@@ -23,6 +23,11 @@ export interface InvoicesHeaderProps {
   stats: InvoiceStats;
   onNew: () => void;
   onStatement: () => void;
+  /** Outbox-only: toggle visibility of the left list pane and right details pane. */
+  leftPaneOpen?: boolean;
+  rightPaneOpen?: boolean;
+  onToggleLeftPane?: () => void;
+  onToggleRightPane?: () => void;
 }
 
 const TAB_SPECS: { id: InvoicesTab; label: string; icon: IconName }[] = [
@@ -38,6 +43,10 @@ export function InvoicesHeader({
   onLedgerChange,
   stats,
   onNew,
+  leftPaneOpen,
+  rightPaneOpen,
+  onToggleLeftPane,
+  onToggleRightPane,
   onStatement,
 }: InvoicesHeaderProps) {
   const { palette } = useAccent();
@@ -164,6 +173,21 @@ export function InvoicesHeader({
           </div>
         )}
 
+        {tab === "outbox" && onToggleLeftPane && (
+          <PaneToggleButton
+            side="left"
+            open={leftPaneOpen ?? true}
+            onClick={onToggleLeftPane}
+          />
+        )}
+        {tab === "outbox" && onToggleRightPane && (
+          <PaneToggleButton
+            side="right"
+            open={rightPaneOpen ?? true}
+            onClick={onToggleRightPane}
+          />
+        )}
+
         <button
           type="button"
           aria-label="Notifications"
@@ -265,5 +289,45 @@ export function InvoicesHeader({
         })}
       </div>
     </header>
+  );
+}
+
+interface PaneToggleButtonProps {
+  side: "left" | "right";
+  open: boolean;
+  onClick: () => void;
+}
+
+function PaneToggleButton({ side, open, onClick }: PaneToggleButtonProps) {
+  const label =
+    side === "left"
+      ? open
+        ? "Hide invoice list"
+        : "Show invoice list"
+      : open
+        ? "Hide details panel"
+        : "Show details panel";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      style={{
+        width: 38,
+        height: 38,
+        borderRadius: 8,
+        background: open ? tokens.color.ink100 : "transparent",
+        border: open ? "none" : `1px solid ${tokens.color.ink200}`,
+        color: open ? tokens.color.ink800 : tokens.color.ink500,
+        display: "grid",
+        placeItems: "center",
+        cursor: "pointer",
+        flexShrink: 0,
+        transition: "background .15s, color .15s",
+      }}
+    >
+      <Icon name={side === "left" ? "panel-left" : "panel-right"} size={17} />
+    </button>
   );
 }

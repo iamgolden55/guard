@@ -48,7 +48,9 @@ export type IconName =
   | "credit-card"
   | "building"
   | "user"
-  | "print";
+  | "print"
+  | "panel-left"
+  | "panel-right";
 
 const PATHS: Record<IconName, ReactElement> = {
   "squares-2x2": (
@@ -239,6 +241,18 @@ const PATHS: Record<IconName, ReactElement> = {
     <>
       <path d="M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-4a2 2 0 012-2h16a2 2 0 012 2v4a2 2 0 01-2 2h-2" />
       <rect x="6" y="14" width="12" height="8" rx="1" />
+    </>
+  ),
+  "panel-left": (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+    </>
+  ),
+  "panel-right": (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16" />
     </>
   ),
 };
