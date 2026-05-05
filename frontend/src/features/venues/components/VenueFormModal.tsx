@@ -22,25 +22,42 @@ const schema = z.object({
   capacity: z
     .string()
     .trim()
-    .refine((v) => v === "" || (Number.isFinite(Number(v)) && Number(v) >= 0), {
-      message: "Capacity must be a positive number",
+    .min(1, "Capacity is required")
+    .refine((v) => Number.isFinite(Number(v)) && Number(v) > 0, {
+      message: "Capacity must be greater than zero",
     }),
-  contact_name: z.string().trim(),
+  contact_name: z.string().trim().min(1, "Contact name is required"),
   contact_email: z
     .string()
     .trim()
-    .refine((v) => v === "" || /\S+@\S+\.\S+/.test(v), {
+    .min(1, "Contact email is required")
+    .refine((v) => /\S+@\S+\.\S+/.test(v), {
       message: "Enter a valid email",
     }),
-  contact_phone: z.string().trim(),
+  contact_phone: z.string().trim().min(1, "Contact phone is required"),
   requires_fire_safety_checks: z.boolean(),
   requires_capacity_monitoring: z.boolean(),
   requires_toilet_checks: z.boolean(),
   terms_version: z.string().trim(),
-  terms_and_conditions: z.string(),
+  terms_and_conditions: z.string().trim().min(1, "Terms & conditions are required"),
 });
 
 type FormValues = z.infer<typeof schema>;
+
+function extractFieldErrors(err: unknown): Record<string, string> | null {
+  const data = (err as { response?: { data?: unknown } } | undefined)?.response?.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      const first = value.find((v) => typeof v === "string");
+      if (typeof first === "string") out[key] = first;
+    } else if (typeof value === "string") {
+      out[key] = value;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
 
 function venueToValues(venue: Venue | null): FormValues {
   return {
@@ -117,6 +134,7 @@ export function VenueFormModal({
     reset,
     watch,
     setValue,
+    setError,
     formState: { errors, isValid },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -163,10 +181,43 @@ export function VenueFormModal({
     try {
       await onSubmit(valuesToVenue(values, venue));
       onClose();
-    } catch {
-      setSubmitError(
-        isEdit ? "Couldn't save changes. Please try again." : "Couldn't create the venue. Please try again.",
-      );
+    } catch (err: unknown) {
+      const fieldErrors = extractFieldErrors(err);
+      if (fieldErrors) {
+        const knownKeys: (keyof FormValues)[] = [
+          "name",
+          "description",
+          "address",
+          "city",
+          "postal_code",
+          "country",
+          "latitude",
+          "longitude",
+          "capacity",
+          "contact_name",
+          "contact_email",
+          "contact_phone",
+          "terms_version",
+          "terms_and_conditions",
+        ];
+        const unmatched: string[] = [];
+        for (const [key, msg] of Object.entries(fieldErrors)) {
+          if ((knownKeys as string[]).includes(key)) {
+            setError(key as keyof FormValues, { type: "server", message: msg });
+          } else {
+            unmatched.push(`${key}: ${msg}`);
+          }
+        }
+        setSubmitError(
+          unmatched.length > 0
+            ? unmatched.join(" • ")
+            : "Please fix the highlighted fields and try again.",
+        );
+      } else {
+        setSubmitError(
+          isEdit ? "Couldn't save changes. Please try again." : "Couldn't create the venue. Please try again.",
+        );
+      }
     }
   };
 
@@ -307,24 +358,24 @@ export function VenueFormModal({
 
         <Section title="Capacity & contact">
           <Grid2>
-            <Field label="Capacity" error={errors.capacity?.message}>
+            <Field label="Capacity" required error={errors.capacity?.message}>
               <Input
                 {...register("capacity")}
                 placeholder="200"
                 inputMode="numeric"
               />
             </Field>
-            <Field label="Contact name">
+            <Field label="Contact name" required error={errors.contact_name?.message}>
               <Input {...register("contact_name")} autoComplete="name" />
             </Field>
-            <Field label="Contact email" error={errors.contact_email?.message}>
+            <Field label="Contact email" required error={errors.contact_email?.message}>
               <Input
                 {...register("contact_email")}
                 type="email"
                 autoComplete="email"
               />
             </Field>
-            <Field label="Contact phone">
+            <Field label="Contact phone" required error={errors.contact_phone?.message}>
               <Input
                 {...register("contact_phone")}
                 type="tel"
@@ -355,11 +406,15 @@ export function VenueFormModal({
           />
         </Section>
 
-        <Section title="Terms & conditions" subtitle="Optional.">
-          <Field label="Version">
+        <Section title="Terms & conditions">
+          <Field label="Version" hint="Optional.">
             <Input {...register("terms_version")} placeholder="v1.0" />
           </Field>
-          <Field label="Terms text">
+          <Field
+            label="Terms text"
+            required
+            error={errors.terms_and_conditions?.message}
+          >
             <textarea
               {...register("terms_and_conditions")}
               rows={4}
