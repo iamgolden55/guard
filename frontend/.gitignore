@@ -5,5 +5,7 @@ dist
 .env
 .env.*
 !.env.example
+# .env.production is committed: only public VITE_* vars baked into the client bundle anyway
+!.env.production
 .vscode
 .idea
