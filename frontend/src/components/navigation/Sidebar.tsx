@@ -83,31 +83,20 @@ export function Sidebar({ drawer = false, onNavigate }: SidebarProps) {
           position: "relative",
         }}
       >
-        <div
+        <img
+          src="/logos/LOGOM.svg"
+          alt="Mead Security"
+          width={34}
+          height={34}
           style={{
             width: 34,
             height: 34,
             borderRadius: 9,
-            background: `linear-gradient(135deg, ${palette.primary} 0%, ${palette.dark} 100%)`,
-            display: "grid",
-            placeItems: "center",
             boxShadow: `0 4px 10px -4px ${palette.primary}66`,
             flexShrink: 0,
+            display: "block",
           }}
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="white"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 3l8 3v6c0 4.5-3.5 8-8 9-4.5-1-8-4.5-8-9V6l8-3z" />
-          </svg>
-        </div>
+        />
         {!effectiveCollapsed && (
           <div style={{ lineHeight: 1.1, flex: 1, minWidth: 0 }}>
             <div
