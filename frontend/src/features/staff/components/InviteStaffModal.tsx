@@ -20,6 +20,21 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
+function extractFieldErrors(err: unknown): Record<string, string> | null {
+  const data = (err as { response?: { data?: unknown } } | undefined)?.response?.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      const first = value.find((v) => typeof v === "string");
+      if (typeof first === "string") out[key] = first;
+    } else if (typeof value === "string") {
+      out[key] = value;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 export interface InviteStaffModalProps {
   open: boolean;
   onClose: () => void;
@@ -39,6 +54,7 @@ export function InviteStaffModal({
     register,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, isValid },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -71,8 +87,34 @@ export function InviteStaffModal({
         role: "staff",
       });
       onClose();
-    } catch {
-      setSubmitError("Couldn't invite staff. Check the details and try again.");
+    } catch (err: unknown) {
+      const fieldErrors = extractFieldErrors(err);
+      if (fieldErrors) {
+        // Backend uses snake_case; map first_name/last_name onto the camelCase form keys.
+        const apiToFormKey: Record<string, keyof FormValues> = {
+          first_name: "firstName",
+          last_name: "lastName",
+          email: "email",
+          username: "username",
+          password: "password",
+        };
+        const unmatched: string[] = [];
+        for (const [key, msg] of Object.entries(fieldErrors)) {
+          const formKey = apiToFormKey[key];
+          if (formKey) {
+            setError(formKey, { type: "server", message: msg });
+          } else {
+            unmatched.push(`${key}: ${msg}`);
+          }
+        }
+        setSubmitError(
+          unmatched.length > 0
+            ? unmatched.join(" • ")
+            : "Please fix the highlighted fields and try again.",
+        );
+      } else {
+        setSubmitError("Couldn't invite staff. Check the details and try again.");
+      }
     }
   };
 
