@@ -40,11 +40,34 @@ export default function PasswordResetConfirmPage() {
     try {
       await api.post("/api/v1/password-reset/confirm/", {
         token,
-        password: values.password,
+        new_password: values.password,
+        confirm_password: values.confirmPassword,
       });
       setDone(true);
       window.setTimeout(() => navigate("/login"), 1500);
-    } catch {
+    } catch (err: unknown) {
+      const data = (err as { response?: { data?: unknown } } | undefined)?.response?.data;
+      // Token-specific errors come back as { error: "Token has expired or already been used" } or { error: "Invalid token" }
+      if (data && typeof data === "object" && !Array.isArray(data) && "error" in data && typeof (data as { error: unknown }).error === "string") {
+        setSubmitError((data as { error: string }).error + " — request a new one.");
+        return;
+      }
+      // Field validation errors come back as { new_password: [...], confirm_password: [...], token: [...] }
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        const messages: string[] = [];
+        for (const value of Object.values(data as Record<string, unknown>)) {
+          if (Array.isArray(value)) {
+            const first = value.find((v) => typeof v === "string");
+            if (typeof first === "string") messages.push(first);
+          } else if (typeof value === "string") {
+            messages.push(value);
+          }
+        }
+        if (messages.length > 0) {
+          setSubmitError(messages.join(" • "));
+          return;
+        }
+      }
       setSubmitError("Reset failed. The link may have expired — request a new one.");
     }
   };
