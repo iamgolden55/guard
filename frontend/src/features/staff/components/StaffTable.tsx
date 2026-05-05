@@ -26,6 +26,9 @@ export interface StaffTableProps {
   onRowClick: (row: StaffRow) => void;
   onApprove?: (row: StaffRow) => void;
   approvingId?: number | null;
+  onResendInvite?: (row: StaffRow) => void;
+  resendingId?: number | null;
+  resentId?: number | null;
   isLoading?: boolean;
 }
 
@@ -90,6 +93,9 @@ export function StaffTable({
   onRowClick,
   onApprove,
   approvingId,
+  onResendInvite,
+  resendingId,
+  resentId,
   isLoading,
 }: StaffTableProps) {
   if (isLoading) {
@@ -291,6 +297,42 @@ export function StaffTable({
                         >
                           {isApproving ? "Approving…" : "Approve"}
                         </button>
+                      )}
+                      {!row.isPending && onResendInvite && (
+                        (() => {
+                          const isResending = resendingId === row.id;
+                          const justSent = resentId === row.id;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => onResendInvite(row)}
+                              disabled={isResending || justSent}
+                              title={
+                                row.email
+                                  ? `Send a fresh setup link to ${row.email}`
+                                  : "User has no email on file"
+                              }
+                              style={{
+                                background: justSent ? tokens.color.successSoft : "white",
+                                color: justSent ? tokens.color.successInk : tokens.color.ink700,
+                                border: `1px solid ${justSent ? tokens.color.success : tokens.color.ink200}`,
+                                borderRadius: tokens.radius.md,
+                                padding: "6px 12px",
+                                fontFamily: tokens.font.display,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: isResending || justSent ? "default" : "pointer",
+                                opacity: isResending ? 0.7 : 1,
+                              }}
+                            >
+                              {isResending
+                                ? "Sending…"
+                                : justSent
+                                  ? "Sent ✓"
+                                  : "Resend invite"}
+                            </button>
+                          );
+                        })()
                       )}
                       <button
                         type="button"

@@ -78,6 +78,10 @@ export default function StaffPage() {
     useState<DrawerTab>("profile");
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("profile");
   const [inviteOpen, setInviteOpen] = useState(false);
+  // Tracks the last user we resent an invite to so the button shows "Sent ✓"
+  // briefly before reverting to "Resend invite".
+  const [recentlyResentId, setRecentlyResentId] = useState<number | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
 
   const data = useStaffData({
     selectedStaffId: selectedRow?.staffProfileId ?? null,
@@ -226,6 +230,25 @@ export default function StaffPage() {
   const handleApprove = async (row: StaffRow) => {
     await data.approveStaff.mutateAsync(row.id);
     if (selectedRow?.id === row.id) setSelectedRow(null);
+  };
+
+  const handleResendInvite = async (row: StaffRow) => {
+    setResendError(null);
+    try {
+      await data.resendInvite.mutateAsync(row.id);
+      setRecentlyResentId(row.id);
+      window.setTimeout(() => {
+        setRecentlyResentId((current) => (current === row.id ? null : current));
+      }, 4000);
+    } catch (err: unknown) {
+      const errData = (err as { response?: { data?: unknown } } | undefined)?.response?.data;
+      const message =
+        errData && typeof errData === "object" && !Array.isArray(errData) && "error" in errData
+          ? String((errData as { error: unknown }).error)
+          : "Couldn't resend invite. Try again in a moment.";
+      setResendError(`${row.fullName}: ${message}`);
+      window.setTimeout(() => setResendError(null), 6000);
+    }
   };
 
   const handleDelete = async (row: StaffRow) => {
@@ -418,6 +441,22 @@ export default function StaffPage() {
               employmentTypeOptions={employmentTypeOptions}
               resultCount={filteredRows.length}
             />
+            {resendError && (
+              <div
+                role="alert"
+                style={{
+                  background: tokens.color.dangerSoft,
+                  color: tokens.color.dangerInk,
+                  border: `1px solid ${tokens.color.danger}33`,
+                  borderRadius: tokens.radius.md,
+                  padding: "10px 12px",
+                  fontFamily: tokens.font.body,
+                  fontSize: 13,
+                }}
+              >
+                {resendError}
+              </div>
+            )}
             <StaffTable
               rows={filteredRows}
               licensesByStaffProfile={licensesByStaffProfile}
@@ -429,6 +468,14 @@ export default function StaffPage() {
                     null)
                   : null
               }
+              onResendInvite={(row) => void handleResendInvite(row)}
+              resendingId={
+                data.resendInvite.isPending
+                  ? ((data.resendInvite.variables as number | undefined) ??
+                    null)
+                  : null
+              }
+              resentId={recentlyResentId}
               isLoading={data.isLoading}
             />
           </div>

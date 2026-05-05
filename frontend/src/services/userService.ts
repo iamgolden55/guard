@@ -49,6 +49,30 @@ class UserService {
     return response.data;
   }
 
+  async inviteStaff(payload: {
+    username: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  }): Promise<{
+    message: string;
+    user: User;
+    welcome_email_queued: boolean;
+    password_setup_expires_at: string;
+  }> {
+    const response = await api.post('/api/v1/users/invite/', payload);
+    return response.data;
+  }
+
+  async resendInvite(userId: number): Promise<{
+    message: string;
+    welcome_email_queued: boolean;
+    password_setup_expires_at: string;
+  }> {
+    const response = await api.post(`/api/v1/users/${userId}/resend-invite/`);
+    return response.data;
+  }
+
   async updateUser(userId: number, userData: Partial<User>): Promise<User> {
     const response = await api.patch<User>(`/api/v1/users/${userId}/`, userData);
     return response.data;

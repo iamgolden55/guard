@@ -24,7 +24,6 @@ import profileService from "../../../services/profileService";
 import shiftService from "../../../services/shiftService";
 import userService, {
   type StaffUser,
-  type User,
 } from "../../../services/userService";
 
 // Pending profile shape — `profileService.getPendingStaffProfiles()` is
@@ -83,8 +82,6 @@ export interface InviteStaffPayload {
   first_name: string;
   last_name: string;
   email: string;
-  password: string;
-  role?: string;
 }
 
 export interface UseStaffDataOptions {
@@ -261,14 +258,22 @@ export function useStaffData(options: UseStaffDataOptions = {}) {
     },
   });
 
-  // ── Invite (create) staff user ─────────────────────────────────────────────
+  // ── Invite staff user ─────────────────────────────────────────────────────
+  // POSTs to /api/v1/users/invite/ which creates the User with an unusable
+  // password, attaches them to the inviting admin's company, and queues a
+  // welcome email containing a secure password-setup link.
   const inviteStaff = useMutation({
-    mutationFn: (payload: InviteStaffPayload) =>
-      userService.createUser(payload as Partial<User>),
+    mutationFn: (payload: InviteStaffPayload) => userService.inviteStaff(payload),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ACTIVE_KEY });
       queryClient.invalidateQueries({ queryKey: PENDING_KEY });
     },
+  });
+
+  // Re-issue a welcome email + fresh password setup link for an existing user.
+  // Backend invalidates any outstanding tokens and queues send_staff_welcome_email.
+  const resendInvite = useMutation({
+    mutationFn: (userId: number) => userService.resendInvite(userId),
   });
 
   // ── Update staff address (admin) ──────────────────────────────────────────
@@ -430,6 +435,7 @@ export function useStaffData(options: UseStaffDataOptions = {}) {
     approveStaff,
     deleteStaff,
     inviteStaff,
+    resendInvite,
     updateEmploymentType,
     updatePayFrequency,
     updateStaffAddress,
