@@ -82,6 +82,14 @@ black==24.2.0
 flake8==7.0.0
 isort==5.13.2
 
+# Monitoring & Observability
+# Required: settings.py imports sentry_sdk at module load — without these,
+# the Render deploy crashes on import.
+sentry-sdk[django,celery]==2.19.2
+posthog==3.7.4
+# drf-yasg requires pkg_resources from setuptools; pin <78 (removal in 78.x)
+setuptools>=75.0.0,<78
+
 # Other dependencies
 inflection==0.5.1
 uritemplate==4.1.1
