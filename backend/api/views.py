@@ -714,6 +714,178 @@ class UserViewSet(viewsets.ModelViewSet):
             'status': status.HTTP_200_OK
         })
     
+    @action(detail=False, methods=['post'], url_path='invite', permission_classes=[IsAuthenticated])
+    def invite_staff(self, request):
+        """Admin/manager invites a staff member by email.
+
+        Mirrors the recruitment convert-to-user flow: creates a User with an
+        unusable password, attaches them to the inviting admin's company, and
+        queues a welcome email containing a secure password setup link.
+        """
+        from django.db import transaction as db_transaction
+
+        if request.user.role not in ('admin', 'manager'):
+            return Response(
+                {'error': 'Only admin or manager users can invite staff'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        company = self.get_user_company(request)
+        if not company:
+            return Response(
+                {'error': 'No company context found. Please ensure you are associated with a company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate via UserSerializer (uniqueness, email format, etc.). Password
+        # is not required here — the invitee will set their own via the email link.
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+
+        ip_address = request.META.get('HTTP_X_FORWARDED_FOR')
+        if ip_address:
+            ip_address = ip_address.split(',')[0].strip()
+        else:
+            ip_address = request.META.get('REMOTE_ADDR', '0.0.0.0')
+
+        try:
+            with db_transaction.atomic():
+                user = User.objects.create(
+                    username=data['username'],
+                    email=data.get('email', ''),
+                    first_name=data.get('first_name', ''),
+                    last_name=data.get('last_name', ''),
+                    role='staff',
+                    is_active=True,
+                    is_staff=False,
+                )
+                user.set_unusable_password()
+                user.save()
+
+                UserCompanyMembership.objects.create(
+                    user=user,
+                    company=company,
+                    role='staff',
+                    is_owner=False,
+                    is_active=True,
+                    invited_by=request.user,
+                    invitation_status='accepted',
+                    joined_at=timezone.now(),
+                )
+
+                reset_token = PasswordResetToken.objects.create(
+                    user=user,
+                    ip_address=ip_address,
+                )
+
+                from .tasks import send_staff_welcome_email
+                send_staff_welcome_email.delay(
+                    user_id=user.id,
+                    company_name=company.name,
+                    token_uuid=str(reset_token.token),
+                    admin_ip=ip_address,
+                )
+
+            logger.info(
+                f"Staff invited: user_id={user.id}, email={user.email}, "
+                f"company={company.name}, invited_by={request.user.username}. "
+                f"Welcome email queued."
+            )
+
+            return Response({
+                'message': 'Invitation sent. The new staff member will receive a welcome email with a setup link.',
+                'user': UserSerializer(user).data,
+                'welcome_email_queued': True,
+                'password_setup_expires_at': reset_token.expires_at.isoformat(),
+            }, status=status.HTTP_201_CREATED)
+
+        except IntegrityError as e:
+            logger.error(f"Integrity error inviting staff: {str(e)}", exc_info=True)
+            return Response(
+                {'error': 'A user with that username or email already exists.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error inviting staff: {str(e)}", exc_info=True)
+            return Response(
+                {'error': 'Failed to invite staff. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @action(detail=True, methods=['post'], url_path='resend-invite', permission_classes=[IsAuthenticated])
+    def resend_invite(self, request, pk=None):
+        """Admin/manager re-issues a welcome email with a fresh password setup link.
+
+        Use case: a staff member never received the original invite, the link
+        expired, or they need a re-send. Invalidates any outstanding tokens for
+        the user, creates a fresh PasswordResetToken, and queues the welcome
+        email via the same Celery task used by the initial invite.
+        """
+        if request.user.role not in ('admin', 'manager'):
+            return Response(
+                {'error': 'Only admin or manager users can resend invites'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        company = self.get_user_company(request)
+        if not company:
+            return Response(
+                {'error': 'No company context found. Please ensure you are associated with a company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target = self.get_object()
+
+        if not UserCompanyMembership.objects.filter(
+            user=target, company=company, is_active=True,
+        ).exists():
+            return Response(
+                {'error': 'This user is not in your company.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if not target.email:
+            return Response(
+                {'error': 'This user has no email address on file.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ip_address = request.META.get('HTTP_X_FORWARDED_FOR')
+        if ip_address:
+            ip_address = ip_address.split(',')[0].strip()
+        else:
+            ip_address = request.META.get('REMOTE_ADDR', '0.0.0.0')
+
+        # Invalidate any outstanding tokens so old links stop working
+        target.password_reset_tokens.filter(is_used=False).update(is_used=True)
+
+        reset_token = PasswordResetToken.objects.create(
+            user=target,
+            ip_address=ip_address,
+        )
+
+        from .tasks import send_staff_welcome_email
+        send_staff_welcome_email.delay(
+            user_id=target.id,
+            company_name=company.name,
+            token_uuid=str(reset_token.token),
+            admin_ip=ip_address,
+        )
+
+        logger.info(
+            f"Invite resent: user_id={target.id}, email={target.email}, "
+            f"resent_by={request.user.username}."
+        )
+
+        return Response({
+            'message': f'Welcome email resent to {target.email}.',
+            'welcome_email_queued': True,
+            'password_setup_expires_at': reset_token.expires_at.isoformat(),
+        }, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['get'], url_path='staff')
     def staff_users(self, request):
         """Get all staff users for dropdown selections"""
