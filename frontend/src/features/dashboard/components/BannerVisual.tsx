@@ -43,7 +43,14 @@ export function BannerVisual() {
         >
           This Week
         </div>
-        <div style={{ marginTop: 10, display: "flex", alignItems: "baseline", gap: 4 }}>
+        <div
+          style={{
+            marginTop: 10,
+            display: "flex",
+            alignItems: "baseline",
+            gap: 4,
+          }}
+        >
           <div
             style={{
               fontFamily: tokens.font.display,
@@ -56,11 +63,18 @@ export function BannerVisual() {
             4,218
           </div>
         </div>
-        <div style={{ fontSize: 10.5, color: tokens.color.ink600, marginTop: 2 }}>
+        <div
+          style={{ fontSize: 10.5, color: tokens.color.ink600, marginTop: 2 }}
+        >
           hours delivered
         </div>
         <div style={{ marginTop: 10 }}>
-          <Sparkline data={[40, 45, 42, 58, 52, 62, 68]} color={palette.primary} w={120} h={28} />
+          <Sparkline
+            data={[40, 45, 42, 58, 52, 62, 68]}
+            color={palette.primary}
+            w={120}
+            h={28}
+          />
         </div>
       </div>
 
@@ -113,7 +127,9 @@ export function BannerVisual() {
           >
             127
           </div>
-          <div style={{ fontSize: 10.5, color: tokens.color.ink600 }}>officers on shift</div>
+          <div style={{ fontSize: 10.5, color: tokens.color.ink600 }}>
+            officers on shift
+          </div>
         </div>
         <div style={{ marginTop: 10, display: "flex" }}>
           {STACK_AVATARS.map((a, i) => (
@@ -182,13 +198,28 @@ export function BannerVisual() {
           }}
         />
         <div style={{ padding: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: tokens.color.ink900 }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: tokens.color.ink900,
+            }}
+          >
             Mead Security Ltd
           </div>
-          <div style={{ fontSize: 9.5, color: tokens.color.ink500, marginTop: 2 }}>
+          <div
+            style={{ fontSize: 9.5, color: tokens.color.ink500, marginTop: 2 }}
+          >
             Weekly payroll · w/c 20 Apr
           </div>
-          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              flexDirection: "column",
+              gap: 5,
+            }}
+          >
             {[
               ["Night Patrol", "£14,400"],
               ["Venue Cover", "£42,810"],
@@ -196,7 +227,11 @@ export function BannerVisual() {
             ].map(([label, value]) => (
               <div
                 key={label}
-                style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5 }}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: 10.5,
+                }}
               >
                 <span style={{ color: tokens.color.ink600 }}>{label}</span>
                 <span

@@ -382,7 +382,7 @@ export const bulkCreateShifts = async (shifts: Array<{
   isSequential?: boolean;
   hourlyRate?: number | null;
   isSpecialEvent?: boolean;
-}>, allowPastDates: boolean = false): Promise<any[] | null> => {
+}>, allowPastDates = false): Promise<any[] | null> => {
   try {
     const results = [];
     let successCount = 0;
@@ -396,7 +396,7 @@ export const bulkCreateShifts = async (shifts: Array<{
         if (!shift.staffIds || shift.staffIds.length === 0) {
           // Use /api/v1/ prefix to go through Vite proxy to backend
           const response = await api.post(`/api/v1/shifts/`, {
-            venue: parseInt(shift.venueId),
+            venue: Number.parseInt(shift.venueId),
             start_time: shift.startTime,
             end_time: shift.endTime,
             status: 'open',
@@ -413,7 +413,7 @@ export const bulkCreateShifts = async (shifts: Array<{
           // Create multi-staff shift using the multi-staff endpoint
           // Use /api/v1/ prefix to go through Vite proxy to backend
           const response = await api.post(`/api/v1/shifts/create_multi_staff/`, {
-            venue: parseInt(shift.venueId),
+            venue: Number.parseInt(shift.venueId),
             staff_users: shift.staffIds,
             start_time: shift.startTime,
             end_time: shift.endTime,

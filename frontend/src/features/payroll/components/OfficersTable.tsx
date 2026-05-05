@@ -16,6 +16,26 @@ import {
   STATUS_META,
   type Officer,
 } from "../data/mocks";
+import { useOfficerBundle } from "../hooks/usePayrollData";
+import { usePayrollMutations } from "../hooks/usePayrollMutations";
+import billingService from "../../../services/billingService";
+import { RejectInvoiceModal } from "../../invoices/components/RejectInvoiceModal";
+import { AdjustHoursModal } from "./AdjustHoursModal";
+
+const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === "1";
+
+/** Render API ISO dates as 'Mon 21 Jan' to match the mock format. Mock dates
+ * already use that string format, so they pass through unchanged. */
+function fmtRowDate(s: string): string {
+  if (!s || !/^\d{4}-\d{2}-\d{2}/.test(s)) return s;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  return d.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+  });
+}
 
 export type Density = "compact" | "comfortable" | "spacious";
 
@@ -27,6 +47,8 @@ export interface OfficersTableProps {
   setSelectedIds: (ids: number[]) => void;
   onOpenDetail: (officer: Officer) => void;
   density?: Density;
+  /** Active payroll-run code — needed to fetch each row's expanded line items. */
+  runCode?: string | null;
 }
 
 export function OfficersTable({
@@ -35,9 +57,10 @@ export function OfficersTable({
   setSelectedIds,
   onOpenDetail,
   density = "comfortable",
+  runCode,
 }: OfficersTableProps) {
   const { palette } = useAccent();
-  const [expandedId, setExpandedId] = useState<number | null>(4);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const allSelected = officers.length > 0 && officers.every((o) => selectedIds.includes(o.id));
 
   const toggleAll = () => {
@@ -105,6 +128,7 @@ export function OfficersTable({
               onSelect={toggleOne}
               onOpenDetail={onOpenDetail}
               density={density}
+              runCode={runCode}
             />
           ))}
           {officers.length === 0 && (
@@ -126,6 +150,7 @@ interface OfficerRowProps {
   onSelect: (id: number) => void;
   onOpenDetail: (officer: Officer) => void;
   density: Density;
+  runCode?: string | null;
 }
 
 function OfficerRow({
@@ -136,13 +161,24 @@ function OfficerRow({
   onSelect,
   onOpenDetail,
   density,
+  runCode,
 }: OfficerRowProps) {
   const { palette } = useAccent();
   const meta = STATUS_META[o.status];
   const expMeta = o.exportStatus ? EXPORT_META[o.exportStatus] : null;
   const rowPad =
     density === "compact" ? "10px 16px" : density === "spacious" ? "18px 16px" : "14px 16px";
-  const bundle = ITEMS_BY_OFFICER[o.id];
+  // Real-API path: fetch line items + adjustments for this officer's invoice
+  // when the row is expanded. Mock fallback only applies when VITE_USE_MOCKS=1.
+  const bundleQuery = useOfficerBundle(
+    USE_MOCKS ? null : (expanded ? runCode : null),
+    expanded ? o.id : null,
+  );
+  const bundle = USE_MOCKS ? ITEMS_BY_OFFICER[o.id] : bundleQuery.data;
+
+  const mutations = usePayrollMutations(runCode);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [adjustOpen, setAdjustOpen] = useState(false);
   const otHrs = o.ot1Hrs + o.ot2Hrs;
   const siaWarn = siaTone(o.sia);
 
@@ -411,7 +447,7 @@ function OfficerRow({
                   fontFamily: tokens.font.mono,
                 }}
               >
-                INV-{o.id.toString().padStart(4, "0")}-W17
+                {o.invoiceId ?? `INV-${o.id.toString().padStart(4, "0")}`}
               </span>
             </div>
             <div
@@ -453,7 +489,7 @@ function OfficerRow({
                   }}
                 >
                   <span style={{ fontFamily: tokens.font.mono, color: tokens.color.ink600 }}>
-                    {it.date}
+                    {fmtRowDate(it.date)}
                   </span>
                   <span>
                     <span
@@ -541,7 +577,7 @@ function OfficerRow({
                   }}
                 >
                   <div>
-                    <strong style={{ fontFamily: tokens.font.mono }}>{a.date}</strong> · {a.shift}
+                    <strong style={{ fontFamily: tokens.font.mono }}>{fmtRowDate(a.date)}</strong> · {a.shift}
                     <span
                       style={{
                         marginLeft: 8,
@@ -579,14 +615,35 @@ function OfficerRow({
               flexWrap: "wrap",
             }}
           >
-            <Button variant="ghost" size="sm" leading={<Icon name="edit" size={12} />}>
+            <Button
+              variant="ghost"
+              size="sm"
+              leading={<Icon name="edit" size={12} />}
+              onClick={() => setAdjustOpen(true)}
+              disabled={USE_MOCKS}
+            >
               Adjust hours
             </Button>
-            <Button variant="secondary" size="sm" leading={<Icon name="file" size={12} />}>
+            {/* P6 (M1 partial): wire Payslip PDF and Export to Xero buttons. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              leading={<Icon name="file" size={12} />}
+              onClick={() => {
+                if (o.invoiceId) billingService.downloadPdf(o.invoiceId);
+              }}
+              disabled={USE_MOCKS || !o.invoiceId}
+            >
               Payslip PDF
             </Button>
             {o.status === "pending" && (
-              <Button variant="secondary" size="sm" leading={<Icon name="x" size={12} />}>
+              <Button
+                variant="secondary"
+                size="sm"
+                leading={<Icon name="x" size={12} />}
+                onClick={() => setRejectOpen(true)}
+                disabled={USE_MOCKS}
+              >
                 Reject invoice
               </Button>
             )}
@@ -595,12 +652,36 @@ function OfficerRow({
               accent={palette}
               size="sm"
               leading={<Icon name="external" size={12} />}
+              onClick={() => {
+                if (o.invoiceId) billingService.exportToXero(o.invoiceId);
+              }}
+              disabled={USE_MOCKS || !o.invoiceId}
             >
               Export to Xero
             </Button>
           </div>
         </div>
       )}
+
+      <RejectInvoiceModal
+        open={rejectOpen}
+        onClose={() => setRejectOpen(false)}
+        onSubmit={async (reason) => {
+          await mutations.rejectOfficer.mutateAsync({ officerId: o.id, reason });
+        }}
+        title="Reject officer invoice"
+        description={`Reject ${o.name}'s pay for this week. Add a reason — they'll see it on the payslip.`}
+        subject={o.name}
+      />
+
+      <AdjustHoursModal
+        open={adjustOpen}
+        onClose={() => setAdjustOpen(false)}
+        items={bundle?.items ?? []}
+        onSubmit={async (payload) => {
+          await mutations.adjustTime.mutateAsync(payload);
+        }}
+      />
     </>
   );
 }

@@ -4,15 +4,8 @@ import { useAccent } from "../../../../contexts/AccentContext";
 import { Avatar } from "../../../../design-system/primitives/Avatar";
 import { Icon } from "../../../../design-system/Icon";
 import { tokens } from "../../../../design-system/tokens";
-import {
-  ATT_STATS,
-  fmtRange2,
-  liveShifts,
-  NOW_HOUR,
-  officerById,
-  venueById,
-  type AttendanceShift,
-} from "../../data/mocks";
+import { fmtRange2, type AttendanceShift } from "../../data/mocks";
+import { useAttendance } from "../../AttendanceContext";
 
 export interface LiveLeftRailProps {
   onSelect: (shift: AttendanceShift) => void;
@@ -20,9 +13,13 @@ export interface LiveLeftRailProps {
 
 export function LiveLeftRail({ onSelect }: LiveLeftRailProps) {
   const { palette } = useAccent();
-  const showed = ATT_STATS.showed_up;
-  const expected = ATT_STATS.expected_so_far;
-  const rate = (showed / expected) * 100;
+  const { stats, liveShifts, matchesSearch } = useAttendance();
+  const filteredLive = liveShifts.filter(matchesSearch);
+  const showed = stats.showed_up;
+  const expected = stats.expected_so_far;
+  // Clamp at 100 so a stats race-condition (e.g. attestation flips before the
+  // expected-so-far counter ticks) can't render a nonsensical "200%" gauge.
+  const rate = expected > 0 ? Math.min(100, (showed / expected) * 100) : 0;
 
   const R = 44;
   const C = 2 * Math.PI * R;
@@ -113,10 +110,10 @@ export function LiveLeftRail({ onSelect }: LiveLeftRailProps) {
             </div>
           </div>
           <div style={{ flex: 1 }}>
-            <KPILine label="On duty" value={ATT_STATS.on_duty} color={tokens.color.success} />
-            <KPILine label="No-shows" value={ATT_STATS.no_show} color={tokens.color.danger} />
-            <KPILine label="Missing out" value={ATT_STATS.missing_out} color={tokens.color.danger} subtle />
-            <KPILine label="Geofence" value={ATT_STATS.geofence} color="#6d28d9" />
+            <KPILine label="On duty" value={stats.on_duty} color={tokens.color.success} />
+            <KPILine label="No-shows" value={stats.no_show} color={tokens.color.danger} />
+            <KPILine label="Missing out" value={stats.missing_out} color={tokens.color.danger} subtle />
+            <KPILine label="Geofence" value={stats.geofence} color="#6d28d9" />
           </div>
         </div>
       </div>
@@ -139,7 +136,7 @@ export function LiveLeftRail({ onSelect }: LiveLeftRailProps) {
               color: tokens.color.ink500,
             }}
           >
-            On duty now · {liveShifts.length}
+            On duty now · {filteredLive.length}
           </div>
           <button
             type="button"
@@ -156,7 +153,7 @@ export function LiveLeftRail({ onSelect }: LiveLeftRailProps) {
             View all
           </button>
         </div>
-        {liveShifts.map((s) => (
+        {filteredLive.map((s) => (
           <RosterRow key={s.id} s={s} onSelect={() => onSelect(s)} />
         ))}
       </div>
@@ -201,11 +198,12 @@ function KPILine({ label, value, color, subtle }: KPILineProps) {
 }
 
 function RosterRow({ s, onSelect }: { s: AttendanceShift; onSelect: () => void }) {
+  const { officerById, venueById, nowHour } = useAttendance();
   const o = officerById(s.oid);
   const v = venueById(s.vid);
   if (!v || !o || s.act_start == null) return null;
 
-  const elapsed = NOW_HOUR - s.act_start;
+  const elapsed = nowHour - s.act_start;
   const total = s.sch_end - s.sch_start;
   const pct = Math.min(100, Math.max(0, (elapsed / total) * 100));
   const dotColor =

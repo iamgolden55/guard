@@ -8,16 +8,14 @@ import { Button } from "../../../design-system/primitives/Button";
 import { Icon, type IconName } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
 import {
-  ADJUSTMENTS,
   fmtHr,
   fmtRange2,
   fmtVar,
-  officerById,
   ribbonKey,
   RIBBON_COLORS,
-  venueById,
   type AttendanceShift,
 } from "../data/mocks";
+import { useAttendance } from "../AttendanceContext";
 
 const STATUS_LABEL: Record<AttendanceShift["status"], string> = {
   on_duty: "On duty",
@@ -40,12 +38,23 @@ export interface AttendanceDrawerProps {
 
 export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps) {
   const { palette } = useAccent();
+  const {
+    officerById,
+    venueById,
+    adjustments,
+    isLoadingAdjustments,
+    adjustTime,
+    isAdjusting,
+    approveShift,
+    isApproving,
+  } = useAttendance();
   const [mount, setMount] = useState(open);
   const [vis, setVis] = useState(false);
   const [editing, setEditing] = useState(false);
   const [reason, setReason] = useState("");
   const [adjIn, setAdjIn] = useState("");
   const [adjOut, setAdjOut] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -79,7 +88,6 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
   const s = shift;
   const o = s ? officerById(s.oid) : undefined;
   const v = s ? venueById(s.vid) : undefined;
-  const adjustments = s ? ADJUSTMENTS[s.id] || [] : [];
   const ribKey = s ? ribbonKey(s) : "on_duty";
   const headerColor = s
     ? RIBBON_COLORS[ribKey].bg !== "transparent"
@@ -248,7 +256,7 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                     }
                   />
                 </div>
-                {s.late_min !== undefined && s.late_min !== 0 && (
+                {s.late_min != null && s.late_min !== 0 && (
                   <div
                     style={{
                       marginTop: 10,
@@ -371,18 +379,44 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                       Time adjustment
                     </div>
                     <div style={{ fontSize: 11.5, color: tokens.color.ink500, marginTop: 2 }}>
-                      Override actual times for payroll. Audit-logged.
+                      {s.act_start == null
+                        ? "Officer on-site but couldn't check in? Mark present and add a reason."
+                        : "Override actual times for payroll. Audit-logged."}
                     </div>
                   </div>
                   {!editing && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      leading={<Icon name="edit" size={12} />}
-                      onClick={() => setEditing(true)}
-                    >
-                      Edit
-                    </Button>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {s.act_start == null && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          accent={palette}
+                          leading={<Icon name="check" size={12} />}
+                          onClick={() => {
+                            const now = new Date();
+                            const hh = String(now.getHours()).padStart(2, "0");
+                            const mm = String(now.getMinutes()).padStart(2, "0");
+                            setAdjIn(`${hh}:${mm}`);
+                            // Leave check-out blank — shift still in progress.
+                            setAdjOut("");
+                            setReason(
+                              "Manager attested presence — officer on-site, app/phone unavailable. ",
+                            );
+                            setEditing(true);
+                          }}
+                        >
+                          Mark present
+                        </Button>
+                      )}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        leading={<Icon name="edit" size={12} />}
+                        onClick={() => setEditing(true)}
+                      >
+                        Edit
+                      </Button>
+                    </div>
                   )}
                 </div>
                 {editing && (
@@ -399,16 +433,36 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                           style={inputCss}
                         />
                       </FieldGroup>
-                      <FieldGroup label="Adjusted check-out">
+                      <FieldGroup
+                        label={
+                          s.act_end == null
+                            ? "Adjusted check-out (optional)"
+                            : "Adjusted check-out"
+                        }
+                      >
                         <input
                           type="time"
                           value={
-                            adjOut ||
-                            (s.act_end != null ? fmtHr(s.act_end) : fmtHr(s.sch_end))
+                            adjOut !== ""
+                              ? adjOut
+                              : s.act_end != null
+                                ? fmtHr(s.act_end)
+                                : ""
                           }
                           onChange={(e) => setAdjOut(e.target.value)}
                           style={inputCss}
                         />
+                        {s.act_end == null && adjOut === "" && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: tokens.color.ink500,
+                              marginTop: 4,
+                            }}
+                          >
+                            Leave blank if shift still in progress
+                          </div>
+                        )}
                       </FieldGroup>
                     </div>
                     <FieldGroup label="Reason (required)">
@@ -420,6 +474,19 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                         style={{ ...inputCss, resize: "vertical", lineHeight: 1.5 }}
                       />
                     </FieldGroup>
+                    {submitError && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: tokens.color.dangerInk,
+                          background: tokens.color.dangerSoft,
+                          padding: "8px 10px",
+                          borderRadius: 6,
+                        }}
+                      >
+                        {submitError}
+                      </div>
+                    )}
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                       <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
                         Cancel
@@ -428,18 +495,102 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                         variant="primary"
                         size="sm"
                         accent={palette}
-                        disabled={!reason}
-                        onClick={() => setEditing(false)}
+                        disabled={!reason || isAdjusting || !s}
+                        onClick={async () => {
+                          if (!s) return;
+                          setSubmitError(null);
+                          try {
+                            const inT =
+                              adjIn ||
+                              (s.act_start != null ? fmtHr(s.act_start) : fmtHr(s.sch_start));
+
+                            // Construct the ISO with the user's local TZ baked in,
+                            // otherwise the backend treats "2026-04-29T12:20:00" as
+                            // naive UTC and the display ends up an hour ahead.
+                            const today = new Date();
+                            const [hh1, mm1] = inT.split(":").map(Number);
+                            const startLocal = new Date(
+                              today.getFullYear(),
+                              today.getMonth(),
+                              today.getDate(),
+                              hh1,
+                              mm1,
+                              0,
+                            );
+                            const startIso = startLocal.toISOString();
+
+                            const outT = adjOut.trim();
+                            let endIso: string | null = null;
+                            let hours = 0;
+                            if (outT) {
+                              const [hh2, mm2] = outT.split(":").map(Number);
+                              const endLocal = new Date(
+                                today.getFullYear(),
+                                today.getMonth(),
+                                today.getDate(),
+                                hh2,
+                                mm2,
+                                0,
+                              );
+                              endIso = endLocal.toISOString();
+                              hours = Math.max(0, hh2 + mm2 / 60 - (hh1 + mm1 / 60));
+                            }
+                            await adjustTime({
+                              shiftId: Number(s.id),
+                              payload: {
+                                adjusted_check_in_time: startIso,
+                                adjusted_check_out_time: endIso ?? undefined,
+                                adjusted_actual_hours: Math.round(hours * 100) / 100,
+                                reason,
+                                manager_signature: "manager",
+                              },
+                            });
+                            setEditing(false);
+                            setReason("");
+                            setAdjIn("");
+                            setAdjOut("");
+                          } catch (err: unknown) {
+                            const e = err as { response?: { data?: { detail?: string } }; message?: string };
+                            setSubmitError(
+                              e?.response?.data?.detail ||
+                                e?.message ||
+                                "Failed to save adjustment",
+                            );
+                          }
+                        }}
                       >
-                        Save adjustment
+                        {isAdjusting ? "Saving…" : "Save adjustment"}
                       </Button>
                     </div>
                   </div>
                 )}
               </div>
 
-              <SectionLabel>Audit trail · {adjustments.length}</SectionLabel>
-              {adjustments.length === 0 ? (
+              {(() => {
+                const systemEntries: { id: string; title: string; detail: string }[] = [];
+                if (s.auto_checkout) {
+                  systemEntries.push({
+                    id: "sys-auto-checkout",
+                    title: "Auto-checkout",
+                    detail:
+                      "System auto-checked the officer out after grace period — venue checks complete, GPS verified.",
+                  });
+                }
+                if (s.auto_approved) {
+                  systemEntries.push({
+                    id: "sys-auto-approve",
+                    title: "Auto-approved on check-out",
+                    detail:
+                      "Shift signature + GPS verified inside venue radius — no manager review required.",
+                  });
+                }
+                const totalEntries = adjustments.length + systemEntries.length;
+                return (
+                  <>
+              <SectionLabel>
+                Audit trail · {isLoadingAdjustments ? "…" : totalEntries}
+              </SectionLabel>
+              {!isLoadingAdjustments && totalEntries === 0 ? (
                 <div
                   style={{
                     padding: 14,
@@ -460,8 +611,11 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                     marginLeft: 6,
                   }}
                 >
-                  {adjustments.map((a, i) => (
-                    <div key={i} style={{ position: "relative", paddingBottom: 12 }}>
+                  {systemEntries.map((sys) => (
+                    <div
+                      key={sys.id}
+                      style={{ position: "relative", paddingBottom: 12 }}
+                    >
                       <span
                         style={{
                           position: "absolute",
@@ -470,7 +624,7 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                           width: 10,
                           height: 10,
                           borderRadius: 5,
-                          background: palette.primary,
+                          background: tokens.color.success,
                           border: "2px solid white",
                           boxShadow: `0 0 0 1px ${tokens.color.ink200}`,
                         }}
@@ -478,10 +632,20 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                       <div
                         style={{ fontSize: 12, fontWeight: 600, color: tokens.color.ink900 }}
                       >
-                        {a.by}
+                        {sys.title}
                       </div>
-                      <div style={{ fontSize: 11, color: tokens.color.ink500, marginTop: 1 }}>
-                        {a.at.replace("T", " · ").slice(0, 22)} · {a.field} {a.from} → {a.to}
+                      <div
+                        style={{ fontSize: 11, color: tokens.color.ink500, marginTop: 1 }}
+                      >
+                        System · {s.checkout_at
+                          ? new Date(s.checkout_at).toLocaleString([], {
+                              year: "numeric",
+                              month: "2-digit",
+                              day: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "on shift completion"}
                       </div>
                       <div
                         style={{
@@ -490,16 +654,90 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                           marginTop: 5,
                           lineHeight: 1.5,
                           padding: "8px 10px",
-                          background: tokens.color.ink50,
+                          background: tokens.color.successSoft,
                           borderRadius: 6,
                         }}
                       >
-                        {a.reason}
+                        {sys.detail}
                       </div>
                     </div>
                   ))}
+                  {adjustments.map((a) => {
+                    const fromIn = a.original_check_in_time
+                      ? new Date(a.original_check_in_time).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "—";
+                    const toIn = a.adjusted_check_in_time
+                      ? new Date(a.adjusted_check_in_time).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "—";
+                    const fromOut = a.original_check_out_time
+                      ? new Date(a.original_check_out_time).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "—";
+                    const toOut = a.adjusted_check_out_time
+                      ? new Date(a.adjusted_check_out_time).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "—";
+                    const at = new Date(a.created_at).toLocaleString([], {
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    });
+                    return (
+                      <div key={a.id} style={{ position: "relative", paddingBottom: 12 }}>
+                        <span
+                          style={{
+                            position: "absolute",
+                            left: -21,
+                            top: 4,
+                            width: 10,
+                            height: 10,
+                            borderRadius: 5,
+                            background: palette.primary,
+                            border: "2px solid white",
+                            boxShadow: `0 0 0 1px ${tokens.color.ink200}`,
+                          }}
+                        />
+                        <div
+                          style={{ fontSize: 12, fontWeight: 600, color: tokens.color.ink900 }}
+                        >
+                          Manager #{a.adjusted_by}
+                        </div>
+                        <div style={{ fontSize: 11, color: tokens.color.ink500, marginTop: 1 }}>
+                          {at} · in {fromIn} → {toIn} · out {fromOut} → {toOut}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: tokens.color.ink600,
+                            marginTop: 5,
+                            lineHeight: 1.5,
+                            padding: "8px 10px",
+                            background: tokens.color.ink50,
+                            borderRadius: 6,
+                          }}
+                        >
+                          {a.reason}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
+                  </>
+                );
+              })()}
             </div>
 
             <div
@@ -512,10 +750,53 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                 background: tokens.color.ink50,
               }}
             >
-              <Button variant="ghost" size="sm">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={
+                  !s ||
+                  isApproving ||
+                  s.status === "approved" ||
+                  s.status === "on_duty" ||
+                  s.status === "upcoming"
+                }
+                title={
+                  s?.status === "on_duty"
+                    ? "Officer hasn't checked out yet"
+                    : s?.status === "upcoming"
+                      ? "Shift hasn't started"
+                      : undefined
+                }
+                onClick={async () => {
+                  if (!s) return;
+                  setSubmitError(null);
+                  try {
+                    await approveShift({
+                      shiftId: Number(s.id),
+                      approved: false,
+                      managerNotes: "Rejected from Attendance drawer",
+                    });
+                    onClose();
+                  } catch (err: unknown) {
+                    const e = err as { response?: { data?: { detail?: string; error?: string } }; message?: string };
+                    setSubmitError(
+                      e?.response?.data?.detail ||
+                        e?.response?.data?.error ||
+                        e?.message ||
+                        "Failed to reject shift",
+                    );
+                  }
+                }}
+              >
                 Reject
               </Button>
-              <Button variant="secondary" size="sm" leading={<Icon name="bell" size={12} />}>
+              <Button
+                variant="secondary"
+                size="sm"
+                leading={<Icon name="bell" size={12} />}
+                disabled
+                title="Coming soon"
+              >
                 Notify officer
               </Button>
               <Button
@@ -523,10 +804,65 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                 size="sm"
                 accent={palette}
                 leading={<Icon name="check" size={12} />}
+                disabled={
+                  !s ||
+                  isApproving ||
+                  s.status === "approved" ||
+                  // Can't approve a shift that hasn't checked out yet —
+                  // payroll would lock in hours that haven't been worked.
+                  s.act_end == null
+                }
+                title={
+                  !s
+                    ? undefined
+                    : s.status === "approved"
+                      ? "Already approved"
+                      : s.act_end == null
+                        ? "Waiting for check-out — auto-approves on valid checkout, or use Mark Present + Edit to record an end time"
+                        : undefined
+                }
+                onClick={async () => {
+                  if (!s) return;
+                  setSubmitError(null);
+                  try {
+                    await approveShift({
+                      shiftId: Number(s.id),
+                      approved: true,
+                    });
+                    onClose();
+                  } catch (err: unknown) {
+                    const e = err as { response?: { data?: { detail?: string; error?: string } }; message?: string };
+                    setSubmitError(
+                      e?.response?.data?.detail ||
+                        e?.response?.data?.error ||
+                        e?.message ||
+                        "Failed to approve shift",
+                    );
+                  }
+                }}
               >
-                Approve shift
+                {isApproving
+                  ? "Saving…"
+                  : s?.status === "approved"
+                    ? "Approved"
+                    : s?.act_end == null
+                      ? "Awaiting check-out"
+                      : "Approve shift"}
               </Button>
             </div>
+            {submitError && (
+              <div
+                style={{
+                  padding: "8px 18px",
+                  background: tokens.color.dangerSoft,
+                  color: tokens.color.dangerInk,
+                  fontSize: 12,
+                  borderTop: `1px solid ${tokens.color.ink200}`,
+                }}
+              >
+                {submitError}
+              </div>
+            )}
           </>
         )}
       </div>

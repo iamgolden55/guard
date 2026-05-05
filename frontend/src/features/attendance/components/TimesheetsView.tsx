@@ -8,14 +8,12 @@ import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
 import {
   fmtH2,
-  officerById,
-  TIMESHEETS,
-  WEEK_DAYS,
   type CellStatus,
   type DayCellData,
   type TimesheetRow,
   type TimesheetStatus,
 } from "../data/mocks";
+import { useAttendance } from "../AttendanceContext";
 
 const STATUS_TONE: Record<
   TimesheetStatus,
@@ -57,8 +55,20 @@ export function TimesheetsView({
   onSelect,
 }: TimesheetsViewProps) {
   const { palette } = useAccent();
+  const { timesheets, weekDays, officerById, searchQuery } = useAttendance();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const rows = hideApproved ? TIMESHEETS.filter((t) => t.status !== "approved") : TIMESHEETS;
+  const q = searchQuery.trim().toLowerCase();
+  const rowMatchesSearch = (t: { oid: string }) => {
+    if (!q) return true;
+    const o = officerById(t.oid);
+    return [o?.name, o?.role, o?.sia]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(q);
+  };
+  const rows = (hideApproved ? timesheets.filter((t) => t.status !== "approved") : timesheets)
+    .filter(rowMatchesSearch);
 
   const totals = {
     sched: rows.reduce((a, r) => a + r.scheduled, 0),
@@ -105,17 +115,39 @@ export function TimesheetsView({
           <Button variant="secondary" size="sm" leading={<Icon name="filter" size={12} />}>
             Filter
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            accent={palette}
-            leading={<Icon name="check" size={12} />}
-            disabled={selected.size === 0}
-          >
-            {selected.size > 0
-              ? `Approve ${selected.size} selected`
-              : "Select rows to approve"}
-          </Button>
+          {(() => {
+            // A row is approvable only if it's "ready" (no blockers, no
+            // late/early flags, no in-progress shifts). Auto-approve handles
+            // the happy path; the bulk button is for the leftover edge cases.
+            const selectedRows = rows.filter((r) => selected.has(r.oid));
+            const approvableSelected = selectedRows.filter((r) => r.status === "ready").length;
+            const noneReady = selected.size > 0 && approvableSelected === 0;
+            const empty = selected.size === 0;
+            return (
+              <Button
+                variant="primary"
+                size="sm"
+                accent={palette}
+                leading={
+                  <Icon name={empty || noneReady ? "lock" : "check"} size={12} />
+                }
+                disabled={empty || noneReady}
+                title={
+                  empty
+                    ? "Tick rows to bulk-approve"
+                    : noneReady
+                      ? "Selected rows aren't ready — shifts must be checked out and free of blockers. Auto-approve handles clean check-outs automatically."
+                      : undefined
+                }
+              >
+                {empty
+                  ? "Select rows to approve"
+                  : noneReady
+                    ? `${selected.size} selected · awaiting check-out`
+                    : `Approve ${approvableSelected} selected`}
+              </Button>
+            );
+          })()}
         </div>
       </div>
 
@@ -152,7 +184,7 @@ export function TimesheetsView({
               }
             />
             <div>Officer</div>
-            {WEEK_DAYS.map((d) => (
+            {weekDays.map((d) => (
               <div
                 key={d.d}
                 style={{
@@ -247,7 +279,7 @@ export function TimesheetsView({
                 </div>
 
                 {t.days.map((cell, i) => (
-                  <DayCell key={i} cell={cell} today={!!WEEK_DAYS[i]?.today} />
+                  <DayCell key={i} cell={cell} today={!!weekDays[i]?.today} />
                 ))}
 
                 <div

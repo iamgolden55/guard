@@ -108,8 +108,8 @@ class UKAddressService {
             town: address.town_or_city || null,
             county: address.county || null,
             postcode: data.postcode,
-            latitude: address.latitude ? parseFloat(address.latitude) : undefined,
-            longitude: address.longitude ? parseFloat(address.longitude) : undefined,
+            latitude: address.latitude ? Number.parseFloat(address.latitude) : undefined,
+            longitude: address.longitude ? Number.parseFloat(address.longitude) : undefined,
           }
         };
       });

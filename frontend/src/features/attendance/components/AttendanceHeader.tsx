@@ -6,8 +6,13 @@ import { useAccent } from "../../../contexts/AccentContext";
 import { Button, Input } from "../../../design-system";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
-import { ATT_STATS, NOW_LABEL, TIMESHEETS, TODAY_LABEL } from "../data/mocks";
+import { useAttendance } from "../AttendanceContext";
 import type { AttendanceTab } from "../AttendancePage";
+import {
+  exportExceptions,
+  exportLive,
+  exportTimesheets,
+} from "../data/exporters";
 
 interface TabSpec {
   id: AttendanceTab;
@@ -15,17 +20,6 @@ interface TabSpec {
   icon: "clock" | "alert" | "file";
   count: number;
 }
-
-const TABS: TabSpec[] = [
-  { id: "live", label: "Live operations", icon: "clock", count: ATT_STATS.on_duty },
-  { id: "exceptions", label: "Exceptions", icon: "alert", count: ATT_STATS.exceptions },
-  {
-    id: "timesheets",
-    label: "Timesheets",
-    icon: "file",
-    count: TIMESHEETS.filter((t) => t.status !== "approved").length,
-  },
-];
 
 export interface AttendanceHeaderProps {
   view: AttendanceTab;
@@ -48,7 +42,56 @@ export function AttendanceHeader({
   onToggleVenueGrid,
 }: AttendanceHeaderProps) {
   const { palette } = useAccent();
-  const readyCount = TIMESHEETS.filter((t) => t.status === "ready").length;
+  const ctx = useAttendance();
+  const {
+    stats,
+    timesheets,
+    todayLabel,
+    nowLabel,
+    searchQuery,
+    setSearchQuery,
+    isToday,
+    selectedDate,
+    setSelectedDate,
+    selectedWeekStart,
+    setSelectedWeekStart,
+  } = ctx;
+  const readyCount = timesheets.filter((t) => t.status === "ready").length;
+  const isWeekView = view === "timesheets";
+  const handleExport = () => {
+    const exporterCtx = {
+      shifts: ctx.shifts,
+      officers: ctx.officers,
+      venues: ctx.venues,
+      timesheets: ctx.timesheets,
+      weekDays: ctx.weekDays,
+      officerById: ctx.officerById,
+      venueById: ctx.venueById,
+    };
+    if (view === "timesheets") exportTimesheets(exporterCtx);
+    else if (view === "exceptions") exportExceptions(exporterCtx);
+    else exportLive(exporterCtx);
+  };
+  const TABS: TabSpec[] = [
+    {
+      id: "live",
+      label: "Live operations",
+      icon: "clock",
+      count: stats.on_duty,
+    },
+    {
+      id: "exceptions",
+      label: "Exceptions",
+      icon: "alert",
+      count: stats.exceptions,
+    },
+    {
+      id: "timesheets",
+      label: "Timesheets",
+      icon: "file",
+      count: timesheets.filter((t) => t.status !== "approved").length,
+    },
+  ];
 
   return (
     <header
@@ -60,7 +103,14 @@ export function AttendanceHeader({
         zIndex: tokens.z.sticky,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 24px 12px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "14px 24px 12px",
+        }}
+      >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
@@ -83,7 +133,14 @@ export function AttendanceHeader({
             <Icon name="chevron-right" size={11} />
             <span style={{ color: tokens.color.ink600 }}>Attendance</span>
           </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 2 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 12,
+              marginTop: 2,
+            }}
+          >
             <h1
               style={{
                 margin: 0,
@@ -96,11 +153,22 @@ export function AttendanceHeader({
             >
               Attendance
             </h1>
-            <span style={{ fontSize: 13, color: tokens.color.ink600 }}>{TODAY_LABEL}</span>
+            <span style={{ fontSize: 13, color: tokens.color.ink600 }}>
+              {todayLabel}
+            </span>
           </div>
         </div>
 
-        {view === "live" && (
+        <DateNavigator
+          mode={isWeekView ? "week" : "day"}
+          dayValue={selectedDate}
+          weekValue={selectedWeekStart}
+          onDayChange={setSelectedDate}
+          onWeekChange={setSelectedWeekStart}
+          accentInk={palette.ink}
+        />
+
+        {view === "live" && isToday && (
           <div
             style={{
               display: "inline-flex",
@@ -118,7 +186,9 @@ export function AttendanceHeader({
                 height: 8,
                 borderRadius: 4,
                 background: tokens.color.success,
-                animation: livePulse ? "ms-pulse 1.4s ease-in-out infinite" : "none",
+                animation: livePulse
+                  ? "ms-pulse 1.4s ease-in-out infinite"
+                  : "none",
               }}
             />
             <span
@@ -129,7 +199,7 @@ export function AttendanceHeader({
                 letterSpacing: "0.02em",
               }}
             >
-              LIVE · {NOW_LABEL}
+              LIVE · {nowLabel}
             </span>
           </div>
         )}
@@ -181,11 +251,29 @@ export function AttendanceHeader({
           />
         </button>
 
-        <Button variant="secondary" leading={<Icon name="download" size={14} />}>
+        <Button
+          variant="secondary"
+          leading={<Icon name="download" size={14} />}
+          onClick={handleExport}
+        >
           Export
         </Button>
-        <Button variant="primary" accent={palette} leading={<Icon name="check" size={14} />}>
-          Approve {readyCount} ready
+        <Button
+          variant="primary"
+          accent={palette}
+          leading={
+            <Icon name={readyCount === 0 ? "lock" : "check"} size={14} />
+          }
+          disabled={readyCount === 0}
+          title={
+            readyCount === 0
+              ? "Nothing to approve — shifts auto-approve when officers check out cleanly. Manual approval is only for shifts that need review."
+              : undefined
+          }
+        >
+          {readyCount === 0
+            ? "Nothing to approve"
+            : `Approve ${readyCount} ready`}
         </Button>
       </div>
 
@@ -213,7 +301,9 @@ export function AttendanceHeader({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 8,
-                borderBottom: active ? `2px solid ${palette.primary}` : "2px solid transparent",
+                borderBottom: active
+                  ? `2px solid ${palette.primary}`
+                  : "2px solid transparent",
                 color: active ? palette.ink : tokens.color.ink600,
                 fontFamily: tokens.font.body,
                 fontSize: 13.5,
@@ -255,6 +345,8 @@ export function AttendanceHeader({
             leading={<Icon name="search" size={14} />}
             placeholder="Search officer or venue…"
             wrapperStyle={{ width: 240, padding: "6px 10px" }}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
       </div>
@@ -299,5 +391,162 @@ function PaneToggleButton({ side, open, onClick }: PaneToggleButtonProps) {
     >
       <Icon name={side === "left" ? "panel-left" : "panel-right"} size={17} />
     </button>
+  );
+}
+
+interface DateNavigatorProps {
+  mode: "day" | "week";
+  dayValue: string;
+  weekValue: string;
+  onDayChange: (iso: string) => void;
+  onWeekChange: (iso: string) => void;
+  accentInk: string;
+}
+
+function pad(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function todayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function mondayIsoFor(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  const day = dt.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  dt.setDate(dt.getDate() + offset);
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
+
+function shiftIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
+
+function DateNavigator({
+  mode,
+  dayValue,
+  weekValue,
+  onDayChange,
+  onWeekChange,
+  accentInk,
+}: DateNavigatorProps) {
+  const isDay = mode === "day";
+  const value = isDay ? dayValue : weekValue;
+  const step = isDay ? 1 : 7;
+  const onChange = isDay ? onDayChange : onWeekChange;
+  const today = todayIso();
+  const isAtToday = isDay ? value === today : value === mondayIsoFor(today);
+
+  const handleNudge = (dir: -1 | 1) => onChange(shiftIso(value, dir * step));
+  const handlePick = (iso: string) => {
+    if (!iso) return;
+    onChange(isDay ? iso : mondayIsoFor(iso));
+  };
+  const handleReset = () => onChange(isDay ? today : mondayIsoFor(today));
+
+  const navBtn: React.CSSProperties = {
+    width: 30,
+    height: 30,
+    borderRadius: 6,
+    background: "transparent",
+    border: `1px solid ${tokens.color.ink200}`,
+    color: tokens.color.ink700,
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+    flexShrink: 0,
+  };
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "4px 6px",
+        borderRadius: 8,
+        background: tokens.color.ink50 ?? "#fafafa",
+        border: `1px solid ${tokens.color.ink200}`,
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => handleNudge(-1)}
+        aria-label={isDay ? "Previous day" : "Previous week"}
+        title={isDay ? "Previous day" : "Previous week"}
+        style={navBtn}
+      >
+        <Icon name="chevron-left" size={14} />
+      </button>
+      <label
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "4px 8px",
+          borderRadius: 6,
+          background: "white",
+          border: `1px solid ${tokens.color.ink200}`,
+          cursor: "pointer",
+          fontFamily: tokens.font.body,
+          fontSize: 12.5,
+          color: tokens.color.ink800,
+        }}
+      >
+        <Icon name="calendar" size={13} />
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => handlePick(e.target.value)}
+          style={{
+            border: "none",
+            background: "transparent",
+            outline: "none",
+            fontSize: 12.5,
+            color: tokens.color.ink800,
+            fontFamily: tokens.font.body,
+            padding: 0,
+            cursor: "pointer",
+          }}
+          aria-label={isDay ? "Pick a date" : "Pick a week"}
+        />
+      </label>
+      <button
+        type="button"
+        onClick={() => handleNudge(1)}
+        aria-label={isDay ? "Next day" : "Next week"}
+        title={isDay ? "Next day" : "Next week"}
+        style={navBtn}
+      >
+        <Icon name="chevron-right" size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={handleReset}
+        disabled={isAtToday}
+        title={isDay ? "Jump to today" : "Jump to this week"}
+        style={{
+          height: 30,
+          padding: "0 12px",
+          borderRadius: 6,
+          background: isAtToday ? "transparent" : "white",
+          border: `1px solid ${isAtToday ? tokens.color.ink200 : accentInk}40`,
+          color: isAtToday ? tokens.color.ink400 : accentInk,
+          fontFamily: tokens.font.body,
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: isAtToday ? "default" : "pointer",
+          flexShrink: 0,
+        }}
+      >
+        {isDay ? "Today" : "This week"}
+      </button>
+    </div>
   );
 }

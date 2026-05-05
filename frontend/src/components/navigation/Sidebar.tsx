@@ -3,13 +3,13 @@
 // Collapsed/expanded state persisted to localStorage so reloads keep it.
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../../contexts/AuthContext";
 import { useAccent } from "../../contexts/AccentContext";
-import { Avatar } from "../../design-system/primitives/Avatar";
+import { useAuth } from "../../contexts/AuthContext";
 import { Icon } from "../../design-system/Icon";
+import { Avatar } from "../../design-system/primitives/Avatar";
 import { tokens } from "../../design-system/tokens";
-import { NAV } from "./nav-config";
 import { AccentPicker } from "./AccentPicker";
+import { NAV } from "./nav-config";
 
 const STORAGE_KEY = "ms-sidebar-collapsed";
 
@@ -52,7 +52,8 @@ export function Sidebar({ drawer = false, onNavigate }: SidebarProps) {
     authState.user?.firstName && authState.user?.lastName
       ? `${authState.user.firstName} ${authState.user.lastName}`
       : authState.user?.username || "Guest";
-  const userRole = authState.currentMembership?.role || authState.user?.role || "";
+  const userRole =
+    authState.currentMembership?.role || authState.user?.role || "";
 
   return (
     <aside
@@ -140,7 +141,9 @@ export function Sidebar({ drawer = false, onNavigate }: SidebarProps) {
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
-          aria-label={effectiveCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={
+            effectiveCollapsed ? "Expand sidebar" : "Collapse sidebar"
+          }
           title={effectiveCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           style={{
             position: "absolute",
@@ -240,15 +243,19 @@ export function Sidebar({ drawer = false, onNavigate }: SidebarProps) {
                     fontSize: 13.5,
                     fontWeight: isActive ? 600 : 500,
                     letterSpacing: "-0.005em",
-                    justifyContent: effectiveCollapsed ? "center" : "flex-start",
+                    justifyContent: effectiveCollapsed
+                      ? "center"
+                      : "flex-start",
                     position: "relative",
                     transition: "background .15s",
                   }}
                   onMouseEnter={(e) => {
-                    if (!isActive) e.currentTarget.style.background = tokens.color.ink50;
+                    if (!isActive)
+                      e.currentTarget.style.background = tokens.color.ink50;
                   }}
                   onMouseLeave={(e) => {
-                    if (!isActive) e.currentTarget.style.background = "transparent";
+                    if (!isActive)
+                      e.currentTarget.style.background = "transparent";
                   }}
                 >
                   {isActive && (
@@ -272,7 +279,9 @@ export function Sidebar({ drawer = false, onNavigate }: SidebarProps) {
                   >
                     <Icon name={item.icon} size={18} />
                   </span>
-                  {!effectiveCollapsed && <span style={{ whiteSpace: "nowrap" }}>{item.label}</span>}
+                  {!effectiveCollapsed && (
+                    <span style={{ whiteSpace: "nowrap" }}>{item.label}</span>
+                  )}
                 </button>
               );
             })}
@@ -291,9 +300,40 @@ export function Sidebar({ drawer = false, onNavigate }: SidebarProps) {
           justifyContent: effectiveCollapsed ? "center" : "flex-start",
         }}
       >
-        <Avatar name={userName} hue={356} size={34} />
-        {!effectiveCollapsed && (
-          <>
+        <button
+          type="button"
+          onClick={() => {
+            navigate("/profile");
+            onNavigate?.();
+          }}
+          aria-label="Open my profile"
+          title={
+            effectiveCollapsed ? `${userName} — open profile` : "Open profile"
+          }
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            background: "transparent",
+            border: "none",
+            padding: 4,
+            margin: -4,
+            borderRadius: 8,
+            cursor: "pointer",
+            flex: effectiveCollapsed ? "0 0 auto" : 1,
+            minWidth: 0,
+            textAlign: "left",
+            transition: `background ${tokens.motion.fast}`,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = tokens.color.ink50;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
+          <Avatar name={userName} hue={356} size={34} />
+          {!effectiveCollapsed && (
             <div style={{ lineHeight: 1.15, flex: 1, minWidth: 0 }}>
               <div
                 style={{
@@ -321,6 +361,10 @@ export function Sidebar({ drawer = false, onNavigate }: SidebarProps) {
                 {userRole}
               </div>
             </div>
+          )}
+        </button>
+        {!effectiveCollapsed && (
+          <>
             <AccentPicker />
             <button
               type="button"

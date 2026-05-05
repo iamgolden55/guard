@@ -1,7 +1,7 @@
-import React from "react";
+import type React from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { UserRole } from "../types";
+import type { UserRole } from "../types";
 import { Spinner } from "./Spinner";
 
 interface AuthGuardProps {

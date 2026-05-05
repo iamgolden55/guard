@@ -1,14 +1,14 @@
 import api from './api';
 import {
-  OnboardingWizardData,
-  OnboardingProgress,
-  SecurityCompany,
+  type OnboardingWizardData,
+  type OnboardingProgress,
+  type SecurityCompany,
   CompanyContextResponse,
-  RegionalComplianceConfig,
-  OnboardingResponse,
-  ValidationError,
-  CompanyInitiationData,
-  CompanyInfoData
+  type RegionalComplianceConfig,
+  type OnboardingResponse,
+  type ValidationError,
+  type CompanyInitiationData,
+  type CompanyInfoData
 } from '../types';
 import { mapCountryNameToCode } from '../utils/countryMapping';
 

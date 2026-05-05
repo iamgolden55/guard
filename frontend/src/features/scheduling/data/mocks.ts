@@ -68,12 +68,26 @@ export interface Shift {
   id: string;
   venueId: string;
   officerId: string | null;
+  /** 0–6 within the focused week. */
   day: number;
   start: number;
   end: number;
   published: boolean;
   status: ShiftStatus;
   violations?: Violation[];
+  /** ISO yyyy-mm-dd of the shift start. Set by the API adapter so views that
+   *  need an absolute date (Month) don't have to convert from `day`. */
+  date?: string;
+  /** UUID linking shifts that share a multi-officer slot. Adding officers in
+   *  edit mode creates new rows with this group. */
+  shiftGroup?: string;
+  /** ISO timestamp of when the assigned officer checked in. Null/undefined =
+   *  not yet checked in. Used by the coverage-alert banner. */
+  checkInTime?: string | null;
+  /** Per-shift hourly rate override. Null = use the rate hierarchy at calc time. */
+  hourlyRate?: number | null;
+  /** Whether this shift uses the company special-event pay rate. */
+  isSpecialEvent?: boolean;
 }
 
 export const WEEK: SchedulingWeek = {
@@ -197,6 +211,14 @@ export const fmtH = (h: number) => {
 };
 export const fmtRange = (s: number, e: number) => `${fmtH(s)}–${fmtH(e)}`;
 export const hrs = (s: number, e: number) => e - s;
+
+/** Format a decimal-hour duration for display.
+ *  Rounds to 2 decimals and trims trailing zeros, so `6.699999999999999` → "6.7"
+ *  and `8` → "8" rather than "8.00". */
+export const fmtHrs = (h: number): string => {
+  const rounded = Math.round(h * 100) / 100;
+  return rounded.toString();
+};
 
 export const shiftsByDay = (day: number) => SHIFTS.filter((s) => s.day === day);
 

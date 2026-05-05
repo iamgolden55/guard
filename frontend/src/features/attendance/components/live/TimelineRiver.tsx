@@ -7,22 +7,16 @@ import { Avatar } from "../../../../design-system/primitives/Avatar";
 import { Icon } from "../../../../design-system/Icon";
 import { tokens } from "../../../../design-system/tokens";
 import {
-  A_VENUES,
   fmtHr,
   fmtRange2,
   fmtVar,
-  NOW_HOUR,
-  NOW_LABEL,
-  officerById,
   ribbonKey,
   RIBBON_COLORS,
   SCHEDULED_BG,
   SCHEDULED_BORDER,
-  SHIFTS_TODAY,
-  TODAY_LABEL,
-  venueById,
   type AttendanceShift,
 } from "../../data/mocks";
+import { useAttendance } from "../../AttendanceContext";
 
 const HOUR_PX = 56;
 const HOUR_FROM = 5;
@@ -54,18 +48,35 @@ export function TimelineRiver({
   onSelect,
 }: TimelineRiverProps) {
   const { palette } = useAccent();
+  const { shifts, venues, officerById, nowHour, nowLabel, todayLabel, matchesSearch, isToday } =
+    useAttendance();
+  const visibleShifts = useMemo(() => shifts.filter(matchesSearch), [shifts, matchesSearch]);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollLeft = Math.max(0, xForHour(NOW_HOUR) - 280);
+    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!isToday) {
+      container.scrollLeft = 0;
+      return;
     }
-  }, []);
+    const labelWidth = 220;
+    const margin = 80;
+    const nowX = xForHour(nowHour);
+    // Only auto-scroll when NOW would otherwise be off-screen. On wide
+    // viewports the timeline already shows NOW at its natural position,
+    // and yanking the scroll forward hides the venue/officer label column.
+    if (nowX + labelWidth + margin > container.clientWidth) {
+      container.scrollLeft = Math.max(0, nowX - 280);
+    } else {
+      container.scrollLeft = 0;
+    }
+  }, [nowHour, isToday]);
 
   const groups: Group[] = useMemo(() => {
     if (groupBy === "officer") {
       const map = new Map<string, AttendanceShift[]>();
-      SHIFTS_TODAY.forEach((s) => {
+      visibleShifts.forEach((s) => {
         const key = s.oid || "_open";
         if (!map.has(key)) map.set(key, []);
         map.get(key)!.push(s);
@@ -81,19 +92,21 @@ export function TimelineRiver({
         })
         .filter((g): g is Group => g !== null);
     }
-    return A_VENUES.map((v): Group => ({
-      key: v.id,
-      label: v.name,
-      sub: v.area,
-      hue: v.hue,
-      list: SHIFTS_TODAY.filter((s) => s.vid === v.id),
-      isOfficer: false,
-    })).filter((g) => g.list.length > 0);
-  }, [groupBy]);
+    return venues
+      .map((v): Group => ({
+        key: v.id,
+        label: v.name,
+        sub: v.area,
+        hue: v.hue,
+        list: visibleShifts.filter((s) => s.vid === v.id),
+        isOfficer: false,
+      }))
+      .filter((g) => g.list.length > 0);
+  }, [groupBy, visibleShifts, venues, officerById]);
 
   const ROW_H = showPhotos ? 86 : 64;
   const totalWidth = HOUR_COUNT * HOUR_PX;
-  const nowX = xForHour(NOW_HOUR);
+  const nowX = xForHour(nowHour);
 
   return (
     <div
@@ -126,7 +139,7 @@ export function TimelineRiver({
             color: tokens.color.ink500,
           }}
         >
-          Timeline · {TODAY_LABEL.split(" ").slice(0, 2).join(" ")}
+          Timeline · {todayLabel.split(" ").slice(0, 2).join(" ")}
         </span>
         <div style={{ flex: 1 }} />
         <LegendChip dot={tokens.color.success} label="On duty" />
@@ -158,6 +171,12 @@ export function TimelineRiver({
                 padding: "8px 16px",
                 display: "flex",
                 alignItems: "center",
+                // Frozen first column — keeps the Venue/Officer label
+                // visible while the timeline scrolls horizontally.
+                position: "sticky",
+                left: 0,
+                background: "white",
+                zIndex: 5,
               }}
             >
               <span
@@ -231,38 +250,40 @@ export function TimelineRiver({
               })}
             </div>
 
-            {/* NOW line */}
-            <div
-              style={{
-                position: "absolute",
-                left: 220 + nowX,
-                top: 0,
-                bottom: 0,
-                width: 0,
-                borderLeft: `1.5px dashed ${palette.primary}`,
-                zIndex: 6,
-                pointerEvents: "none",
-              }}
-            >
+            {/* NOW line — only meaningful when viewing today */}
+            {isToday && (
               <div
                 style={{
                   position: "absolute",
-                  left: -22,
-                  top: 4,
-                  background: palette.primary,
-                  color: "white",
-                  fontSize: 10,
-                  fontWeight: 800,
-                  letterSpacing: "0.04em",
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  whiteSpace: "nowrap",
-                  boxShadow: `0 4px 10px -4px ${palette.primary}`,
+                  left: 220 + nowX,
+                  top: 0,
+                  bottom: 0,
+                  width: 0,
+                  borderLeft: `1.5px dashed ${palette.primary}`,
+                  zIndex: 6,
+                  pointerEvents: "none",
                 }}
               >
-                NOW · {NOW_LABEL}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: -22,
+                    top: 4,
+                    background: palette.primary,
+                    color: "white",
+                    fontSize: 10,
+                    fontWeight: 800,
+                    letterSpacing: "0.04em",
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    whiteSpace: "nowrap",
+                    boxShadow: `0 4px 10px -4px ${palette.primary}`,
+                  }}
+                >
+                  NOW · {nowLabel}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Rows */}
             {groups.map((g) => (
@@ -284,6 +305,11 @@ export function TimelineRiver({
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
+                    // Frozen first column for each row — venue / officer
+                    // label stays visible while the timeline scrolls.
+                    position: "sticky",
+                    left: 0,
+                    zIndex: 3,
                   }}
                 >
                   {g.isOfficer ? (
@@ -371,6 +397,7 @@ interface ShiftRibbonProps {
 }
 
 function ShiftRibbon({ s, showPhotos, groupBy, onSelect }: ShiftRibbonProps) {
+  const { officerById, venueById, nowHour } = useAttendance();
   const v = venueById(s.vid);
   const o = officerById(s.oid);
   if (!v) return null;
@@ -388,7 +415,7 @@ function ShiftRibbon({ s, showPhotos, groupBy, onSelect }: ShiftRibbonProps) {
     if (s.act_end != null) {
       actW = (s.act_end - s.act_start) * HOUR_PX;
     } else {
-      const endH = s.status === "missing_out" ? s.sch_end : NOW_HOUR;
+      const endH = s.status === "missing_out" ? s.sch_end : nowHour;
       actW = (endH - s.act_start) * HOUR_PX;
       isLive = true;
     }

@@ -262,14 +262,33 @@ export function ModernInvoice({ inv, accent }: { inv: InvoiceRecord; accent: Acc
           }}
         >
           <div style={{ flex: 1, fontSize: 11.5, color: "#605e5c", lineHeight: 1.7 }}>
-            <SmallLabel>Bank</SmallLabel>
-            <div>{COMPANY.bank.name}</div>
-            <div>
-              Sort <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.sort}</span>{" "}
-              · Acc{" "}
-              <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.acc}</span>
-            </div>
-            <div style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.iban}</div>
+            <SmallLabel>{isStaff ? "Pay into" : "Bank"}</SmallLabel>
+            {isStaff ? (
+              staffParty?.bank ? (
+                <>
+                  <div>{staffParty.bank.name}</div>
+                  <div>
+                    Sort <span style={{ fontFamily: "ui-monospace, monospace" }}>{staffParty.bank.sort}</span>
+                    {" · Acc "}
+                    <span style={{ fontFamily: "ui-monospace, monospace" }}>{staffParty.bank.account}</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ color: "#a19f9d", fontStyle: "italic" }}>
+                  Bank details not on file — ask the officer to add them in their profile.
+                </div>
+              )
+            ) : (
+              <>
+                <div>{COMPANY.bank.name}</div>
+                <div>
+                  Sort <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.sort}</span>
+                  {" · Acc "}
+                  <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.acc}</span>
+                </div>
+                <div style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.iban}</div>
+              </>
+            )}
             {inv.note && (
               <div
                 style={{

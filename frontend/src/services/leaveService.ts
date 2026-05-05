@@ -199,7 +199,7 @@ class LeaveService {
   /**
    * Get all available leave types for the current user
    */
-  async getLeaveTypes(activeOnly: boolean = true): Promise<LeaveType[]> {
+  async getLeaveTypes(activeOnly = true): Promise<LeaveType[]> {
     const response = await api.get<{results: LeaveType[]}>(LEAVE_ENDPOINTS.LEAVE_TYPES, {
       params: { active_only: activeOnly }
     });
@@ -274,10 +274,15 @@ class LeaveService {
   }
 
   /**
-   * Get current user's leave balances
+   * Get current user's leave balances. The list endpoint returns a paginated
+   * envelope of every balance the user can see; the my_balances action returns
+   * the LeaveBalanceResponse shape (user + balances[] + total_days_*).
    */
   async getMyBalances(): Promise<LeaveBalanceResponse> {
-    return this.getLeaveBalances();
+    const response = await api.get<LeaveBalanceResponse>(
+      `${LEAVE_ENDPOINTS.LEAVE_BALANCES}my_balances/`,
+    );
+    return response.data;
   }
 
   /**
@@ -329,8 +334,8 @@ class LeaveService {
    */
   async getLeaveRequests(
     filters?: LeaveRequestFilterOptions,
-    page: number = 1,
-    pageSize: number = 20
+    page = 1,
+    pageSize = 20
   ): Promise<LeaveRequestResponse> {
     const params: Record<string, any> = {
       page,
@@ -358,8 +363,8 @@ class LeaveService {
    */
   async getMyLeaveRequests(
     filters?: Omit<LeaveRequestFilterOptions, 'user'>,
-    page: number = 1,
-    pageSize: number = 20
+    page = 1,
+    pageSize = 20
   ): Promise<LeaveRequestResponse> {
     return this.getLeaveRequests(filters, page, pageSize);
   }

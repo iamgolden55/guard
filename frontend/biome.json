@@ -32,6 +32,20 @@
       }
     }
   },
+  "overrides": [
+    {
+      "include": ["src/features/venues/components/AddressAutocomplete.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off",
+            "useFocusableInteractive": "off",
+            "noNoninteractiveElementToInteractiveRole": "off"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double"

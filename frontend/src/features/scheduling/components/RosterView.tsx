@@ -1,18 +1,14 @@
 // RosterView — officers × days table.
 // Ported 1:1 from project/scheduling-app.jsx RosterView (lines 176-246).
-import { Fragment } from "react";
+// Phase 7.7: each cell is droppable (drop a shift to change officer + day);
+// each assigned shift is draggable.
+import { Fragment, type CSSProperties, type ReactNode } from "react";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import { Avatar } from "../../../design-system/primitives/Avatar";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
-import {
-  fmtRange,
-  OFFICERS,
-  siaState,
-  UNAVAIL,
-  venueById,
-  WEEK,
-  type Shift,
-} from "../data/mocks";
+import { fmtHrs, fmtRange, siaState, UNAVAIL, type Shift } from "../data/mocks";
 import { officerWeeklyHrs, useScheduling } from "../state/SchedulingState";
 
 export interface RosterViewProps {
@@ -20,7 +16,7 @@ export interface RosterViewProps {
 }
 
 export function RosterView({ onOpenShift }: RosterViewProps) {
-  const { shifts } = useScheduling();
+  const { shifts, officers, venueById, week } = useScheduling();
   return (
     <div
       style={{
@@ -53,7 +49,7 @@ export function RosterView({ onOpenShift }: RosterViewProps) {
           >
             Officer
           </div>
-          {WEEK.days.map((d, i) => (
+          {week.days.map((d, i) => (
             <div
               key={i}
               style={{
@@ -100,7 +96,7 @@ export function RosterView({ onOpenShift }: RosterViewProps) {
             </div>
           ))}
 
-          {OFFICERS.map((o) => {
+          {officers.map((o) => {
             const sia = siaState(o.sia);
             const hrsWk = officerWeeklyHrs(shifts, o.id);
             return (
@@ -153,32 +149,22 @@ export function RosterView({ onOpenShift }: RosterViewProps) {
                           {sia.short}
                         </span>
                       )}
-                      <span>{hrsWk}h</span>
+                      <span>{fmtHrs(hrsWk)}h</span>
                     </div>
                   </div>
                 </div>
-                {WEEK.days.map((d, di) => {
+                {week.days.map((d, di) => {
                   const cellShifts = shifts.filter(
                     (s) => s.officerId === o.id && s.day === di,
                   );
                   const unavail = UNAVAIL.find((u) => u.officerId === o.id && u.day === di);
                   return (
-                    <div
+                    <DroppableCell
                       key={di}
-                      style={{
-                        padding: "6px 8px",
-                        borderBottom: `1px solid ${tokens.color.ink100}`,
-                        borderLeft: `1px solid ${tokens.color.ink200}`,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 3,
-                        minHeight: 52,
-                        background: unavail
-                          ? "repeating-linear-gradient(135deg, #faf9f8, #faf9f8 6px, #f3f2f1 6px, #f3f2f1 8px)"
-                          : d.today
-                            ? "rgba(255,250,246,0.4)"
-                            : "white",
-                      }}
+                      officerId={o.id}
+                      day={di}
+                      isToday={!!d.today}
+                      unavail={!!unavail}
                     >
                       {unavail ? (
                         <div
@@ -199,11 +185,11 @@ export function RosterView({ onOpenShift }: RosterViewProps) {
                           const venue = venueById(s.venueId);
                           if (!venue) return null;
                           const hard = (s.violations || []).some((v) => v.tier === "hard");
-                          const draftPattern = !s.published && s.status !== "open";
+                          const draftPattern = !s.published;
                           return (
-                            <button
+                            <DraggableRosterShift
                               key={s.id}
-                              type="button"
+                              shift={s}
                               onClick={() => onOpenShift(s)}
                               style={{
                                 padding: "4px 6px",
@@ -217,7 +203,6 @@ export function RosterView({ onOpenShift }: RosterViewProps) {
                                     : "1px solid transparent",
                                 textAlign: "left",
                                 fontFamily: tokens.font.body,
-                                cursor: "pointer",
                                 backgroundImage: draftPattern
                                   ? "repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,0.2) 4px, rgba(255,255,255,0.2) 7px)"
                                   : undefined,
@@ -243,11 +228,11 @@ export function RosterView({ onOpenShift }: RosterViewProps) {
                               >
                                 {fmtRange(s.start, s.end)}
                               </div>
-                            </button>
+                            </DraggableRosterShift>
                           );
                         })
                       )}
-                    </div>
+                    </DroppableCell>
                   );
                 })}
               </Fragment>
@@ -256,5 +241,86 @@ export function RosterView({ onOpenShift }: RosterViewProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+interface DroppableCellProps {
+  officerId: string;
+  day: number;
+  isToday: boolean;
+  unavail: boolean;
+  children: ReactNode;
+}
+
+function DroppableCell({ officerId, day, isToday, unavail, children }: DroppableCellProps) {
+  const { setNodeRef, isOver, active } = useDroppable({
+    id: `cell:${officerId}:${day}`,
+    data: { kind: "cell", officerId, day },
+    disabled: unavail,
+  });
+  const draggingShift =
+    (active?.data.current as { kind?: string } | undefined)?.kind === "shift-block";
+  const showHover = isOver && draggingShift && !unavail;
+  const dragActive = !!active && draggingShift;
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        padding: "6px 8px",
+        borderBottom: `1px solid ${tokens.color.ink100}`,
+        borderLeft: `1px solid ${tokens.color.ink200}`,
+        display: "flex",
+        flexDirection: "column",
+        gap: 3,
+        minHeight: 52,
+        background: unavail
+          ? "repeating-linear-gradient(135deg, #faf9f8, #faf9f8 6px, #f3f2f1 6px, #f3f2f1 8px)"
+          : showHover
+            ? `${tokens.color.success}10`
+            : isToday
+              ? "rgba(255,250,246,0.4)"
+              : "white",
+        outline: showHover ? `2px solid ${tokens.color.success}` : undefined,
+        outlineOffset: showHover ? -2 : undefined,
+        opacity: dragActive && unavail ? 0.5 : 1,
+        transition: "background .12s ease",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+interface DraggableRosterShiftProps {
+  shift: Shift;
+  onClick: () => void;
+  style: CSSProperties;
+  children: ReactNode;
+}
+
+function DraggableRosterShift({ shift, onClick, style, children }: DraggableRosterShiftProps) {
+  const draggableEnabled = shift.officerId !== null && shift.status !== "completed";
+  const { setNodeRef, attributes, listeners, transform, isDragging } = useDraggable({
+    id: `shift-drag:${shift.id}`,
+    data: { shiftId: shift.id, kind: "shift-block" },
+    disabled: !draggableEnabled,
+  });
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      onClick={onClick}
+      {...(draggableEnabled ? listeners : {})}
+      {...(draggableEnabled ? attributes : {})}
+      style={{
+        ...style,
+        opacity: isDragging ? 0.45 : 1,
+        transform: CSS.Translate.toString(transform),
+        touchAction: draggableEnabled ? "none" : undefined,
+        cursor: draggableEnabled ? (isDragging ? "grabbing" : "grab") : "pointer",
+      }}
+    >
+      {children}
+    </button>
   );
 }

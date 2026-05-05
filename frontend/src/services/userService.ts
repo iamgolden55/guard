@@ -16,13 +16,16 @@ export interface User {
 
 export interface StaffUser {
   id: number;
+  staff_profile_id: number | null;
   username: string;
   first_name: string;
   last_name: string;
   email: string;
+  role: string;
   full_name: string;
   is_approved: boolean;
   employment_type: string | null;
+  pay_frequency?: "weekly" | "monthly";
 }
 
 class UserService {

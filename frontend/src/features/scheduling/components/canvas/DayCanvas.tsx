@@ -1,18 +1,16 @@
 // DayCanvas — Gantt-style timeline for one day, rows = venues OR officers.
 // Ported 1:1 from project/scheduling-canvas.jsx:214-340.
 // Phase 7.6: rows are droppable so a ShiftBlock can be dragged onto them.
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { Icon } from "../../../../design-system/Icon";
 import { tokens } from "../../../../design-system/tokens";
 import {
   fmtH,
+  fmtHrs,
   HOURS_END,
   HOURS_START,
-  OFFICERS,
   UNAVAIL,
-  VENUES,
-  WEEK,
   type Shift,
 } from "../../data/mocks";
 import { officerWeeklyHrs, shiftsForDay, useScheduling } from "../../state/SchedulingState";
@@ -36,11 +34,22 @@ export function DayCanvas({
   onOpenShift,
 }: DayCanvasProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const { shifts } = useScheduling();
-  const day = WEEK.days[currentDay];
+  const { shifts, officers, venues, week } = useScheduling();
+  const day = week.days[currentDay];
   const dayShifts = shiftsForDay(shifts, currentDay);
 
-  const nowHour = day?.today ? 14.45 : null;
+  // Live "now" indicator — ticks every 60s so the red line tracks real time.
+  // Only shown when the canvas day is today AND the current hour falls inside
+  // the visible window (HOURS_START..HOURS_END). Outside that window — e.g.
+  // 1 AM when the canvas starts at 5 AM — the line is hidden.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const liveHour = now.getHours() + now.getMinutes() / 60;
+  const nowHour =
+    day?.today && liveHour >= HOURS_START && liveHour < HOURS_END ? liveHour : null;
 
   useEffect(() => {
     if (scrollerRef.current) {
@@ -52,13 +61,13 @@ export function DayCanvas({
 
   const rows =
     canvasAxis === "venue"
-      ? VENUES.map((v) => ({
+      ? venues.map((v) => ({
           key: v.id,
           unavail: undefined as { type: "leave" | "unavailable"; reason: string } | undefined,
           header: <VenueRowHeader v={v} />,
-          shifts: dayShifts.filter((s) => s.venueId === v.id),
+          shifts: packLanes(dayShifts.filter((s) => s.venueId === v.id)),
         }))
-      : OFFICERS.map((o) => {
+      : officers.map((o) => {
           const unavail = UNAVAIL.find((u) => u.officerId === o.id && u.day === currentDay);
           return {
             key: o.id,
@@ -72,7 +81,7 @@ export function DayCanvas({
                 unavailToday={!!unavail}
               />
             ),
-            shifts: dayShifts.filter((s) => s.officerId === o.id),
+            shifts: packLanes(dayShifts.filter((s) => s.officerId === o.id)),
           };
         });
 
@@ -248,8 +257,15 @@ export function DayCanvas({
                     {r.unavail.reason}
                   </div>
                 )}
-                {r.shifts.map((s) => (
-                  <ShiftBlock key={s.id} shift={s} onOpen={onOpenShift} colorBy={colorBy} />
+                {r.shifts.map(({ shift, lane, totalLanes }) => (
+                  <ShiftBlock
+                    key={shift.id}
+                    shift={shift}
+                    lane={lane}
+                    totalLanes={totalLanes}
+                    onOpen={onOpenShift}
+                    colorBy={colorBy}
+                  />
                 ))}
               </DroppableRow>
             ))}
@@ -354,7 +370,7 @@ function DaySummary({ shifts }: { shifts: Shift[] }) {
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
       <Stat label="Shifts" value={String(shifts.length)} />
-      <Stat label="Hours" value={`${totalHrs}h`} />
+      <Stat label="Hours" value={`${fmtHrs(totalHrs)}h`} />
       <Stat label="Published" value={String(published)} color="#0f766e" />
       {draft > 0 && <Stat label="Drafts" value={String(draft)} color={tokens.color.warn} />}
       {open > 0 && <Stat label="Open" value={String(open)} color={tokens.color.ink600} />}
@@ -401,4 +417,33 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
       </span>
     </div>
   );
+}
+
+interface PackedShift {
+  shift: Shift;
+  lane: number;
+  totalLanes: number;
+}
+
+/**
+ * Greedy interval scheduling — assigns each shift to the lowest-numbered lane
+ * whose previous shift has already ended by this shift's start time. Used to
+ * stack overlapping shifts (e.g. multi-officer slots at the same venue/time)
+ * vertically inside a single canvas row.
+ */
+function packLanes(input: Shift[]): PackedShift[] {
+  const sorted = [...input].sort((a, b) => a.start - b.start || b.end - a.end);
+  const laneEnds: number[] = [];
+  const placed: { shift: Shift; lane: number }[] = [];
+  for (const s of sorted) {
+    let lane = laneEnds.findIndex((end) => end <= s.start);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(0);
+    }
+    laneEnds[lane] = s.end;
+    placed.push({ shift: s, lane });
+  }
+  const totalLanes = Math.max(1, laneEnds.length);
+  return placed.map((p) => ({ ...p, totalLanes }));
 }

@@ -1,8 +1,10 @@
 // CoverageHeatmap — wraps the design-system Heatmap with the
 // dashboard's section header. Ported from project/dashboard.jsx:421-487.
+import { useState } from "react";
 import { useAccent } from "../../../contexts/AccentContext";
-import { Heatmap } from "../../../design-system/charts/Heatmap";
 import { Icon } from "../../../design-system/Icon";
+import { Heatmap } from "../../../design-system/charts/Heatmap";
+import { Modal } from "../../../design-system/primitives/Modal";
 import { tokens } from "../../../design-system/tokens";
 
 export interface CoverageHeatmapProps {
@@ -11,6 +13,7 @@ export interface CoverageHeatmapProps {
 
 export function CoverageHeatmap({ data }: CoverageHeatmapProps) {
   const { palette } = useAccent();
+  const [expanded, setExpanded] = useState(false);
   return (
     <div
       style={{
@@ -43,12 +46,15 @@ export function CoverageHeatmap({ data }: CoverageHeatmapProps) {
           >
             Coverage by day × hour
           </h3>
-          <div style={{ fontSize: 12.5, color: tokens.color.ink500, marginTop: 2 }}>
+          <div
+            style={{ fontSize: 12.5, color: tokens.color.ink500, marginTop: 2 }}
+          >
             Last 7 days · staffed vs required
           </div>
         </div>
         <button
           type="button"
+          onClick={() => setExpanded(true)}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -67,6 +73,16 @@ export function CoverageHeatmap({ data }: CoverageHeatmapProps) {
         </button>
       </div>
       <Heatmap data={data} accentHex={palette.primary} />
+
+      <Modal
+        open={expanded}
+        onClose={() => setExpanded(false)}
+        title="Coverage by day × hour"
+        description="Last 7 days · staffed vs required"
+        size="lg"
+      >
+        <Heatmap data={data} accentHex={palette.primary} />
+      </Modal>
     </div>
   );
 }

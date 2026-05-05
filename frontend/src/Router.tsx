@@ -9,9 +9,19 @@ import PasswordResetRequestPage from "./features/auth/PasswordResetRequestPage";
 import PasswordResetConfirmPage from "./features/auth/PasswordResetConfirmPage";
 import DashboardPage from "./features/dashboard/DashboardPage";
 import AttendancePage from "./features/attendance/AttendancePage";
+import CompliancePage from "./features/compliance/CompliancePage";
+import IncidentsPage from "./features/incidents/IncidentsPage";
+import IntegrationsPage from "./features/integrations/IntegrationsPage";
+import OAuthCallbackPage from "./features/integrations/OAuthCallbackPage";
 import InvoicesPage from "./features/invoices/InvoicesPage";
+import LeaveManagementPage from "./features/leave/LeaveManagementPage";
 import PayrollPage from "./features/payroll/PayrollPage";
+import ProfilePage from "./features/profile/ProfilePage";
+import RecruitmentPage from "./features/recruitment/RecruitmentPage";
+import ApplyPage from "./features/recruitment/ApplyPage";
 import SchedulingPage from "./features/scheduling/SchedulingPage";
+import StaffPage from "./features/staff/StaffPage";
+import VenuesPage from "./features/venues/VenuesPage";
 import ThemeSmokePage from "./features/dev/ThemeSmokePage";
 import { Card, SectionHeader, textStyles } from "./design-system";
 
@@ -48,26 +58,40 @@ export default function Router() {
       {/* Dev-only token swatch page (no auth, no chrome) */}
       <Route path="/dev/theme" element={<ThemeSmokePage />} />
 
+      {/* Public recruitment apply form (no auth, no chrome) */}
+      <Route path="/apply/:companySlug" element={<ApplyPage />} />
+
       {/* Protected app — standard layout */}
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/staff" element={<PagePlaceholder title="Staff" />} />
-          <Route path="/leave" element={<PagePlaceholder title="Leave" />} />
-          <Route path="/venues" element={<PagePlaceholder title="Venues" />} />
-          <Route path="/compliance" element={<PagePlaceholder title="Compliance" />} />
-          <Route path="/incidents" element={<PagePlaceholder title="Incidents" />} />
-          <Route path="/recruitment" element={<PagePlaceholder title="Recruitment" />} />
-          <Route path="/integrations" element={<PagePlaceholder title="Integrations" />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          {/* OAuth callback inherits AppLayout chrome; legacy redirect URI
+              path preserved so backend's whitelist keeps working. */}
+          <Route
+            path="/admin/finance-integrations/oauth-callback"
+            element={<OAuthCallbackPage />}
+          />
+          <Route
+            path="/integrations/oauth/callback"
+            element={<OAuthCallbackPage />}
+          />
         </Route>
 
         {/* Routes with their own page-level header bring no AppLayout topbar. */}
         <Route element={<FullScreenAppLayout />}>
           <Route path="/scheduling" element={<SchedulingPage />} />
           <Route path="/attendance" element={<AttendancePage />} />
+          <Route path="/compliance" element={<CompliancePage />} />
+          <Route path="/incidents" element={<IncidentsPage />} />
+          <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/invoices" element={<InvoicesPage />} />
           <Route path="/payroll" element={<PayrollPage />} />
+          <Route path="/staff" element={<StaffPage />} />
+          <Route path="/leave" element={<LeaveManagementPage />} />
+          <Route path="/recruitment" element={<RecruitmentPage />} />
+          <Route path="/venues" element={<VenuesPage />} />
         </Route>
       </Route>
 

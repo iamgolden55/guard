@@ -1,13 +1,16 @@
 // VenueGrid — right rail of Live tab. Per-venue tile with status color
 // and counts. Ported 1:1 from project/attendance-live.jsx:432-476.
 import { tokens } from "../../../../design-system/tokens";
-import { A_VENUES, SHIFTS_TODAY, type AttendanceShift } from "../../data/mocks";
+import type { AttendanceShift } from "../../data/mocks";
+import { useAttendance } from "../../AttendanceContext";
 
 export interface VenueGridProps {
   onSelect: (shift: AttendanceShift) => void;
 }
 
 export function VenueGrid({ onSelect }: VenueGridProps) {
+  const { venues, shifts, matchesSearch } = useAttendance();
+  const visibleShifts = shifts.filter(matchesSearch);
   return (
     <div
       style={{
@@ -39,12 +42,12 @@ export function VenueGrid({ onSelect }: VenueGridProps) {
           Venue board
         </div>
         <div style={{ fontSize: 12, color: tokens.color.ink600 }}>
-          Coverage right now across {A_VENUES.length} sites
+          Coverage right now across {venues.length} sites
         </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px" }}>
-        {A_VENUES.map((v) => {
-          const venueShifts = SHIFTS_TODAY.filter((s) => s.vid === v.id);
+        {venues.map((v) => {
+          const venueShifts = visibleShifts.filter((s) => s.vid === v.id);
           const onDuty = venueShifts.filter((s) => s.status === "on_duty").length;
           const issues = venueShifts.filter(
             (s) => s.status === "no_show" || s.status === "missing_out" || s.geofence_fail,

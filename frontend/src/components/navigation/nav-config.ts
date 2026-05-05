@@ -21,16 +21,36 @@ export const NAV: NavGroup[] = [
   {
     group: "Overview",
     items: [
-      { id: "dashboard", label: "Dashboard", icon: "squares-2x2", path: "/dashboard" },
-      { id: "scheduling", label: "Scheduling", icon: "calendar", path: "/scheduling" },
-      { id: "attendance", label: "Attendance", icon: "clock", path: "/attendance" },
+      {
+        id: "dashboard",
+        label: "Dashboard",
+        icon: "squares-2x2",
+        path: "/dashboard",
+      },
+      {
+        id: "scheduling",
+        label: "Scheduling",
+        icon: "calendar",
+        path: "/scheduling",
+      },
+      {
+        id: "attendance",
+        label: "Attendance",
+        icon: "clock",
+        path: "/attendance",
+      },
     ],
   },
   {
     group: "People",
     items: [
       { id: "staff", label: "Staff", icon: "users", path: "/staff" },
-      { id: "recruitment", label: "Recruitment", icon: "user-plus", path: "/recruitment" },
+      {
+        id: "recruitment",
+        label: "Recruitment",
+        icon: "user-plus",
+        path: "/recruitment",
+      },
       { id: "leave", label: "Leave", icon: "sun", path: "/leave" },
     ],
   },
@@ -38,8 +58,18 @@ export const NAV: NavGroup[] = [
     group: "Operations",
     items: [
       { id: "venues", label: "Venues", icon: "map-pin", path: "/venues" },
-      { id: "compliance", label: "Compliance", icon: "shield", path: "/compliance" },
-      { id: "incidents", label: "Incidents", icon: "alert", path: "/incidents" },
+      {
+        id: "compliance",
+        label: "Compliance",
+        icon: "shield",
+        path: "/compliance",
+      },
+      {
+        id: "incidents",
+        label: "Incidents",
+        icon: "alert",
+        path: "/incidents",
+      },
     ],
   },
   {
@@ -47,7 +77,12 @@ export const NAV: NavGroup[] = [
     items: [
       { id: "invoices", label: "Invoices", icon: "receipt", path: "/invoices" },
       { id: "payroll", label: "Payroll", icon: "banknote", path: "/payroll" },
-      { id: "integrations", label: "Integrations", icon: "plug", path: "/integrations" },
+      {
+        id: "integrations",
+        label: "Integrations",
+        icon: "plug",
+        path: "/integrations",
+      },
     ],
   },
 ];

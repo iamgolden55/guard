@@ -7,14 +7,8 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Icon } from "../../../../design-system/Icon";
 import { tokens } from "../../../../design-system/tokens";
-import {
-  fmtRange,
-  HOURS_START,
-  hrs,
-  officerById,
-  venueById,
-  type Shift,
-} from "../../data/mocks";
+import { fmtHrs, fmtRange, HOURS_START, hrs, type Shift } from "../../data/mocks";
+import { useScheduling } from "../../state/SchedulingState";
 import { HOUR_W } from "./HourHeader";
 
 export type ColorBy = "venue" | "status";
@@ -23,9 +17,23 @@ export interface ShiftBlockProps {
   shift: Shift;
   onOpen: (shift: Shift) => void;
   colorBy?: ColorBy;
+  /** Lane assigned by DayCanvas's lane-packer (0-indexed). */
+  lane?: number;
+  /** Total lanes in this row — block height divides the row by this count. */
+  totalLanes?: number;
 }
 
-export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps) {
+const ROW_HEIGHT = 72;
+const ROW_VERT_PAD = 6;
+
+export function ShiftBlock({
+  shift,
+  onOpen,
+  colorBy = "venue",
+  lane = 0,
+  totalLanes = 1,
+}: ShiftBlockProps) {
+  const { officerById, venueById } = useScheduling();
   const venue = venueById(shift.venueId);
   const officer = officerById(shift.officerId);
 
@@ -78,7 +86,12 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
         : venue.color;
   const fgColor = shift.status === "open" ? tokens.color.ink900 : "white";
 
-  const draftPattern = !shift.published && shift.status !== "open";
+  // Draft = any unpublished shift (including open). Open-drafts get amber stripes
+  // on white; venue-coloured assigned drafts get translucent-white stripes that
+  // read well over the venue's hue.
+  const draftPattern = !shift.published;
+  const draftStripeColor =
+    shift.status === "open" ? "rgba(217, 119, 6, 0.18)" : "rgba(255, 255, 255, 0.22)";
 
   // Drop-target highlighting for open shifts during a drag.
   const hovering = isOver && shift.status === "open";
@@ -93,8 +106,8 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
       {...(draggableEnabled ? attributes : {})}
       style={{
         position: "absolute",
-        top: 6,
-        bottom: 6,
+        top: ROW_VERT_PAD + lane * ((ROW_HEIGHT - ROW_VERT_PAD * 2) / totalLanes),
+        height: (ROW_HEIGHT - ROW_VERT_PAD * 2) / totalLanes - 2,
         left,
         width,
         minWidth: 60,
@@ -130,7 +143,7 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
               ? "none"
               : "0 1px 2px rgba(32,31,30,0.12)",
         backgroundImage: draftPattern
-          ? "repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,255,255,0.18) 6px, rgba(255,255,255,0.18) 9px)"
+          ? `repeating-linear-gradient(45deg, transparent, transparent 6px, ${draftStripeColor} 6px, ${draftStripeColor} 9px)`
           : undefined,
       }}
     >
@@ -202,14 +215,16 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
             textOverflow: "ellipsis",
           }}
         >
-          {!shift.published && shift.status !== "open" && (
+          {!shift.published && (
             <span
               style={{
                 fontSize: 9,
                 fontWeight: 700,
                 padding: "1px 4px",
                 borderRadius: 2,
-                background: "rgba(255,255,255,0.22)",
+                background:
+                  shift.status === "open" ? tokens.color.warnSoft : "rgba(255,255,255,0.22)",
+                color: shift.status === "open" ? tokens.color.warnInk : "inherit",
                 letterSpacing: "0.05em",
               }}
             >
@@ -233,7 +248,7 @@ export function ShiftBlock({ shift, onOpen, colorBy = "venue" }: ShiftBlockProps
           )}
           {width > 160 && officer && shift.published && (
             <span style={{ fontSize: 9.5, opacity: 0.75 }}>
-              {venue.req} · {hrs(shift.start, shift.end)}h
+              {venue.req} · {fmtHrs(hrs(shift.start, shift.end))}h
             </span>
           )}
         </div>

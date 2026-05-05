@@ -574,7 +574,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
     const userStr = localStorage.getItem('user');
     if (userStr) {
       try {
-        let user = JSON.parse(userStr);
+        const user = JSON.parse(userStr);
         // Make sure firstName and lastName exist and are properly formatted
         if (user) {
           // If we have snake_case fields but no camelCase ones, create the camelCase ones

@@ -3,10 +3,11 @@
 // primary CTA. Includes the mobile-drawer hamburger trigger.
 import { useMemo } from "react";
 import { useLocation } from "react-router-dom";
-import { useAuth } from "../../contexts/AuthContext";
 import { useAccent } from "../../contexts/AccentContext";
+import { useAuth } from "../../contexts/AuthContext";
 import { Icon } from "../../design-system/Icon";
 import { tokens } from "../../design-system/tokens";
+import { SearchPalette } from "./SearchPalette";
 
 function greeting(now = new Date()): string {
   const h = now.getHours();
@@ -29,6 +30,7 @@ const ROUTE_TITLES: Record<string, { eyebrow: string; title?: string }> = {
   "/incidents": { eyebrow: "Incidents · Admin" },
   "/recruitment": { eyebrow: "Recruitment · Admin" },
   "/integrations": { eyebrow: "Integrations · Admin" },
+  "/profile": { eyebrow: "My profile" },
 };
 
 const iconButtonStyle = {
@@ -57,7 +59,8 @@ export function Topbar({ onMenuClick, onPrimaryAction }: TopbarProps) {
   const { palette } = useAccent();
 
   const eyebrow = ROUTE_TITLES[location.pathname]?.eyebrow ?? "Mead Security";
-  const firstName = authState.user?.firstName || authState.user?.username || "there";
+  const firstName =
+    authState.user?.firstName || authState.user?.username || "there";
   const greet = useMemo(() => `${greeting()}, ${firstName}`, [firstName]);
 
   return (
@@ -116,45 +119,7 @@ export function Topbar({ onMenuClick, onPrimaryAction }: TopbarProps) {
       </div>
 
       {/* Search */}
-      <div
-        className="hidden md:flex"
-        style={{
-          alignItems: "center",
-          gap: 8,
-          background: tokens.color.ink100,
-          borderRadius: 8,
-          padding: "8px 12px",
-          minWidth: 280,
-          color: tokens.color.ink600,
-        }}
-      >
-        <Icon name="search" size={16} />
-        <input
-          placeholder="Search staff, venues, shifts…"
-          style={{
-            border: "none",
-            outline: "none",
-            background: "transparent",
-            fontSize: 13,
-            fontFamily: tokens.font.body,
-            flex: 1,
-            color: tokens.color.ink800,
-          }}
-        />
-        <kbd
-          style={{
-            fontFamily: tokens.font.mono,
-            fontSize: 10,
-            color: tokens.color.ink600,
-            background: "white",
-            border: `1px solid ${tokens.color.ink200}`,
-            padding: "1px 5px",
-            borderRadius: 4,
-          }}
-        >
-          ⌘K
-        </kbd>
-      </div>
+      <SearchPalette />
 
       {/* Notifications */}
       <button type="button" aria-label="Notifications" style={iconButtonStyle}>

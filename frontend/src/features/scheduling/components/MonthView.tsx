@@ -1,43 +1,60 @@
-// MonthView — 5×7 coverage heatmap.
-// Ported 1:1 from project/scheduling-app.jsx MonthView (lines 101-171).
+// MonthView — 6×7 calendar of the focused month, with prev/next/today nav.
+// Shifts are fetched for the full grid range (see useSchedulingData with
+// viewMode="month") and grouped here by their absolute `date` field.
+import { useMemo } from "react";
+import { Button } from "../../../design-system/primitives/Button";
+import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
-import { WEEK, type Shift } from "../data/mocks";
-import { shiftsForDay, useScheduling } from "../state/SchedulingState";
+import type { Shift } from "../data/mocks";
+import { useScheduling } from "../state/SchedulingState";
 
-interface MonthCell {
-  i: number;
-  dayOffset: number;
-  inWeek: boolean;
-  dayShifts: Shift[];
-  hasBH: boolean;
+export interface MonthViewProps {
+  onOpenShift?: (s: Shift) => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onToday: () => void;
+  /** Drill into Day view focused on the clicked date. */
+  onSelectDate: (iso: string) => void;
+}
+
+interface CellSummary {
+  date: string;
+  inMonth: boolean;
+  today: boolean;
+  shifts: Shift[];
   published: number;
   draft: number;
   open: number;
   hard: number;
-  date: Date;
 }
 
-export interface MonthViewProps {
-  onOpenShift?: (s: Shift) => void;
-}
+export function MonthView({ onPrev, onNext, onToday, onSelectDate }: MonthViewProps) {
+  const { shifts, monthGrid } = useScheduling();
 
-export function MonthView({ onOpenShift: _onOpenShift }: MonthViewProps) {
-  const { shifts } = useScheduling();
-  const cells: MonthCell[] = [];
-  const monthStart = -14;
-  for (let i = 0; i < 35; i++) {
-    const dayOffset = monthStart + i;
-    const inWeek = dayOffset >= 0 && dayOffset < 7;
-    const dayShifts = inWeek ? shiftsForDay(shifts, dayOffset) : [];
-    const dayInfo = inWeek ? WEEK.days[dayOffset] : undefined;
-    const hasBH = !!(inWeek && dayInfo?.bankHoliday);
-    const published = dayShifts.filter((s) => s.published).length;
-    const draft = dayShifts.filter((s) => !s.published && s.status !== "open").length;
-    const open = dayShifts.filter((s) => s.status === "open").length;
-    const hard = dayShifts.filter((s) => (s.violations || []).some((v) => v.tier === "hard")).length;
-    const date = new Date(2026, 3, 6 + i); // Apr 6 = Monday
-    cells.push({ i, dayOffset, inWeek, dayShifts, hasBH, published, draft, open, hard, date });
-  }
+  const cells: CellSummary[] = useMemo(() => {
+    const byDate = new Map<string, Shift[]>();
+    for (const s of shifts) {
+      if (!s.date) continue;
+      const list = byDate.get(s.date);
+      if (list) list.push(s);
+      else byDate.set(s.date, [s]);
+    }
+    return monthGrid.cells.map((c) => {
+      const dayShifts = byDate.get(c.date) ?? [];
+      return {
+        date: c.date,
+        inMonth: c.inMonth,
+        today: c.today,
+        shifts: dayShifts,
+        published: dayShifts.filter((s) => s.published).length,
+        // Any unpublished shift counts as a draft from the admin's view —
+        // includes open-but-unpublished. Mirrors weekCounts in SchedulingState.
+        draft: dayShifts.filter((s) => !s.published).length,
+        open: dayShifts.filter((s) => s.status === "open").length,
+        hard: dayShifts.filter((s) => (s.violations || []).some((v) => v.tier === "hard")).length,
+      };
+    });
+  }, [shifts, monthGrid]);
 
   return (
     <div
@@ -54,10 +71,31 @@ export function MonthView({ onOpenShift: _onOpenShift }: MonthViewProps) {
           padding: "14px 20px",
           borderBottom: `1px solid ${tokens.color.ink200}`,
           display: "flex",
-          alignItems: "baseline",
+          alignItems: "center",
           gap: 12,
         }}
       >
+        <Button
+          variant="secondary"
+          size="sm"
+          leading={<Icon name="chevron-left" size={14} />}
+          onClick={onPrev}
+          aria-label="Previous month"
+        >
+          {""}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          leading={<Icon name="chevron-right" size={14} />}
+          onClick={onNext}
+          aria-label="Next month"
+        >
+          {""}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onToday}>
+          Today
+        </Button>
         <div
           style={{
             fontFamily: tokens.font.display,
@@ -65,12 +103,13 @@ export function MonthView({ onOpenShift: _onOpenShift }: MonthViewProps) {
             fontSize: 18,
             letterSpacing: "-0.015em",
             color: tokens.color.ink900,
+            marginLeft: 4,
           }}
         >
-          April 2026
+          {monthGrid.label}
         </div>
-        <div style={{ fontSize: 12, color: tokens.color.ink600 }}>
-          Coverage overview · click a day to drill in
+        <div style={{ fontSize: 12, color: tokens.color.ink600, marginLeft: "auto" }}>
+          Coverage overview
         </div>
       </div>
 
@@ -99,27 +138,33 @@ export function MonthView({ onOpenShift: _onOpenShift }: MonthViewProps) {
             {d}
           </div>
         ))}
-        {cells.map((c) => {
-          const coverage = c.dayShifts.length;
+        {cells.map((c, i) => {
+          const coverage = c.shifts.length;
           const heat = Math.min(1, coverage / 9);
+          const dayNum = Number(c.date.slice(8, 10));
           return (
-            <div
-              key={c.i}
+            <button
+              key={c.date}
+              type="button"
+              onClick={() => onSelectDate(c.date)}
+              aria-label={`Open day ${c.date}`}
               style={{
                 minHeight: 100,
                 padding: "8px 10px",
-                borderRight: (c.i + 1) % 7 !== 0 ? `1px solid ${tokens.color.ink200}` : "none",
+                border: "none",
+                borderRight: (i + 1) % 7 !== 0 ? `1px solid ${tokens.color.ink200}` : "none",
                 borderBottom: `1px solid ${tokens.color.ink200}`,
-                background:
-                  c.inWeek && c.dayOffset === 3
-                    ? "#fffaf6"
-                    : c.hasBH
-                      ? "#eef2ff"
-                      : c.inWeek
-                        ? `rgba(203, 36, 49, ${heat * 0.12})`
-                        : tokens.color.ink50,
-                opacity: c.inWeek ? 1 : 0.55,
+                background: c.today
+                  ? "#fffaf6"
+                  : c.inMonth
+                    ? `rgba(203, 36, 49, ${heat * 0.12})`
+                    : tokens.color.ink50,
+                opacity: c.inMonth ? 1 : 0.55,
                 position: "relative",
+                textAlign: "left",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                color: "inherit",
               }}
             >
               <div
@@ -134,25 +179,13 @@ export function MonthView({ onOpenShift: _onOpenShift }: MonthViewProps) {
                     fontFamily: tokens.font.display,
                     fontWeight: 700,
                     fontSize: 14,
-                    color: c.dayOffset === 3 ? tokens.color.danger : tokens.color.ink900,
+                    color: c.today ? tokens.color.danger : tokens.color.ink900,
                   }}
                 >
-                  {c.date.getDate()}
+                  {dayNum}
                 </span>
-                {c.hasBH && (
-                  <span
-                    style={{
-                      fontSize: 8.5,
-                      color: "#312e81",
-                      fontWeight: 700,
-                      letterSpacing: "0.04em",
-                    }}
-                  >
-                    BH
-                  </span>
-                )}
               </div>
-              {c.inWeek && coverage > 0 && (
+              {coverage > 0 && (
                 <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 3 }}>
                   <div
                     style={{
@@ -171,7 +204,7 @@ export function MonthView({ onOpenShift: _onOpenShift }: MonthViewProps) {
                         marginLeft: 3,
                       }}
                     >
-                      shifts
+                      {coverage === 1 ? "shift" : "shifts"}
                     </span>
                   </div>
                   <div style={{ display: "flex", gap: 4, fontSize: 9.5, flexWrap: "wrap" }}>
@@ -210,7 +243,7 @@ export function MonthView({ onOpenShift: _onOpenShift }: MonthViewProps) {
                   )}
                 </div>
               )}
-            </div>
+            </button>
           );
         })}
       </div>

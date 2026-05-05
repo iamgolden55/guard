@@ -3,14 +3,29 @@ import { tokens } from "../tokens";
 
 export interface AvatarProps {
   name?: string | null;
-  /** Hue 0-360. Defaults to brand red hue. */
+  /**
+   * Hue 0-360. When omitted, a stable hue is derived from the `name` so each
+   * person renders in a consistent unique-ish colour across reloads.
+   */
   hue?: number;
   size?: number;
 }
 
-export function Avatar({ name, hue = 356, size = 36 }: AvatarProps) {
-  const initials = (name || "?")
-    .split(" ")
+// djb2-style hash → modulo 360. Stable per input string.
+function hueFromName(name: string): number {
+  let hash = 5381;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 33) ^ name.charCodeAt(i);
+  }
+  // Force positive int (>>> 0), then map to hue range.
+  return (hash >>> 0) % 360;
+}
+
+export function Avatar({ name, hue, size = 36 }: AvatarProps) {
+  const safeName = (name ?? "").trim();
+  const resolvedHue = hue ?? (safeName ? hueFromName(safeName.toLowerCase()) : 356);
+  const initials = (safeName || "?")
+    .split(/\s+/)
     .map((s) => s[0] ?? "")
     .slice(0, 2)
     .join("");
@@ -21,7 +36,7 @@ export function Avatar({ name, hue = 356, size = 36 }: AvatarProps) {
         width: size,
         height: size,
         borderRadius: size / 2,
-        background: `linear-gradient(135deg, oklch(68% 0.14 ${hue}), oklch(52% 0.17 ${hue}))`,
+        background: `linear-gradient(135deg, oklch(68% 0.14 ${resolvedHue}), oklch(52% 0.17 ${resolvedHue}))`,
         color: "white",
         display: "inline-flex",
         alignItems: "center",

@@ -54,7 +54,9 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
           >
             Live activity
           </h3>
-          <div style={{ fontSize: 12.5, color: tokens.color.ink500, marginTop: 2 }}>
+          <div
+            style={{ fontSize: 12.5, color: tokens.color.ink500, marginTop: 2 }}
+          >
             Cross-venue stream
           </div>
         </div>
@@ -97,7 +99,12 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
           return (
             <div
               key={i}
-              style={{ display: "flex", gap: 14, padding: "8px 0", position: "relative" }}
+              style={{
+                display: "flex",
+                gap: 14,
+                padding: "8px 0",
+                position: "relative",
+              }}
             >
               <div
                 style={{
@@ -116,10 +123,22 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
                 <Icon name={meta.icon} size={13} />
               </div>
               <div style={{ flex: 1, minWidth: 0, paddingTop: 6 }}>
-                <div style={{ fontSize: 13, color: tokens.color.ink900, fontWeight: 500 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: tokens.color.ink900,
+                    fontWeight: 500,
+                  }}
+                >
                   {a.text}
                 </div>
-                <div style={{ fontSize: 11.5, color: tokens.color.ink500, marginTop: 2 }}>
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: tokens.color.ink500,
+                    marginTop: 2,
+                  }}
+                >
                   {a.t} ago
                 </div>
               </div>

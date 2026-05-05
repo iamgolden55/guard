@@ -154,7 +154,9 @@ export function ClassicInvoice({ inv, accent }: { inv: InvoiceRecord; accent: Ac
               <div>
                 BACS ·{" "}
                 <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                  {staffParty.bank}
+                  {staffParty.bank
+                    ? `${staffParty.bank.sort} / ${staffParty.bank.account}`
+                    : "(no bank details)"}
                 </span>
               </div>
             </div>
@@ -351,14 +353,30 @@ export function ClassicInvoice({ inv, accent }: { inv: InvoiceRecord; accent: Ac
               textTransform: "uppercase",
             }}
           >
-            Payment
+            Pay {isStaff ? "into" : "to"}
           </div>
-          <div>{COMPANY.bank.name}</div>
-          <div>
-            Sort: <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.sort}</span> ·
-            Acc: <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.acc}</span>
-          </div>
-          <div style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.iban}</div>
+          {isStaff ? (
+            staffParty?.bank ? (
+              <>
+                <div>{staffParty.bank.name}</div>
+                <div>
+                  Sort: <span style={{ fontFamily: "ui-monospace, monospace" }}>{staffParty.bank.sort}</span>{" "}
+                  · Acc: <span style={{ fontFamily: "ui-monospace, monospace" }}>{staffParty.bank.account}</span>
+                </div>
+              </>
+            ) : (
+              <div style={{ fontStyle: "italic", color: "#a19f9d" }}>Bank details not on file</div>
+            )
+          ) : (
+            <>
+              <div>{COMPANY.bank.name}</div>
+              <div>
+                Sort: <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.sort}</span>{" "}
+                · Acc: <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.acc}</span>
+              </div>
+              <div style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.iban}</div>
+            </>
+          )}
         </div>
         <div style={{ textAlign: "right" }}>
           <div>Co. registered in England · {COMPANY.reg}</div>

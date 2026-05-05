@@ -36,7 +36,8 @@ export function WelcomeBanner({
     month: "long",
   });
   const greet = greeting(now);
-  const firstName = authState.user?.firstName || authState.user?.username || "there";
+  const firstName =
+    authState.user?.firstName || authState.user?.username || "there";
 
   return (
     <div
@@ -135,7 +136,8 @@ export function WelcomeBanner({
           </strong>{" "}
           awaiting review and{" "}
           <strong style={{ color: palette.primary }}>
-            {expiringLicensesCount} {expiringLicensesCount === 1 ? "officer" : "officers"}
+            {expiringLicensesCount}{" "}
+            {expiringLicensesCount === 1 ? "officer" : "officers"}
           </strong>{" "}
           with SIA licences expiring this month. Everything else is on track.
         </p>

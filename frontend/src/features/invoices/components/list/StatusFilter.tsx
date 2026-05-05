@@ -10,7 +10,8 @@ export type StatusFilterValue =
   | "sent"
   | "overdue"
   | "paid"
-  | "rejected";
+  | "rejected"
+  | "resolved";
 
 const OPTS: [StatusFilterValue, string, string][] = [
   ["all", "All", "#605e5c"],
@@ -19,6 +20,7 @@ const OPTS: [StatusFilterValue, string, string][] = [
   ["overdue", "Overdue", "#8a1820"],
   ["paid", "Paid", "#0f5132"],
   ["rejected", "Rejected", "#8a4b0a"],
+  ["resolved", "Resolved", "#3a4a5e"],
 ];
 
 export interface StatusFilterProps {

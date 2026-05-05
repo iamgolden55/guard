@@ -1,7 +1,7 @@
 // KpiGrid + KpiCard — ported from project/dashboard.jsx:370-401.
 import { useAccent } from "../../../contexts/AccentContext";
-import { Sparkline } from "../../../design-system/charts/Sparkline";
 import { DeltaBadge } from "../../../design-system/charts/DeltaBadge";
+import { Sparkline } from "../../../design-system/charts/Sparkline";
 import { tokens } from "../../../design-system/tokens";
 import type { DashboardKpi } from "../hooks/useDashboardData";
 
@@ -11,10 +11,16 @@ export interface KpiGridProps {
   gap?: number;
 }
 
-export function KpiGrid({ kpis, showSparklines = true, gap = 18 }: KpiGridProps) {
+export function KpiGrid({
+  kpis,
+  showSparklines = true,
+  gap = 18,
+}: KpiGridProps) {
   const { palette } = useAccent();
   return (
-    <div style={{ display: "grid", gap, gridTemplateColumns: "repeat(4, 1fr)" }}>
+    <div
+      style={{ display: "grid", gap, gridTemplateColumns: "repeat(4, 1fr)" }}
+    >
       {kpis.map((k) => (
         <KpiCard
           key={k.label}
@@ -41,7 +47,15 @@ interface KpiCardProps {
   showSpark: boolean;
 }
 
-function KpiCard({ label, value, delta, deltaDir, sparkData, accentColor, showSpark }: KpiCardProps) {
+function KpiCard({
+  label,
+  value,
+  delta,
+  deltaDir,
+  sparkData,
+  accentColor,
+  showSpark,
+}: KpiCardProps) {
   return (
     <div
       style={{

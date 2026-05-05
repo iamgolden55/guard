@@ -10,9 +10,16 @@ import { useScheduling, weekCounts } from "../state/SchedulingState";
 export interface SchedulingHeaderProps {
   onPublish: () => void;
   onNewShift: () => void;
+  onCopyLastWeek: () => void;
+  isCopying?: boolean;
 }
 
-export function SchedulingHeader({ onPublish, onNewShift }: SchedulingHeaderProps) {
+export function SchedulingHeader({
+  onPublish,
+  onNewShift,
+  onCopyLastWeek,
+  isCopying,
+}: SchedulingHeaderProps) {
   const { palette } = useAccent();
   const { shifts } = useScheduling();
   const counts = weekCounts(shifts);
@@ -125,8 +132,13 @@ export function SchedulingHeader({ onPublish, onNewShift }: SchedulingHeaderProp
         />
       </button>
 
-      <Button variant="secondary" leading={<Icon name="copy" size={14} />}>
-        Copy last week
+      <Button
+        variant="secondary"
+        leading={<Icon name="copy" size={14} />}
+        onClick={onCopyLastWeek}
+        disabled={isCopying}
+      >
+        {isCopying ? "Copying…" : "Copy last week"}
       </Button>
       <Button variant="secondary" leading={<Icon name="plus" size={14} />} onClick={onNewShift}>
         New shift

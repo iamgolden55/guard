@@ -3,6 +3,7 @@
 import { Avatar } from "../../../../design-system/primitives/Avatar";
 import { tokens } from "../../../../design-system/tokens";
 import {
+  fmtHrs,
   siaState,
   type SchedulingOfficer,
   type SchedulingVenue,
@@ -140,7 +141,7 @@ export function OfficerRowHeader({ o, weeklyHrs, unavailToday }: OfficerRowHeade
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            · {weeklyHrs}h / {o.cap}h
+            · {fmtHrs(weeklyHrs)}h / {o.cap}h
           </span>
           {o.optOut && (
             <span

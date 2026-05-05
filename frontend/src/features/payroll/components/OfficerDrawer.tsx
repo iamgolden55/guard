@@ -1,20 +1,27 @@
 // OfficerDrawer — slide-over with breakdown + SIA + adjustments.
 // Ported 1:1 from project/payroll-drawer-modal.jsx:8-203.
 import { useEffect } from "react";
+import { useState } from "react";
 import { useAccent } from "../../../contexts/AccentContext";
+import { Icon } from "../../../design-system/Icon";
 import { Avatar } from "../../../design-system/primitives/Avatar";
 import { Button } from "../../../design-system/primitives/Button";
 import { Pill } from "../../../design-system/primitives/Pill";
-import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
+import billingService from "../../../services/billingService";
 import {
   EXPORT_META,
-  fmtGBP,
   ITEMS_BY_OFFICER,
-  siaTone,
-  STATUS_META,
   type Officer,
+  STATUS_META,
+  fmtGBP,
+  siaTone,
 } from "../data/mocks";
+import { useOfficerBundle } from "../hooks/usePayrollData";
+import { usePayrollMutations } from "../hooks/usePayrollMutations";
+import { AdjustHoursModal } from "./AdjustHoursModal";
+
+const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === "1";
 
 interface BreakdownRow {
   label: string;
@@ -26,9 +33,15 @@ interface BreakdownRow {
 export interface OfficerDrawerProps {
   officer: Officer | null;
   onClose: () => void;
+  /** Active payroll-run code — needed to look up the officer's invoice on the API. */
+  runCode?: string | null;
 }
 
-export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
+export function OfficerDrawer({
+  officer,
+  onClose,
+  runCode,
+}: OfficerDrawerProps) {
   const { palette } = useAccent();
 
   useEffect(() => {
@@ -40,10 +53,19 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [officer, onClose]);
 
+  const bundleQuery = useOfficerBundle(
+    USE_MOCKS ? null : officer ? runCode : null,
+    officer ? officer.id : null,
+  );
+  const mutations = usePayrollMutations(runCode);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+
   if (!officer) return null;
 
   const o = officer;
-  const bundle = ITEMS_BY_OFFICER[o.id] ?? { items: [], adjustments: [] };
+  const bundle = USE_MOCKS
+    ? (ITEMS_BY_OFFICER[o.id] ?? { items: [], adjustments: [] })
+    : (bundleQuery.data ?? { items: [], adjustments: [] });
   const meta = STATUS_META[o.status];
   const expMeta = o.exportStatus ? EXPORT_META[o.exportStatus] : null;
   const siaWarn = siaTone(o.sia);
@@ -154,10 +176,23 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
             >
               {o.name}
             </div>
-            <div style={{ fontSize: 12.5, color: tokens.color.ink600, marginTop: 2 }}>
+            <div
+              style={{
+                fontSize: 12.5,
+                color: tokens.color.ink600,
+                marginTop: 2,
+              }}
+            >
               {o.role} · {o.venue}
             </div>
-            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                marginTop: 8,
+                flexWrap: "wrap",
+              }}
+            >
               <Pill tone={meta.tone} dot>
                 {meta.label}
               </Pill>
@@ -217,11 +252,12 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
                   marginBottom: 2,
                 }}
               >
-                Invoice total · Week 17
+                Invoice total{runCode ? ` · ${runCode}` : ""}
               </div>
               <div style={{ fontSize: 11.5, color: tokens.color.ink600 }}>
-                INV-{o.id.toString().padStart(4, "0")}-W17 ·{" "}
-                {o.baseHrs + o.ot1Hrs + o.ot2Hrs}h billable + {o.bhDays + o.alDays}d
+                {o.invoiceId ?? `INV-${o.id.toString().padStart(4, "0")}`} ·{" "}
+                {o.baseHrs + o.ot1Hrs + o.ot2Hrs}h billable +{" "}
+                {o.bhDays + o.alDays}d
               </div>
             </div>
             <div
@@ -261,7 +297,13 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
                   >
                     {r.label}
                   </div>
-                  <div style={{ fontSize: 11.5, color: tokens.color.ink600, marginTop: 2 }}>
+                  <div
+                    style={{
+                      fontSize: 11.5,
+                      color: tokens.color.ink600,
+                      marginTop: 2,
+                    }}
+                  >
                     {r.detail}
                   </div>
                 </div>
@@ -287,7 +329,13 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
                 marginTop: 2,
               }}
             >
-              <span style={{ fontSize: 13, fontWeight: 700, color: tokens.color.ink900 }}>
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: tokens.color.ink900,
+                }}
+              >
                 Gross payable
               </span>
               <span
@@ -318,9 +366,16 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
             }}
           >
             <Icon name="info" size={14} />
-            <div style={{ fontSize: 11.5, color: tokens.color.ink600, lineHeight: 1.5 }}>
-              Gross figure only. PAYE / NI withholding is handled by the connected accounting
-              provider (Xero, QuickBooks, Sage) after export — not on this platform.
+            <div
+              style={{
+                fontSize: 11.5,
+                color: tokens.color.ink600,
+                lineHeight: 1.5,
+              }}
+            >
+              Gross figure only. PAYE / NI withholding is handled by the
+              connected accounting provider (Xero, QuickBooks, Sage) after
+              export — not on this platform.
             </div>
           </div>
 
@@ -359,7 +414,13 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
                 </div>
               </div>
               <Pill
-                tone={o.sia.expired ? "danger" : o.sia.expiresInDays <= 30 ? "warning" : "positive"}
+                tone={
+                  o.sia.expired
+                    ? "danger"
+                    : o.sia.expiresInDays <= 30
+                      ? "warning"
+                      : "positive"
+                }
                 dot
               >
                 {o.sia.expired
@@ -368,9 +429,15 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
               </Pill>
             </div>
             {o.sia.expired && (
-              <div style={{ marginTop: 8, fontSize: 11.5, color: tokens.color.dangerInk }}>
-                Officer cannot claim new shifts until licence is renewed. Payslip flagged for
-                review.
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 11.5,
+                  color: tokens.color.dangerInk,
+                }}
+              >
+                Officer cannot claim new shifts until licence is renewed.
+                Payslip flagged for review.
               </div>
             )}
           </div>
@@ -407,10 +474,14 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
                         flexWrap: "wrap",
                       }}
                     >
-                      <strong style={{ fontFamily: tokens.font.mono, fontSize: 12 }}>
+                      <strong
+                        style={{ fontFamily: tokens.font.mono, fontSize: 12 }}
+                      >
                         {a.date}
                       </strong>
-                      <span style={{ color: tokens.color.ink600 }}>{a.shift}</span>
+                      <span style={{ color: tokens.color.ink600 }}>
+                        {a.shift}
+                      </span>
                       <Pill tone="warning" dot>
                         {a.delta}
                       </Pill>
@@ -423,9 +494,19 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
                       }}
                     >
                       {a.before} →{" "}
-                      <span style={{ color: tokens.color.ink900, fontWeight: 600 }}>{a.after}</span>
+                      <span
+                        style={{ color: tokens.color.ink900, fontWeight: 600 }}
+                      >
+                        {a.after}
+                      </span>
                     </div>
-                    <div style={{ fontSize: 11, color: tokens.color.ink500, marginTop: 4 }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: tokens.color.ink500,
+                        marginTop: 4,
+                      }}
+                    >
                       by {a.by} · {a.on}
                     </div>
                   </div>
@@ -455,7 +536,13 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
               >
                 Rejection reason
               </div>
-              <div style={{ fontSize: 12.5, color: tokens.color.ink900, lineHeight: 1.5 }}>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  color: tokens.color.ink900,
+                  lineHeight: 1.5,
+                }}
+              >
                 {o.rejectReason}
               </div>
             </div>
@@ -471,11 +558,53 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
             background: "white",
           }}
         >
-          <Button variant="ghost" size="md" leading={<Icon name="edit" size={14} />}>
+          <Button
+            variant="ghost"
+            size="md"
+            leading={<Icon name="edit" size={14} />}
+            onClick={() => setAdjustOpen(true)}
+            disabled={USE_MOCKS}
+          >
             Adjust hours
           </Button>
+          {/* P6 (M2 fix): wire approveOfficer mutation. Visible only when the
+              officer's invoice is in an approvable state. */}
+          {!USE_MOCKS && o.status === "pending" && (
+            <Button
+              variant="ghost"
+              size="md"
+              leading={<Icon name="check" size={14} />}
+              onClick={() => mutations.approveOfficer.mutate(o.id)}
+              disabled={mutations.approveOfficer.isPending}
+              title="Manager sign-off — flips to Approved (no payment yet)"
+            >
+              Approve
+            </Button>
+          )}
+          {!USE_MOCKS && o.status === "approved" && (
+            <Button
+              variant="ghost"
+              size="md"
+              leading={<Icon name="check" size={14} />}
+              onClick={() => mutations.markPaidOfficer.mutate(o.id)}
+              disabled={mutations.markPaidOfficer.isPending}
+              title="Settle — flips Approved to Paid and stamps paid_date"
+            >
+              Mark paid
+            </Button>
+          )}
           <div style={{ flex: 1 }} />
-          <Button variant="secondary" size="md" leading={<Icon name="file" size={14} />}>
+          {/* P6 (M1 partial): wire Payslip PDF + Export invoice. Disabled when
+              we don't have a real invoiceId to act on. */}
+          <Button
+            variant="secondary"
+            size="md"
+            leading={<Icon name="file" size={14} />}
+            onClick={() => {
+              if (o.invoiceId) billingService.downloadPdf(o.invoiceId);
+            }}
+            disabled={USE_MOCKS || !o.invoiceId}
+          >
             Payslip PDF
           </Button>
           <Button
@@ -483,11 +612,24 @@ export function OfficerDrawer({ officer, onClose }: OfficerDrawerProps) {
             accent={palette}
             size="md"
             leading={<Icon name="external" size={14} />}
+            onClick={() => {
+              if (o.invoiceId) billingService.exportToXero(o.invoiceId);
+            }}
+            disabled={USE_MOCKS || !o.invoiceId}
           >
             Export invoice
           </Button>
         </div>
       </div>
+
+      <AdjustHoursModal
+        open={adjustOpen}
+        onClose={() => setAdjustOpen(false)}
+        items={bundle.items}
+        onSubmit={async (payload) => {
+          await mutations.adjustTime.mutateAsync(payload);
+        }}
+      />
     </>
   );
 }

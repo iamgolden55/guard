@@ -1,20 +1,18 @@
 // OfficerLeftPanel — left rail with Open shifts + Staff tabs.
 // Ported 1:1 from project/scheduling-canvas.jsx:377-539.
 import { useState } from "react";
-import { useDraggable } from "@dnd-kit/core";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { useAccent } from "../../../contexts/AccentContext";
 import { Avatar } from "../../../design-system/primitives/Avatar";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
 import {
+  fmtHrs,
   fmtRange,
   hrs,
-  OFFICERS,
   type SchedulingOfficer,
   siaState,
-  venueById,
-  WEEK,
   type Shift,
 } from "../data/mocks";
 import { officerWeeklyHrs, useScheduling } from "../state/SchedulingState";
@@ -25,11 +23,18 @@ export interface OfficerLeftPanelProps {
   mode: LeftPanelMode;
   setMode: (m: LeftPanelMode) => void;
   onOpenShift: (s: Shift) => void;
+  /** Switch the canvas focused day so the user sees the clicked open shift on the timeline. */
+  onJumpToDay: (day: number) => void;
 }
 
-export function OfficerLeftPanel({ mode, setMode, onOpenShift }: OfficerLeftPanelProps) {
+export function OfficerLeftPanel({
+  mode,
+  setMode,
+  onOpenShift,
+  onJumpToDay,
+}: OfficerLeftPanelProps) {
   const { palette } = useAccent();
-  const { shifts } = useScheduling();
+  const { shifts, officers, venueById, week } = useScheduling();
   const [tab, setTab] = useState<"open" | "people">("open");
   const [search, setSearch] = useState("");
 
@@ -37,7 +42,7 @@ export function OfficerLeftPanel({ mode, setMode, onOpenShift }: OfficerLeftPane
     .filter((s) => s.status === "open")
     .sort((a, b) => a.day - b.day || a.start - b.start);
 
-  const filteredOfficers = OFFICERS.filter((o) => {
+  const filteredOfficers = officers.filter((o) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return o.name.toLowerCase().includes(q) || o.role.toLowerCase().includes(q);
@@ -87,7 +92,7 @@ export function OfficerLeftPanel({ mode, setMode, onOpenShift }: OfficerLeftPane
             marginTop: 10,
           }}
         >
-          Open · {openShifts.length} · Staff · {OFFICERS.length}
+          Open · {openShifts.length} · Staff · {officers.length}
         </div>
       </aside>
     );
@@ -115,7 +120,7 @@ export function OfficerLeftPanel({ mode, setMode, onOpenShift }: OfficerLeftPane
         {(
           [
             ["open", "Open shifts", openShifts.length],
-            ["people", "Staff", OFFICERS.length],
+            ["people", "Staff", officers.length],
           ] as const
         ).map(([id, label, count]) => {
           const active = tab === id;
@@ -212,51 +217,22 @@ export function OfficerLeftPanel({ mode, setMode, onOpenShift }: OfficerLeftPane
         {tab === "open"
           ? openShifts.map((s) => {
               const v = venueById(s.venueId);
-              const dayInfo = WEEK.days[s.day];
+              const dayInfo = week.days[s.day];
               if (!v || !dayInfo) return null;
               return (
-                <button
+                <DroppableOpenShiftCard
                   key={s.id}
-                  type="button"
-                  onClick={() => onOpenShift(s)}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    background: "white",
-                    border: `1.5px dashed ${tokens.color.ink500}`,
-                    marginBottom: 6,
-                    cursor: "pointer",
+                  shift={s}
+                  venueName={v.name}
+                  venueColor={v.color}
+                  venueReq={v.req}
+                  dayLabel={`${dayInfo.day} ${dayInfo.dd}`}
+                  timeLabel={`${fmtRange(s.start, s.end)} · ${fmtHrs(hrs(s.start, s.end))}h`}
+                  onClick={() => {
+                    onJumpToDay(s.day);
+                    onOpenShift(s);
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = tokens.color.ink50;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "white";
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        background: v.color,
-                      }}
-                    />
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: tokens.color.ink900 }}>
-                      {v.name}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11, color: tokens.color.ink600, fontFamily: tokens.font.mono }}>
-                    {dayInfo.day} {dayInfo.dd} · {fmtRange(s.start, s.end)} · {hrs(s.start, s.end)}h
-                  </div>
-                  <div style={{ fontSize: 10.5, color: tokens.color.ink500, marginTop: 3 }}>
-                    Needs {v.req} · no officer assigned
-                  </div>
-                </button>
+                />
               );
             })
           : filteredOfficers.map((o) => (
@@ -396,10 +372,119 @@ export function DraggableOfficerCard({ o, weeklyHrs }: DraggableOfficerCardProps
             fontWeight: 600,
           }}
         >
-          {weeklyHrs}h / {o.cap}h {full && "· at cap"}
+          {fmtHrs(weeklyHrs)}h / {o.cap}h {full && "· at cap"}
         </div>
       </div>
       <Icon name="grip" size={14} />
     </div>
+  );
+}
+
+interface DroppableOpenShiftCardProps {
+  shift: Shift;
+  venueName: string;
+  venueColor: string;
+  venueReq: string;
+  dayLabel: string;
+  timeLabel: string;
+  onClick: () => void;
+}
+
+// Open-shift cards in the left panel are both clickable (jump to day +
+// open drawer) and drop targets for officer cards (assigning matches the
+// canvas-block drop, since the droppable id and data shape are identical).
+function DroppableOpenShiftCard({
+  shift,
+  venueName,
+  venueColor,
+  venueReq,
+  dayLabel,
+  timeLabel,
+  onClick,
+}: DroppableOpenShiftCardProps) {
+  const { setNodeRef, isOver, active } = useDroppable({
+    id: `panel-shift-drop:${shift.id}`,
+    data: { shiftId: shift.id, kind: "shift" },
+  });
+  const draggingOfficer = !!(active?.data.current as { officerId?: string } | undefined)?.officerId;
+  const showHover = isOver && draggingOfficer;
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        padding: "10px 12px",
+        borderRadius: 8,
+        background: showHover ? tokens.color.successSoft : "white",
+        border: `1.5px dashed ${showHover ? tokens.color.success : tokens.color.ink500}`,
+        marginBottom: 6,
+        cursor: "pointer",
+        transition: "background .12s ease, border-color .12s ease",
+      }}
+      onMouseEnter={(e) => {
+        if (!showHover) e.currentTarget.style.background = tokens.color.ink50;
+      }}
+      onMouseLeave={(e) => {
+        if (!showHover) e.currentTarget.style.background = "white";
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: 3,
+            background: venueColor,
+          }}
+        />
+        <span
+          style={{
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: tokens.color.ink900,
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {venueName}
+        </span>
+        {!shift.published && (
+          <span
+            title="Draft — not yet broadcast to officers"
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              padding: "1px 5px",
+              borderRadius: 3,
+              background: tokens.color.warnSoft,
+              color: tokens.color.warnInk,
+              letterSpacing: "0.04em",
+              flexShrink: 0,
+            }}
+          >
+            DRAFT
+          </span>
+        )}
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          color: tokens.color.ink600,
+          fontFamily: tokens.font.mono,
+        }}
+      >
+        {dayLabel} · {timeLabel}
+      </div>
+      <div style={{ fontSize: 10.5, color: tokens.color.ink500, marginTop: 3 }}>
+        Needs {venueReq} · drop officer here to assign
+      </div>
+    </button>
   );
 }

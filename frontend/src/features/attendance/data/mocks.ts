@@ -31,6 +31,8 @@ export interface AttendanceOfficer {
   role: string;
   sia: SiaCode;
   hue: number;
+  phone?: string | null;
+  email?: string | null;
 }
 
 export interface AttendanceShift {
@@ -53,6 +55,9 @@ export interface AttendanceShift {
   geofence_fail?: boolean;
   open?: boolean;
   note?: string;
+  auto_checkout?: boolean;
+  auto_approved?: boolean;
+  checkout_at?: string | null;
 }
 
 export interface ShiftAdjustment {

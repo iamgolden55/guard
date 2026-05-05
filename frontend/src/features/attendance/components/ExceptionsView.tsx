@@ -6,14 +6,8 @@ import { Avatar } from "../../../design-system/primitives/Avatar";
 import { Button } from "../../../design-system/primitives/Button";
 import { Icon, type IconName } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
-import {
-  fmtRange2,
-  NOW_HOUR,
-  officerById,
-  SHIFTS_TODAY,
-  venueById,
-  type AttendanceShift,
-} from "../data/mocks";
+import { fmtRange2, type AttendanceShift } from "../data/mocks";
+import { useAttendance } from "../AttendanceContext";
 
 interface ExceptionType {
   id: string;
@@ -37,10 +31,12 @@ export interface ExceptionsViewProps {
 
 export function ExceptionsView({ onSelect }: ExceptionsViewProps) {
   const [filter, setFilter] = useState<string>("all");
+  const { shifts, matchesSearch } = useAttendance();
+  const visibleShifts = shifts.filter(matchesSearch);
 
   const buckets = EXCEPTION_TYPES.map((t) => ({
     ...t,
-    items: SHIFTS_TODAY.filter(t.test),
+    items: visibleShifts.filter(t.test),
   }));
   const total = buckets.reduce((n, b) => n + b.items.length, 0);
   const visible = filter === "all" ? buckets : buckets.filter((b) => b.id === filter);
@@ -156,7 +152,7 @@ export function ExceptionsView({ onSelect }: ExceptionsViewProps) {
               All clear
             </div>
             <div style={{ fontSize: 13, marginTop: 4 }}>
-              No open exceptions across {SHIFTS_TODAY.length} shifts today.
+              No open exceptions across {visibleShifts.length} shifts today.
             </div>
           </div>
         )}
@@ -226,15 +222,17 @@ function ExceptionCard({
   onSelect: () => void;
 }) {
   const { palette } = useAccent();
+  const { officerById, venueById, nowHour, approveShift, isApproving } = useAttendance();
+  const [actionError, setActionError] = useState<string | null>(null);
   const o = officerById(s.oid);
   const v = venueById(s.vid);
   if (!v) return null;
 
   const sinceMin =
     s.status === "no_show"
-      ? Math.round((NOW_HOUR - s.sch_start) * 60)
+      ? Math.round((nowHour - s.sch_start) * 60)
       : s.status === "missing_out"
-        ? Math.round((NOW_HOUR - s.sch_end) * 60)
+        ? Math.round((nowHour - s.sch_end) * 60)
         : null;
 
   return (
@@ -360,10 +358,32 @@ function ExceptionCard({
       )}
 
       <div style={{ display: "flex", gap: 6 }}>
-        <Button variant="secondary" size="sm" leading={<Icon name="bell" size={12} />} style={{ flex: 1 }}>
+        <Button
+          variant="secondary"
+          size="sm"
+          leading={<Icon name="bell" size={12} />}
+          style={{ flex: 1 }}
+          disabled={!o?.phone}
+          title={o?.phone ?? "No phone on file"}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (o?.phone) {
+              window.location.href = `tel:${o.phone.replace(/\s+/g, "")}`;
+            }
+          }}
+        >
           Call
         </Button>
-        <Button variant="secondary" size="sm" leading={<Icon name="edit" size={12} />} style={{ flex: 1 }}>
+        <Button
+          variant="secondary"
+          size="sm"
+          leading={<Icon name="edit" size={12} />}
+          style={{ flex: 1 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect();
+          }}
+        >
           Adjust
         </Button>
         <Button
@@ -372,10 +392,55 @@ function ExceptionCard({
           accent={palette}
           leading={<Icon name="check" size={12} />}
           style={{ flex: 1 }}
+          disabled={isApproving || s.status === "approved" || s.act_end == null}
+          title={
+            s.status === "approved"
+              ? "Already approved"
+              : s.act_end == null
+                ? "Waiting for check-out — open the shift to Mark Present + record end time"
+                : undefined
+          }
+          onClick={async (e) => {
+            e.stopPropagation();
+            setActionError(null);
+            try {
+              await approveShift({
+                shiftId: Number(s.id),
+                approved: true,
+                managerNotes: "Resolved from Exceptions queue",
+              });
+            } catch (err: unknown) {
+              const ex = err as { response?: { data?: { detail?: string; error?: string } }; message?: string };
+              setActionError(
+                ex?.response?.data?.detail ||
+                  ex?.response?.data?.error ||
+                  ex?.message ||
+                  "Failed to resolve shift",
+              );
+            }
+          }}
         >
-          Resolve
+          {isApproving
+            ? "Saving…"
+            : s.act_end == null
+              ? "Awaiting check-out"
+              : "Resolve"}
         </Button>
       </div>
+      {actionError && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: "6px 10px",
+            background: tokens.color.dangerSoft,
+            color: tokens.color.dangerInk,
+            borderRadius: 6,
+            fontSize: 11.5,
+          }}
+        >
+          {actionError}
+        </div>
+      )}
     </div>
   );
 }

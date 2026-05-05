@@ -21,9 +21,9 @@ export interface HeatmapProps {
 const DEFAULT_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function hexToRgba(hex: string, alpha: number): string {
-  const a = parseInt(hex.slice(1, 3), 16);
-  const b = parseInt(hex.slice(3, 5), 16);
-  const c = parseInt(hex.slice(5, 7), 16);
+  const a = Number.parseInt(hex.slice(1, 3), 16);
+  const b = Number.parseInt(hex.slice(3, 5), 16);
+  const c = Number.parseInt(hex.slice(5, 7), 16);
   return `rgba(${a},${b},${c},${alpha.toFixed(2)})`;
 }
 

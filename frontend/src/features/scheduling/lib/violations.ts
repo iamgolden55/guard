@@ -8,11 +8,12 @@
 // authoritative WorkingHoursRegulation values.
 import {
   officerWeeklyHrs,
+  type SchedulingDay,
   type SchedulingOfficer,
+  type SchedulingWeek,
   type Shift,
   type Violation,
   UNAVAIL,
-  WEEK,
 } from "../data/mocks";
 
 export interface AssignmentCheck {
@@ -34,6 +35,7 @@ export function checkAssignment(
   officer: SchedulingOfficer,
   shift: Shift,
   allShifts: Shift[],
+  week?: SchedulingWeek,
 ): AssignmentCheck {
   const hard: Violation[] = [];
   const soft: Violation[] = [];
@@ -138,7 +140,7 @@ export function checkAssignment(
   }
 
   // Bank holiday uplift
-  const dayInfo = WEEK.days[shift.day];
+  const dayInfo: SchedulingDay | undefined = week?.days[shift.day];
   if (dayInfo?.bankHoliday) {
     soft.push({
       tier: "soft",

@@ -1,6 +1,5 @@
 // SchedulingDrawer — right-edge slide-over for shift detail.
-// Ported 1:1 from project/scheduling-drawer.jsx:1-251.
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useAccent } from "../../../contexts/AccentContext";
 import { Avatar } from "../../../design-system/primitives/Avatar";
 import { Button } from "../../../design-system/primitives/Button";
@@ -8,25 +7,25 @@ import { Icon, type IconName } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
 import {
   fmtH,
+  fmtHrs,
   fmtRange,
   hrs,
-  officerById,
   siaState,
-  venueById,
-  WEEK,
   type Shift,
   type Violation,
 } from "../data/mocks";
+import { useScheduling } from "../state/SchedulingState";
 
 export interface SchedulingDrawerProps {
   shift: Shift | null;
   onClose: () => void;
+  onEdit: (shift: Shift) => void;
+  onDelete: (shift: Shift) => void;
 }
 
-export function SchedulingDrawer({ shift, onClose }: SchedulingDrawerProps) {
+export function SchedulingDrawer({ shift, onClose, onEdit, onDelete }: SchedulingDrawerProps) {
   const { palette } = useAccent();
-  const [repeat, setRepeat] = useState(false);
-  const [repeatWeeks, setRepeatWeeks] = useState(4);
+  const { officerById, venueById, week, unassign, publishShift } = useScheduling();
 
   useEffect(() => {
     if (!shift) return;
@@ -40,7 +39,7 @@ export function SchedulingDrawer({ shift, onClose }: SchedulingDrawerProps) {
   if (!shift) return null;
   const venue = venueById(shift.venueId);
   const officer = officerById(shift.officerId);
-  const day = WEEK.days[shift.day];
+  const day = week.days[shift.day];
   if (!venue || !day) return null;
 
   const hardViol = (shift.violations || []).filter((v) => v.tier === "hard");
@@ -140,7 +139,7 @@ export function SchedulingDrawer({ shift, onClose }: SchedulingDrawerProps) {
               {day.day} {day.dd} Apr
             </span>
             <span>
-              {fmtRange(shift.start, shift.end)} · {hrs(shift.start, shift.end)}h
+              {fmtRange(shift.start, shift.end)} · {fmtHrs(hrs(shift.start, shift.end))}h
             </span>
             <span>{venue.area}</span>
           </div>
@@ -174,8 +173,16 @@ export function SchedulingDrawer({ shift, onClose }: SchedulingDrawerProps) {
                     {officer.role} · {officer.sia.level}
                   </div>
                 </div>
-                <Button variant="secondary" size="sm" leading={<Icon name="edit" size={12} />}>
-                  Reassign
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leading={<Icon name="edit" size={12} />}
+                  onClick={() => {
+                    unassign(shift.id);
+                    onClose();
+                  }}
+                >
+                  Unassign
                 </Button>
               </div>
             ) : (
@@ -200,8 +207,9 @@ export function SchedulingDrawer({ shift, onClose }: SchedulingDrawerProps) {
                   size="sm"
                   style={{ marginTop: 10 }}
                   leading={<Icon name="user-plus" size={12} />}
+                  onClick={onClose}
                 >
-                  Find eligible officer
+                  Drag a Staff card to assign
                 </Button>
               </div>
             )}
@@ -256,105 +264,48 @@ export function SchedulingDrawer({ shift, onClose }: SchedulingDrawerProps) {
               </code>
             </Field>
             <Field label="Duration">
-              <code>{hrs(shift.start, shift.end)}h</code>
+              <code>{fmtHrs(hrs(shift.start, shift.end))}h</code>
             </Field>
             <Field label="Break">30 min (unpaid)</Field>
           </Section>
 
-          <Section label="Repeat weekly">
+          <Section label="Status">
             <div
               style={{
-                padding: "10px 0",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
+                padding: "10px 12px",
+                borderRadius: 8,
+                background: tokens.color.ink50,
+                border: `1px solid ${tokens.color.ink200}`,
+                fontSize: 12.5,
+                color: tokens.color.ink700,
+                lineHeight: 1.5,
               }}
             >
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  cursor: "pointer",
-                  flex: 1,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={repeat}
-                  onChange={(e) => setRepeat(e.target.checked)}
-                />
-                <span style={{ fontSize: 13, color: tokens.color.ink800 }}>
-                  Repeat this shift every week for
-                </span>
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={52}
-                value={repeatWeeks}
-                onChange={(e) => setRepeatWeeks(+e.target.value)}
-                disabled={!repeat}
-                style={{
-                  width: 52,
-                  padding: "5px 8px",
-                  border: `1px solid ${tokens.color.ink400}`,
-                  borderRadius: 6,
-                  fontFamily: tokens.font.mono,
-                  fontSize: 13,
-                  textAlign: "center",
-                  opacity: repeat ? 1 : 0.5,
-                }}
-              />
-              <span style={{ fontSize: 12, color: tokens.color.ink600 }}>weeks</span>
+              {shift.status === "open" && !shift.published && (
+                <>
+                  This shift is a <b>draft open shift</b>. Officers can't see it
+                  yet. Publish to broadcast it as a claimable shift.
+                </>
+              )}
+              {shift.status === "open" && shift.published && (
+                <>
+                  This shift is <b>open</b> and broadcast — eligible officers can
+                  claim it on their app.
+                </>
+              )}
+              {shift.status !== "open" && !shift.published && (
+                <>
+                  Assignment is a <b>draft</b>. {officer?.name.split(" ")[0] ?? "The officer"}
+                  {" "}hasn't been notified yet. Publish to send.
+                </>
+              )}
+              {shift.status !== "open" && shift.published && (
+                <>
+                  Published — {officer?.name.split(" ")[0] ?? "the officer"} has
+                  been notified.
+                </>
+              )}
             </div>
-            {repeat && (
-              <div
-                style={{
-                  fontSize: 11,
-                  color: tokens.color.ink500,
-                  background: tokens.color.ink50,
-                  padding: "8px 10px",
-                  borderRadius: 6,
-                  lineHeight: 1.45,
-                }}
-              >
-                Will generate {repeatWeeks} shifts starting {day.day} {day.dd} Apr. Each one
-                becomes an individual draft — edit or skip them separately. Conflicts will be
-                flagged per week.
-              </div>
-            )}
-          </Section>
-
-          <Section label="Activity">
-            <Activity icon="plus" text={<>Shift created by <b>Alex Mead</b></>} time="2 days ago" />
-            {officer && (
-              <Activity
-                icon="user-plus"
-                text={<>Assigned to <b>{officer.name}</b></>}
-                time="2 days ago"
-              />
-            )}
-            {!shift.published && shift.status !== "open" && (
-              <Activity
-                icon="edit"
-                text={
-                  <>
-                    Pending publish — not yet visible to{" "}
-                    {officer ? officer.name.split(" ")[0] : "officer"}
-                  </>
-                }
-                time="draft"
-                accent
-              />
-            )}
-            {shift.published && (
-              <Activity
-                icon="eye"
-                text={<>Published to schedule — officer notified</>}
-                time="yesterday"
-              />
-            )}
           </Section>
         </div>
 
@@ -368,28 +319,34 @@ export function SchedulingDrawer({ shift, onClose }: SchedulingDrawerProps) {
             background: tokens.color.ink50,
           }}
         >
-          <Button variant="ghost" size="sm" leading={<Icon name="x" size={12} />}>
+          <Button
+            variant="ghost"
+            size="sm"
+            leading={<Icon name="x" size={12} />}
+            onClick={() => onDelete(shift)}
+          >
             Delete
           </Button>
           <div style={{ flex: 1 }} />
-          {!shift.published && shift.status !== "open" && (
+          <Button
+            variant="secondary"
+            leading={<Icon name="edit" size={12} />}
+            onClick={() => onEdit(shift)}
+          >
+            Edit shift
+          </Button>
+          {!shift.published && (
             <Button
               variant="primary"
               accent={palette}
               leading={<Icon name="send" size={12} />}
               disabled={hardViol.length > 0}
+              onClick={() => {
+                publishShift(shift.id);
+                onClose();
+              }}
             >
               Publish shift
-            </Button>
-          )}
-          {shift.published && (
-            <Button variant="secondary" leading={<Icon name="edit" size={12} />}>
-              Edit shift
-            </Button>
-          )}
-          {shift.status === "open" && (
-            <Button variant="primary" accent={palette} leading={<Icon name="user-plus" size={12} />}>
-              Assign officer
             </Button>
           )}
         </div>
@@ -536,37 +493,3 @@ function ViolRow({ v }: { v: Violation }) {
   );
 }
 
-function Activity({
-  icon,
-  text,
-  time,
-  accent: isAccent,
-}: {
-  icon: IconName;
-  text: ReactNode;
-  time: string;
-  accent?: boolean;
-}) {
-  return (
-    <div style={{ display: "flex", gap: 10, padding: "7px 0", alignItems: "flex-start" }}>
-      <div
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: 6,
-          flexShrink: 0,
-          background: isAccent ? tokens.color.warnSoft : tokens.color.ink100,
-          color: isAccent ? tokens.color.warnInk : tokens.color.ink600,
-          display: "grid",
-          placeItems: "center",
-        }}
-      >
-        <Icon name={icon} size={12} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, color: tokens.color.ink900, lineHeight: 1.45 }}>{text}</div>
-        <div style={{ fontSize: 10.5, color: tokens.color.ink500, marginTop: 2 }}>{time}</div>
-      </div>
-    </div>
-  );
-}

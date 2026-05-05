@@ -24,6 +24,7 @@ export type InvoiceActionId =
   | "paid"
   | "remind"
   | "download"
+  | "email"
   | "duplicate"
   | "resolve"
   | "void"
@@ -372,16 +373,25 @@ function ActionGroup({
     buttons.push({ id: "issue", label: "Issue & send", icon: "send", primary: true });
     buttons.push({ id: "edit", label: "Edit", icon: "edit" });
     buttons.push({ id: "delete", label: "Discard", icon: "x" });
-  } else if (inv.status === "sent" || inv.status === "overdue") {
+  } else if (
+    inv.status === "pending" ||
+    inv.status === "sent" ||
+    inv.status === "overdue"
+  ) {
     buttons.push({ id: "paid", label: "Mark paid", icon: "check", primary: true });
-    buttons.push({ id: "remind", label: "Send reminder", icon: "mail" });
+    buttons.push({ id: "email", label: "Email payslip to officer", icon: "mail" });
+    buttons.push({ id: "remind", label: "Send reminder", icon: "bell" });
+    buttons.push({ id: "resolve", label: "Resolve & re-issue", icon: "edit" });
+    buttons.push({ id: "duplicate", label: "Duplicate", icon: "copy" });
     buttons.push({ id: "download", label: "Download PDF", icon: "download" });
   } else if (inv.status === "paid") {
-    buttons.push({ id: "download", label: "Download PDF", icon: "download", primary: true });
+    buttons.push({ id: "email", label: "Email payslip to officer", icon: "mail", primary: true });
+    buttons.push({ id: "download", label: "Download PDF", icon: "download" });
     buttons.push({ id: "duplicate", label: "Duplicate", icon: "copy" });
   } else if (inv.status === "rejected") {
     buttons.push({ id: "resolve", label: "Resolve & re-issue", icon: "edit", primary: true });
     buttons.push({ id: "void", label: "Void", icon: "x" });
+    buttons.push({ id: "duplicate", label: "Duplicate", icon: "copy" });
   }
 
   return (

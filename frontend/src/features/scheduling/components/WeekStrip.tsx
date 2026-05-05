@@ -5,7 +5,6 @@ import { useAccent } from "../../../contexts/AccentContext";
 import { Button } from "../../../design-system/primitives/Button";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
-import { WEEK } from "../data/mocks";
 import { shiftsForDay, useScheduling } from "../state/SchedulingState";
 import type { CanvasAxis } from "./canvas/DayCanvas";
 
@@ -18,6 +17,9 @@ export interface WeekStripProps {
   setViewMode: (m: ViewMode) => void;
   canvasAxis: CanvasAxis;
   setCanvasAxis: (a: CanvasAxis) => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onToday: () => void;
 }
 
 export function WeekStrip({
@@ -27,9 +29,12 @@ export function WeekStrip({
   setViewMode,
   canvasAxis,
   setCanvasAxis,
+  onPrev,
+  onNext,
+  onToday,
 }: WeekStripProps) {
   const { palette } = useAccent();
-  const { shifts } = useScheduling();
+  const { shifts, week } = useScheduling();
   return (
     <div
       style={{
@@ -50,7 +55,13 @@ export function WeekStrip({
           borderRight: `1px solid ${tokens.color.ink200}`,
         }}
       >
-        <Button variant="secondary" size="sm" leading={<Icon name="chevron-left" size={14} />}>
+        <Button
+          variant="secondary"
+          size="sm"
+          leading={<Icon name="chevron-left" size={14} />}
+          onClick={onPrev}
+          aria-label={viewMode === "month" ? "Previous month" : "Previous week"}
+        >
           {""}
         </Button>
         <div style={{ minWidth: 180 }}>
@@ -63,7 +74,7 @@ export function WeekStrip({
               letterSpacing: "-0.01em",
             }}
           >
-            {WEEK.label}
+            {week.label}
           </div>
           <div
             style={{
@@ -73,13 +84,19 @@ export function WeekStrip({
               fontFamily: tokens.font.mono,
             }}
           >
-            {WEEK.id}
+            {week.id}
           </div>
         </div>
-        <Button variant="secondary" size="sm" leading={<Icon name="chevron-right" size={14} />}>
+        <Button
+          variant="secondary"
+          size="sm"
+          leading={<Icon name="chevron-right" size={14} />}
+          onClick={onNext}
+          aria-label={viewMode === "month" ? "Next month" : "Next week"}
+        >
           {""}
         </Button>
-        <Button variant="ghost" size="sm">
+        <Button variant="ghost" size="sm" onClick={onToday}>
           Today
         </Button>
       </div>
@@ -94,7 +111,7 @@ export function WeekStrip({
           overflowX: "auto",
         }}
       >
-        {WEEK.days.map((d, i) => {
+        {week.days.map((d, i) => {
           const active = currentDay === i && viewMode === "day";
           const dayShifts = shiftsForDay(shifts, i);
           const hasHard = dayShifts.some((s) =>

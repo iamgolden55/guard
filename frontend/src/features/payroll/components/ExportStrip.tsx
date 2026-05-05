@@ -1,17 +1,39 @@
 // ExportStrip — payment + export status row.
 // Ported 1:1 from project/payroll-hero.jsx:114-160.
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../../design-system/primitives/Button";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
+import billingService from "../../../services/billingService";
 import { PROVIDERS } from "../data/mocks";
+
+const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === "1";
 
 export interface ExportStripProps {
   onOpenExport: () => void;
+  /** Process date for the current run, used in the status copy. */
+  processDate?: string;
 }
 
-export function ExportStrip({ onOpenExport }: ExportStripProps) {
-  const defaultProvider = PROVIDERS.find((p) => p.default) ?? PROVIDERS[0]!;
-  const connected = PROVIDERS.filter((p) => p.connected);
+export function ExportStrip({ onOpenExport, processDate }: ExportStripProps) {
+  const providersQuery = useQuery({
+    queryKey: ["billing", "providers"],
+    queryFn: () => billingService.getFinanceProviders(),
+    enabled: !USE_MOCKS,
+    staleTime: 5 * 60_000,
+  });
+  const providers = USE_MOCKS || !providersQuery.data?.length
+    ? PROVIDERS
+    : providersQuery.data;
+  const defaultProvider = providers.find((p) => p.default) ?? providers[0]!;
+  const connected = providers.filter((p) => p.connected);
+  const processed = processDate
+    ? new Date(processDate).toLocaleDateString("en-GB", {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+      })
+    : "Mon 27 Apr";
 
   return (
     <div
@@ -55,7 +77,7 @@ export function ExportStrip({ onOpenExport }: ExportStripProps) {
             Payment status
           </div>
           <div style={{ fontSize: 13.5, color: tokens.color.ink900, lineHeight: 1.35 }}>
-            <strong>Pending</strong> — weekly run processed Mon 27 Apr · marked paid once cleared by
+            <strong>Pending</strong> — weekly run processed {processed} · marked paid once cleared by
             accounts
           </div>
         </div>

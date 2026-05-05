@@ -86,6 +86,37 @@ class ProfileService {
   }
 
   /**
+   * Get a staff profile by id (admin/manager only). Returns the full StaffProfileSerializer payload.
+   */
+  async getStaffProfileById(staffProfileId: number): Promise<any> {
+    const response = await api.get(`/api/v1/staff-profiles/${staffProfileId}/`);
+    return response.data;
+  }
+
+  /**
+   * Patch a staff profile by id (admin/manager only). Used to edit addresses,
+   * employment type, etc. on behalf of another staff member.
+   */
+  async patchStaffProfile(
+    staffProfileId: number,
+    data: Record<string, unknown>,
+  ): Promise<any> {
+    const response = await api.patch(
+      `/api/v1/staff-profiles/${staffProfileId}/`,
+      data,
+    );
+    return response.data;
+  }
+
+  /**
+   * Delete an SIA licence by id via the admin endpoint (vs the per-self
+   * /profiles/me/sia-licenses/ path used by deleteSIALicense).
+   */
+  async deleteSIALicenseById(licenseId: number): Promise<void> {
+    await api.delete(`/api/v1/sia-licenses/${licenseId}/`);
+  }
+
+  /**
    * Update an existing SIA license by ID (PATCH)
    */
   async patchSIALicense(licenseId: number, data: Record<string, any>): Promise<any> {

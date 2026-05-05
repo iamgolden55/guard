@@ -68,7 +68,10 @@ export const tokens = {
     easing: "cubic-bezier(0.4, 0, 0.2, 1)",
   },
 
-  z: { base: 1, sticky: 10, overlay: 50, modal: 60, toast: 70 },
+  // Leaflet uses up to z 800 for map controls + 700 for popups, so anything
+  // that needs to overlay a map (modals, drawers, toasts, dropdowns) must
+  // sit above 800. Sticky stays low — page headers under the map are fine.
+  z: { base: 1, sticky: 10, overlay: 900, modal: 1000, toast: 1100 },
 } as const;
 
 export type Tokens = typeof tokens;

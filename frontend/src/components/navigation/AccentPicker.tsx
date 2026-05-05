@@ -2,7 +2,7 @@
 // the production replacement for the prototype's tweaks panel.
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useAccent } from "../../contexts/AccentContext";
-import { accents, type AccentName } from "../../design-system/accents";
+import { type AccentName, accents } from "../../design-system/accents";
 import { tokens } from "../../design-system/tokens";
 
 const LABELS: Record<AccentName, string> = {
@@ -71,7 +71,8 @@ export function AccentPicker() {
                   outline: "none",
                 }}
                 onMouseEnter={(e) => {
-                  if (!active) e.currentTarget.style.background = tokens.color.ink50;
+                  if (!active)
+                    e.currentTarget.style.background = tokens.color.ink50;
                 }}
                 onMouseLeave={(e) => {
                   if (!active) e.currentTarget.style.background = "transparent";

@@ -11,9 +11,19 @@ import {
   fmtGBPshort,
   OFFICERS,
   RUN_HISTORY,
+  type Officer,
+  type PayrollCycle,
+  type PayrollHistoryRun,
 } from "../data/mocks";
+import {
+  useRunComposition,
+  useRunHistory,
+  useRunSiaHolds,
+} from "../hooks/usePayrollData";
 
-const COMPOSITION_ITEMS: { label: string; value: number; tone: string }[] = [
+const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === "1";
+
+const COMPOSITION_FALLBACK: { label: string; value: number; tone: string }[] = [
   { label: "Base shift hours", value: 58940, tone: tokens.color.ink900 },
   { label: "Overtime · 1.5×", value: 10820, tone: tokens.color.warn },
   { label: "Overtime · 2×", value: 3210, tone: tokens.color.dangerInk },
@@ -22,15 +32,36 @@ const COMPOSITION_ITEMS: { label: string; value: number; tone: string }[] = [
   { label: "Special event", value: 3960, tone: "#78350f" },
 ];
 
-export function CompositionCard() {
+const COMPOSITION_LABELS: { key: string; label: string; tone: string }[] = [
+  { key: "shift", label: "Base shift hours", tone: tokens.color.ink900 },
+  { key: "overtime_1", label: "Overtime · 1.5×", tone: tokens.color.warn },
+  { key: "overtime_2", label: "Overtime · 2×", tone: tokens.color.dangerInk },
+  { key: "bank_holiday", label: "Bank holiday", tone: "#312e81" },
+  { key: "annual_leave", label: "Annual leave", tone: tokens.color.successInk },
+  { key: "special", label: "Special event", tone: "#78350f" },
+];
+
+export interface CompositionCardProps {
+  runCode?: string | null;
+}
+
+export function CompositionCard({ runCode }: CompositionCardProps = {}) {
   const { palette } = useAccent();
-  const total = COMPOSITION_ITEMS.reduce((a, b) => a + b.value, 0);
-  const max = Math.max(...COMPOSITION_ITEMS.map((i) => Math.abs(i.value)));
+  const compositionQuery = useRunComposition(USE_MOCKS ? null : runCode);
+  const items = USE_MOCKS || !compositionQuery.data
+    ? COMPOSITION_FALLBACK
+    : COMPOSITION_LABELS.map((m) => ({
+        label: m.label,
+        value: Number(compositionQuery.data?.[m.key] ?? 0),
+        tone: m.tone,
+      }));
+  const total = items.reduce((a, b) => a + b.value, 0) || 0;
+  const max = Math.max(1, ...items.map((i) => Math.abs(i.value)));
   return (
     <Card padding={20}>
       <SectionHeader title="Run composition" subtitle="Gross by InvoiceItem type" />
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {COMPOSITION_ITEMS.map((it) => {
+        {items.map((it) => {
           const pct = (Math.abs(it.value) / max) * 100;
           return (
             <div key={it.label}>
@@ -106,8 +137,14 @@ export function CompositionCard() {
   );
 }
 
-export function SiaHoldsCard() {
-  const flagged = OFFICERS.filter((o) => o.sia.expired || o.sia.expiresInDays <= 30);
+export interface SiaHoldsCardProps {
+  runCode?: string | null;
+}
+
+export function SiaHoldsCard({ runCode }: SiaHoldsCardProps = {}) {
+  const siaQuery = useRunSiaHolds(USE_MOCKS ? null : runCode);
+  const sourceList: Officer[] = USE_MOCKS ? OFFICERS : (siaQuery.data ?? []);
+  const flagged = sourceList.filter((o) => o.sia.expired || o.sia.expiresInDays <= 30);
   return (
     <Card padding={20}>
       <SectionHeader title="SIA licence holds" subtitle="Blocks new shifts · flag on payslip" />
@@ -163,28 +200,54 @@ export function SiaHoldsCard() {
   );
 }
 
-export function RunHistoryCard() {
+export interface RunHistoryCardProps {
+  /** Currently active run code — highlights the matching row. */
+  activeRunCode?: string | null;
+  /** Click handler — receives the clicked row's run code. */
+  onSelect?: (runCode: string) => void;
+  /** Pay cycle to load history for ('weekly' | 'monthly'). */
+  cycle?: PayrollCycle;
+}
+
+export function RunHistoryCard({ activeRunCode, onSelect, cycle = "weekly" }: RunHistoryCardProps = {}) {
+  const historyQuery = useRunHistory(cycle);
+  // P6 (M6 fix): no mock fallback when real API returns empty. An empty list
+  // is a valid state — show "No previous runs" instead of test data.
+  const list: PayrollHistoryRun[] = USE_MOCKS ? RUN_HISTORY : (historyQuery.data ?? []);
   return (
     <Card padding={20}>
-      <SectionHeader
-        title="Previous runs"
-        right={
-          <Button variant="ghost" size="sm">
-            All
-          </Button>
-        }
-      />
+      <SectionHeader title="Previous runs" />
+      {list.length === 0 ? (
+        <div
+          style={{
+            fontSize: 12,
+            color: tokens.color.ink500,
+            padding: "12px 0",
+          }}
+        >
+          No previous runs yet.
+        </div>
+      ) : (
       <div style={{ display: "flex", flexDirection: "column" }}>
-        {RUN_HISTORY.map((r, i) => (
-          <div
+        {list.map((r, i) => (
+          <button
+            type="button"
             key={r.id}
+            onClick={() => onSelect?.(r.id)}
             style={{
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
               padding: "12px 0",
               borderBottom:
-                i === RUN_HISTORY.length - 1 ? "none" : `1px solid ${tokens.color.ink100}`,
+                i === list.length - 1 ? "none" : `1px solid ${tokens.color.ink100}`,
+              background: r.id === activeRunCode ? tokens.color.ink50 : "transparent",
+              border: "none",
+              borderLeft: r.id === activeRunCode ? `3px solid ${tokens.color.ink900}` : "3px solid transparent",
+              paddingLeft: 8,
+              cursor: onSelect ? "pointer" : "default",
+              fontFamily: "inherit",
+              textAlign: "left",
             }}
           >
             <div>
@@ -214,13 +277,27 @@ export function RunHistoryCard() {
               >
                 {fmtGBPshort(r.gross)}
               </div>
-              <Pill tone="positive" dot>
-                Paid
+              <Pill
+                tone={
+                  r.status === "paid"
+                    ? "positive"
+                    : r.status === "rejected"
+                      ? "danger"
+                      : "warning"
+                }
+                dot
+              >
+                {r.status === "paid"
+                  ? "Paid"
+                  : r.status === "rejected"
+                    ? "Rejected"
+                    : "Pending"}
               </Pill>
             </div>
-          </div>
+          </button>
         ))}
       </div>
+      )}
     </Card>
   );
 }

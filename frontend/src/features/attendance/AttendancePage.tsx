@@ -1,16 +1,14 @@
 // AttendancePage — composes header, view-switcher, and drawer.
-// Tab state is local; deeplinking via ?tab= is a Phase 4.5 polish.
+// Phase 4.5: real-API wiring via useAttendanceData + AttendanceContext.
 import { useEffect, useState } from "react";
-import { AttendanceHeader } from "./components/AttendanceHeader";
+import { AttendanceProvider } from "./AttendanceContext";
 import { AttendanceDrawer } from "./components/AttendanceDrawer";
-import { LiveView } from "./components/live/LiveView";
+import { AttendanceHeader } from "./components/AttendanceHeader";
 import { ExceptionsView } from "./components/ExceptionsView";
 import { TimesheetsView } from "./components/TimesheetsView";
-import {
-  SHIFTS_TODAY,
-  type AttendanceShift,
-  type TimesheetRow,
-} from "./data/mocks";
+import { LiveView } from "./components/live/LiveView";
+import type { AttendanceShift, TimesheetRow } from "./data/mocks";
+import { useAttendanceData } from "./hooks/useAttendanceData";
 
 export type AttendanceTab = "live" | "exceptions" | "timesheets";
 
@@ -28,14 +26,46 @@ function readBool(key: string, fallback: boolean): boolean {
   return fallback;
 }
 
+function todayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function mondayIsoFor(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  const day = dt.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  dt.setDate(dt.getDate() + offset);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
 export default function AttendancePage() {
   const [view, setView] = useState<AttendanceTab>("live");
-  const [selectedShift, setSelectedShift] = useState<AttendanceShift | null>(null);
+  const [selectedShift, setSelectedShift] = useState<AttendanceShift | null>(
+    null,
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [leftRailOpen, setLeftRailOpen] = useState<boolean>(() => readBool(LEFT_RAIL_KEY, true));
+  const [searchQuery, setSearchQuery] = useState("");
+  const [leftRailOpen, setLeftRailOpen] = useState<boolean>(() =>
+    readBool(LEFT_RAIL_KEY, true),
+  );
   const [venueGridOpen, setVenueGridOpen] = useState<boolean>(() =>
     readBool(VENUE_GRID_KEY, true),
   );
+  const [selectedDate, setSelectedDate] = useState<string>(() => todayIso());
+  const [selectedWeekStart, setSelectedWeekStart] = useState<string>(() =>
+    mondayIsoFor(todayIso()),
+  );
+
+  const isToday = selectedDate === todayIso();
+  const selectedShiftId = selectedShift ? Number(selectedShift.id) : null;
+  const data = useAttendanceData({
+    date: selectedDate,
+    weekStart: selectedWeekStart,
+    selectedShiftId,
+    livePollMs: isToday ? 30_000 : null,
+  });
 
   useEffect(() => {
     try {
@@ -58,12 +88,16 @@ export default function AttendancePage() {
     setDrawerOpen(true);
   };
 
-  const handleSelectTimesheet = ({ timesheet }: { timesheet: TimesheetRow }) => {
+  const handleSelectTimesheet = ({
+    timesheet,
+  }: { timesheet: TimesheetRow }) => {
     // Open the most-recent shift for that officer that isn't upcoming, or
     // any shift if none qualify.
     const shift =
-      SHIFTS_TODAY.find((x) => x.oid === timesheet.oid && x.status !== "upcoming") ??
-      SHIFTS_TODAY.find((x) => x.oid === timesheet.oid) ??
+      data.shifts.find(
+        (x) => x.oid === timesheet.oid && x.status !== "upcoming",
+      ) ??
+      data.shifts.find((x) => x.oid === timesheet.oid) ??
       null;
     if (shift) {
       setSelectedShift(shift);
@@ -72,7 +106,22 @@ export default function AttendancePage() {
   };
 
   return (
-    <>
+    <AttendanceProvider
+      data={data}
+      selectedShiftId={selectedShiftId}
+      setSelectedShiftId={(id) => {
+        if (id === null) setSelectedShift(null);
+      }}
+      searchQuery={searchQuery}
+      setSearchQuery={setSearchQuery}
+      selectedDate={selectedDate}
+      setSelectedDate={(d) => {
+        setSelectedDate(d);
+        setSelectedWeekStart(mondayIsoFor(d));
+      }}
+      selectedWeekStart={selectedWeekStart}
+      setSelectedWeekStart={setSelectedWeekStart}
+    >
       <AttendanceHeader
         view={view}
         onViewChange={setView}
@@ -89,12 +138,17 @@ export default function AttendancePage() {
         />
       )}
       {view === "exceptions" && <ExceptionsView onSelect={handleSelectShift} />}
-      {view === "timesheets" && <TimesheetsView onSelect={handleSelectTimesheet} />}
+      {view === "timesheets" && (
+        <TimesheetsView onSelect={handleSelectTimesheet} />
+      )}
       <AttendanceDrawer
         open={drawerOpen}
         shift={selectedShift}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => {
+          setDrawerOpen(false);
+          setSelectedShift(null);
+        }}
       />
-    </>
+    </AttendanceProvider>
   );
 }

@@ -16,6 +16,7 @@ export function MinimalInvoice({ inv, accent }: { inv: InvoiceRecord; accent: Ac
   const isStaff = inv.kind === "staff";
   const party = inv.party;
   const clientParty = !isStaff ? (party as import("../../data/mocks").ClientPartyDetails) : null;
+  const staffParty = isStaff ? (party as import("../../data/mocks").StaffPartyDetails) : null;
   void isClientParty;
 
   return (
@@ -234,9 +235,25 @@ export function MinimalInvoice({ inv, accent }: { inv: InvoiceRecord; accent: Ac
         }}
       >
         <span>
-          {COMPANY.bank.name} · Sort{" "}
-          <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.sort}</span> · Acc{" "}
-          <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.acc}</span>
+          {isStaff ? (
+            staffParty?.bank ? (
+              <>
+                {staffParty.bank.name} · Sort{" "}
+                <span style={{ fontFamily: "ui-monospace, monospace" }}>{staffParty.bank.sort}</span>{" "}
+                · Acc{" "}
+                <span style={{ fontFamily: "ui-monospace, monospace" }}>{staffParty.bank.account}</span>
+              </>
+            ) : (
+              <span style={{ fontStyle: "italic", color: "#a19f9d" }}>Bank details not on file</span>
+            )
+          ) : (
+            <>
+              {COMPANY.bank.name} · Sort{" "}
+              <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.sort}</span>{" "}
+              · Acc{" "}
+              <span style={{ fontFamily: "ui-monospace, monospace" }}>{COMPANY.bank.acc}</span>
+            </>
+          )}
         </span>
         <span>VAT {COMPANY.vat}</span>
       </div>

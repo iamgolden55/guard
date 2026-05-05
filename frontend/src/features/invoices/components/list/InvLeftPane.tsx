@@ -220,7 +220,7 @@ export function InvLeftPane({
         </div>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <span style={{ fontSize: 11, color: tokens.color.ink600, fontWeight: 600 }}>
-            Paid (last 30d)
+            Paid (total)
           </span>
           <span
             style={{

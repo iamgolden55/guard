@@ -1,15 +1,23 @@
 // FilterBar — chip filter + search + venue/week filters + bulk actions.
 // Ported 1:1 from project/payroll-hero.jsx:165-221.
+import { useState } from "react";
 import { useAccent } from "../../../contexts/AccentContext";
-import { Button } from "../../../design-system/primitives/Button";
 import { Icon } from "../../../design-system/Icon";
+import { Button } from "../../../design-system/primitives/Button";
 import { tokens } from "../../../design-system/tokens";
 
-export type PayrollFilter = "all" | "pending" | "paid" | "rejected" | "flagged";
+export type PayrollFilter =
+  | "all"
+  | "pending"
+  | "approved"
+  | "paid"
+  | "rejected"
+  | "flagged";
 
 export interface FilterCounts {
   all: number;
   pending: number;
+  approved: number;
   paid: number;
   rejected: number;
   flagged: number;
@@ -23,11 +31,20 @@ export interface FilterBarProps {
   counts: FilterCounts;
   selected: number;
   onBulkExport: () => void;
+  /** P6 (M1): triggered by the bulk "Payslip PDFs" button. */
+  onBulkDownloadPayslips?: () => void;
+  /** Run code shown on the week selector button, e.g. "W18-2026". */
+  runCode?: string;
+  /** Distinct venue names for the venue dropdown. Empty = button stays passive. */
+  venues?: string[];
+  venueFilter?: string | null;
+  onVenueChange?: (venue: string | null) => void;
 }
 
 const CHIPS: { id: PayrollFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "pending", label: "Pending" },
+  { id: "approved", label: "Approved" },
   { id: "paid", label: "Paid" },
   { id: "rejected", label: "Rejected" },
   { id: "flagged", label: "Needs attention" },
@@ -41,8 +58,16 @@ export function FilterBar({
   counts,
   selected,
   onBulkExport,
+  onBulkDownloadPayslips,
+  runCode,
+  venues,
+  venueFilter,
+  onVenueChange,
 }: FilterBarProps) {
   const { palette } = useAccent();
+  const [venueMenuOpen, setVenueMenuOpen] = useState(false);
+  const venueOptions = venues ?? [];
+  const weekLabel = runCode ? runCode.split("-")[0] : "Week 17";
   return (
     <div
       style={{
@@ -125,16 +150,102 @@ export function FilterBar({
           }}
         />
       </div>
-      <Button variant="secondary" size="sm" leading={<Icon name="filter" size={13} />}>
-        Venue
-      </Button>
-      <Button variant="secondary" size="sm" leading={<Icon name="calendar" size={13} />}>
-        Week 17
+      <div style={{ position: "relative" }}>
+        <Button
+          variant="secondary"
+          size="sm"
+          leading={<Icon name="filter" size={13} />}
+          onClick={() => venueOptions.length > 0 && setVenueMenuOpen((v) => !v)}
+        >
+          {venueFilter ?? "Venue"}
+        </Button>
+        {venueMenuOpen && venueOptions.length > 0 && (
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(100% + 4px)",
+              right: 0,
+              minWidth: 220,
+              maxHeight: 300,
+              overflowY: "auto",
+              background: "white",
+              border: `1px solid ${tokens.color.ink200}`,
+              borderRadius: 10,
+              boxShadow: "0 12px 32px -8px rgba(32,31,30,0.18)",
+              padding: 6,
+              zIndex: tokens.z.overlay,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                onVenueChange?.(null);
+                setVenueMenuOpen(false);
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                padding: "8px 10px",
+                border: "none",
+                background: !venueFilter ? tokens.color.ink100 : "transparent",
+                fontSize: 12.5,
+                fontFamily: tokens.font.body,
+                color: tokens.color.ink900,
+                borderRadius: 6,
+                cursor: "pointer",
+              }}
+            >
+              All venues
+            </button>
+            {venueOptions.map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => {
+                  onVenueChange?.(v);
+                  setVenueMenuOpen(false);
+                }}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "8px 10px",
+                  border: "none",
+                  background:
+                    venueFilter === v ? tokens.color.ink100 : "transparent",
+                  fontSize: 12.5,
+                  fontFamily: tokens.font.body,
+                  color: tokens.color.ink900,
+                  borderRadius: 6,
+                  cursor: "pointer",
+                }}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        leading={<Icon name="calendar" size={13} />}
+      >
+        {weekLabel}
       </Button>
       {selected > 0 && (
         <>
-          <div style={{ width: 1, height: 24, background: tokens.color.ink200 }} />
-          <div style={{ fontSize: 12.5, color: tokens.color.ink900, fontWeight: 600 }}>
+          <div
+            style={{ width: 1, height: 24, background: tokens.color.ink200 }}
+          />
+          <div
+            style={{
+              fontSize: 12.5,
+              color: tokens.color.ink900,
+              fontWeight: 600,
+            }}
+          >
             {selected} selected
           </div>
           <Button
@@ -146,7 +257,13 @@ export function FilterBar({
           >
             Export
           </Button>
-          <Button variant="secondary" size="sm" leading={<Icon name="file" size={13} />}>
+          <Button
+            variant="secondary"
+            size="sm"
+            leading={<Icon name="file" size={13} />}
+            onClick={onBulkDownloadPayslips}
+            disabled={!onBulkDownloadPayslips}
+          >
             Payslip PDFs
           </Button>
         </>

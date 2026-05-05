@@ -1,14 +1,16 @@
 // AppLayout — sticky Sidebar + Topbar + scrollable Outlet. Renders the
 // sidebar inline on >= lg, as a fixed drawer below.
 import { useEffect, useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import { Sidebar } from "../components/navigation/Sidebar";
 import { Topbar } from "../components/navigation/Topbar";
 import { tokens } from "../design-system/tokens";
 
 function useIsLarge(): boolean {
   const [isLarge, setIsLarge] = useState<boolean>(() =>
-    typeof window === "undefined" ? true : window.matchMedia("(min-width: 1024px)").matches,
+    typeof window === "undefined"
+      ? true
+      : window.matchMedia("(min-width: 1024px)").matches,
   );
   useEffect(() => {
     const m = window.matchMedia("(min-width: 1024px)");
@@ -22,6 +24,7 @@ function useIsLarge(): boolean {
 export default function AppLayout() {
   const isLarge = useIsLarge();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const navigate = useNavigate();
 
   // Auto-close drawer when window grows past lg.
   useEffect(() => {
@@ -29,7 +32,13 @@ export default function AppLayout() {
   }, [isLarge, drawerOpen]);
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: tokens.color.ink50 }}>
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        background: tokens.color.ink50,
+      }}
+    >
       {isLarge && <Sidebar />}
 
       {!isLarge && drawerOpen && (
@@ -48,9 +57,25 @@ export default function AppLayout() {
         </>
       )}
 
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-        <Topbar onMenuClick={!isLarge ? () => setDrawerOpen(true) : undefined} />
-        <main style={{ flex: 1, padding: "24px 28px", background: tokens.color.ink50 }}>
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <Topbar
+          onMenuClick={!isLarge ? () => setDrawerOpen(true) : undefined}
+          onPrimaryAction={() => navigate("/scheduling")}
+        />
+        <main
+          style={{
+            flex: 1,
+            padding: "24px 28px",
+            background: tokens.color.ink50,
+          }}
+        >
           <Outlet />
         </main>
       </div>

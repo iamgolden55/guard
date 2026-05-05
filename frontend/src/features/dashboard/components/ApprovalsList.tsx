@@ -13,11 +13,23 @@ const URGENCY_TONE: Record<DashboardApproval["urgency"], PillTone> = {
 
 export interface ApprovalsListProps {
   items: DashboardApproval[];
-  onResolve: (id: number, action: "approve" | "deny") => void;
+  /** Total open approvals across all sources (KPI value). The list itself
+   * is capped to a top-N for visibility — show this as the headline count. */
+  totalCount?: number;
+  onResolve: (id: string, action: "approve" | "deny") => void;
+  /** Click handler for the Inbox button. */
+  onInbox?: () => void;
 }
 
-export function ApprovalsList({ items, onResolve }: ApprovalsListProps) {
+export function ApprovalsList({
+  items,
+  totalCount,
+  onResolve,
+  onInbox,
+}: ApprovalsListProps) {
   const { palette } = useAccent();
+  const headlineCount = totalCount ?? items.length;
+  const hasMore = totalCount !== undefined && totalCount > items.length;
 
   return (
     <div
@@ -50,14 +62,21 @@ export function ApprovalsList({ items, onResolve }: ApprovalsListProps) {
             }}
           >
             Approvals{" "}
-            <span style={{ color: tokens.color.ink500, fontWeight: 500 }}>· {items.length}</span>
+            <span style={{ color: tokens.color.ink500, fontWeight: 500 }}>
+              · {headlineCount}
+            </span>
           </h3>
-          <div style={{ fontSize: 12.5, color: tokens.color.ink500, marginTop: 2 }}>
-            Awaiting your review
+          <div
+            style={{ fontSize: 12.5, color: tokens.color.ink500, marginTop: 2 }}
+          >
+            {hasMore
+              ? `Showing top ${items.length} · awaiting your review`
+              : "Awaiting your review"}
           </div>
         </div>
         <button
           type="button"
+          onClick={onInbox}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -68,7 +87,7 @@ export function ApprovalsList({ items, onResolve }: ApprovalsListProps) {
             fontFamily: tokens.font.body,
             fontWeight: 600,
             fontSize: 12.5,
-            cursor: "pointer",
+            cursor: onInbox ? "pointer" : "default",
             padding: 0,
           }}
         >
@@ -105,9 +124,18 @@ export function ApprovalsList({ items, onResolve }: ApprovalsListProps) {
             }}
           >
             <div style={{ minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 4,
+                }}
+              >
                 <Pill tone={URGENCY_TONE[a.urgency]}>{a.type}</Pill>
-                <span style={{ fontSize: 11.5, color: tokens.color.ink500 }}>{a.venue}</span>
+                <span style={{ fontSize: 11.5, color: tokens.color.ink500 }}>
+                  {a.venue}
+                </span>
               </div>
               <div
                 style={{
@@ -121,7 +149,15 @@ export function ApprovalsList({ items, onResolve }: ApprovalsListProps) {
               >
                 {a.who}
               </div>
-              <div style={{ fontSize: 12, color: tokens.color.ink600, marginTop: 2 }}>{a.when}</div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: tokens.color.ink600,
+                  marginTop: 2,
+                }}
+              >
+                {a.when}
+              </div>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <button

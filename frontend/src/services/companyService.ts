@@ -1,5 +1,5 @@
 import api from './api';
-import {
+import type {
   SecurityCompany,
   UserCompanyMembership,
   CompanyContextResponse,
@@ -248,7 +248,7 @@ class CompanyService {
   /**
    * Get company activity log
    */
-  async getActivityLog(companyId?: string, page: number = 1, limit: number = 50): Promise<{
+  async getActivityLog(companyId?: string, page = 1, limit = 50): Promise<{
     activities: Array<{
       id: string;
       action: string;
@@ -316,7 +316,7 @@ class CompanyService {
   /**
    * Check if resource limit would be exceeded
    */
-  async checkResourceLimit(resource: string, quantity: number = 1, companyId?: string): Promise<{
+  async checkResourceLimit(resource: string, quantity = 1, companyId?: string): Promise<{
     allowed: boolean;
     currentUsage: number;
     limit: number;
@@ -393,7 +393,7 @@ class CompanyService {
   /**
    * Search companies (for system admins)
    */
-  async searchCompanies(query: string, page: number = 1, limit: number = 20): Promise<{
+  async searchCompanies(query: string, page = 1, limit = 20): Promise<{
     companies: SecurityCompany[];
     total: number;
     hasMore: boolean;

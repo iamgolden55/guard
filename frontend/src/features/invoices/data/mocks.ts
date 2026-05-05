@@ -8,6 +8,7 @@ export type InvoiceStatus =
   | "paid"
   | "overdue"
   | "rejected"
+  | "resolved"
   | "pending";
 
 export type InvoiceKind = "client" | "staff";
@@ -44,13 +45,21 @@ export interface ClientPartyDetails {
   hue: number;
 }
 
+export interface StaffBankDetails {
+  name: string;
+  sort: string;
+  account: string;
+}
+
 export interface StaffPartyDetails {
   id: string;
+  /** StaffProfile.pk — used by the bank-details prompt modal to PATCH the profile. */
+  staffProfileId?: number | null;
   name: string;
   role: string;
   hue: number;
   utr: string;
-  bank: string;
+  bank: StaffBankDetails | null;
 }
 
 export interface InvoiceRecord {
@@ -65,6 +74,9 @@ export interface InvoiceRecord {
   paidDate?: string;
   status: InvoiceStatus;
   exportStatus: ExportStatus;
+  /** When set, this invoice has been re-issued as a fresh draft. UI shows it
+   * as 'Resolved' (neutral) instead of 'Rejected' (red). */
+  supersededById?: string | null;
   items: InvoiceItem[];
   note?: string;
   history: InvoiceHistoryEntry[];
@@ -126,14 +138,20 @@ export const CLIENTS: ClientPartyDetails[] = [
   { id: "c7", name: "Docklands Estate Mgmt", contact: "Tess Akinwale", email: "accounts@docklands-em.co.uk", address: ["West India Quay", "London E14 4QT"], terms: 30, hue: 245 },
 ];
 
+const _mockBank = (acc: string): StaffBankDetails => ({
+  name: "Lloyds Bank",
+  sort: "12-34-56",
+  account: acc,
+});
+
 export const STAFF: StaffPartyDetails[] = [
-  { id: "s1", name: "Jordan Okafor", role: "SIA Door Sup.", hue: 12, utr: "8821 9001", bank: "12-34-56 / 88210011" },
-  { id: "s2", name: "Priya Shah", role: "Control Room", hue: 280, utr: "8821 9002", bank: "12-34-56 / 88210019" },
-  { id: "s3", name: "Marcus Bell", role: "Events Steward", hue: 160, utr: "8821 9003", bank: "12-34-56 / 88210027" },
-  { id: "s4", name: "Siobhan Clarke", role: "Close Protection", hue: 32, utr: "8821 9004", bank: "12-34-56 / 88210035" },
-  { id: "s5", name: "Haroon Idris", role: "Retail Guard", hue: 210, utr: "8821 9005", bank: "12-34-56 / 88210043" },
-  { id: "s6", name: "Lindiwe Msimang", role: "Front-of-House", hue: 340, utr: "8821 9006", bank: "12-34-56 / 88210051" },
-  { id: "s7", name: "Aaron Whitfield", role: "Events Steward", hue: 245, utr: "8821 9007", bank: "12-34-56 / 88210069" },
+  { id: "s1", name: "Jordan Okafor", role: "SIA Door Sup.", hue: 12, utr: "8821 9001", bank: _mockBank("88210011") },
+  { id: "s2", name: "Priya Shah", role: "Control Room", hue: 280, utr: "8821 9002", bank: _mockBank("88210019") },
+  { id: "s3", name: "Marcus Bell", role: "Events Steward", hue: 160, utr: "8821 9003", bank: _mockBank("88210027") },
+  { id: "s4", name: "Siobhan Clarke", role: "Close Protection", hue: 32, utr: "8821 9004", bank: _mockBank("88210035") },
+  { id: "s5", name: "Haroon Idris", role: "Retail Guard", hue: 210, utr: "8821 9005", bank: _mockBank("88210043") },
+  { id: "s6", name: "Lindiwe Msimang", role: "Front-of-House", hue: 340, utr: "8821 9006", bank: _mockBank("88210051") },
+  { id: "s7", name: "Aaron Whitfield", role: "Events Steward", hue: 245, utr: "8821 9007", bank: _mockBank("88210069") },
 ];
 
 export const sFind = (id: string) => STAFF.find((x) => x.id === id);
@@ -360,9 +378,11 @@ export interface InvoiceStats {
     total: number;
     draft: number;
     sent: number;
+    pending: number;
     overdue: number;
     paid: number;
     rejected: number;
+    resolved: number;
   };
   totals: {
     sent: number;
@@ -382,6 +402,8 @@ export function statsFor(invoices: InvoiceRecord[]): InvoiceStats {
   const paid = byStatus("paid");
   const draft = byStatus("draft");
   const rejected = byStatus("rejected");
+  const resolved = byStatus("resolved");
+  const pending = byStatus("pending");
   const buckets = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
   overdue.forEach((i) => {
     const d = -daysFromToday(i.dueDate);
@@ -395,7 +417,9 @@ export function statsFor(invoices: InvoiceRecord[]): InvoiceStats {
       sent: sent.length,
       overdue: overdue.length,
       paid: paid.length,
+      pending: pending.length,
       rejected: rejected.length,
+      resolved: resolved.length,
     },
     totals: {
       sent: sum(sent),
@@ -424,6 +448,7 @@ export const STATUS_COLOR: Record<InvoiceStatus, StatusTone> = {
   paid: { bg: "#e6f4ea", border: "#b8e0c2", fg: "#0f5132", label: "Paid" },
   overdue: { bg: "#fde7e9", border: "#f7c0c5", fg: "#8a1820", label: "Overdue" },
   rejected: { bg: "#fff4e5", border: "#ffd4a3", fg: "#8a4b0a", label: "Rejected" },
+  resolved: { bg: "#eef2f7", border: "#c7d2e0", fg: "#3a4a5e", label: "Resolved" },
   pending: { bg: "#fff8e1", border: "#ffe0a3", fg: "#7a5500", label: "Pending" },
 };
 

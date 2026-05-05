@@ -21,7 +21,9 @@ export interface InvoicesHeaderProps {
   ledger: InvoiceKind;
   onLedgerChange: (next: InvoiceKind) => void;
   stats: InvoiceStats;
-  onNew: () => void;
+  /** Optional — hidden when undefined (e.g. on the Staff ledger where staff
+   * invoices auto-generate from approved shifts via the payroll cron). */
+  onNew?: () => void;
   onStatement: () => void;
   /** Outbox-only: toggle visibility of the left list pane and right details pane. */
   leftPaneOpen?: boolean;
@@ -52,8 +54,19 @@ export function InvoicesHeader({
   const { palette } = useAccent();
 
   const tabCount = (id: InvoicesTab) => {
-    if (id === "outbox") return stats.counts.draft + stats.counts.sent + stats.counts.overdue;
-    if (id === "archive") return stats.counts.paid;
+    if (id === "outbox") {
+      // Active work — anything still pending action.
+      return (
+        stats.counts.draft +
+        stats.counts.pending +
+        stats.counts.sent +
+        stats.counts.overdue
+      );
+    }
+    if (id === "archive") {
+      // Settled — paid + terminal corrections (rejected, resolved).
+      return stats.counts.paid + stats.counts.rejected + stats.counts.resolved;
+    }
     return null;
   };
 
@@ -216,14 +229,16 @@ export function InvoicesHeader({
             >
               Send statement…
             </Button>
-            <Button
-              variant="primary"
-              accent={palette}
-              leading={<Icon name="plus" size={14} />}
-              onClick={onNew}
-            >
-              New invoice
-            </Button>
+            {onNew && (
+              <Button
+                variant="primary"
+                accent={palette}
+                leading={<Icon name="plus" size={14} />}
+                onClick={onNew}
+              >
+                New invoice
+              </Button>
+            )}
           </>
         )}
         {tab === "my" && (
