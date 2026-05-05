@@ -78,6 +78,12 @@ export const NAV: NavGroup[] = [
       { id: "invoices", label: "Invoices", icon: "receipt", path: "/invoices" },
       { id: "payroll", label: "Payroll", icon: "banknote", path: "/payroll" },
       {
+        id: "pay-rates",
+        label: "Pay rates",
+        icon: "credit-card",
+        path: "/settings/pay-rates",
+      },
+      {
         id: "integrations",
         label: "Integrations",
         icon: "plug",

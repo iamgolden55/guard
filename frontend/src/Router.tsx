@@ -16,6 +16,7 @@ import OAuthCallbackPage from "./features/integrations/OAuthCallbackPage";
 import InvoicesPage from "./features/invoices/InvoicesPage";
 import LeaveManagementPage from "./features/leave/LeaveManagementPage";
 import PayrollPage from "./features/payroll/PayrollPage";
+import PayRatesPage from "./features/settings/PayRatesPage";
 import ProfilePage from "./features/profile/ProfilePage";
 import RecruitmentPage from "./features/recruitment/RecruitmentPage";
 import ApplyPage from "./features/recruitment/ApplyPage";
@@ -88,6 +89,7 @@ export default function Router() {
           <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/invoices" element={<InvoicesPage />} />
           <Route path="/payroll" element={<PayrollPage />} />
+          <Route path="/settings/pay-rates" element={<PayRatesPage />} />
           <Route path="/staff" element={<StaffPage />} />
           <Route path="/leave" element={<LeaveManagementPage />} />
           <Route path="/recruitment" element={<RecruitmentPage />} />
