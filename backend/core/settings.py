@@ -519,6 +519,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'api.tasks.detect_attendance_exceptions',
         'schedule': crontab(minute='*/15'),
     },
+    'process-auto-checkouts': {
+        'task': 'api.tasks.process_auto_checkouts',
+        'schedule': crontab(minute='*/5'),
+    },
     'process-monthly-leave-accruals': {
         'task': 'api.tasks.process_monthly_leave_accruals',
         'schedule': crontab(day_of_month=1, hour=2, minute=0),
@@ -526,6 +530,18 @@ CELERY_BEAT_SCHEDULE = {
     'hard-delete-expired-accounts': {
         'task': 'api.tasks.hard_delete_expired_accounts',
         'schedule': crontab(hour=2, minute=30),
+    },
+    'create-weekly-payroll-run': {
+        'task': 'api.tasks.create_weekly_payroll_run',
+        # Mondays at 06:00 UTC — generates the previous ISO week's run for
+        # officers whose StaffProfile.pay_frequency='weekly' (the default).
+        'schedule': crontab(day_of_week='mon', hour=6, minute=0),
+    },
+    'create-monthly-payroll-run': {
+        'task': 'api.tasks.create_monthly_payroll_run',
+        # 1st of each month at 06:00 UTC — generates the previous calendar
+        # month's run for officers whose pay_frequency='monthly'.
+        'schedule': crontab(day_of_month=1, hour=6, minute=0),
     },
 }
 

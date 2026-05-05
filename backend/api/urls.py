@@ -39,6 +39,8 @@ from .views import (
     ClientInvoiceViewSet,
     # Incident reporting views
     IncidentReportViewSet,
+    # Admin dashboard
+    AdminDashboardOverviewView,
 )
 from .social_auth import apple_auth, google_auth
 
@@ -98,6 +100,19 @@ router.register('bank-holidays', BankHolidayViewSet, basename='bank-holidays')
 router.register('staff-leave-rates', StaffLeaveDailyRateViewSet, basename='staff-leave-rates')
 # Client billing endpoints
 router.register('client-invoices', ClientInvoiceViewSet, basename='client-invoices')
+# Unified billing facade for the Payroll & Invoices UI (read-only parity iteration)
+from .views_billing import (
+    BillingInvoiceFacadeViewSet,
+    PayrollRunViewSet,
+    FinanceProviderViewSet,
+    StatementViewSet,
+    InvoiceExportStubViewSet,
+)
+router.register('billing/invoices', BillingInvoiceFacadeViewSet, basename='billing-invoices')
+router.register('billing/statements', StatementViewSet, basename='billing-statements')
+router.register('billing/finance-providers', FinanceProviderViewSet, basename='billing-finance-providers')
+router.register('billing/exports', InvoiceExportStubViewSet, basename='billing-exports')
+router.register('payroll/runs', PayrollRunViewSet, basename='payroll-runs')
 # Incident reporting endpoints
 router.register('incidents', IncidentReportViewSet, basename='incidents')
 
@@ -120,6 +135,7 @@ urlpatterns = [
     path('staff/profile/upload-photo/', ProfilePhotoUploadView.as_view(), name='profile-photo-upload'),
     path('admin/payroll/preview/', payroll_preview, name='payroll-preview'),
     path('admin/payroll/generate/', payroll_generate, name='payroll-generate'),
+    path('admin/dashboard/overview/', AdminDashboardOverviewView.as_view(), name='admin-dashboard-overview'),
     # Compliance system endpoints
     path('compliance/check/', check_compliance, name='compliance-check'),
     path('compliance/alerts/', compliance_alerts, name='compliance-alerts'),

@@ -1,14 +1,10 @@
 """
-Invoice / Pay Stub PDF generation using ReportLab.
+Invoice / payslip PDF generation using ReportLab.
 
-Generates a professional A4 pay stub containing:
-  - Company header (name, address)
-  - Staff member details
-  - Invoice period and reference
-  - Line-item table (shifts, bank holidays, annual leave)
-  - Subtotals by category
-  - Grand total and status
-  - Generated timestamp
+Visual language matches the React `ModernInvoice` template (red brand accent,
+hero header with the total, three-column FROM/PAY TO/SERVICE PERIOD block,
+modern line-item table, right-aligned totals card). Edit both files together
+when the design evolves so admin UI and printed payslip stay in sync.
 """
 
 import io
@@ -27,439 +23,472 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+from reportlab.platypus.flowables import Flowable
 
 
-# ---------------------------------------------------------------------------
-# Colour palette
-# ---------------------------------------------------------------------------
-BRAND_DARK = colors.HexColor("#1a1a2e")
-BRAND_PRIMARY = colors.HexColor("#16213e")
-BRAND_ACCENT = colors.HexColor("#0f3460")
-HEADER_BG = colors.HexColor("#1a1a2e")
-ROW_ALT = colors.HexColor("#f4f6f9")
-BORDER_COLOR = colors.HexColor("#d1d5db")
-STATUS_COLORS = {
-    "pending": colors.HexColor("#f59e0b"),
-    "paid": colors.HexColor("#10b981"),
-    "rejected": colors.HexColor("#ef4444"),
-}
+# --- Brand palette (matches frontend/src/design-system/accents.ts brand-red) -
+ACCENT_PRIMARY = colors.HexColor("#cb2431")
+ACCENT_DARK = colors.HexColor("#991b25")
+ACCENT_SOFT = colors.HexColor("#fde7e9")
+INK900 = colors.HexColor("#201f1e")
+INK600 = colors.HexColor("#605e5c")
+INK500 = colors.HexColor("#a19f9d")
+BG_100 = colors.HexColor("#faf9f8")
+BORDER = colors.HexColor("#edebe9")
+SUCCESS_INK = colors.HexColor("#0e6b3a")
 
 
-def _currency(value):
-    """Format a Decimal / float as GBP currency string."""
+def _gbp(value):
     try:
-        return f"\u00a3{Decimal(str(value)):,.2f}"
+        return f"£{Decimal(str(value)):,.2f}"
     except Exception:
-        return "\u00a30.00"
+        return "£0.00"
 
 
-def _safe_str(value, default=""):
-    """Return str(value) or *default* when value is None / empty."""
+def _safe(value, default=""):
     if value is None:
         return default
     s = str(value).strip()
     return s if s else default
 
 
+def _date_short(d):
+    return d.strftime("%d %b") if d else ""
+
+
+def _date_long(d):
+    return d.strftime("%d %b %Y") if d else ""
+
+
+class PaidStamp(Flowable):
+    """Translucent diagonal "PAID" watermark for paid invoices."""
+
+    def __init__(self, text="PAID"):
+        super().__init__()
+        self.text = text
+        self.width = 0
+        self.height = 0
+
+    def draw(self):
+        c = self.canv
+        c.saveState()
+        # Position over the hero. Coordinates are local to the flowable; we
+        # offset back into the page above via translate.
+        c.translate(140 * mm, -10 * mm)
+        c.rotate(-18)
+        c.setFillColorRGB(0.80, 0.13, 0.18, alpha=0.18)
+        c.setFont("Helvetica-Bold", 56)
+        c.drawString(0, 0, self.text)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(8, -8 * mm, "T H A N K   Y O U")
+        c.restoreState()
+
+
 def generate_invoice_pdf(invoice) -> io.BytesIO:
-    """Generate an A4 pay-stub PDF for the given ``Invoice`` instance.
-
-    Parameters
-    ----------
-    invoice : api.models.Invoice
-        The invoice ORM object (must have ``.items`` related manager,
-        ``.staff_user``, and ``.get_payment_breakdown()``).
-
-    Returns
-    -------
-    io.BytesIO
-        A seeked-to-zero buffer containing the PDF bytes.
-    """
+    """Render the modern payslip PDF for an Invoice and return a BytesIO."""
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
-        leftMargin=15 * mm,
-        rightMargin=15 * mm,
-        topMargin=15 * mm,
-        bottomMargin=15 * mm,
-        title=f"Pay Stub - Invoice #{invoice.id}",
+        leftMargin=0,
+        rightMargin=0,
+        topMargin=0,
+        bottomMargin=0,
+        title=f"Payslip {invoice.invoice_number or invoice.pk}",
     )
 
     styles = getSampleStyleSheet()
 
-    # ------------------------------------------------------------------
-    # Custom styles
-    # ------------------------------------------------------------------
+    # --- Style primitives ---------------------------------------------------
     s_company = ParagraphStyle(
-        "CompanyName",
-        parent=styles["Heading1"],
-        fontSize=18,
-        leading=22,
-        textColor=colors.white,
-        spaceAfter=2 * mm,
+        "Company", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=11, leading=14, textColor=INK900,
     )
-    s_company_sub = ParagraphStyle(
-        "CompanySub",
-        parent=styles["Normal"],
-        fontSize=9,
-        leading=12,
-        textColor=colors.HexColor("#cbd5e1"),
+    s_amount = ParagraphStyle(
+        "Amount", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=30, leading=32, textColor=INK900,
     )
-    s_heading = ParagraphStyle(
-        "SectionHeading",
-        parent=styles["Heading2"],
-        fontSize=11,
-        leading=14,
-        textColor=BRAND_DARK,
-        spaceBefore=6 * mm,
-        spaceAfter=3 * mm,
+    s_caption = ParagraphStyle(
+        "Caption", parent=styles["Normal"],
+        fontSize=10, leading=13, textColor=INK600,
+    )
+    s_caption_paid = ParagraphStyle(
+        "CaptionPaid", parent=s_caption, textColor=SUCCESS_INK, fontName="Helvetica-Bold",
     )
     s_label = ParagraphStyle(
-        "Label",
-        parent=styles["Normal"],
-        fontSize=8,
-        leading=10,
-        textColor=colors.HexColor("#6b7280"),
+        "Label", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=7.5, leading=10, textColor=INK500,
+        spaceAfter=4,
+    )
+    s_value_strong = ParagraphStyle(
+        "ValueStrong", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=11, leading=14, textColor=INK900,
     )
     s_value = ParagraphStyle(
-        "Value",
-        parent=styles["Normal"],
-        fontSize=10,
-        leading=13,
-        textColor=BRAND_DARK,
+        "Value", parent=styles["Normal"],
+        fontSize=9, leading=12, textColor=INK600,
     )
+    s_invoice_pill = ParagraphStyle(
+        "InvoicePill", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=INK600,
+        alignment=TA_RIGHT,
+    )
+    s_invoice_id = ParagraphStyle(
+        "InvoiceId", parent=styles["Normal"],
+        fontName="Courier-Bold", fontSize=11, leading=14, textColor=INK900,
+        alignment=TA_RIGHT,
+    )
+    s_th = ParagraphStyle(
+        "TH", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=7.5, leading=10, textColor=INK600,
+    )
+    s_th_right = ParagraphStyle("THr", parent=s_th, alignment=TA_RIGHT)
+    s_td = ParagraphStyle("TD", parent=styles["Normal"], fontSize=9, leading=12, textColor=INK900)
+    s_td_muted = ParagraphStyle("TDm", parent=s_td, textColor=INK600)
+    s_td_right = ParagraphStyle("TDr", parent=s_td, alignment=TA_RIGHT)
+    s_td_right_muted = ParagraphStyle("TDrm", parent=s_td_muted, alignment=TA_RIGHT)
+    s_td_right_bold = ParagraphStyle("TDrb", parent=s_td_right, fontName="Helvetica-Bold")
     s_total_label = ParagraphStyle(
-        "TotalLabel",
-        parent=styles["Normal"],
-        fontSize=11,
-        leading=14,
-        textColor=BRAND_DARK,
-        fontName="Helvetica-Bold",
+        "TotalLabel", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=11, leading=14, textColor=INK900,
     )
     s_total_value = ParagraphStyle(
-        "TotalValue",
-        parent=styles["Normal"],
-        fontSize=13,
-        leading=16,
-        textColor=BRAND_DARK,
-        fontName="Helvetica-Bold",
+        "TotalValue", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=18, leading=22, textColor=ACCENT_PRIMARY,
         alignment=TA_RIGHT,
     )
     s_footer = ParagraphStyle(
-        "Footer",
-        parent=styles["Normal"],
-        fontSize=7,
-        leading=9,
-        textColor=colors.HexColor("#9ca3af"),
-        alignment=TA_CENTER,
+        "Footer", parent=styles["Normal"],
+        fontSize=7, leading=10, textColor=INK500, alignment=TA_CENTER,
     )
 
     elements = []
 
-    # ------------------------------------------------------------------
-    # Resolve company
-    # ------------------------------------------------------------------
+    # --- Resolve display values --------------------------------------------
     company = None
     membership = invoice.staff_user.company_memberships.filter(is_active=True).first()
     if membership:
         company = membership.company
-
-    company_name = _safe_str(getattr(company, "name", None), "Security Company")
-    company_address_parts = []
+    company_name = _safe(getattr(company, "name", None), "Mead Security")
+    company_address = []
     if company:
-        if company.address_line_1:
-            company_address_parts.append(company.address_line_1)
-        if getattr(company, "address_line_2", None):
-            company_address_parts.append(company.address_line_2)
-        city_line = ", ".join(
-            filter(None, [
-                _safe_str(getattr(company, "city", None)),
-                _safe_str(getattr(company, "state_province", None)),
-                _safe_str(getattr(company, "postal_code", None)),
-            ])
-        )
-        if city_line:
-            company_address_parts.append(city_line)
-        if getattr(company, "registration_number", None):
-            company_address_parts.append(f"Reg: {company.registration_number}")
-        if getattr(company, "tax_id", None):
-            company_address_parts.append(f"VAT: {company.tax_id}")
-
-    company_address = " | ".join(company_address_parts) if company_address_parts else ""
-
-    # ------------------------------------------------------------------
-    # Header banner
-    # ------------------------------------------------------------------
-    header_data = [
-        [
-            Paragraph(company_name, s_company),
-            Paragraph("PAY STUB", ParagraphStyle(
-                "PayStubTitle",
-                parent=styles["Heading1"],
-                fontSize=16,
-                leading=20,
-                textColor=colors.white,
-                alignment=TA_RIGHT,
-            )),
-        ],
-    ]
-    if company_address:
-        header_data.append([
-            Paragraph(company_address, s_company_sub),
-            "",
-        ])
-
-    header_table = Table(header_data, colWidths=[120 * mm, 60 * mm])
-    header_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), HEADER_BG),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6 * mm),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6 * mm),
-        ("TOPPADDING", (0, 0), (-1, -1), 5 * mm),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5 * mm),
-        ("SPAN", (0, 1), (1, 1)) if company_address else ("TOPPADDING", (0, 0), (0, 0), 5 * mm),
-    ]))
-    elements.append(header_table)
-    elements.append(Spacer(1, 5 * mm))
-
-    # ------------------------------------------------------------------
-    # Invoice meta + staff details (two-column)
-    # ------------------------------------------------------------------
-    staff_user = invoice.staff_user
-    staff_name = f"{staff_user.first_name} {staff_user.last_name}".strip()
-    if not staff_name:
-        staff_name = staff_user.username
-
-    staff_profile = getattr(staff_user, "profile", None)
-    employee_id = ""
-    if staff_profile:
-        employee_id = _safe_str(getattr(staff_profile, "employee_id", None))
-
-    status_color = STATUS_COLORS.get(invoice.status, colors.gray)
-    status_text = invoice.get_status_display() if hasattr(invoice, "get_status_display") else invoice.status.title()
-
-    left_col = [
-        [Paragraph("EMPLOYEE", s_label), ""],
-        [Paragraph(staff_name, s_value), ""],
-    ]
-    if employee_id:
-        left_col.append([Paragraph(f"ID: {employee_id}", s_label), ""])
-    if staff_user.email:
-        left_col.append([Paragraph(staff_user.email, s_label), ""])
-
-    right_col = [
-        [Paragraph("INVOICE REF", s_label), Paragraph(f"#{invoice.id}", s_value)],
-        [Paragraph("PERIOD", s_label), Paragraph(
-            f"{invoice.start_date.strftime('%d %b %Y')} \u2013 {invoice.end_date.strftime('%d %b %Y')}", s_value
-        )],
-        [Paragraph("STATUS", s_label), Paragraph(
-            f'<font color="{status_color.hexval()}">{status_text}</font>', s_value
-        )],
-        [Paragraph("ISSUED", s_label), Paragraph(
-            invoice.created_at.strftime("%d %b %Y") if invoice.created_at else "N/A", s_value
-        )],
-    ]
-
-    left_table = Table(left_col, colWidths=[80 * mm, 10 * mm])
-    left_table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 1),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-    ]))
-
-    right_table = Table(right_col, colWidths=[30 * mm, 60 * mm])
-    right_table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 1),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-    ]))
-
-    meta_table = Table(
-        [[left_table, right_table]],
-        colWidths=[95 * mm, 85 * mm],
-    )
-    meta_table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
-    elements.append(meta_table)
-    elements.append(Spacer(1, 4 * mm))
-
-    # ------------------------------------------------------------------
-    # Line items table
-    # ------------------------------------------------------------------
-    elements.append(Paragraph("LINE ITEMS", s_heading))
-
-    items_qs = invoice.items.select_related("shift", "venue", "bank_holiday").order_by("date", "item_type")
-
-    col_widths = [22 * mm, 16 * mm, 58 * mm, 22 * mm, 22 * mm, 28 * mm]
-    header_style = ParagraphStyle("TH", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
-    cell_style = ParagraphStyle("TD", parent=styles["Normal"], fontSize=8, leading=11, textColor=BRAND_DARK)
-    cell_right = ParagraphStyle("TDR", parent=cell_style, alignment=TA_RIGHT)
-
-    table_data = [[
-        Paragraph("Date", header_style),
-        Paragraph("Type", header_style),
-        Paragraph("Description", header_style),
-        Paragraph("Qty", header_style),
-        Paragraph("Rate", header_style),
-        Paragraph("Amount", header_style),
-    ]]
-
-    for item in items_qs:
-        date_str = item.date.strftime("%d/%m/%Y") if item.date else ""
-
-        if item.item_type == "shift":
-            type_label = "Shift"
-            venue_name = _safe_str(getattr(item.venue, "name", None) if item.venue else None, "—")
-            description = venue_name
-            if item.shift and getattr(item.shift, 'is_special_event', False):
-                type_label = "Event"
-                description = f"{venue_name} (Special Event)"
-            qty = f"{item.hours_worked or 0:.2f} hrs"
-            rate = f"{_currency(item.rate)}/hr"
-        elif item.item_type == "bank_holiday":
-            type_label = "BH"
-            description = _safe_str(item.description, "Bank Holiday")
-            qty = f"{item.days or 1:.1f} day(s)"
-            rate = f"{_currency(item.rate)}/day"
-        elif item.item_type == "annual_leave":
-            type_label = "Leave"
-            description = _safe_str(item.description, "Annual Leave")
-            qty = f"{item.days or 1:.1f} day(s)"
-            rate = f"{_currency(item.rate)}/day"
-        else:
-            type_label = item.item_type
-            description = _safe_str(item.description, "—")
-            qty = ""
-            rate = ""
-
-        table_data.append([
-            Paragraph(date_str, cell_style),
-            Paragraph(type_label, cell_style),
-            Paragraph(description, cell_style),
-            Paragraph(qty, cell_right),
-            Paragraph(rate, cell_right),
-            Paragraph(_currency(item.amount), cell_right),
-        ])
-
-    items_table = Table(table_data, colWidths=col_widths, repeatRows=1)
-    t_style_cmds = [
-        # Header row
-        ("BACKGROUND", (0, 0), (-1, 0), BRAND_ACCENT),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 8),
-        # All cells
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3 * mm),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3 * mm),
-        ("TOPPADDING", (0, 0), (-1, -1), 2 * mm),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2 * mm),
-        # Grid
-        ("GRID", (0, 0), (-1, -1), 0.5, BORDER_COLOR),
-        ("LINEBELOW", (0, 0), (-1, 0), 1, BRAND_DARK),
-    ]
-    # Alternate row shading
-    for i in range(1, len(table_data)):
-        if i % 2 == 0:
-            t_style_cmds.append(("BACKGROUND", (0, i), (-1, i), ROW_ALT))
-
-    items_table.setStyle(TableStyle(t_style_cmds))
-    elements.append(items_table)
-    elements.append(Spacer(1, 5 * mm))
-
-    # ------------------------------------------------------------------
-    # Breakdown summary
-    # ------------------------------------------------------------------
-    try:
-        breakdown = invoice.get_payment_breakdown()
-    except Exception:
-        breakdown = {}
-
-    summary_rows = []
-    s_sum_label = ParagraphStyle("SumL", parent=styles["Normal"], fontSize=9, leading=12, textColor=BRAND_DARK)
-    s_sum_val = ParagraphStyle("SumV", parent=styles["Normal"], fontSize=9, leading=12, textColor=BRAND_DARK, alignment=TA_RIGHT)
-
-    reg = breakdown.get("regular_shifts", {})
-    if reg.get("count", 0) > 0:
-        summary_rows.append([
-            Paragraph(f"Regular Shifts ({reg['count']} shifts, {reg['hours']:.2f} hrs @ avg {_currency(reg['average_rate'])}/hr)", s_sum_label),
-            Paragraph(_currency(reg["amount"]), s_sum_val),
-        ])
-
-    spe = breakdown.get("special_event_shifts", {})
-    if spe.get("count", 0) > 0:
-        summary_rows.append([
-            Paragraph(f"Special Event Shifts ({spe['count']} shifts, {spe['hours']:.2f} hrs @ avg {_currency(spe['average_rate'])}/hr)", s_sum_label),
-            Paragraph(_currency(spe["amount"]), s_sum_val),
-        ])
-
-    bh = breakdown.get("bank_holidays", {})
-    if bh.get("count", 0) > 0:
-        summary_rows.append([
-            Paragraph(f"Bank Holiday Pay ({bh['count']} days @ {_currency(bh['daily_rate'])}/day)", s_sum_label),
-            Paragraph(_currency(bh["amount"]), s_sum_val),
-        ])
-
-    al = breakdown.get("annual_leave", {})
-    if al.get("count", 0) > 0:
-        summary_rows.append([
-            Paragraph(f"Annual Leave Pay ({al['count']} days @ {_currency(al['daily_rate'])}/day)", s_sum_label),
-            Paragraph(_currency(al["amount"]), s_sum_val),
-        ])
-
-    if summary_rows:
-        elements.append(Paragraph("PAYMENT BREAKDOWN", s_heading))
-        summary_table = Table(summary_rows, colWidths=[140 * mm, 28 * mm])
-        summary_table.setStyle(TableStyle([
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 3 * mm),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 3 * mm),
-            ("TOPPADDING", (0, 0), (-1, -1), 2 * mm),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2 * mm),
-            ("LINEBELOW", (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        for attr in ("address_line_1", "address_line_2"):
+            val = _safe(getattr(company, attr, None))
+            if val:
+                company_address.append(val)
+        city_line = ", ".join(filter(None, [
+            _safe(getattr(company, "city", None)),
+            _safe(getattr(company, "postal_code", None)),
         ]))
-        elements.append(summary_table)
-        elements.append(Spacer(1, 3 * mm))
+        if city_line:
+            company_address.append(city_line)
+        if getattr(company, "country", None):
+            company_address.append(getattr(company, "country"))
 
-    # ------------------------------------------------------------------
-    # Grand total
-    # ------------------------------------------------------------------
-    total_data = [[
-        Paragraph("TOTAL PAYABLE", s_total_label),
-        Paragraph(_currency(invoice.total_amount), s_total_value),
-    ]]
-    total_table = Table(total_data, colWidths=[140 * mm, 28 * mm])
-    total_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f0fdf4") if invoice.status == "paid" else colors.HexColor("#fefce8")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4 * mm),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4 * mm),
-        ("TOPPADDING", (0, 0), (-1, -1), 3 * mm),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3 * mm),
-        ("BOX", (0, 0), (-1, -1), 1, BRAND_DARK),
+    staff = invoice.staff_user
+    staff_name = (f"{staff.first_name} {staff.last_name}".strip()) or staff.username
+    staff_role = "Officer"
+    staff_profile = getattr(staff, "profile", None)
+    staff_utr = ""
+    if staff_profile:
+        staff_utr = _safe(getattr(staff_profile, "utr_number", None))
+
+    invoice_id = invoice.invoice_number or f"PAY-{invoice.pk}"
+    period = f"{_date_short(invoice.start_date)} – {_date_short(invoice.end_date)}"
+    issue_date = _date_long(invoice.created_at) if invoice.created_at else "—"
+
+    is_paid = invoice.status == "paid"
+    is_overdue = invoice.status == "overdue"
+
+    # Status caption shown under the total amount.
+    if is_paid and invoice.paid_date:
+        status_caption = Paragraph(f"Paid on {_date_long(invoice.paid_date)}", s_caption_paid)
+    elif invoice.status == "draft":
+        status_caption = Paragraph("Draft · ready for review", s_caption)
+    elif is_overdue and invoice.due_date:
+        status_caption = Paragraph(f"Overdue · due {_date_long(invoice.due_date)}", s_caption)
+    elif invoice.due_date:
+        status_caption = Paragraph(f"Due {_date_long(invoice.due_date)}", s_caption)
+    else:
+        status_caption = Paragraph(invoice.status.title(), s_caption)
+
+    # ---  HERO HEADER  -----------------------------------------------------
+    hero_left = Table(
+        [
+            [Paragraph(f"◆ &nbsp; {company_name}", s_company)],
+            [Spacer(1, 4 * mm)],
+            [Paragraph(_gbp(invoice.total_amount), s_amount)],
+            [status_caption],
+        ],
+        colWidths=[110 * mm],
+    )
+    hero_left.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
-    elements.append(total_table)
+
+    invoice_pill = Table(
+        [[Paragraph("INVOICE", s_invoice_pill)]],
+        colWidths=[24 * mm],
+    )
+    invoice_pill.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    ]))
+
+    hero_right = Table(
+        [
+            [invoice_pill],
+            [Spacer(1, 2 * mm)],
+            [Paragraph(invoice_id, s_invoice_id)],
+            [Paragraph(f"Issued {issue_date}", ParagraphStyle("IssuedSm", parent=s_caption, alignment=TA_RIGHT))],
+        ],
+        colWidths=[60 * mm],
+    )
+    hero_right.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+    ]))
+
+    hero = Table(
+        [[hero_left, hero_right]],
+        colWidths=[110 * mm, 70 * mm],
+    )
+    hero_style = [
+        ("BACKGROUND", (0, 0), (-1, -1), ACCENT_SOFT),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 16 * mm),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 16 * mm),
+        ("TOPPADDING", (0, 0), (-1, -1), 14 * mm),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 12 * mm),
+        # 4px-equivalent accent line under the hero
+        ("LINEBELOW", (0, 0), (-1, -1), 2.5, ACCENT_PRIMARY),
+    ]
+    hero.setStyle(TableStyle(hero_style))
+    elements.append(hero)
+
+    # Paid stamp watermark, sits on top of the hero.
+    if is_paid:
+        elements.append(PaidStamp())
+
     elements.append(Spacer(1, 8 * mm))
 
-    # ------------------------------------------------------------------
-    # Footer
-    # ------------------------------------------------------------------
+    # --- Three-column meta block: FROM | PAY TO | SERVICE PERIOD ----------
+    def meta_column(label, lines):
+        rows = [[Paragraph(label.upper(), s_label)]]
+        if lines:
+            rows.append([Paragraph(lines[0], s_value_strong)])
+            for ln in lines[1:]:
+                rows.append([Paragraph(ln, s_value)])
+        t = Table(rows, colWidths=[55 * mm])
+        t.setStyle(TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        return t
+
+    from_lines = [company_name] + company_address
+    pay_to_lines = [staff_name, staff_role]
+    if staff_utr:
+        pay_to_lines.append(f"UTR {staff_utr}")
+    if staff.email:
+        pay_to_lines.append(staff.email)
+    period_lines = [
+        period,
+        f"{invoice.total_hours or 0:.2f} hours · {invoice.items.count()} line items",
+    ]
+
+    meta = Table(
+        [[
+            meta_column("From", from_lines),
+            meta_column("Pay to", pay_to_lines),
+            meta_column("Service period", period_lines),
+        ]],
+        colWidths=[60 * mm, 60 * mm, 60 * mm],
+    )
+    meta.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 16 * mm),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    elements.append(meta)
+    elements.append(Spacer(1, 8 * mm))
+
+    # --- Line items table -------------------------------------------------
+    type_label = {
+        "shift": "Shift",
+        "overtime_1": "OT 1.5×",
+        "overtime_2": "OT 2×",
+        "bank_holiday": "Bank holiday",
+        "annual_leave": "Annual leave",
+        "special": "Special event",
+    }
+
+    items = list(invoice.items.select_related("shift", "venue").order_by("date", "id"))
+    table_data = [[
+        Paragraph("DATE", s_th),
+        Paragraph("DESCRIPTION", s_th),
+        Paragraph("HRS", s_th_right),
+        Paragraph("RATE", s_th_right),
+        Paragraph("AMOUNT", s_th_right),
+    ]]
+    for it in items:
+        venue_name = _safe(getattr(it.venue, "name", None) if it.venue else None, "")
+        type_str = type_label.get(it.item_type, it.item_type)
+        if it.item_type in ("shift", "overtime_1", "overtime_2", "special"):
+            primary = f"{type_str} · {venue_name}" if venue_name else type_str
+        else:
+            primary = type_str
+        desc_html = f"<b>{primary}</b>"
+        if venue_name and it.item_type not in ("shift", "overtime_1", "overtime_2", "special"):
+            desc_html += f"<br/><font color='#a19f9d' size='8'>{venue_name}</font>"
+
+        if it.hours_worked is not None:
+            qty = f"{it.hours_worked:.2f}"
+        elif it.days is not None:
+            qty = f"{it.days:.1f}d"
+        else:
+            qty = ""
+        rate = _gbp(it.rate) if it.rate else ""
+        table_data.append([
+            Paragraph(_date_short(it.date), s_td_muted),
+            Paragraph(desc_html, s_td),
+            Paragraph(qty, s_td_right),
+            Paragraph(rate, s_td_right_muted),
+            Paragraph(_gbp(it.amount), s_td_right_bold),
+        ])
+
+    items_table = Table(
+        table_data,
+        colWidths=[20 * mm, 84 * mm, 18 * mm, 22 * mm, 24 * mm],
+        repeatRows=1,
+    )
+    style_cmds = [
+        # Header row
+        ("BACKGROUND", (0, 0), (-1, 0), BG_100),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.5, BORDER),
+        # All cells
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3 * mm),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3 * mm),
+        ("TOPPADDING", (0, 0), (-1, -1), 3 * mm),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3 * mm),
+        # Box around the whole table for rounded-card feel
+        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+    ]
+    # Inner row dividers
+    for i in range(1, len(table_data) - 1):
+        style_cmds.append(("LINEBELOW", (0, i), (-1, i), 0.3, BG_100))
+
+    items_table.setStyle(TableStyle(style_cmds))
+
+    # Wrap in a left-margin Table to inset by 16mm.
+    body_wrap = Table([[items_table]], colWidths=[168 * mm])
+    body_wrap.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 16 * mm),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 16 * mm),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    elements.append(body_wrap)
+    elements.append(Spacer(1, 6 * mm))
+
+    # --- Bottom row: bank details (left) + totals card (right) ------------
+    # For a staff payslip the BANK block describes WHERE THE OFFICER GETS PAID
+    # (their personal bank account). We read it from BankDetails which is a
+    # OneToOne on StaffProfile. Encrypted fields decrypt automatically.
+    staff_bank = None
+    if staff_profile is not None:
+        staff_bank = getattr(staff_profile, 'bank_details', None)
+
+    if staff_bank:
+        bank_label_text = "PAY INTO"
+        bank_lines = [
+            _safe(staff_bank.bank_name),
+            f"Sort {staff_bank.sort_code} · Acc {staff_bank.account_number}",
+        ]
+        if staff_bank.account_name:
+            bank_lines.append(f"Account name: {staff_bank.account_name}")
+    else:
+        bank_label_text = "PAY INTO"
+        bank_lines = ["Bank details not on file."]
+
+    bank_rows = [[Paragraph(bank_label_text, s_label)]]
+    for ln in bank_lines:
+        bank_rows.append([Paragraph(ln, s_value)])
+
+    bank_table = Table(bank_rows, colWidths=[90 * mm])
+    bank_table.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+
+    totals_rows = [
+        [
+            Paragraph("Subtotal", s_value),
+            Paragraph(_gbp(invoice.total_amount), ParagraphStyle("Sub", parent=s_value, alignment=TA_RIGHT)),
+        ],
+    ]
+    totals_rows.append([
+        Paragraph("Total", s_total_label),
+        Paragraph(_gbp(invoice.total_amount), s_total_value),
+    ])
+
+    totals_table = Table(totals_rows, colWidths=[36 * mm, 32 * mm])
+    totals_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), BG_100),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4 * mm),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4 * mm),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5 * mm),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5 * mm),
+        # Divider above total row
+        ("LINEABOVE", (0, 1), (-1, 1), 0.5, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+
+    bottom = Table(
+        [[bank_table, totals_table]],
+        colWidths=[90 * mm, 78 * mm],
+    )
+    bottom.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 16 * mm),
+        ("RIGHTPADDING", (0, 0), (0, 0), 4 * mm),
+        ("RIGHTPADDING", (1, 0), (1, 0), 16 * mm),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    elements.append(bottom)
+    elements.append(Spacer(1, 12 * mm))
+
+    # --- Footer ------------------------------------------------------------
     generated_at = datetime.now().strftime("%d %b %Y at %H:%M")
     footer_text = (
-        f"Generated on {generated_at} | "
-        f"Invoice version {invoice.version or 1} | "
-        f"This document is for payroll purposes only."
+        f"Generated on {generated_at} · "
+        f"Invoice version {invoice.version or 1} · "
+        "This document is the canonical record of the named period."
     )
     elements.append(Paragraph(footer_text, s_footer))
 
-    # Build
     doc.build(elements)
     buf.seek(0)
     return buf

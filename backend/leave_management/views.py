@@ -791,12 +791,11 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         # Create the request
         self.perform_create(serializer)
 
-        # Auto-submit if not in draft mode
-        if serializer.instance.status == 'draft':
-            # Allow user to submit later
-            pass
-        else:
-            # Auto-submit — save() handles adding to LeaveBalance.pending_balance
+        # Auto-submit for approval unless caller explicitly asked to save as draft
+        # (the legacy save-as-draft path is the explicit `save_as=draft` flag).
+        save_as_draft = str(request.data.get('save_as', '')).lower() == 'draft'
+        if not save_as_draft:
+            # save() handles stamping submitted_at + adding to LeaveBalance.pending_balance
             serializer.instance.status = 'pending'
             serializer.instance.save()
 
@@ -1143,14 +1142,17 @@ class LeaveCalendarViewSet(viewsets.ReadOnlyModelViewSet):
             # Staff can only see their own requests
             queryset = queryset.filter(staff_user=self.request.user)
 
-        # Filter by date range if provided
+        # Filter by date range if provided — match any event that OVERLAPS
+        # [start_date, end_date], not just events fully contained within it.
+        # An event overlaps the range when its start_date <= range_end AND
+        # its end_date >= range_start.
         start_date = self.request.query_params.get('start_date')
         end_date = self.request.query_params.get('end_date')
 
-        if start_date:
-            queryset = queryset.filter(start_date__gte=start_date)
         if end_date:
-            queryset = queryset.filter(end_date__lte=end_date)
+            queryset = queryset.filter(start_date__lte=end_date)
+        if start_date:
+            queryset = queryset.filter(end_date__gte=start_date)
 
         return queryset.filter(status='approved').select_related('staff_user', 'leave_type')
 

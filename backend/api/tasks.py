@@ -1950,3 +1950,190 @@ def hard_delete_expired_accounts():
 
     logger.info(f"Hard-delete task completed: {deleted_count} accounts anonymized")
     return result
+
+
+@shared_task
+def process_auto_checkouts():
+    """
+    Auto-checkout shifts that ran past their end_time without a manual checkout.
+
+    Mirrors the logic in `Shift.can_auto_checkout()` / `perform_auto_checkout()`
+    and depends on `SystemSettings.auto_checkout_enabled` to be on. When a
+    shift is auto-checked-out with all venue checks complete and a synthetic
+    end signature, `Shift.save()` then auto-promotes the status from
+    `pending_approval` to `approved` — closing the loop without a manager
+    click. Run from CELERY_BEAT_SCHEDULE every 5 minutes.
+    """
+    from api.models import Shift
+
+    eligible = Shift.objects.filter(
+        status='in_progress',
+        check_out_time__isnull=True,
+        auto_checkout=False,
+    ).select_related('venue', 'staff_user')
+
+    processed = 0
+    skipped = 0
+    failed = 0
+    for shift in eligible:
+        try:
+            if not shift.can_auto_checkout():
+                skipped += 1
+                continue
+            if shift.perform_auto_checkout():
+                processed += 1
+                logger.info(
+                    f"Auto-checkout completed for shift {shift.id} "
+                    f"(staff={shift.staff_user_id}, venue={shift.venue_id})"
+                )
+            else:
+                failed += 1
+        except Exception as exc:  # pragma: no cover — defensive
+            failed += 1
+            logger.exception(f"Auto-checkout failed for shift {shift.id}: {exc}")
+
+    logger.info(
+        f"Auto-checkout sweep: processed={processed}, skipped={skipped}, failed={failed}"
+    )
+    return {'processed': processed, 'skipped': skipped, 'failed': failed}
+
+
+def _run_payroll_for_period(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Shared implementation for the weekly + monthly payroll cron tasks.
+
+    `params` is the output of `PayrollRun.for_iso_week()` or
+    `PayrollRun.for_calendar_month()`. We filter staff by their
+    `StaffProfile.pay_frequency` so a weekly run only touches weekly-paid
+    officers and vice versa — preventing duplicate invoices when both
+    crons run in the same window.
+    """
+    from django.db import transaction as _txn
+    from api.models import (
+        Invoice, PayrollRun, SecurityCompany, Shift, AuditLog,
+    )
+
+    today = timezone.localdate()
+    cycle = params['cycle']
+
+    summary = {'cycle': cycle, 'companies': 0, 'runs_created': 0,
+               'invoices_created': 0, 'invoices_linked': 0, 'errors': 0}
+
+    for company in SecurityCompany.objects.filter(is_active=True):
+        try:
+            with _txn.atomic():
+                run, created = PayrollRun.objects.select_for_update().get_or_create(
+                    company=company,
+                    cycle=cycle,
+                    period_start=params['period_start'],
+                    period_end=params['period_end'],
+                    defaults={
+                        'run_code': params['run_code'],
+                        'label': params['label'],
+                        'process_date': params['process_date'],
+                    },
+                )
+                if created:
+                    summary['runs_created'] += 1
+
+                # Find staff with approved shifts in the period for this company,
+                # filtered by pay_frequency so weekly/monthly cycles never overlap.
+                staff_ids = list(
+                    Shift.objects.filter(
+                        venue__company=company,
+                        start_time__date__gte=params['period_start'],
+                        start_time__date__lte=params['period_end'],
+                        status='approved',
+                        actual_hours_worked__isnull=False,
+                        staff_user__profile__pay_frequency=cycle,
+                    )
+                    .values_list('staff_user_id', flat=True)
+                    .distinct()
+                )
+
+                from api.models import User as _U
+                for staff_user in _U.objects.filter(pk__in=staff_ids):
+                    try:
+                        invoice = Invoice.generate_for_staff_period(
+                            staff_user=staff_user,
+                            start_date=params['period_start'],
+                            end_date=params['period_end'],
+                            source='system',
+                        )
+                        if invoice.payroll_run_id != run.id:
+                            invoice.payroll_run = run
+                            invoice.save(update_fields=['payroll_run', 'updated_at'])
+                            summary['invoices_linked'] += 1
+                        if invoice.pk and invoice.created_at and invoice.created_at.date() == today:
+                            summary['invoices_created'] += 1
+                    except ValueError:
+                        continue
+                    except Exception:
+                        logger.exception(
+                            f"Failed to generate invoice for staff={staff_user.pk} "
+                            f"in run {run.run_code}"
+                        )
+                        summary['errors'] += 1
+
+                run.recompute_totals()
+
+                AuditLog.objects.create(
+                    user=None,
+                    action='payroll_run_created' if created else 'payroll_run_updated',
+                    resource_type='PayrollRun',
+                    resource_id=str(run.id),
+                    details={
+                        'run_code': run.run_code,
+                        'cycle': cycle,
+                        'invoices': run.invoice_count,
+                        'gross': float(run.gross_total),
+                    },
+                )
+
+            summary['companies'] += 1
+        except Exception:
+            logger.exception(
+                f"_run_payroll_for_period failed cycle={cycle} company={company.id}"
+            )
+            summary['errors'] += 1
+
+    logger.info(
+        f"Payroll {cycle} sweep: companies={summary['companies']} "
+        f"runs_created={summary['runs_created']} "
+        f"invoices_created={summary['invoices_created']} "
+        f"invoices_linked={summary['invoices_linked']} "
+        f"errors={summary['errors']}"
+    )
+    return summary
+
+
+@shared_task
+def create_weekly_payroll_run() -> Dict[str, Any]:
+    """Create a PayrollRun for the previous ISO week per active company.
+
+    Runs every Monday at 06:00 UTC. Picks up officers with
+    `profile.pay_frequency='weekly'` only; monthly officers go through
+    `create_monthly_payroll_run` instead.
+    """
+    from api.models import PayrollRun
+    today = timezone.localdate()
+    last_week = today - timedelta(days=7)
+    return _run_payroll_for_period(PayrollRun.for_iso_week(last_week))
+
+
+@shared_task
+def create_monthly_payroll_run() -> Dict[str, Any]:
+    """Create a PayrollRun for the previous calendar month per active company.
+
+    Runs on the 1st of each month at 06:00 UTC. Picks up officers with
+    `profile.pay_frequency='monthly'`. Idempotent via the unique
+    constraint (company, cycle, period_start, period_end).
+    """
+    from datetime import date
+    from api.models import PayrollRun
+    today = timezone.localdate()
+    # Step back into the previous calendar month.
+    if today.month == 1:
+        anchor = date(today.year - 1, 12, 1)
+    else:
+        anchor = date(today.year, today.month - 1, 1)
+    return _run_payroll_for_period(PayrollRun.for_calendar_month(anchor))

@@ -256,6 +256,50 @@ class InvoiceExport(models.Model):
     def __str__(self):
         return f"Invoice #{self.local_invoice.id} → {self.connection.provider.display_name} ({self.status})"
 
+class ClientInvoiceExport(models.Model):
+    """Tracks ClientInvoice exports to accounting providers.
+
+    Mirrors `InvoiceExport` (which targets staff `api.Invoice`) but for the
+    `api.ClientInvoice` (B2B billing) lifecycle. Both are read by the
+    frontend's exportStatus pill on the Invoices page.
+    """
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    connection = models.ForeignKey(
+        ProviderConnection, on_delete=models.CASCADE,
+        related_name='client_invoice_exports'
+    )
+    local_invoice = models.ForeignKey(
+        'api.ClientInvoice', on_delete=models.CASCADE, related_name='exports'
+    )
+    provider_invoice_id = models.CharField(max_length=100, blank=True)
+    provider_invoice_number = models.CharField(max_length=100, blank=True)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    export_data = models.JSONField(null=True, blank=True, help_text="Exported invoice data snapshot")
+    provider_response = models.JSONField(null=True, blank=True, help_text="Provider API response")
+    error_message = models.TextField(blank=True)
+
+    exported_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='exported_client_invoices')
+    exported_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'client_invoice_exports'
+        ordering = ['-exported_at']
+        unique_together = ['connection', 'local_invoice']
+
+    def __str__(self):
+        return f"ClientInvoice {self.local_invoice.invoice_number} → {self.connection.provider.display_name} ({self.status})"
+
+
 class PayrollExport(models.Model):
     """Tracks payroll/pay run exports to accounting providers"""
     

@@ -109,7 +109,13 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
     - Staff reassigned to different user → reassignment + assignment notifications
 
     Also schedules reminder notifications via Celery for new assignments.
+
+    Drafts (is_published=False) never fire notifications — staff are only told
+    about shifts after the manager publishes them.
     """
+    if not instance.is_published:
+        return
+
     previous_staff = getattr(instance, '_previous_staff_user', None)
     current_staff = instance.staff_user
 
@@ -357,16 +363,26 @@ def _notify_coworkers_of_new_assignment(shift, new_staff):
 @receiver(post_save, sender=Shift)
 def auto_create_open_shift_request(sender, instance, created, **kwargs):
     """
-    Automatically create an OpenShiftRequest when admin creates an open shift.
+    Automatically create an OpenShiftRequest when an open shift is published.
 
-    This handles the workflow where admin creates a shift with status='open'
-    and no staff assigned, making it available for staff to claim.
+    Fires whenever a Shift is saved that meets all of:
+      - status='open' and no staff assigned
+      - is_published=True (drafts never broadcast — even on creation)
+      - no existing OpenShiftRequest for this Shift
+
+    The post_save signal on the resulting OpenShiftRequest queues the batched
+    push-notification Celery task, so this is what makes "Publish week" actually
+    notify eligible staff.
     """
-    # Only process newly created open shifts with no staff assigned
-    if not created:
+    if instance.status != 'open' or instance.staff_user is not None:
         return
 
-    if instance.status != 'open' or instance.staff_user is not None:
+    if not instance.is_published:
+        return
+
+    # Idempotent — don't create a duplicate OpenShiftRequest if a publish save
+    # fires more than once, or if the shift was already broadcast.
+    if OpenShiftRequest.objects.filter(original_shift=instance).exists():
         return
 
     try:
@@ -547,9 +563,16 @@ def notify_shift_deletion(sender, instance, **kwargs):
 
     Uses pre_delete signal to capture shift data before it's removed from database.
     This ensures the assigned staff member is notified when their shift is deleted.
+
+    Drafts (is_published=False) are silent — staff were never told about the
+    shift, so removing it shouldn't notify them either.
     """
     # Only notify if there's an assigned staff member
     if not instance.staff_user:
+        return
+
+    # Drafts never broadcast — deleting them is also silent.
+    if not instance.is_published:
         return
 
     # Only notify for future/active shifts (not past completed ones)
@@ -602,19 +625,14 @@ def notify_shift_deletion(sender, instance, **kwargs):
 # =============================================================================
 
 @receiver(post_save, sender='api.TimeAdjustment')
-def auto_update_invoice_on_time_adjustment(sender, instance, created, **kwargs):
+def sync_shift_and_recalc_invoice_on_time_adjustment(sender, instance, created, **kwargs):
     """
-    When a TimeAdjustment is created, automatically update any existing invoice
-    that includes this shift
+    Sync the adjusted attendance values back onto the parent Shift so the Shift
+    remains the single source of truth (Phase 1 of the attendance source-of-truth
+    refactor — see docs/attendance-source-of-truth.md).
 
-    This ensures payment calculations stay accurate when managers correct shift times
-    due to technical issues (e.g., network problems preventing timely check-in).
-
-    Args:
-        sender: The TimeAdjustment model class
-        instance: The TimeAdjustment instance that was saved
-        created: True if this is a new record (not an update)
-        **kwargs: Additional signal arguments
+    Then, if an invoice already covers this shift, recalculate its line items so
+    payment calculations stay accurate after a manager correction.
     """
     from .models import InvoiceItem
 
@@ -624,25 +642,52 @@ def auto_update_invoice_on_time_adjustment(sender, instance, created, **kwargs):
 
     shift = instance.shift
 
-    # Find invoice item for this shift
-    try:
-        invoice_item = InvoiceItem.objects.select_related('invoice').get(shift=shift)
-        invoice = invoice_item.invoice
+    # P3.1 (C4 fix): always write the adjusted values through to the Shift.
+    # Previously this guarded with `not shift.check_in_time` which meant
+    # corrections never reached Shift in the normal case where staff had
+    # already self-checked-out. The audit trail on TimeAdjustment.original_*
+    # preserves the pre-correction values, so overwriting Shift is safe.
+    sync_fields = []
+    if instance.adjusted_check_in_time is not None:
+        shift.check_in_time = instance.adjusted_check_in_time
+        sync_fields.append('check_in_time')
+    if instance.adjusted_check_out_time is not None:
+        shift.check_out_time = instance.adjusted_check_out_time
+        sync_fields.append('check_out_time')
+    if instance.adjusted_actual_hours is not None:
+        shift.actual_hours_worked = instance.adjusted_actual_hours
+        sync_fields.append('actual_hours_worked')
+    if sync_fields:
+        shift.save(update_fields=sync_fields)
+        logger.info(
+            f"Synced Shift {shift.id} from TimeAdjustment {instance.id}: {sync_fields}"
+        )
 
-        # Only update pending invoices (not paid/rejected)
-        if invoice.status != 'pending':
-            logger.warning(
-                f"Skipping invoice update for shift {shift.id} - "
-                f"invoice {invoice.id} status is {invoice.status}"
+    # A single shift can produce multiple InvoiceItems (base + OT + special tiers),
+    # so look up the parent invoice via filter() and let recalculate_from_shifts
+    # re-emit all per-tier rows from the new actual_hours_worked.
+    try:
+        invoice_item = (
+            InvoiceItem.objects.select_related('invoice').filter(shift=shift).first()
+        )
+        if invoice_item is None:
+            logger.debug(
+                f"Shift {shift.id} has time adjustment but no invoice exists yet - "
+                f"will be included when invoice is generated"
             )
             return
 
-        # Recalculate this specific invoice item
-        invoice_item.hours_worked = shift.get_effective_actual_hours()
-        invoice_item.amount = shift.calculate_payment()
-        invoice_item.save()
+        invoice = invoice_item.invoice
 
-        # Recalculate invoice totals
+        # Skip paid invoices — those are locked. Allow pending/rejected/draft so
+        # the reject → adjust → re-issue cycle can update line items in place.
+        if invoice.status == 'paid':
+            logger.warning(
+                f"Skipping invoice update for shift {shift.id} - "
+                f"invoice {invoice.id} is already paid"
+            )
+            return
+
         invoice.recalculate_from_shifts()
 
         logger.info(
@@ -650,16 +695,81 @@ def auto_update_invoice_on_time_adjustment(sender, instance, created, **kwargs):
             f"for shift {shift.id} by {instance.adjusted_by.username if instance.adjusted_by else 'Unknown'}"
         )
 
-    except InvoiceItem.DoesNotExist:
-        # Shift not yet invoiced - no action needed
-        logger.debug(
-            f"Shift {shift.id} has time adjustment but no invoice exists yet - "
-            f"will be included when invoice is generated"
-        )
+        # P3.4 (C3 fix): cascade recompute to sibling invoices containing
+        # later-starting shifts in the same ISO week. Their OT split depends
+        # on this shift's hours (prior_hours accumulator), so adjusting this
+        # shift can shift the OT classification of later shifts. Earlier
+        # shifts are unaffected (their prior_hours doesn't include this one).
+        from datetime import timedelta as _td
+        from .models import Invoice as _Invoice
+        if shift.start_time:
+            shift_date = shift.start_time.date()
+            week_start = shift_date - _td(days=shift_date.weekday())
+            week_end = week_start + _td(days=6)
+            sibling_invoice_ids = list(
+                InvoiceItem.objects
+                .filter(
+                    invoice__staff_user=shift.staff_user,
+                    invoice__superseded_by__isnull=True,
+                    shift__start_time__date__gte=week_start,
+                    shift__start_time__date__lte=week_end,
+                    shift__start_time__gt=shift.start_time,
+                )
+                .exclude(invoice_id=invoice.id)
+                .values_list('invoice_id', flat=True)
+                .distinct()
+            )
+            for sibling_id in sibling_invoice_ids:
+                sibling = _Invoice.objects.filter(pk=sibling_id).first()
+                if not sibling or sibling.status == 'paid':
+                    continue
+                sibling.recalculate_from_shifts()
+                logger.info(
+                    f"Cascaded recompute to sibling invoice {sibling_id} "
+                    f"for staff {shift.staff_user_id} week {week_start}"
+                )
+
     except Exception as e:
         logger.error(
             f"Error auto-updating invoice after time adjustment for shift {shift.id}: {str(e)}",
             exc_info=True
+        )
+
+
+# =============================================================================
+# PayrollRun cached-aggregate refresh
+# =============================================================================
+
+@receiver(post_save, sender='api.Invoice')
+def refresh_payrollrun_aggregates_on_invoice_save(sender, instance, **kwargs):
+    """Keep `PayrollRun.gross_total` / `hours_billed` / `invoice_count` in sync
+    with their child invoices.
+
+    Without this, a manager-driven `Invoice.recalculate_from_shifts()` (e.g.
+    after a time adjustment) updated invoice totals but the parent run's
+    cached aggregates still reflected the pre-adjustment numbers, so the
+    Payroll page's "Previous runs" rail and the run header drifted apart.
+
+    Side-effects: a single recompute_totals() does one aggregate query per
+    save, so it's cheap. Bulk paths that don't want this firing should use
+    queryset.update() (which doesn't emit post_save) and call recompute_totals
+    explicitly when they're done.
+    """
+    run = instance.payroll_run
+    if run is None:
+        return
+    # Avoid recursion: both methods save the PayrollRun, not the invoice,
+    # so this won't re-enter this signal.
+    try:
+        run.recompute_totals()
+        # update_status_from_invoices() flips pending → approved → paid based
+        # on child invoice statuses. Without this, the run pill stays stuck
+        # at its initial status even after every officer is paid out.
+        run.update_status_from_invoices()
+    except Exception:
+        logger.exception(
+            f"Failed to refresh PayrollRun {run.id} aggregates after "
+            f"Invoice {instance.id} save"
         )
 
 
@@ -855,9 +965,26 @@ def audit_invoice_status_change(sender, instance, **kwargs):
         old_status = old_invoice.status
         new_status = instance.status
         if old_status != new_status:
+            # P4 (H4 fix): resolve company via the staff user's active
+            # membership. Invoice has no `company` field so the previous
+            # `instance.company` always evaluated to None and broke
+            # multi-tenant audit filtering.
+            company = None
+            if instance.staff_user_id:
+                try:
+                    membership = (
+                        instance.staff_user.company_memberships
+                        .filter(is_active=True)
+                        .select_related('company')
+                        .first()
+                    )
+                    if membership:
+                        company = membership.company
+                except Exception:
+                    pass
             AuditLog.objects.create(
                 user=instance.staff_user if hasattr(instance, 'staff_user') else None,
-                company=instance.company if hasattr(instance, 'company') else None,
+                company=company,
                 action='status_change',
                 resource_type='Invoice',
                 resource_id=str(instance.id),

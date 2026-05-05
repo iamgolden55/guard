@@ -727,21 +727,28 @@ class UserViewSet(viewsets.ModelViewSet):
             company = self.get_user_company(request)
             if company:
                 company_user_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
-                staff_users = User.objects.filter(id__in=company_user_ids, role='staff').select_related('profile')
+                staff_users = User.objects.filter(
+                    id__in=company_user_ids,
+                    role__in=['staff', 'admin', 'manager'],
+                ).select_related('profile')
             else:
                 staff_users = User.objects.none()
             staff_data = []
 
             for user in staff_users:
+                profile = getattr(user, 'profile', None)
                 staff_data.append({
                     'id': user.id,
+                    'staff_profile_id': profile.id if profile else None,
                     'username': user.username,
                     'first_name': user.first_name,
                     'last_name': user.last_name,
                     'email': user.email,
+                    'role': user.role,
                     'full_name': f"{user.first_name} {user.last_name}".strip() or user.username,
-                    'is_approved': getattr(user.profile, 'is_approved', False) if hasattr(user, 'profile') else False,
-                    'employment_type': getattr(user.profile, 'employment_type', None).name if hasattr(user, 'profile') and hasattr(user.profile, 'employment_type') and user.profile.employment_type else None
+                    'is_approved': getattr(profile, 'is_approved', False) if profile else False,
+                    'employment_type': profile.employment_type.name if profile and profile.employment_type else None,
+                    'pay_frequency': getattr(profile, 'pay_frequency', 'weekly') if profile else 'weekly',
                 })
             
             return Response(staff_data)
@@ -1352,6 +1359,8 @@ class SIALicenseViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = SIALicense.objects.all()
     serializer_class = SIALicenseSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['staff_profile']
 
     def get_queryset(self):
         user = self.request.user
@@ -2236,6 +2245,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         else:
             # Default to user's own invoices
             queryset = Invoice.objects.filter(staff_user=user)
+
+        # Hide superseded invoices (resolved by reissue or replaced by a period
+        # invoice in the hybrid flow). They remain in the DB for audit.
+        queryset = queryset.filter(superseded_by__isnull=True)
 
         # Filter by date range if provided
         start_date = self.request.query_params.get('start_date')
@@ -8359,3 +8372,502 @@ class IncidentReportViewSet(viewsets.ModelViewSet):
         incident.followup_notes = request.data.get('followup_notes', incident.followup_notes)
         incident.save()
         return Response(IncidentReportSerializer(incident).data)
+
+
+# =============================================================================
+# ADMIN DASHBOARD OVERVIEW
+# =============================================================================
+
+class AdminDashboardOverviewView(APIView):
+    """
+    GET /api/v1/admin/dashboard/overview/
+
+    Manager/admin-only aggregation backing the Operations Dashboard.
+    Returns KPIs, pending approvals, venue coverage, SIA compliance,
+    live activity, staff roster, and a 7×24 coverage heatmap in one call.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not CompliancePermissions.is_manager_or_admin(request.user):
+            return Response(
+                {'detail': 'Manager or admin role required.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        from leave_management.models import LeaveRequest
+
+        now = timezone.now()
+        today = timezone.localdate()
+        week_start = today - datetime.timedelta(days=today.weekday())  # Monday
+        week_end = week_start + datetime.timedelta(days=6)
+
+        # ---- Company scope ----
+        # Mirrors LeaveRequestViewSet.get_queryset: surface only data the
+        # caller can act on. If the admin has no company membership we fall
+        # back to global (super-admin) — same behaviour the per-resource
+        # viewsets accept.
+        membership = (
+            request.user.company_memberships
+            .filter(is_active=True, company__is_active=True)
+            .select_related('company').first()
+        )
+        if membership:
+            company_id = membership.company_id
+            company_user_ids = list(
+                membership.company.memberships
+                .filter(is_active=True)
+                .values_list('user_id', flat=True)
+            )
+        else:
+            company_id = None
+            company_user_ids = None
+
+        def by_users(qs, field='staff_user_id'):
+            if company_user_ids is None:
+                return qs
+            return qs.filter(**{f'{field}__in': company_user_ids})
+
+        def by_venue_co(qs, field='venue__company_id'):
+            if company_id is None:
+                return qs
+            return qs.filter(**{field: company_id})
+
+        def by_co(qs, field='company_id'):
+            if company_id is None:
+                return qs
+            return qs.filter(**{field: company_id})
+
+        # ---- KPIs ----
+        # Officers expected on shift right now: published + assigned, the shift
+        # window contains now, and they aren't already done. This counts both
+        # checked-in officers (status=in_progress) and ones who haven't checked
+        # in yet — the dashboard surfaces the latter via the delta below.
+        expected_on_shift_qs = by_venue_co(
+            Shift.objects.filter(
+                is_published=True,
+                staff_user__isnull=False,
+                start_time__lte=now,
+                end_time__gte=now,
+            ).exclude(status__in=['completed', 'cancelled', 'no_show', 'rejected'])
+        )
+        on_shift = expected_on_shift_qs.count()
+        # "Not checked in" excludes shifts whose check-in came via a manager
+        # TimeAdjustment (Mark Present). check_in_time alone is null in that
+        # case, but the officer is effectively present.
+        from django.db.models import Exists, OuterRef
+        from api.models import TimeAdjustment
+        has_attestation = TimeAdjustment.objects.filter(
+            shift=OuterRef('pk'),
+            adjusted_check_in_time__isnull=False,
+        )
+        on_shift_pending_checkin = (
+            expected_on_shift_qs
+            .filter(check_in_time__isnull=True)
+            .annotate(_attested=Exists(has_attestation))
+            .filter(_attested=False)
+            .count()
+        )
+
+        hours_today = by_venue_co(Shift.objects.filter(
+            start_time__date=today,
+            actual_hours_worked__isnull=False,
+        )).aggregate(total=Sum('actual_hours_worked'))['total'] or Decimal('0')
+
+        # Scheduled hours today: sum (end_time - start_time) for every
+        # published shift that starts today, regardless of check-in. Used as
+        # the "delta" so admin sees both delivered and scheduled.
+        todays_shift_pairs = list(by_venue_co(Shift.objects.filter(
+            start_time__date=today,
+            is_published=True,
+            end_time__isnull=False,
+        )).values_list('start_time', 'end_time'))
+        scheduled_hours_today = sum(
+            (e - s).total_seconds() / 3600
+            for s, e in todays_shift_pairs
+            if s and e
+        )
+
+        leave_pending = by_users(
+            LeaveRequest.objects.filter(status='pending')
+        ).count()
+        recruit_pending = by_co(
+            RecruitmentApplication.objects.filter(status='pending'),
+            field='employment_type__company_id',
+        ).count()
+        shift_pending = by_venue_co(
+            Shift.objects.filter(status='pending_approval')
+        ).count()
+        open_approvals_total = leave_pending + recruit_pending + shift_pending
+
+        revenue_week = by_venue_co(Shift.objects.filter(
+            start_time__date__gte=week_start,
+            start_time__date__lte=week_end,
+            status__in=['completed', 'approved'],
+            actual_hours_worked__isnull=False,
+            bill_rate__isnull=False,
+        )).aggregate(
+            total=Sum(models.F('actual_hours_worked') * models.F('bill_rate'))
+        )['total'] or Decimal('0')
+
+        kpis = {
+            'officers_on_shift': {
+                'value': on_shift,
+                'delta': (
+                    f'{on_shift_pending_checkin} not checked in'
+                    if on_shift_pending_checkin > 0
+                    else ''
+                ),
+                'delta_dir': (
+                    'down' if on_shift_pending_checkin > 0 else 'neutral'
+                ),
+                'spark': [],
+            },
+            'hours_delivered_today': {
+                'value': float(hours_today),
+                'delta': (
+                    f'{scheduled_hours_today:.1f}h scheduled'
+                    if scheduled_hours_today > 0
+                    else ''
+                ),
+                'delta_dir': 'neutral',
+                'spark': [],
+            },
+            'open_approvals': {
+                'value': open_approvals_total,
+                'delta': f'{shift_pending} urgent' if shift_pending else '',
+                'delta_dir': 'neutral',
+                'spark': [],
+            },
+            'revenue_this_week': {
+                'value': float(revenue_week),
+                'delta': '',
+                'delta_dir': 'neutral',
+                'spark': [],
+            },
+        }
+
+        # ---- Pending approvals (top 10, mixed sources) ----
+        approvals = []
+        for lr in (by_users(LeaveRequest.objects.filter(status='pending'))
+                   .select_related('staff_user', 'leave_type')
+                   .order_by('start_date')[:5]):
+            approvals.append({
+                'id': f'leave:{lr.id}',
+                'type': f'{lr.leave_type.name} request' if lr.leave_type else 'Leave request',
+                'who': lr.staff_user.get_full_name() or lr.staff_user.username,
+                'when': self._format_date_range(lr.start_date, lr.end_date),
+                'venue': '—',
+                'urgency': self._urgency_for_date(lr.start_date),
+                'source': 'leave',
+                'source_id': lr.id,
+            })
+        for app in (by_co(
+                        RecruitmentApplication.objects.filter(status='pending'),
+                        field='employment_type__company_id',
+                    )
+                    .order_by('-application_date')[:3]):
+            approvals.append({
+                'id': f'recruitment:{app.id}',
+                'type': 'New application',
+                'who': app.full_name,
+                'when': app.application_date.strftime('%-d %b'),
+                'venue': '—',
+                'urgency': 'medium',
+                'source': 'recruitment',
+                'source_id': app.id,
+            })
+        for s in (by_venue_co(Shift.objects.filter(status='pending_approval'))
+                  .select_related('staff_user', 'venue')
+                  .order_by('-end_time')[:3]):
+            staff_name = (s.staff_user.get_full_name() if s.staff_user else '') or 'Unassigned'
+            approvals.append({
+                'id': f'shift:{s.id}',
+                'type': 'Shift approval',
+                'who': staff_name,
+                'when': self._format_shift_time(s),
+                'venue': s.venue.name,
+                'urgency': self._urgency_for_datetime(s.end_time or s.start_time),
+                'source': 'shift',
+                'source_id': s.id,
+            })
+        urgency_rank = {'high': 0, 'medium': 1, 'low': 2}
+        approvals.sort(key=lambda a: urgency_rank.get(a['urgency'], 3))
+        approvals = approvals[:10]
+
+        # ---- Venue coverage ----
+        venue_coverage = []
+        venues = by_co(
+            Venue.objects.filter(is_active=True)
+        ).order_by('name')[:10]
+        for v in venues:
+            week_shifts = Shift.objects.filter(
+                venue=v,
+                start_time__date__gte=week_start,
+                start_time__date__lte=week_end,
+            )
+            required = week_shifts.count()
+            staffed = week_shifts.filter(staff_user__isnull=False).count()
+            incidents = IncidentReport.objects.filter(
+                venue=v,
+                created_at__date__gte=week_start,
+            ).count()
+            coverage = int(round((staffed / required * 100))) if required else 100
+            venue_coverage.append({
+                'id': v.id,
+                'name': v.name,
+                'staffed': staffed,
+                'required': required,
+                'coverage': coverage,
+                'incidents': incidents,
+            })
+
+        # ---- SIA compliance ----
+        in_30 = today + datetime.timedelta(days=30)
+        valid_count = by_users(
+            SIALicense.objects.filter(expiry_date__gte=in_30),
+            field='staff_profile__user_id',
+        ).count()
+        expiring_count = by_users(
+            SIALicense.objects.filter(
+                expiry_date__gte=today,
+                expiry_date__lt=in_30,
+            ),
+            field='staff_profile__user_id',
+        ).count()
+        expired_count = by_users(
+            SIALicense.objects.filter(expiry_date__lt=today),
+            field='staff_profile__user_id',
+        ).count()
+        expiring_list = []
+        for lic in (by_users(
+                        SIALicense.objects.filter(
+                            expiry_date__gte=today, expiry_date__lt=in_30,
+                        ),
+                        field='staff_profile__user_id',
+                    )
+                    .select_related('staff_profile__user')
+                    .order_by('expiry_date')[:5]):
+            user = lic.staff_profile.user
+            expiring_list.append({
+                'user_id': user.id,
+                'name': user.get_full_name() or user.username,
+                'expiresIn': (lic.expiry_date - today).days,
+                'license': self._license_label(lic.license_type),
+            })
+        sia_compliance = {
+            'valid': valid_count,
+            'expiring_soon': expiring_count,
+            'expired': expired_count,
+            'expiring_list': expiring_list,
+        }
+
+        # ---- Live activity (top 10, mixed kinds) ----
+        events = []
+        for s in (by_venue_co(Shift.objects.filter(
+                      check_in_time__isnull=False,
+                      check_in_time__gte=now - datetime.timedelta(hours=24),
+                  ))
+                  .select_related('staff_user', 'venue')
+                  .order_by('-check_in_time')[:10]):
+            if not s.staff_user:
+                continue
+            events.append({
+                'when': s.check_in_time,
+                'kind': 'check-in',
+                'text': f'{s.staff_user.get_full_name() or s.staff_user.username} checked in at {s.venue.name}',
+            })
+        for s in (by_venue_co(Shift.objects.filter(
+                      check_out_time__isnull=False,
+                      check_out_time__gte=now - datetime.timedelta(hours=24),
+                  ))
+                  .select_related('staff_user', 'venue')
+                  .order_by('-check_out_time')[:10]):
+            if not s.staff_user:
+                continue
+            hours = s.actual_hours_worked or 0
+            events.append({
+                'when': s.check_out_time,
+                'kind': 'check-out',
+                'text': f'{s.staff_user.get_full_name() or s.staff_user.username} checked out — {hours}h',
+            })
+        for i in (by_venue_co(IncidentReport.objects.filter(
+                      created_at__gte=now - datetime.timedelta(hours=72),
+                  ))
+                  .select_related('venue')
+                  .order_by('-created_at')[:5]):
+            events.append({
+                'when': i.created_at,
+                'kind': 'incident',
+                'text': f'{i.get_severity_display()} incident at {i.venue.name}',
+            })
+        events.sort(key=lambda e: e['when'], reverse=True)
+        live_activity = [
+            {'t': self._relative_time(now, e['when']), 'kind': e['kind'], 'text': e['text']}
+            for e in events[:10]
+        ]
+
+        # ---- Staff roster (top 50 active users) ----
+        users_qs = (by_users(
+                        User.objects.filter(
+                            role__in=['staff', 'manager'], is_active=True,
+                        ),
+                        field='id',
+                    )
+                    .select_related('profile')
+                    .prefetch_related('profile__sia_licenses')
+                    .order_by('first_name', 'last_name')[:50])
+        user_ids = [u.id for u in users_qs]
+
+        # Bulk-fetch current shifts per user
+        in_progress = {
+            s.staff_user_id: s for s in
+            Shift.objects.filter(staff_user_id__in=user_ids, status='in_progress')
+                         .select_related('venue')
+        }
+        late = {
+            s.staff_user_id: s for s in
+            Shift.objects.filter(
+                staff_user_id__in=user_ids,
+                status='scheduled',
+                start_time__lte=now - datetime.timedelta(minutes=15),
+                check_in_time__isnull=True,
+            ).select_related('venue')
+        }
+        last_completed = {}
+        for s in Shift.objects.filter(
+            staff_user_id__in=user_ids,
+            status__in=['completed', 'approved'],
+        ).select_related('venue').order_by('staff_user_id', '-start_time'):
+            last_completed.setdefault(s.staff_user_id, s)
+        week_hours_map = {
+            row['staff_user']: row['total'] for row in
+            Shift.objects.filter(
+                staff_user_id__in=user_ids,
+                start_time__date__gte=week_start,
+                start_time__date__lte=week_end,
+                actual_hours_worked__isnull=False,
+            ).values('staff_user').annotate(total=Sum('actual_hours_worked'))
+        }
+
+        staff_roster = []
+        for u in users_qs:
+            if u.id in in_progress:
+                status_str = 'on-shift'
+                venue_name = in_progress[u.id].venue.name
+            elif u.id in late:
+                status_str = 'late'
+                venue_name = late[u.id].venue.name
+            else:
+                status_str = 'off-duty'
+                last = last_completed.get(u.id)
+                venue_name = last.venue.name if last else '—'
+
+            primary_license = None
+            if hasattr(u, 'profile') and u.profile:
+                licenses = list(u.profile.sia_licenses.all())
+                primary_license = max(licenses, key=lambda l: l.expiry_date, default=None)
+
+            license_label = (
+                self._license_label(primary_license.license_type)
+                if primary_license else '—'
+            )
+            expires_in = (
+                (primary_license.expiry_date - today).days
+                if primary_license else 9999
+            )
+
+            if u.role == 'manager':
+                role_label = 'Manager'
+            elif u.security_roles:
+                role_label = u.security_roles[0].replace('_', ' ').title()
+            else:
+                role_label = 'Security Officer'
+
+            week_hrs = week_hours_map.get(u.id) or Decimal('0')
+
+            staff_roster.append({
+                'id': u.id,
+                'name': u.get_full_name() or u.username,
+                'role': role_label,
+                'venue': venue_name,
+                'status': status_str,
+                'license': license_label,
+                'expiresIn': expires_in,
+                'hours': float(week_hrs),
+                'avatarHue': (u.id * 47) % 360,
+            })
+
+        # ---- Coverage heatmap (7 × 24, last 7 days) ----
+        last_7 = now - datetime.timedelta(days=7)
+        counts = [[0] * 24 for _ in range(7)]
+        for st_dt in (by_venue_co(
+                          Shift.objects.filter(start_time__gte=last_7)
+                      ).values_list('start_time', flat=True)):
+            local_st = timezone.localtime(st_dt)
+            counts[local_st.weekday()][local_st.hour] += 1
+        max_count = max((max(row) for row in counts), default=0) or 1
+        heatmap = [[round(cell / max_count, 3) for cell in row] for row in counts]
+
+        return Response({
+            'kpis': kpis,
+            'pending_approvals': approvals,
+            'venue_coverage': venue_coverage,
+            'sia_compliance': sia_compliance,
+            'live_activity': live_activity,
+            'staff_roster': staff_roster,
+            'coverage_heatmap': heatmap,
+        })
+
+    @staticmethod
+    def _license_label(code):
+        return f'SIA-{(code or "").upper()}' if code else '—'
+
+    @staticmethod
+    def _format_date_range(start, end):
+        if start == end:
+            return start.strftime('%-d %b')
+        if start.month == end.month:
+            return f'{start.day}–{end.day} {end.strftime("%b")}'
+        return f'{start.strftime("%-d %b")} – {end.strftime("%-d %b")}'
+
+    @staticmethod
+    def _format_shift_time(shift):
+        if not shift.start_time:
+            return '—'
+        st = timezone.localtime(shift.start_time)
+        if shift.end_time:
+            et = timezone.localtime(shift.end_time)
+            return f'{st.strftime("%a %-d %b, %H:%M")}–{et.strftime("%H:%M")}'
+        return st.strftime('%a %-d %b, %H:%M')
+
+    @staticmethod
+    def _urgency_for_date(d):
+        delta = (d - timezone.localdate()).days
+        if delta <= 1:
+            return 'high'
+        if delta <= 3:
+            return 'medium'
+        return 'low'
+
+    @staticmethod
+    def _urgency_for_datetime(dt):
+        if not dt:
+            return 'medium'
+        delta = (dt - timezone.now()).total_seconds() / 3600
+        if delta <= 24:
+            return 'high'
+        if delta <= 72:
+            return 'medium'
+        return 'low'
+
+    @staticmethod
+    def _relative_time(now, then):
+        secs = (now - then).total_seconds()
+        if secs < 60:
+            return f'{int(secs)}s'
+        if secs < 3600:
+            return f'{int(secs / 60)}m'
+        if secs < 86400:
+            return f'{int(secs / 3600)}h'
+        return f'{int(secs / 86400)}d'

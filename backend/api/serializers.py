@@ -287,7 +287,7 @@ class StaffProfileSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'user', 'employment_type', 'employment_type_details', 'phone_number', 'date_of_birth', 'national_insurance_number',
             'street', 'city', 'postal_code', 'country', 'profile_image_url', 'notes',
-            'password_last_changed', 'is_approved', 'created_at', 'updated_at',
+            'password_last_changed', 'is_approved', 'pay_frequency', 'created_at', 'updated_at',
             'emergency_contacts', 'bank_details', 'sia_licenses', 'availability',
             'security_roles', 'securityRoles', 'siaLicenses', 'bankDetails', 'isApproved', 'employmentType', 'passwordLastChanged',
             'firstName', 'lastName', 'email', 'username', 'role'

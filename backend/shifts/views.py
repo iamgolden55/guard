@@ -2,6 +2,7 @@ from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from api.models import Shift  # Import from api.models instead
 from .serializers import (
@@ -1393,77 +1394,141 @@ class ShiftViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(shift)
         return Response(serializer.data)
 
-    @action(detail=True, methods=['post'], url_path='adjust_time')
-    def adjust_time(self, request, pk=None):
+    def _handle_attendance_write(self, request, *, require_reason: bool):
+        """Shared implementation for record_attendance + adjust_time.
+
+        Both endpoints route through the `record_attendance` service so the
+        Shift table stays the single source of truth and audit trail (a
+        TimeAdjustment row) is only created when prior data was overwritten.
         """
-        Create a time adjustment for a shift.
+        from decimal import Decimal, InvalidOperation
+        from datetime import datetime
+        from django.utils.dateparse import parse_datetime
+        from api.models import InvoiceItem
+        from .services import record_attendance
 
-        Allows managers/admins to correct shift check-in/check-out times when staff
-        were present on time but signed in late due to technical issues.
-
-        Requires:
-        - adjusted_check_in_time (optional): Corrected check-in time
-        - adjusted_check_out_time (optional): Corrected check-out time
-        - adjusted_actual_hours: Corrected actual hours worked
-        - reason: Explanation for the adjustment (required)
-        - manager_signature: Base64 encoded signature image (required)
-
-        Returns payment impact details and invoice update status.
-        """
-        from api.models import TimeAdjustment, InvoiceItem
-        from api.serializers import TimeAdjustmentSerializer
-        from decimal import Decimal
-
-        # Check permissions - only managers and admins can adjust times
         if request.user.role not in ['manager', 'admin']:
             return Response(
-                {'detail': 'Only managers and admins can adjust shift times'},
+                {'detail': 'Only managers and admins can record shift attendance'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
         shift = self.get_object()
 
-        # Prepare data for TimeAdjustment
-        adjustment_data = {
-            'shift': shift.id,
-            'adjusted_check_in_time': request.data.get('adjusted_check_in_time'),
-            'adjusted_check_out_time': request.data.get('adjusted_check_out_time'),
-            'adjusted_actual_hours': request.data.get('adjusted_actual_hours'),
-            'reason': request.data.get('reason'),
-            'manager_signature': request.data.get('manager_signature'),
-        }
+        def _parse_dt(value):
+            if value in (None, ''):
+                return None
+            if isinstance(value, datetime):
+                return value
+            return parse_datetime(value)
 
-        # Create serializer and validate
-        serializer = TimeAdjustmentSerializer(data=adjustment_data, context={'request': request})
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        def _parse_hours(value):
+            if value in (None, ''):
+                return None
+            try:
+                return Decimal(str(value))
+            except (InvalidOperation, TypeError):
+                return None
 
-        # Save the adjustment (this will trigger the signal to auto-update invoice)
-        adjustment = serializer.save(adjusted_by=request.user)
+        check_in = _parse_dt(request.data.get('adjusted_check_in_time'))
+        check_out = _parse_dt(request.data.get('adjusted_check_out_time'))
+        hours = _parse_hours(request.data.get('adjusted_actual_hours'))
+        reason = (request.data.get('reason') or '').strip()
+        source = request.data.get('manager_signature') or 'admin'
 
-        # Check if this shift has an invoice
-        invoice_updated = False
-        invoice_id = None
+        if hours is None and check_in and check_out:
+            duration_hours = Decimal(str((check_out - check_in).total_seconds() / 3600))
+            hours = duration_hours.quantize(Decimal('0.01'))
+
+        if hours is None and check_in is None and check_out is None:
+            return Response(
+                {'detail': 'Provide check-in, check-out, or hours.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if require_reason and not reason:
+            return Response(
+                {'detail': 'A reason is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if hours is not None and hours > 24:
+            return Response(
+                {'detail': 'Adjusted hours cannot exceed 24.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         try:
-            invoice_item = InvoiceItem.objects.select_related('invoice').get(shift=shift)
-            invoice_updated = True
-            invoice_id = invoice_item.invoice.id
-        except InvoiceItem.DoesNotExist:
-            pass
+            shift, audit = record_attendance(
+                shift=shift,
+                check_in=check_in,
+                check_out=check_out,
+                hours=hours,
+                actor=request.user,
+                source=source,
+                reason=reason,
+            )
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            return Response(
+                {'detail': '; '.join(e.messages) if hasattr(e, 'messages') else str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # Prepare response with payment impact
+        # Lift no-show / cancelled shifts back into the pipeline once a manager
+        # attests presence — Scheduling hides terminal statuses.
+        if check_in and shift.status in ('no_show', 'cancelled'):
+            shift.status = 'pending_approval' if check_out else 'in_progress'
+            shift.save(update_fields=['status'])
+
+        invoice_item = (
+            InvoiceItem.objects.select_related('invoice').filter(shift=shift).first()
+        )
+        invoice_updated = invoice_item is not None
+        invoice_id = invoice_item.invoice.id if invoice_item else None
+
         response_data = {
-            'id': adjustment.id,
+            'id': audit.id if audit else None,
             'shift': shift.id,
-            'original_hours': float(adjustment.original_actual_hours or Decimal('0.00')),
-            'adjusted_hours': float(adjustment.adjusted_actual_hours or Decimal('0.00')),
-            'payment_impact': serializer.data.get('payment_impact', {}),
+            'original_hours': float(audit.original_actual_hours or Decimal('0.00')) if audit else 0.0,
+            'adjusted_hours': float(shift.actual_hours_worked or Decimal('0.00')),
+            'check_in_time': shift.check_in_time.isoformat() if shift.check_in_time else None,
+            'check_out_time': shift.check_out_time.isoformat() if shift.check_out_time else None,
+            'audited': audit is not None,
             'invoice_updated': invoice_updated,
             'invoice_id': invoice_id,
-            'created_at': adjustment.created_at.isoformat(),
+            'created_at': (audit.created_at if audit else shift.updated_at).isoformat(),
         }
 
         return Response(response_data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='record_attendance')
+    def record_attendance(self, request, pk=None):
+        """Record attendance values onto a shift (canonical endpoint).
+
+        Used by the admin Attendance UI and any first-time recording flow. The
+        Shift table is the source of truth; an audit TimeAdjustment row is
+        created only if this call overwrites previously recorded values.
+
+        Body:
+        - adjusted_check_in_time (ISO 8601, optional)
+        - adjusted_check_out_time (ISO 8601, optional)
+        - adjusted_actual_hours (decimal, optional — derived from times if absent)
+        - reason (required only when overwriting prior data)
+        - manager_signature (string label, optional)
+        """
+        return self._handle_attendance_write(request, require_reason=False)
+
+    @action(detail=True, methods=['post'], url_path='adjust_time')
+    def adjust_time(self, request, pk=None):
+        """Adjust an already-recorded shift (legacy + corrections endpoint).
+
+        Same payload as record_attendance, but always requires `reason` because
+        this endpoint's contract is "I am correcting recorded data". For new
+        recordings the admin UI should use /record_attendance/.
+        """
+        return self._handle_attendance_write(request, require_reason=True)
 
     @action(detail=True, methods=['get'], url_path='time_adjustments')
     def time_adjustments(self, request, pk=None):
@@ -1752,6 +1817,123 @@ class ShiftViewSet(viewsets.ModelViewSet):
             }
         })
 
+    # ─── Attendance Page (Live / Exceptions / Timesheets tabs) ─────────
+
+    def _company_for_request(self, request):
+        """Resolve the active company for the current request, with multi-tenant fallback."""
+        from api.models import UserCompanyMembership
+        company = getattr(request, 'current_company', None)
+        if company:
+            return company
+        membership = UserCompanyMembership.objects.filter(
+            user=request.user,
+            is_active=True,
+            company__is_active=True,
+        ).select_related('company').order_by('-joined_at').first()
+        return membership.company if membership else None
+
+    @action(detail=False, methods=['get'], url_path='attendance/live')
+    def attendance_live(self, request):
+        """
+        Returns today's shifts + officers + venues + stats for the Attendance
+        page Live and Exceptions tabs.
+
+        Shape matches frontend/src/features/attendance/data/mocks.ts so the
+        UI can drop the mock import for this hook directly.
+
+        Query params:
+        - date (optional, YYYY-MM-DD): defaults to today in the company timezone
+        - venueId (optional): filter to one venue
+        """
+        from .attendance_serializers import build_live_payload
+
+        if not request.user.is_authenticated:
+            return Response({"detail": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
+        if not (getattr(request.user, 'role', None) in ('admin', 'manager') or request.user.is_staff):
+            return Response({"detail": "Manager or admin permissions required"}, status=status.HTTP_403_FORBIDDEN)
+
+        company = self._company_for_request(request)
+        if not company:
+            return Response({"shifts": [], "officers": [], "venues": [], "stats": {}})
+
+        date_str = request.query_params.get('date')
+        try:
+            target_date = (
+                datetime.strptime(date_str, '%Y-%m-%d').date()
+                if date_str else timezone.localdate()
+            )
+        except ValueError:
+            return Response({"detail": "Invalid date format. Use YYYY-MM-DD"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Window is the local calendar day, plus a 6h spillover for overnight shifts
+        # whose start_time is the previous day (the timeline ribbon shows them too).
+        day_start = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
+        day_end = day_start + timedelta(days=1)
+        spill_start = day_start - timedelta(hours=6)
+
+        shifts_qs = Shift.objects.filter(
+            venue__company=company,
+        ).filter(
+            Q(start_time__gte=spill_start, start_time__lt=day_end)
+            | Q(end_time__gt=day_start, end_time__lte=day_end + timedelta(hours=6))
+        )
+
+        venue_id = request.query_params.get('venueId')
+        if venue_id:
+            shifts_qs = shifts_qs.filter(venue_id=venue_id)
+
+        payload = build_live_payload(shifts_qs.order_by('start_time'), now=timezone.now())
+        return Response(payload)
+
+    @action(detail=False, methods=['get'], url_path='attendance/timesheets')
+    def attendance_timesheets(self, request):
+        """
+        Returns weekly per-officer TimesheetRow aggregates for the Timesheets tab.
+
+        Query params:
+        - weekStart (optional, YYYY-MM-DD): Monday of the requested week.
+          Defaults to current week's Monday in the company timezone.
+        - venueId (optional): filter to one venue
+        """
+        from .attendance_serializers import build_timesheets_payload
+
+        if not request.user.is_authenticated:
+            return Response({"detail": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
+        if not (getattr(request.user, 'role', None) in ('admin', 'manager') or request.user.is_staff):
+            return Response({"detail": "Manager or admin permissions required"}, status=status.HTTP_403_FORBIDDEN)
+
+        company = self._company_for_request(request)
+        if not company:
+            return Response({"rows": [], "days": [], "officers": [], "venues": []})
+
+        week_str = request.query_params.get('weekStart')
+        try:
+            if week_str:
+                week_start = datetime.strptime(week_str, '%Y-%m-%d').date()
+            else:
+                today = timezone.localdate()
+                week_start = today - timedelta(days=today.weekday())  # Monday
+        except ValueError:
+            return Response({"detail": "Invalid weekStart format. Use YYYY-MM-DD"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        week_start_dt = timezone.make_aware(datetime.combine(week_start, datetime.min.time()))
+        week_end_dt = week_start_dt + timedelta(days=7)
+
+        shifts_qs = Shift.objects.filter(
+            venue__company=company,
+            start_time__gte=week_start_dt,
+            start_time__lt=week_end_dt,
+        )
+
+        venue_id = request.query_params.get('venueId')
+        if venue_id:
+            shifts_qs = shifts_qs.filter(venue_id=venue_id)
+
+        payload = build_timesheets_payload(shifts_qs, week_start, now=timezone.now())
+        return Response(payload)
+
     # ─── Scheduler Endpoints ───────────────────────────────────────────
 
     @action(detail=False, methods=['get'], url_path='resource_timeline')
@@ -1916,12 +2098,24 @@ class ShiftViewSet(viewsets.ModelViewSet):
                     'staffName': staff_name,
                     'status': shift.status,
                     'isPublished': shift.is_published,
-                    'hourlyRate': str(shift.hourly_rate) if shift.hourly_rate else None,
+                    'hourlyRate': float(shift.hourly_rate) if shift.hourly_rate else None,
+                    'isSpecialEvent': shift.is_special_event,
                     'billRate': str(shift.bill_rate) if shift.bill_rate else None,
                     'breakDuration': shift.break_duration,
                     'requiredRole': shift.required_security_role,
                     'notes': shift.notes,
                     'shiftGroup': shift.shift_group,
+                    # Effective times honour TimeAdjustment overrides so a manager
+                    # attesting presence makes the coverage banner / calendar
+                    # treat the shift as checked-in.
+                    'checkInTime': (
+                        shift.get_effective_check_in_time().isoformat()
+                        if shift.get_effective_check_in_time() else None
+                    ),
+                    'checkOutTime': (
+                        shift.get_effective_check_out_time().isoformat()
+                        if shift.get_effective_check_out_time() else None
+                    ),
                 },
             })
 
@@ -2166,6 +2360,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
         for assigned staff.
         """
         from api.models import AuditLog, Notification
+        from api.services import push_notification_service
         from django.db import transaction
 
         if not request.user.role in ['manager', 'admin']:
@@ -2204,7 +2399,9 @@ class ShiftViewSet(viewsets.ModelViewSet):
                     shift.save(update_fields=['is_published', 'updated_at'])
                     published_count += 1
 
-                    # Create notification for assigned staff
+                    # Notify assigned staff (in-app + push). The post_save
+                    # signal won't fire an assignment push here — staff_user
+                    # didn't change on this save — so we trigger it directly.
                     if shift.staff_user:
                         Notification.objects.create(
                             user=shift.staff_user,
@@ -2215,9 +2412,23 @@ class ShiftViewSet(viewsets.ModelViewSet):
                                     f"on {shift.start_time.strftime('%a %d %b')} "
                                     f"{shift.start_time.strftime('%H:%M')}-{shift.end_time.strftime('%H:%M') if shift.end_time else 'TBD'}",
                             priority='normal',
-                            data={'shift_id': shift.id},
+                            related_type='shift',
+                            related_id=str(shift.id),
+                            action_url=f'/shifts/{shift.id}',
                         )
                         notifications_sent += 1
+                        try:
+                            push_notification_service.send_shift_assignment_notification(
+                                user_id=shift.staff_user_id,
+                                shift_id=shift.id,
+                                venue_name=shift.venue.name if shift.venue else 'Unknown Venue',
+                                start_time=shift.start_time.strftime('%I:%M %p'),
+                                formatted_date=shift.start_time.strftime('%B %d, %Y'),
+                            )
+                        except Exception:
+                            # Don't fail the publish if push delivery fails — the
+                            # in-app Notification is already recorded above.
+                            pass
 
                     # Audit log
                     AuditLog.objects.create(

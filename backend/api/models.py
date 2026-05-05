@@ -1021,6 +1021,11 @@ class User(AbstractUser):
         }
 
 class StaffProfile(models.Model):
+    PAY_FREQUENCY_CHOICES = (
+        ('weekly', 'Weekly'),
+        ('monthly', 'Monthly'),
+    )
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     employment_type = models.ForeignKey('EmploymentType', on_delete=models.SET_NULL, null=True, blank=True, related_name='staff_profiles', help_text="Employment type for this staff member")
     phone_number = models.CharField(max_length=20)
@@ -1034,6 +1039,12 @@ class StaffProfile(models.Model):
     notes = models.TextField(null=True, blank=True)
     password_last_changed = models.DateTimeField(default=timezone.now)
     is_approved = models.BooleanField(default=False, help_text="Admin approval required before staff can take shifts")
+    pay_frequency = models.CharField(
+        max_length=10,
+        choices=PAY_FREQUENCY_CHOICES,
+        default='weekly',
+        help_text="How often this officer is paid; selects which payroll cycle (weekly W-runs vs monthly M-runs) generates their invoices.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1844,30 +1855,47 @@ class Shift(models.Model):
             self.auto_generate_invoice()
 
     def auto_generate_invoice(self):
-        """Auto-generate invoice for staff when shift is approved"""
+        """Auto-generate invoice for staff when shift is approved.
+
+        Creates a 'draft' invoice (hybrid flow, P1.1). The draft will be
+        superseded automatically when an official period invoice is created via
+        regenerate(). Skipped if any non-superseded invoice already covers this
+        shift's date.
+        """
+        from django.core.exceptions import ValidationError
+        from django.db import DatabaseError
+
         try:
             # Get the shift date for invoice period
             shift_date = self.start_time.date()
-            
-            # Check if invoice already exists for this period
+
+            # Check if a non-superseded invoice already covers this shift date
             existing_invoice = Invoice.objects.filter(
                 staff_user=self.staff_user,
+                superseded_by__isnull=True,
                 start_date__lte=shift_date,
-                end_date__gte=shift_date
+                end_date__gte=shift_date,
             ).first()
-            
+
             if not existing_invoice:
-                # Generate invoice for the shift date
+                # Generate a draft invoice for the shift date
                 Invoice.generate_for_staff_period(
                     staff_user=self.staff_user,
                     start_date=shift_date,
-                    end_date=shift_date
+                    end_date=shift_date,
+                    default_status='draft',
                 )
-        except Exception as e:
-            # Log error but don't fail the save operation
+        except (DatabaseError, ValidationError, ValueError, TypeError) as e:
+            # Log loudly but don't fail the shift-save itself. Specific
+            # exception classes only — bubble up unexpected errors so they
+            # surface to monitoring instead of being swallowed silently.
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Failed to auto-generate invoice for shift {self.id}: {str(e)}")
+            logger.error(
+                "Failed to auto-generate draft invoice for shift %s: %s: %s",
+                self.id, type(e).__name__, e,
+                exc_info=True,
+            )
 
     def create_open_shift_request(self):
         """Create an OpenShiftRequest for this unassigned shift"""
@@ -2149,50 +2177,53 @@ class Shift(models.Model):
             return adjustment.adjusted_actual_hours
         return self.actual_hours_worked
 
-    def calculate_payment(self):
-        """Calculate the payment for this shift based on actual hours worked and effective hourly rate
+    def calculate_payment_breakdown(self):
+        """Return a per-tier breakdown of this shift's payment.
 
-        Payment is capped at scheduled hours to prevent overtime exploitation from late checkouts.
-        Only auto-checkout and manager-approved overtime can exceed scheduled hours.
-        Uses adjusted hours from TimeAdjustment if available.
+        Splits the capped/adjusted shift hours into base, OT tier 1 (1.5×), and
+        OT tier 2 (2×) buckets driven by the relevant WorkingHoursRegulation.
+        Used by Invoice.generate_for_staff_period to emit separate
+        InvoiceItem rows per tier so the Payroll UI can show base+OT splits.
+
+        Revenue-neutral: base_amount + ot1_amount + ot2_amount equals
+        calculate_payment() exactly.
+
+        Returns:
+            dict with keys: rate, base_hours, base_amount, ot1_hours,
+            ot1_amount, ot1_multiplier, ot2_hours, ot2_amount, ot2_multiplier.
+            Returns None if hours/rate cannot be determined.
         """
-        # Use adjusted hours if they exist
-        effective_hours = self.get_effective_actual_hours()
+        from decimal import Decimal
 
+        effective_hours = self.get_effective_actual_hours()
         if not effective_hours:
             return None
 
-        from decimal import Decimal
-        # Use effective hourly rate which checks PayRate model
         effective_rate = self.get_effective_hourly_rate()
         if not effective_rate:
             return None
 
-        # Calculate scheduled hours (excluding breaks)
+        # Capped/adjusted hours (same logic as the legacy calculate_payment)
         scheduled_duration = self.end_time - self.start_time
         scheduled_hours = Decimal(str(scheduled_duration.total_seconds() / 3600))
         break_hours = Decimal(str(self.break_duration / 60))
         max_payable_hours = scheduled_hours - break_hours
 
         hours = Decimal(str(effective_hours))
-
-        # Apply same capping logic, but adjusted hours are already validated
-        # Only cap if no time adjustment exists
         if not self.get_latest_time_adjustment() and not self.auto_checkout:
             hours = min(hours, max_payable_hours)
 
         rate = Decimal(str(effective_rate))
-        base_payment = hours * rate
 
-        # --- Overtime calculation ---
-        # Look up the applicable WorkingHoursRegulation via the venue's company country
-        overtime_premium = Decimal('0')
+        # Default: everything is base (no OT)
+        ot1_hours = Decimal('0')
+        ot2_hours = Decimal('0')
+        multiplier_1 = Decimal('1')
+        multiplier_2 = Decimal('1')
+
         try:
             company = getattr(self.venue, 'company', None) if self.venue else None
             if company and company.country_code:
-                # SecurityCompany uses alpha-3 codes, WorkingHoursRegulation uses alpha-2.
-                # Try exact match first (works if regulation uses same format), then try
-                # the first 2 characters as a fallback for alpha-2 lookup.
                 regulation = (
                     WorkingHoursRegulation.objects.filter(
                         country_code__iexact=company.country_code,
@@ -2207,19 +2238,36 @@ class Shift(models.Model):
                 if regulation and regulation.overtime_threshold_hours is not None and self.staff_user:
                     from datetime import timedelta as td
 
-                    # Determine the ISO week (Mon-Sun) containing this shift
-                    shift_date = self.start_time.date() if self.start_time else None
+                    # P5 (L1 fix): convert to the company's timezone before
+                    # extracting the date. Shifts near midnight UTC for venues
+                    # in other timezones could otherwise land in the wrong
+                    # ISO week, breaking weekly OT accumulation.
+                    shift_date = None
+                    if self.start_time:
+                        try:
+                            import zoneinfo
+                            tz_name = (company.timezone or 'UTC') if company else 'UTC'
+                            company_tz = zoneinfo.ZoneInfo(tz_name)
+                            shift_date = self.start_time.astimezone(company_tz).date()
+                        except (KeyError, ImportError, AttributeError):
+                            # Fallback to UTC date on bad/missing timezone data
+                            shift_date = self.start_time.date()
                     if shift_date:
-                        week_start = shift_date - td(days=shift_date.weekday())  # Monday
-                        week_end = week_start + td(days=6)  # Sunday
+                        week_start = shift_date - td(days=shift_date.weekday())
+                        week_end = week_start + td(days=6)
 
-                        # Total hours this staff member has worked this week (excluding current shift)
                         from django.db.models import Sum as _Sum
+                        # P3.5: only count shifts that started BEFORE this one
+                        # in the same ISO week. Without start_time__lt the same
+                        # threshold-overflow gets booked once per shift in the
+                        # week (3 shifts in a 48h week with 40h threshold would
+                        # each book 8h of OT, totalling 24h instead of 8h).
                         other_hours = (
                             Shift.objects.filter(
                                 staff_user=self.staff_user,
                                 start_time__date__gte=week_start,
                                 start_time__date__lte=week_end,
+                                start_time__lt=self.start_time,
                                 status__in=['completed', 'approved', 'in_progress'],
                             )
                             .exclude(pk=self.pk)
@@ -2227,7 +2275,7 @@ class Shift(models.Model):
                         ) or Decimal('0')
 
                         prior_hours = Decimal(str(other_hours))
-                        current_hours = hours  # hours for this shift (already computed above)
+                        current_hours = hours
                         cumulative_after = prior_hours + current_hours
 
                         threshold_1 = Decimal(str(regulation.overtime_threshold_hours))
@@ -2238,39 +2286,75 @@ class Shift(models.Model):
                             if regulation.overtime_threshold_2
                             else None
                         )
-                        multiplier_2 = (
+                        multiplier_2_val = (
                             Decimal(str(regulation.overtime_multiplier_2))
                             if regulation.overtime_multiplier_2
                             else None
                         )
 
                         if cumulative_after > threshold_1:
-                            # How many of THIS shift's hours are above threshold_1?
+                            # OT-eligible hours from this shift
                             ot_start = max(threshold_1 - prior_hours, Decimal('0'))
-                            ot1_hours = current_hours - ot_start  # hours in OT range
+                            shift_ot_hours = current_hours - ot_start
 
-                            if threshold_2 and multiplier_2 and cumulative_after > threshold_2:
-                                # Split into tier-1 and tier-2 overtime
+                            if threshold_2 and multiplier_2_val and cumulative_after > threshold_2:
                                 ot2_start = max(threshold_2 - prior_hours, Decimal('0'))
-                                tier2_hours = current_hours - ot2_start
-                                tier1_hours = ot1_hours - tier2_hours
-
-                                if tier1_hours > 0:
-                                    overtime_premium += tier1_hours * rate * (multiplier_1 - Decimal('1'))
-                                if tier2_hours > 0:
-                                    overtime_premium += tier2_hours * rate * (multiplier_2 - Decimal('1'))
+                                ot2_hours = current_hours - ot2_start
+                                ot1_hours = shift_ot_hours - ot2_hours
+                                multiplier_2 = multiplier_2_val
                             else:
-                                # All overtime at tier-1 rate
-                                if ot1_hours > 0:
-                                    overtime_premium += ot1_hours * rate * (multiplier_1 - Decimal('1'))
+                                ot1_hours = shift_ot_hours
+                                multiplier_2 = Decimal('1')
+
+                            if ot1_hours < 0:
+                                ot1_hours = Decimal('0')
+                            if ot2_hours < 0:
+                                ot2_hours = Decimal('0')
         except Exception:
-            # If overtime calculation fails, still return the base payment
             import logging as _logging
             _logging.getLogger(__name__).warning(
                 f"Overtime calculation failed for shift {self.pk}", exc_info=True
             )
+            ot1_hours = Decimal('0')
+            ot2_hours = Decimal('0')
+            multiplier_1 = Decimal('1')
+            multiplier_2 = Decimal('1')
 
-        return base_payment + overtime_premium
+        base_hours = hours - ot1_hours - ot2_hours
+        if base_hours < 0:
+            base_hours = Decimal('0')
+
+        base_amount = base_hours * rate
+        ot1_amount = ot1_hours * rate * multiplier_1
+        ot2_amount = ot2_hours * rate * multiplier_2
+
+        return {
+            'rate': rate,
+            'base_hours': base_hours,
+            'base_amount': base_amount,
+            'ot1_hours': ot1_hours,
+            'ot1_amount': ot1_amount,
+            'ot1_multiplier': multiplier_1,
+            'ot2_hours': ot2_hours,
+            'ot2_amount': ot2_amount,
+            'ot2_multiplier': multiplier_2,
+        }
+
+    def calculate_payment(self):
+        """Calculate the payment for this shift based on actual hours worked and effective hourly rate
+
+        Payment is capped at scheduled hours to prevent overtime exploitation from late checkouts.
+        Only auto-checkout and manager-approved overtime can exceed scheduled hours.
+        Uses adjusted hours from TimeAdjustment if available.
+
+        Implementation note: this delegates to calculate_payment_breakdown() and
+        sums the per-tier amounts so the legacy scalar return matches the
+        breakdown exactly (revenue-neutral split).
+        """
+        breakdown = self.calculate_payment_breakdown()
+        if breakdown is None:
+            return None
+        return breakdown['base_amount'] + breakdown['ot1_amount'] + breakdown['ot2_amount']
 
     @property
     def calculated_payment(self):
@@ -2278,20 +2362,43 @@ class Shift(models.Model):
         return self.calculate_payment()
 
     def get_effective_hourly_rate(self):
-        """Get the effective hourly rate for this shift, checking PayRate model first"""
+        """Get the effective hourly rate for this shift, checking PayRate model first.
+
+        For special-event shifts (is_special_event=True), the resolution order is:
+          1. shift.hourly_rate (per-shift override always wins)
+          2. SystemSettings.special_event_pay_rate (P3.3 fix — was unreachable)
+          3. PayRate venue-specific
+          4. PayRate default
+          5. SystemSettings.default_hourly_rate
+          6. Hardcoded fallback
+
+        For regular shifts the order is the same minus step 2.
+        """
         # First check if shift has its own hourly rate set
         if self.hourly_rate:
             return self.hourly_rate
-        
+
+        # P3.3 (C5 fix): special-event premium short-circuits PayRate cascade.
+        # Without this, a staff member with a venue-specific PayRate will always
+        # be paid at the venue rate even on special events, ignoring the
+        # configured special_event_pay_rate.
+        if self.is_special_event:
+            try:
+                settings = SystemSettings.objects.first()
+                if settings and settings.special_event_pay_rate:
+                    return settings.special_event_pay_rate
+            except Exception:
+                logger.exception('Error reading special_event_pay_rate')
+
         # Check for venue-specific pay rate for this staff member
         if self.staff_user and self.venue:
             venue_rate = PayRate.objects.filter(
-                staff_user=self.staff_user, 
+                staff_user=self.staff_user,
                 venue=self.venue
             ).first()
             if venue_rate:
                 return venue_rate.hourly_rate
-        
+
         # Check for default pay rate for this staff member
         if self.staff_user:
             default_rate = PayRate.objects.filter(
@@ -2301,7 +2408,7 @@ class Shift(models.Model):
             ).first()
             if default_rate:
                 return default_rate.hourly_rate
-            
+
         # Fallback to system settings if no pay rates are set
         try:
             settings = SystemSettings.objects.first()
@@ -2309,7 +2416,7 @@ class Shift(models.Model):
                 return settings.special_event_pay_rate if self.is_special_event else settings.default_hourly_rate
         except Exception:
             logger.exception('Error in get_effective_hourly_rate')
-            
+
         # Final fallback to hardcoded defaults
         return 14.00 if self.is_special_event else 12.50
 
@@ -2492,8 +2599,26 @@ class TimeAdjustment(models.Model):
         """Validate time adjustment constraints"""
         from django.core.exceptions import ValidationError
         from datetime import timedelta
+        from decimal import Decimal
 
         errors = {}
+
+        # A TimeAdjustment is an audit row for a real correction. It MUST
+        # capture the prior state (original_*) of the Shift it adjusted.
+        # First-time recordings should write Shift fields directly via
+        # shifts.services.record_attendance and not create a TimeAdjustment.
+        if self.pk is None:
+            has_prior_state = bool(
+                self.original_check_in_time
+                or self.original_check_out_time
+                or (self.original_actual_hours and self.original_actual_hours > Decimal('0'))
+            )
+            if not has_prior_state:
+                errors['original_actual_hours'] = (
+                    'TimeAdjustment requires non-empty original_* fields. '
+                    'For first-time attendance recording use '
+                    'shifts.services.record_attendance instead.'
+                )
 
         # Validate check-in time adjustment
         if self.adjusted_check_in_time:
@@ -2800,7 +2925,14 @@ class ShiftExchange(models.Model):
 
 class Invoice(models.Model):
     STATUS_CHOICES = (
+        ('draft', 'Draft'),
         ('pending', 'Pending'),
+        ('sent', 'Sent'),
+        # 'approved' (Phase 2): manager has signed off on the hours but
+        # money has not left the bank yet. Sits between 'pending' (unreviewed)
+        # and 'paid' (settled). Approved invoices are exportable to Xero;
+        # only the Xero webhook (or a manual mark-paid) flips them to 'paid'.
+        ('approved', 'Approved'),
         ('paid', 'Paid'),
         ('rejected', 'Rejected'),
     )
@@ -2811,12 +2943,37 @@ class Invoice(models.Model):
     )
 
     staff_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='invoices')
+    invoice_number = models.CharField(
+        max_length=50, unique=True, null=True, blank=True,
+        help_text="Display invoice number, e.g. PAY-2026-00481"
+    )
     start_date = models.DateField()
     end_date = models.DateField()
     total_hours = models.DecimalField(max_digits=10, decimal_places=2)
     hourly_rate = models.DecimalField(max_digits=10, decimal_places=2)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    issued_date = models.DateField(null=True, blank=True)
+    due_date = models.DateField(null=True, blank=True)
+    paid_date = models.DateField(null=True, blank=True)
+    reject_reason = models.TextField(blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    payroll_run = models.ForeignKey(
+        'PayrollRun', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='staff_invoices'
+    )
+    superseded_by = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='supersedes',
+        help_text=(
+            "When set, this invoice has been replaced by another invoice. "
+            "Many-to-one: a single replacement invoice can supersede multiple "
+            "draft auto-invoices in the hybrid flow, or a single rejected "
+            "invoice can be superseded by its reissue. Display as 'Resolved' "
+            "instead of 'Rejected' so it falls out of the manager's open work "
+            "queue."
+        ),
+    )
     pdf_url = models.URLField(max_length=500, null=True, blank=True)
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='system')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_invoices')
@@ -2833,8 +2990,22 @@ class Invoice(models.Model):
         return f"Invoice for {self.staff_user.username} ({self.start_date} to {self.end_date})"
     
     @classmethod
-    def generate_for_staff_period(cls, staff_user, start_date, end_date, source='system', created_by=None):
-        """Generate an invoice for a staff member for a specific period using shift-specific payments
+    @transaction.atomic
+    def generate_for_staff_period(cls, staff_user, start_date, end_date, source='system', created_by=None, default_status='pending'):
+        """Generate an invoice for a staff member for a specific period using shift-specific payments.
+
+        Wrapped in transaction.atomic so a mid-loop failure on InvoiceItem
+        creation rolls back the partial invoice header. Without this, a failure
+        between creating the Invoice row and emitting all its line items would
+        leave Invoice.total_amount mismatched with the sum of its items.
+
+        Note on C6 (concurrent-approval race, deferred): two concurrent calls
+        racing the existence check before either has inserted can both create
+        an invoice for the same (staff_user, start_date, end_date). A proper
+        fix requires a partial UNIQUE constraint (where superseded_by IS NULL)
+        added by migration. The hybrid + cascade architecture limits practical
+        exposure: any race-created drafts are superseded on the next regenerate
+        and any sibling-week OT drift is healed by the cascade signal.
 
         Args:
             staff_user: The staff member the invoice is for
@@ -2842,6 +3013,9 @@ class Invoice(models.Model):
             end_date: End date of the invoice period
             source: 'system' for shift-generated, 'admin' for admin-generated (default: 'system')
             created_by: User who created the invoice (for admin-generated invoices)
+            default_status: Status to assign to the new invoice. Use 'draft' for
+                preliminary auto-generated invoices that should be superseded
+                when an official period invoice is later created. Default 'pending'.
         """
         from decimal import Decimal
 
@@ -2965,23 +3139,93 @@ class Invoice(models.Model):
             total_hours=total_hours,
             hourly_rate=average_rate,  # This is now an average of all shift rates
             total_amount=total_amount,
-            status='pending',
+            status=default_status,
             source=source,
             created_by=created_by
         )
 
-        # Create invoice items for each shift
+        # Hybrid invoice flow (P1.1): when an official period invoice is created
+        # (default_status != 'draft'), supersede any preliminary draft invoices
+        # for this staff member whose period overlaps the new invoice. The
+        # superseded_by FK already drives 'Resolved' rendering in serializers.
+        if default_status != 'draft':
+            overlapping_drafts = cls.objects.filter(
+                staff_user=staff_user,
+                status='draft',
+                superseded_by__isnull=True,
+                start_date__lte=end_date,
+                end_date__gte=start_date,
+            ).exclude(pk=invoice.pk)
+            for draft in overlapping_drafts:
+                draft.superseded_by = invoice
+                draft.save(update_fields=['superseded_by', 'updated_at'])
+
+        # Create invoice items for each shift, splitting into base + OT tier rows
+        # so the Payroll UI can show base/OT1/OT2 separately.
         for shift in shifts:
-            if shift.actual_hours_worked and shift.calculate_payment():
+            if not shift.actual_hours_worked:
+                continue
+            breakdown = shift.calculate_payment_breakdown()
+            if not breakdown:
+                continue
+
+            base_rate = breakdown['rate']
+            shift_date = shift.start_time.date()
+
+            # Determine the item_type for the base row: special-event shifts
+            # become a 'special' line item per the UI's 6-type taxonomy.
+            base_item_type = 'special' if shift.is_special_event else 'shift'
+
+            base_hours = breakdown['base_hours']
+            base_amount = breakdown['base_amount']
+            if base_hours > 0:
                 InvoiceItem.objects.create(
                     invoice=invoice,
-                    item_type='shift',
+                    item_type=base_item_type,
                     shift=shift,
-                    date=shift.start_time.date(),
+                    date=shift_date,
                     venue=shift.venue,
-                    hours_worked=shift.actual_hours_worked,
-                    rate=shift.get_effective_hourly_rate(),
-                    amount=shift.calculate_payment()
+                    hours_worked=base_hours,
+                    rate=base_rate,
+                    amount=base_amount,
+                )
+
+            # OT tier 1 (1.5×): emit only if hours > 0
+            if breakdown['ot1_hours'] > 0:
+                ot1_effective_rate = base_rate * breakdown['ot1_multiplier']
+                InvoiceItem.objects.create(
+                    invoice=invoice,
+                    item_type='overtime_1',
+                    shift=shift,
+                    date=shift_date,
+                    venue=shift.venue,
+                    hours_worked=breakdown['ot1_hours'],
+                    rate=ot1_effective_rate,
+                    amount=breakdown['ot1_amount'],
+                )
+
+            # OT tier 2 (2×): emit only if hours > 0
+            if breakdown['ot2_hours'] > 0:
+                ot2_effective_rate = base_rate * breakdown['ot2_multiplier']
+                InvoiceItem.objects.create(
+                    invoice=invoice,
+                    item_type='overtime_2',
+                    shift=shift,
+                    date=shift_date,
+                    venue=shift.venue,
+                    hours_worked=breakdown['ot2_hours'],
+                    rate=ot2_effective_rate,
+                    amount=breakdown['ot2_amount'],
+                )
+
+            # Revenue-neutral assertion: per-tier sum must equal calculate_payment().
+            # Floats from calculate_payment_breakdown are Decimals so equality is exact.
+            tier_sum = breakdown['base_amount'] + breakdown['ot1_amount'] + breakdown['ot2_amount']
+            scalar = shift.calculate_payment() or Decimal('0')
+            if abs(tier_sum - scalar) > Decimal('0.01'):
+                logger.warning(
+                    "Payment breakdown sum (%s) drifts from calculate_payment (%s) for shift %s",
+                    tier_sum, scalar, shift.pk,
                 )
 
         # Create invoice items for bank holidays (permanent employees only)
@@ -3013,11 +3257,13 @@ class Invoice(models.Model):
         return invoice
 
     def recalculate_from_shifts(self):
-        """Recalculate invoice totals from all linked shifts and leave items
+        """Recalculate invoice totals from all linked shifts and leave items.
 
-        This method is automatically called when a TimeAdjustment is created for any shift
-        in this invoice. It updates the invoice totals to reflect the adjusted hours.
-        Leave items (bank holidays, annual leave) are included but not recalculated.
+        Triggered by the TimeAdjustment post-save signal. Because an adjustment
+        can change a shift's OT distribution (more hours pushed past threshold,
+        for example), shift-backed line items are deleted and re-emitted via the
+        same per-tier logic used by generate_for_staff_period.
+        Leave items (bank holidays, annual leave) are preserved unchanged.
         """
         from decimal import Decimal
         from django.utils import timezone
@@ -3025,30 +3271,82 @@ class Invoice(models.Model):
         total_hours = Decimal('0.00')
         total_amount = Decimal('0.00')
 
-        # Update each invoice item
-        for item in self.items.all():
-            if item.item_type == 'shift' and item.shift:
-                # Recalculate shift items from their shifts
-                item.hours_worked = item.shift.get_effective_actual_hours()
-                item.amount = item.shift.calculate_payment()
-                item.save()
-                total_hours += item.hours_worked or Decimal('0.00')
-                total_amount += item.amount or Decimal('0.00')
-            elif item.item_type in ('bank_holiday', 'annual_leave'):
-                # Leave items don't change - just add to totals
-                total_amount += item.amount or Decimal('0.00')
+        # Snapshot the distinct shift FKs that contribute to this invoice
+        shift_ids = list(
+            self.items.filter(shift__isnull=False)
+            .values_list('shift_id', flat=True)
+            .distinct()
+        )
+        shifts = list(Shift.objects.filter(pk__in=shift_ids).order_by('start_time'))
 
-        # Update invoice totals
+        # Drop the existing shift-backed rows so we can re-emit cleanly with
+        # the latest OT distribution.
+        self.items.filter(shift__isnull=False).delete()
+
+        for shift in shifts:
+            if not shift.actual_hours_worked:
+                continue
+            breakdown = shift.calculate_payment_breakdown()
+            if not breakdown:
+                continue
+
+            base_rate = breakdown['rate']
+            shift_date = shift.start_time.date()
+            base_item_type = 'special' if shift.is_special_event else 'shift'
+
+            base_hours = breakdown['base_hours']
+            if base_hours > 0:
+                InvoiceItem.objects.create(
+                    invoice=self,
+                    item_type=base_item_type,
+                    shift=shift,
+                    date=shift_date,
+                    venue=shift.venue,
+                    hours_worked=base_hours,
+                    rate=base_rate,
+                    amount=breakdown['base_amount'],
+                )
+                total_hours += base_hours
+                total_amount += breakdown['base_amount']
+
+            if breakdown['ot1_hours'] > 0:
+                InvoiceItem.objects.create(
+                    invoice=self,
+                    item_type='overtime_1',
+                    shift=shift,
+                    date=shift_date,
+                    venue=shift.venue,
+                    hours_worked=breakdown['ot1_hours'],
+                    rate=base_rate * breakdown['ot1_multiplier'],
+                    amount=breakdown['ot1_amount'],
+                )
+                total_hours += breakdown['ot1_hours']
+                total_amount += breakdown['ot1_amount']
+
+            if breakdown['ot2_hours'] > 0:
+                InvoiceItem.objects.create(
+                    invoice=self,
+                    item_type='overtime_2',
+                    shift=shift,
+                    date=shift_date,
+                    venue=shift.venue,
+                    hours_worked=breakdown['ot2_hours'],
+                    rate=base_rate * breakdown['ot2_multiplier'],
+                    amount=breakdown['ot2_amount'],
+                )
+                total_hours += breakdown['ot2_hours']
+                total_amount += breakdown['ot2_amount']
+
+        # Add leave amounts (untouched by this recalc)
+        for item in self.items.filter(item_type__in=('bank_holiday', 'annual_leave')):
+            total_amount += item.amount or Decimal('0.00')
+
         self.total_hours = total_hours
         self.total_amount = total_amount
         self.hourly_rate = total_amount / total_hours if total_hours > 0 else Decimal('0.00')
-
-        # Track recalculation for audit
         self.version = (self.version or 0) + 1
         self.last_recalculated_at = timezone.now()
-
         self.save()
-
         return self
 
     @property
@@ -3057,12 +3355,23 @@ class Invoice(models.Model):
         return self.get_payment_breakdown()
     
     def get_payment_breakdown(self):
-        """Get detailed payment breakdown by rate type including leave items"""
+        """Get detailed payment breakdown by rate type including leave items.
+
+        P4 (H3 fix): now includes overtime_1, overtime_2, and special_event
+        item types in the breakdown buckets. Previously these were silently
+        excluded so any invoice with OT or special-event shifts showed zero
+        in its per-category summary even though invoice.total_amount was
+        correct.
+        """
         from decimal import Decimal
 
-        # Filter shift items
-        regular_shifts = self.items.filter(item_type='shift', shift__is_special_event=False)
-        special_event_shifts = self.items.filter(item_type='shift', shift__is_special_event=True)
+        # Base hours for non-special shifts (item_type='shift')
+        regular_shifts = self.items.filter(item_type='shift')
+        # Base hours for special-event shifts (item_type='special')
+        special_event_shifts = self.items.filter(item_type='special')
+        # Overtime items (apply to both regular and special shifts)
+        overtime_1_items = self.items.filter(item_type='overtime_1')
+        overtime_2_items = self.items.filter(item_type='overtime_2')
 
         # Filter leave items
         bank_holiday_items = self.items.filter(item_type='bank_holiday')
@@ -3126,6 +3435,28 @@ class Invoice(models.Model):
                 'amount': float(annual_leave_amount),
                 'daily_rate': float(annual_leave_amount / annual_leave_days) if annual_leave_days > 0 else 0.0
             },
+            'overtime_1': {
+                'count': overtime_1_items.count(),
+                'hours': float(
+                    overtime_1_items.aggregate(t=models.Sum('hours_worked'))['t']
+                    or Decimal('0.00')
+                ),
+                'amount': float(
+                    overtime_1_items.aggregate(t=models.Sum('amount'))['t']
+                    or Decimal('0.00')
+                ),
+            },
+            'overtime_2': {
+                'count': overtime_2_items.count(),
+                'hours': float(
+                    overtime_2_items.aggregate(t=models.Sum('hours_worked'))['t']
+                    or Decimal('0.00')
+                ),
+                'amount': float(
+                    overtime_2_items.aggregate(t=models.Sum('amount'))['t']
+                    or Decimal('0.00')
+                ),
+            },
             'total': {
                 'count': self.items.count(),
                 'hours': float(self.total_hours) if self.total_hours else 0.0,
@@ -3135,9 +3466,15 @@ class Invoice(models.Model):
 
 INVOICE_ITEM_TYPE_CHOICES = (
     ('shift', 'Shift Work'),
+    ('overtime_1', 'Overtime tier 1 (1.5x)'),
+    ('overtime_2', 'Overtime tier 2 (2x)'),
     ('bank_holiday', 'Bank Holiday Pay'),
     ('annual_leave', 'Annual Leave Pay'),
+    ('special', 'Special Event'),
 )
+
+# Item types that consume a shift FK (allows splitting one shift into base/OT items)
+SHIFT_BACKED_ITEM_TYPES = ('shift', 'overtime_1', 'overtime_2')
 
 
 class InvoiceItem(models.Model):
@@ -3216,12 +3553,14 @@ class InvoiceItem(models.Model):
         db_table = 'invoice_items'
         ordering = ['date', 'item_type']
         constraints = [
-            # Shift uniqueness only applies when shift is not null
+            # A given (invoice, shift) pair can have at most one row of each type
+            # (shift|overtime_1|overtime_2). One shift may produce multiple line
+            # items when its hours are split across overtime tiers.
             models.UniqueConstraint(
-                fields=['shift'],
-                name='unique_shift_per_invoice_item',
+                fields=['invoice', 'shift', 'item_type'],
+                name='unique_shift_invoice_item_type',
                 condition=models.Q(shift__isnull=False),
-                violation_error_message="This shift has already been added to an invoice."
+                violation_error_message="This shift has already been added to this invoice for this item type."
             ),
             # Bank holiday uniqueness per invoice
             models.UniqueConstraint(
@@ -3240,12 +3579,14 @@ class InvoiceItem(models.Model):
         ]
 
     def __str__(self):
-        if self.item_type == 'shift' and self.venue:
-            return f"{self.date} - {self.venue.name} ({self.hours_worked} hours)"
+        if self.item_type in SHIFT_BACKED_ITEM_TYPES and self.venue:
+            return f"{self.date} - {self.venue.name} ({self.hours_worked} hours, {self.item_type})"
         elif self.item_type == 'bank_holiday':
             return f"{self.date} - Bank Holiday: {self.description or 'Holiday'} ({self.days} day)"
         elif self.item_type == 'annual_leave':
             return f"{self.date} - Annual Leave ({self.days} day)"
+        elif self.item_type == 'special':
+            return f"{self.date} - Special: {self.description or 'Event'}"
         return f"{self.date} - {self.description or self.item_type}"
 
     def clean(self):
@@ -3253,13 +3594,13 @@ class InvoiceItem(models.Model):
         from django.core.exceptions import ValidationError
         errors = {}
 
-        if self.item_type == 'shift':
+        if self.item_type in SHIFT_BACKED_ITEM_TYPES:
             if not self.shift:
-                errors['shift'] = 'Shift is required for shift items'
+                errors['shift'] = f'Shift is required for {self.item_type} items'
             if not self.venue:
-                errors['venue'] = 'Venue is required for shift items'
+                errors['venue'] = f'Venue is required for {self.item_type} items'
             if self.hours_worked is None:
-                errors['hours_worked'] = 'Hours worked is required for shift items'
+                errors['hours_worked'] = f'Hours worked is required for {self.item_type} items'
         elif self.item_type == 'bank_holiday':
             if not self.bank_holiday:
                 errors['bank_holiday'] = 'Bank holiday is required for bank holiday items'
@@ -3270,6 +3611,10 @@ class InvoiceItem(models.Model):
                 errors['leave_request'] = 'Leave request is required for annual leave items'
             if self.days is None:
                 errors['days'] = 'Days is required for leave items'
+        elif self.item_type == 'special':
+            # Special items may be free-form admin entries; only require hours
+            if self.hours_worked is None:
+                errors['hours_worked'] = 'Hours worked is required for special items'
 
         if errors:
             raise ValidationError(errors)
@@ -6424,6 +6769,7 @@ class ClientInvoice(models.Model):
         ('sent', 'Sent'),
         ('paid', 'Paid'),
         ('overdue', 'Overdue'),
+        ('rejected', 'Rejected'),
         ('cancelled', 'Cancelled'),
     ]
 
@@ -6468,6 +6814,19 @@ class ClientInvoice(models.Model):
 
     # Metadata
     notes = models.TextField(blank=True)
+    reject_reason = models.TextField(blank=True, default='')
+    superseded_by = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='supersedes',
+        help_text=(
+            "When set, this invoice has been replaced by another invoice. "
+            "Many-to-one: a single replacement invoice can supersede multiple "
+            "draft auto-invoices in the hybrid flow, or a single rejected "
+            "invoice can be superseded by its reissue. Display as 'Resolved' "
+            "instead of 'Rejected' so it falls out of the manager's open work "
+            "queue."
+        ),
+    )
     created_by = models.ForeignKey(
         'User', on_delete=models.SET_NULL, null=True,
         related_name='created_client_invoices'
@@ -6515,6 +6874,95 @@ class ClientInvoice(models.Model):
             seq = 1
         return f'{prefix}{seq:04d}'
 
+    @classmethod
+    def generate_for_venue_period(cls, venue, start_date, end_date, *,
+                                  created_by=None, notes='', tax_rate=None):
+        """Build a draft ClientInvoice for `venue` covering `start_date..end_date`.
+
+        Pulls every approved shift at the venue with recorded actual hours
+        in the period and turns each into a ClientInvoiceItem priced at the
+        shift's effective hourly rate. Returns the new draft.
+
+        Idempotent guard: if a draft already exists for the same
+        (venue, start_date, end_date), it is returned instead of being
+        recreated — the manager is expected to edit/issue that one rather
+        than have multiple drafts pile up.
+        """
+        from decimal import Decimal
+
+        existing = cls.objects.filter(
+            venue=venue,
+            start_date=start_date,
+            end_date=end_date,
+            status='draft',
+        ).first()
+        if existing:
+            return existing
+
+        company = venue.company
+        shifts = list(
+            Shift.objects.filter(
+                venue=venue,
+                start_time__date__gte=start_date,
+                start_time__date__lte=end_date,
+                status='approved',
+                actual_hours_worked__isnull=False,
+            ).order_by('start_time')
+        )
+        if not shifts:
+            raise ValueError(
+                f"No approved shifts at {venue.name} between {start_date} and {end_date}."
+            )
+
+        client_address_lines = []
+        for attr in ('address', 'city', 'postal_code'):
+            v = getattr(venue, attr, None)
+            if v:
+                client_address_lines.append(str(v))
+
+        invoice = cls.objects.create(
+            company=company,
+            venue=venue,
+            invoice_number=cls.generate_invoice_number(company),
+            start_date=start_date,
+            end_date=end_date,
+            tax_rate=tax_rate if tax_rate is not None else Decimal('20.00'),
+            client_name=venue.name,
+            client_address='\n'.join(client_address_lines),
+            client_email=getattr(venue, 'contact_email', '') or '',
+            notes=notes or '',
+            created_by=created_by,
+            status='draft',
+        )
+
+        for shift in shifts:
+            rate = shift.get_effective_hourly_rate() or Decimal('0')
+            hours = Decimal(str(shift.actual_hours_worked or 0))
+            staff_label = ''
+            if shift.staff_user:
+                staff_label = (
+                    f"{shift.staff_user.first_name} {shift.staff_user.last_name}".strip()
+                    or shift.staff_user.username
+                )
+            descr = (
+                f"Security cover · "
+                f"{shift.start_time.strftime('%a %d %b')} · "
+                f"{staff_label}"
+                if staff_label else
+                f"Security cover · {shift.start_time.strftime('%a %d %b')}"
+            )
+            ClientInvoiceItem.objects.create(
+                invoice=invoice,
+                shift=shift,
+                description=descr,
+                date=shift.start_time.date(),
+                hours=hours,
+                rate=rate,
+            )
+
+        invoice.calculate_totals()
+        return invoice
+
 
 class ClientInvoiceItem(models.Model):
     """Line item on a client invoice, optionally linked to a shift."""
@@ -6547,3 +6995,357 @@ class ClientInvoiceItem(models.Model):
         from decimal import Decimal
         self.total = (self.hours * self.rate).quantize(Decimal('0.01'))
         super().save(*args, **kwargs)
+
+
+# =====================================================
+# PAYROLL RUN, EXPORT TRACKING, STATEMENTS, FINANCE PROVIDERS
+# (Backend alignment for Payroll & Invoices UI)
+# =====================================================
+
+class PayrollRun(models.Model):
+    """A weekly payroll batch grouping per-officer staff Invoices for one period.
+
+    The frontend Payroll page is a one-run-at-a-time view: one PayrollRun maps
+    to the W17-2026-style header and aggregates its child Invoices into the
+    KPIs (gross_total, prev_gross delta, hours_billed, etc.).
+    """
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        # 'approved' run: every child invoice is approved (or paid) but at
+        # least one is not yet paid. This is the export-to-Xero state.
+        ('approved', 'Approved'),
+        ('paid', 'Paid'),
+        ('rejected', 'Rejected'),
+    )
+    EXPORT_STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    )
+    CYCLE_CHOICES = (
+        ('weekly', 'Weekly'),
+        ('monthly', 'Monthly'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    company = models.ForeignKey(
+        SecurityCompany, on_delete=models.CASCADE, related_name='payroll_runs'
+    )
+    cycle = models.CharField(
+        max_length=10,
+        choices=CYCLE_CHOICES,
+        default='weekly',
+        help_text="Pay cycle this run covers — controls which staff are included.",
+    )
+    run_code = models.CharField(
+        max_length=20,
+        help_text="Run code: W{week}-{year} for weekly, M{month}-{year} for monthly. Unique per (company, cycle).",
+    )
+    label = models.CharField(
+        max_length=120,
+        help_text="Human label, e.g. 'Week 17 · w/c Mon 20 Apr 2026' or 'April 2026'",
+    )
+    period_start = models.DateField(help_text="First day of the run period (inclusive)")
+    period_end = models.DateField(help_text="Last day of the run period (inclusive)")
+    process_date = models.DateField(help_text="Day the run is processed (Monday after for weekly, 1st of next month for monthly)")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    export_status = models.CharField(
+        max_length=20, choices=EXPORT_STATUS_CHOICES, null=True, blank=True
+    )
+
+    # Cached aggregates (recomputed by recompute_totals())
+    invoice_count = models.IntegerField(default=0)
+    line_item_count = models.IntegerField(default=0)
+    hours_billed = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    gross_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    prev_gross = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    time_adjustments = models.IntegerField(default=0)
+    sia_blocks = models.IntegerField(default=0)
+
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='payroll_runs_created'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'payroll_runs'
+        ordering = ['-period_start']
+        indexes = [
+            models.Index(fields=['company', '-period_start']),
+            models.Index(fields=['run_code']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'cycle', 'period_start', 'period_end'],
+                name='unique_payrollrun_per_company_period',
+            ),
+            models.UniqueConstraint(
+                fields=['company', 'run_code'],
+                name='unique_payrollrun_code_per_company',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.run_code} ({self.company.name})"
+
+    @classmethod
+    def for_iso_week(cls, dt):
+        """Return (run_code, label, period_start, period_end, process_date) for the
+        ISO week containing dt. The run period is Mon-Sun; process_date is the
+        following Monday.
+        """
+        from datetime import timedelta
+        weekday = dt.weekday()  # Mon=0, Sun=6
+        period_start = dt - timedelta(days=weekday)
+        period_end = period_start + timedelta(days=6)
+        process_date = period_end + timedelta(days=1)
+        iso_year, iso_week, _ = period_start.isocalendar()
+        run_code = f"W{iso_week:02d}-{iso_year}"
+        label = f"Week {iso_week} · w/c {period_start.strftime('%a %d %b %Y')}"
+        return {
+            'run_code': run_code,
+            'label': label,
+            'cycle': 'weekly',
+            'period_start': period_start,
+            'period_end': period_end,
+            'process_date': process_date,
+        }
+
+    @classmethod
+    def for_calendar_month(cls, dt):
+        """Return run_code/label/period for the calendar month containing dt.
+
+        Period is the 1st through last day of the month; process_date is the
+        1st of the following month (the day the monthly cron fires).
+        """
+        from datetime import date
+        from calendar import monthrange
+        period_start = date(dt.year, dt.month, 1)
+        last_day = monthrange(dt.year, dt.month)[1]
+        period_end = date(dt.year, dt.month, last_day)
+        if dt.month == 12:
+            process_date = date(dt.year + 1, 1, 1)
+        else:
+            process_date = date(dt.year, dt.month + 1, 1)
+        run_code = f"M{dt.month:02d}-{dt.year}"
+        label = period_start.strftime('%B %Y')
+        return {
+            'run_code': run_code,
+            'label': label,
+            'cycle': 'monthly',
+            'period_start': period_start,
+            'period_end': period_end,
+            'process_date': process_date,
+        }
+
+    def recompute_totals(self):
+        """Re-aggregate cached counters from this run's child invoices."""
+        from decimal import Decimal
+        from django.db.models import Sum, Count
+
+        # Exclude superseded invoices: they remain linked to the run for audit
+        # but don't count toward gross/hours/officer totals.
+        invoices = self.staff_invoices.filter(superseded_by__isnull=True)
+        agg = invoices.aggregate(
+            inv_count=Count('id'),
+            hours=Sum('total_hours'),
+            gross=Sum('total_amount'),
+        )
+        self.invoice_count = agg['inv_count'] or 0
+        self.hours_billed = agg['hours'] or Decimal('0')
+        self.gross_total = agg['gross'] or Decimal('0')
+        self.line_item_count = InvoiceItem.objects.filter(invoice__in=invoices).count()
+
+        prev = (
+            PayrollRun.objects
+            .filter(company=self.company, period_end__lt=self.period_start)
+            .order_by('-period_end')
+            .first()
+        )
+        self.prev_gross = prev.gross_total if prev else Decimal('0')
+
+        # Time adjustments touching shifts in this run's invoices
+        shift_ids = InvoiceItem.objects.filter(
+            invoice__in=invoices, shift__isnull=False
+        ).values_list('shift_id', flat=True).distinct()
+        try:
+            self.time_adjustments = TimeAdjustment.objects.filter(
+                shift_id__in=list(shift_ids)
+            ).count()
+        except NameError:
+            self.time_adjustments = 0
+
+        # SIA blocks: officers whose latest license is expired on process_date
+        # SIALicense -> StaffProfile -> User
+        from django.db.models import Max
+        staff_ids = list(invoices.values_list('staff_user_id', flat=True))
+        try:
+            sia_qs = SIALicense.objects.filter(staff_profile__user_id__in=staff_ids)
+            blocked = (
+                sia_qs.values('staff_profile__user_id')
+                .annotate(latest_expiry=Max('expiry_date'))
+                .filter(latest_expiry__lt=self.process_date)
+                .count()
+            )
+            self.sia_blocks = blocked
+        except NameError:
+            self.sia_blocks = 0
+
+        self.save(update_fields=[
+            'invoice_count', 'line_item_count', 'hours_billed',
+            'gross_total', 'prev_gross', 'time_adjustments', 'sia_blocks',
+            'updated_at',
+        ])
+
+    def update_status_from_invoices(self):
+        """Derive run status from child invoices.
+
+        Rules (in order):
+          - any invoice still in pending/draft/sent -> 'pending' (work to do)
+          - any invoice approved but not all paid -> 'approved' (ready for Xero)
+          - all paid (and at least one exists) -> 'paid'
+          - all terminal and at least one rejected -> 'rejected'
+          - empty run -> 'pending'
+
+        The "any pending" guard means the run pill stays warning-coloured
+        until the manager has actioned every officer.
+        """
+        invoices = list(self.staff_invoices.values_list('status', flat=True))
+        if not invoices:
+            new_status = 'pending'
+        elif any(s in ('pending', 'draft', 'sent') for s in invoices):
+            new_status = 'pending'
+        elif any(s == 'approved' for s in invoices):
+            # All officers reviewed; some not yet paid out. This is the
+            # export-to-Xero state.
+            new_status = 'approved'
+        elif all(s == 'paid' for s in invoices):
+            new_status = 'paid'
+        else:
+            # All terminal, at least one is rejected (or cancelled).
+            new_status = 'rejected'
+
+        if new_status != self.status:
+            self.status = new_status
+            self.save(update_fields=['status', 'updated_at'])
+
+
+class Statement(models.Model):
+    """A periodic statement bundling multiple ClientInvoices for a single venue.
+
+    Backed by the Invoices page's 'Send statement…' button. A statement is
+    a *summary* document: it references the underlying ClientInvoices but does
+    not recompute or re-tax anything. The `snapshot` JSON freezes balances at
+    issue time so the document reads consistently regardless of later activity.
+    """
+    STATUS_CHOICES = (
+        ('draft', 'Draft'),
+        ('sent', 'Sent'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    company = models.ForeignKey(
+        SecurityCompany, on_delete=models.CASCADE, related_name='statements'
+    )
+    venue = models.ForeignKey(
+        Venue, on_delete=models.CASCADE, related_name='statements'
+    )
+    statement_number = models.CharField(max_length=50, unique=True)
+    period_start = models.DateField()
+    period_end = models.DateField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    issued_date = models.DateField(null=True, blank=True)
+    sent_to_email = models.EmailField(blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    snapshot = models.JSONField(
+        default=dict, blank=True,
+        help_text="Frozen list of invoice rows: [{invoice_number, issued, due, total, paid_total, balance}, …]"
+    )
+    invoices = models.ManyToManyField(
+        ClientInvoice, through='StatementInvoice', related_name='statements'
+    )
+    pdf_url = models.URLField(max_length=500, null=True, blank=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='statements_created'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'statements'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['company', '-created_at']),
+            models.Index(fields=['venue', 'period_start']),
+        ]
+
+    def __str__(self):
+        return f"{self.statement_number} - {self.venue.name} ({self.status})"
+
+    @classmethod
+    def generate_statement_number(cls, company):
+        """Generate sequential STMT-YYYY-NNNN per company per year."""
+        year = timezone.now().year
+        prefix = f'STMT-{year}-'
+        last = cls.objects.filter(
+            company=company, statement_number__startswith=prefix
+        ).order_by('-statement_number').first()
+        if last:
+            try:
+                seq = int(last.statement_number.split('-')[-1]) + 1
+            except (ValueError, IndexError):
+                seq = 1
+        else:
+            seq = 1
+        return f'{prefix}{seq:04d}'
+
+    def freeze_snapshot(self):
+        """Capture per-invoice balances at this moment for permanent record."""
+        from decimal import Decimal
+        rows = []
+        for inv in self.invoices.all().order_by('issued_date'):
+            paid = Decimal('0') if inv.status != 'paid' else inv.total_amount
+            rows.append({
+                'invoice_number': inv.invoice_number,
+                'issued': inv.issued_date.isoformat() if inv.issued_date else None,
+                'due': inv.due_date.isoformat() if inv.due_date else None,
+                'total': float(inv.total_amount),
+                'paid_total': float(paid),
+                'balance': float(inv.total_amount - paid),
+            })
+        self.snapshot = {'rows': rows, 'frozen_at': timezone.now().isoformat()}
+        self.save(update_fields=['snapshot', 'updated_at'])
+
+
+class StatementInvoice(models.Model):
+    """Through model for Statement <-> ClientInvoice with display ordering."""
+    statement = models.ForeignKey(
+        Statement, on_delete=models.CASCADE, related_name='statement_invoices'
+    )
+    invoice = models.ForeignKey(
+        ClientInvoice, on_delete=models.CASCADE, related_name='statement_invoices'
+    )
+    sort_order = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = 'statement_invoices'
+        ordering = ['sort_order', 'invoice__issued_date']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['statement', 'invoice'],
+                name='unique_statement_invoice',
+            ),
+        ]
+
+
+# NOTE: Invoice/payroll export tracking is handled by `finance_integrations.InvoiceExport`
+# (for staff Invoice), `finance_integrations.PayrollExport` (for runs/periods), and a sibling
+# `finance_integrations.ClientInvoiceExport` (for ClientInvoice — added alongside this work).
+# The accounting-provider registry and per-connection state live in
+# `finance_integrations.AccountingProvider` and `finance_integrations.ProviderConnection`.
+# The frontend FinanceProvider strip is rendered by joining those two.
