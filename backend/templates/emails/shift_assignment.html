@@ -1,108 +1,112 @@
 {% extends "emails/base_email.html" %}
 
-{% block title %}New Shift Assigned - {{ company_name }}{% endblock %}
+{% block title %}New shift assigned &middot; {{ company_name }}{% endblock %}
 
-{% block headline %}You've Been Assigned a New Shift{% endblock %}
+{% block subline %}Scheduling{% endblock %}
 
-{% block content %}
-<!-- Body Text -->
+{% block preheader %}New shift: {{ venue_name }} &middot; {{ formatted_date }} &middot; {{ start_time }}&ndash;{{ end_time }}.{% endblock %}
+
+{% block pre_headline %}
 <tr>
-    <td align="left" class="mobile-padding" style="padding: 0 10px 20px 10px;">
-        <p style="margin: 0 0 15px 0; font-size: 16px; line-height: 1.6; color: #555555;">
-            Hello {{ user.first_name|default:user.username }},
-        </p>
-        <p style="margin: 0; font-size: 16px; line-height: 1.6; color: #555555;">
-            You have been assigned a new shift. Please review the details below:
-        </p>
-    </td>
-</tr>
-
-<!-- Shift Details Box -->
-<tr>
-    <td align="left" class="mobile-padding" style="padding: 0 10px 25px 10px;">
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" class="shift-box" style="background-color: #f0f7ff; border-radius: 8px; border-left: 4px solid #1a1a2e;">
-            <tr>
-                <td style="padding: 20px;">
-                    <p style="margin: 0 0 15px 0; font-size: 14px; font-weight: 600; color: #111111; text-transform: uppercase; letter-spacing: 0.5px;">
-                        Shift Details
-                    </p>
-                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
-                        <tr>
-                            <td style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
-                                <span style="font-size: 14px; color: #666666;">Venue</span>
-                            </td>
-                            <td align="right" style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
-                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ venue_name }}</span>
-                            </td>
-                        </tr>
-                        {% if venue_address %}
-                        <tr>
-                            <td style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
-                                <span style="font-size: 14px; color: #666666;">Address</span>
-                            </td>
-                            <td align="right" style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
-                                <span style="font-size: 14px; color: #333333;">{{ venue_address }}</span>
-                            </td>
-                        </tr>
-                        {% endif %}
-                        <tr>
-                            <td style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
-                                <span style="font-size: 14px; color: #666666;">Date</span>
-                            </td>
-                            <td align="right" style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
-                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ formatted_date }}</span>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
-                                <span style="font-size: 14px; color: #666666;">Start Time</span>
-                            </td>
-                            <td align="right" style="padding: 8px 0; border-bottom: 1px solid #dde8f4;">
-                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ start_time }}</span>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 8px 0;">
-                                <span style="font-size: 14px; color: #666666;">End Time</span>
-                            </td>
-                            <td align="right" style="padding: 8px 0;">
-                                <span style="font-size: 14px; font-weight: 600; color: #111111;">{{ end_time }}</span>
-                            </td>
-                        </tr>
-                        {% if hourly_rate %}
-                        <tr>
-                            <td style="padding: 8px 0; border-top: 1px solid #dde8f4;">
-                                <span style="font-size: 14px; color: #666666;">Pay Rate</span>
-                            </td>
-                            <td align="right" style="padding: 8px 0; border-top: 1px solid #dde8f4;">
-                                <span style="font-size: 14px; font-weight: 600; color: #1a1a2e;">&pound;{{ hourly_rate }}/hr</span>
-                            </td>
-                        </tr>
-                        {% endif %}
-                    </table>
-                </td>
-            </tr>
-        </table>
-    </td>
-</tr>
-
-<!-- Important Notes -->
-<tr>
-    <td align="left" class="mobile-padding" style="padding: 0 10px 20px 10px;">
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #fff8e6; border-left: 4px solid #f5a623; border-radius: 4px;">
-            <tr>
-                <td style="padding: 15px 20px;">
-                    <p style="margin: 0 0 5px 0; font-size: 14px; font-weight: 600; color: #111111;">
-                        Important Reminders
-                    </p>
-                    <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #555555;">
-                        &bull; Please arrive at least 10 minutes before your shift starts<br>
-                        &bull; Don't forget to check in when you arrive<br>
-                        &bull; Contact your manager if you cannot make this shift
-                    </p>
-                </td>
-            </tr>
-        </table>
-    </td>
+  <td class="mobile-padding" style="padding:32px 32px 0 32px;">
+    <span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#f3f2f1;color:#323130;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+      <span style="display:inline-block;width:6px;height:6px;border-radius:3px;background:#605e5c;margin-right:6px;vertical-align:middle;"></span>New shift
+    </span>
+  </td>
 </tr>
 {% endblock %}
+
+{% block headline %}You&rsquo;re scheduled, {{ user.first_name|default:user.username }}.{% endblock %}
+
+{% block content %}
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 22px 32px;">
+    <p style="margin:0;font-size:15px;line-height:1.6;color:#3b3a39;">
+      You&rsquo;ve been assigned a new shift. Please confirm in the app &mdash; arriving 10 minutes before the start time keeps the team on schedule.
+    </p>
+  </td>
+</tr>
+
+<!-- Shift card -->
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 22px 32px;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border:1px solid #edebe9;border-radius:14px;overflow:hidden;">
+      <!-- Date strip -->
+      <tr>
+        <td style="padding:14px 18px;background:#201f1e;color:#ffffff;">
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+            <tr>
+              <td>
+                <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.6);">Shift date</div>
+                <div style="font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-weight:800;font-size:22px;margin-top:2px;letter-spacing:-0.02em;color:#ffffff;">{{ formatted_date }}</div>
+              </td>
+              <td align="right" style="text-align:right;vertical-align:middle;">
+                <div style="font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:20px;color:#ffffff;letter-spacing:0.02em;">{{ start_time }} &ndash; {{ end_time }}</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Venue -->
+      <tr>
+        <td style="padding:16px 18px;border-bottom:1px solid #f3f2f1;">
+          <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">Venue</div>
+          <div style="font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-weight:700;font-size:15px;color:#201f1e;margin-top:4px;">{{ venue_name }}</div>
+          {% if venue_address %}
+          <div style="font-size:12.5px;color:#605e5c;margin-top:2px;">{{ venue_address }}</div>
+          {% endif %}
+        </td>
+      </tr>
+
+      <!-- Role + rate -->
+      <tr>
+        <td style="padding:14px 18px;{% if hourly_rate %}border-bottom:1px solid #f3f2f1;{% endif %}">
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+            <tr>
+              <td>
+                <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">Role</div>
+                <div style="font-size:13.5px;color:#201f1e;font-weight:600;margin-top:4px;">Security Officer</div>
+              </td>
+              {% if hourly_rate %}
+              <td align="right" style="text-align:right;">
+                <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">Pay rate</div>
+                <div style="font-size:13.5px;color:#201f1e;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums;">&pound;{{ hourly_rate }}/hr</div>
+              </td>
+              {% endif %}
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Brief -->
+      <tr>
+        <td style="padding:14px 18px;">
+          <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">Brief</div>
+          <div style="font-size:13px;color:#3b3a39;margin-top:4px;line-height:1.55;">Standard hi-vis &middot; report 10&ndash;15 min before start &middot; check in via the mobile app on arrival.</div>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+
+<!-- Reminders -->
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 28px 32px;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-radius:10px;background:#fff4e5;border-left:4px solid #d97706;">
+      <tr>
+        <td style="padding:14px 16px;">
+          <div style="font-size:13px;font-weight:700;color:#7a4a00;">Before you go</div>
+          <div style="font-size:13px;color:#7a4a00;margin-top:4px;line-height:1.5;">
+            &bull; Arrive at least 10 minutes early<br>
+            &bull; Check in via the mobile app on arrival<br>
+            &bull; Contact your manager if you can&rsquo;t make this shift
+          </div>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+{% endblock %}
+
+{% block footer_note %}Need to swap or decline this shift? Contact your manager via the app or reply to this email.{% endblock %}

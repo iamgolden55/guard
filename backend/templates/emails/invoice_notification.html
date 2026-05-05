@@ -1,0 +1,126 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Invoice {{ invoice_number }} &middot; {{ company_name }}{% endblock %}
+
+{% block subline %}Payroll &middot; Invoice notification{% endblock %}
+
+{% block preheader %}Your invoice for {{ period_label }} is ready &mdash; £{{ total_amount }}{% if pay_date %} due {{ pay_date }}{% endif %}.{% endblock %}
+
+{% block pre_headline %}
+<tr>
+  <td class="mobile-padding" style="padding:32px 32px 0 32px;">
+    {% if status == 'paid' %}
+    <span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#e6f4ea;color:#0f5132;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+      <span style="display:inline-block;width:6px;height:6px;border-radius:3px;background:#0f9d58;margin-right:6px;vertical-align:middle;"></span>Paid
+    </span>
+    {% else %}
+    <span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#fff4e5;color:#7a4a00;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+      <span style="display:inline-block;width:6px;height:6px;border-radius:3px;background:#d97706;margin-right:6px;vertical-align:middle;"></span>Pending payment
+    </span>
+    {% endif %}
+    <span style="margin-left:8px;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:12px;color:#a19f9d;">#{{ invoice_number }}</span>
+  </td>
+</tr>
+{% endblock %}
+
+{% block headline %}Invoice for {{ period_label }}{% endblock %}
+
+{% block content %}
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 22px 32px;">
+    <p style="margin:0;font-size:15px;line-height:1.6;color:#3b3a39;">
+      Hi {{ user.first_name|default:user.username }}, your invoice is ready.{% if pay_date %} Payment is scheduled for <strong style="color:#201f1e;">{{ pay_date }}</strong>, processed by {{ company_name }} Accounts.{% endif %}
+    </p>
+  </td>
+</tr>
+
+<!-- Big total hero -->
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 22px 32px;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background:#201f1e;background:linear-gradient(135deg,#201f1e 0%,#2b2826 100%);border-radius:14px;color:#ffffff;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+            <tr>
+              <td style="vertical-align:middle;">
+                <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.55);">{% if status == 'paid' %}Total paid{% else %}Total due{% endif %}</div>
+                <div style="font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-weight:800;font-size:38px;letter-spacing:-0.03em;margin-top:4px;line-height:1;font-variant-numeric:tabular-nums;color:#ffffff;">&pound;{{ total_amount }}</div>
+                <div style="font-size:12.5px;color:rgba(255,255,255,0.6);margin-top:6px;">{{ total_hours }} hours{% if pay_date %} &middot; paid {{ pay_date }}{% endif %}</div>
+              </td>
+              {% if pdf_url %}
+              <td align="right" style="text-align:right;vertical-align:middle;">
+                <a href="{{ pdf_url }}" style="display:inline-block;padding:11px 16px;border-radius:10px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:#ffffff;font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-weight:600;font-size:13px;text-decoration:none;">Download PDF &darr;</a>
+              </td>
+              {% endif %}
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+
+<!-- Bill from / to -->
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 18px 32px;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+      <tr>
+        <td class="ms-stack-cell" style="width:50%;vertical-align:top;padding-right:12px;">
+          <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">From</div>
+          <div style="font-size:13.5px;color:#323130;margin-top:6px;line-height:1.55;">
+            <strong style="color:#201f1e;">{{ company_name }}</strong>
+          </div>
+        </td>
+        <td class="ms-stack-cell" style="width:50%;vertical-align:top;padding-left:12px;">
+          <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">To</div>
+          <div style="font-size:13.5px;color:#323130;margin-top:6px;line-height:1.55;">
+            <strong style="color:#201f1e;">{{ user.first_name|default:user.username }}{% if user.last_name %} {{ user.last_name }}{% endif %}</strong><br>
+            {{ user.email }}
+          </div>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+
+<!-- Line items -->
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 18px 32px;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;">
+      <thead>
+        <tr style="background:#faf9f8;">
+          <th align="left"  style="text-align:left; padding:10px 14px;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#a19f9d;border-bottom:1px solid #edebe9;">Description</th>
+          <th align="right" style="text-align:right;padding:10px 14px;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#a19f9d;border-bottom:1px solid #edebe9;">Hours</th>
+          <th align="right" style="text-align:right;padding:10px 14px;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#a19f9d;border-bottom:1px solid #edebe9;">Rate</th>
+          <th align="right" style="text-align:right;padding:10px 14px;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#a19f9d;border-bottom:1px solid #edebe9;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in lines %}
+        <tr>
+          <td style="padding:12px 14px;border-bottom:1px solid #f3f2f1;font-size:13.5px;color:#201f1e;">{{ line.label }}</td>
+          <td align="right" style="text-align:right;padding:12px 14px;border-bottom:1px solid #f3f2f1;font-size:13.5px;color:#323130;font-variant-numeric:tabular-nums;">{{ line.hours }}</td>
+          <td align="right" style="text-align:right;padding:12px 14px;border-bottom:1px solid #f3f2f1;font-size:13.5px;color:#605e5c;font-variant-numeric:tabular-nums;">&pound;{{ line.rate }}/hr</td>
+          <td align="right" style="text-align:right;padding:12px 14px;border-bottom:1px solid #f3f2f1;font-size:13.5px;color:#201f1e;font-weight:600;font-variant-numeric:tabular-nums;">&pound;{{ line.amount }}</td>
+        </tr>
+        {% endfor %}
+        <tr style="background:#faf9f8;">
+          <td colspan="3" align="right" style="text-align:right;padding:14px 14px;font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-weight:800;font-size:14px;color:#201f1e;">Total</td>
+          <td align="right" style="text-align:right;padding:14px 14px;font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-weight:800;font-size:16px;color:#201f1e;font-variant-numeric:tabular-nums;">&pound;{{ total_amount }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </td>
+</tr>
+
+<!-- BACS / payment note -->
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 24px 32px;">
+    <p style="margin:0;font-size:13px;line-height:1.55;color:#605e5c;">
+      {% if bank_last4 %}Paid via BACS to your registered account ending <strong style="color:#323130;">&bull;&bull;&bull;&bull; {{ bank_last4 }}</strong>.{% else %}Payment will be issued to the bank account on file.{% endif %} Questions: <a href="mailto:accounts@meadsecurity.co.uk" style="color:#cb2431;text-decoration:none;font-weight:600;">accounts@meadsecurity.co.uk</a>
+    </p>
+  </td>
+</tr>
+{% endblock %}
+
+{% block footer_note %}Self-billing invoice issued under HMRC self-billing agreement. VAT not applicable.{% endblock %}

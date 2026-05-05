@@ -1,0 +1,175 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Incident at {{ venue_name }} &middot; {{ company_name }}{% endblock %}
+
+{% block subline %}Incident management{% endblock %}
+
+{% block preheader %}{{ severity|default:"Critical" }}: incident logged at {{ venue_name }}{% if zone %}, {{ zone }}{% endif %}. Action required.{% endblock %}
+
+{% block brandbar %}
+<!-- Top alert strip replaces the standard accent rail -->
+<tr>
+  <td style="padding:0;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background:#cb2431;background:linear-gradient(90deg,#cb2431,#991b25);">
+      <tr>
+        <td class="ms-pad-x" style="padding:12px 32px;">
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+            <tr>
+              <td>
+                <span style="display:inline-block;width:8px;height:8px;border-radius:4px;background:#ffffff;margin-right:8px;vertical-align:middle;"></span>
+                <span style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:11px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:#ffffff;vertical-align:middle;">Operations alert &middot; {{ severity|default:"Critical" }}</span>
+              </td>
+              <td align="right" style="text-align:right;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:11px;color:rgba(255,255,255,0.85);">{{ incident_id }}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+
+<!-- Standard logo row (no extra accent rail since strip already provides it) -->
+<tr>
+  <td style="padding:0;">
+    {% load email_extras %}
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+      <tr>
+        <td class="ms-pad-x" style="padding:22px 32px;border-bottom:1px solid #f3f2f1;">
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding-right:12px;vertical-align:middle;width:36px;">
+                <img src="{% asset_url 'logos/LOGOM.png' %}" alt="{{ company_name|default:'Mead Security' }}" width="36" height="36" style="display:block;width:36px;height:36px;border:0;border-radius:8px;">
+              </td>
+              <td style="vertical-align:middle;">
+                <div style="font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-weight:800;font-size:16px;letter-spacing:-0.02em;color:#201f1e;line-height:1;">{{ company_name|default:"Mead Security" }}</div>
+                <div style="margin-top:4px;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#a19f9d;line-height:1;">Incident management</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
+{% endblock %}
+
+{% block headline %}Incident at {{ venue_name }}{% endblock %}
+
+{% block content %}
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 22px 32px;">
+    <p style="margin:0;font-size:15px;line-height:1.6;color:#3b3a39;">
+      A {{ category|default:"category-2" }} incident was logged in <strong style="color:#201f1e;">{{ zone|default:venue_name }}</strong>{% if reported_by_name %}{% if ack_supervisor %} and acknowledged by the on-shift supervisor{% endif %}{% endif %}. Your action is required as duty manager.
+    </p>
+  </td>
+</tr>
+
+<!-- Detail card -->
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 22px 32px;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border:1px solid #edebe9;border-radius:12px;">
+      <tr>
+        <td style="padding:14px 18px;border-bottom:1px solid #f3f2f1;">
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+            <tr>
+              <td>
+                <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">Venue</div>
+                <div style="font-size:14px;font-weight:700;color:#201f1e;margin-top:4px;">{{ venue_name }}{% if zone %} &middot; {{ zone }}{% endif %}</div>
+              </td>
+              <td align="right" style="text-align:right;">
+                <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">Time</div>
+                <div style="font-size:14px;font-weight:700;color:#201f1e;margin-top:4px;font-family:'SF Mono','Fira Code',Consolas,monospace;">{{ incident_time }}</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      {% if reported_by_name or category %}
+      <tr>
+        <td style="padding:14px 18px;border-bottom:1px solid #f3f2f1;">
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+            <tr>
+              {% if reported_by_name %}
+              <td>
+                <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">Reported by</div>
+                <div style="font-size:14px;font-weight:700;color:#201f1e;margin-top:4px;">{{ reported_by_name }}{% if reported_by_role %} &middot; {{ reported_by_role }}{% endif %}</div>
+              </td>
+              {% endif %}
+              {% if category %}
+              <td align="right" style="text-align:right;">
+                <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">Category</div>
+                <div style="margin-top:4px;">
+                  <span style="display:inline-block;padding:3px 10px;border-radius:999px;background:#fde7e9;color:#5b0a10;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+                    <span style="display:inline-block;width:6px;height:6px;border-radius:3px;background:#cb2431;margin-right:6px;vertical-align:middle;"></span>{{ category }}
+                  </span>
+                </div>
+              </td>
+              {% endif %}
+            </tr>
+          </table>
+        </td>
+      </tr>
+      {% endif %}
+      {% if summary %}
+      <tr>
+        <td style="padding:14px 18px;">
+          <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">Summary</div>
+          <div style="font-size:13.5px;color:#323130;margin-top:6px;line-height:1.55;">{{ summary }}</div>
+        </td>
+      </tr>
+      {% endif %}
+    </table>
+  </td>
+</tr>
+
+<!-- CTAs -->
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 22px 32px;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="padding-right:8px;">
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="background:#cb2431;background:linear-gradient(180deg,#cb2431,#991b25);border-radius:10px;">
+                <a href="{{ report_url }}" style="display:inline-block;padding:13px 22px;font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-weight:700;font-size:14px;color:#ffffff;text-decoration:none;letter-spacing:-0.005em;">Acknowledge &amp; open report &rarr;</a>
+              </td>
+            </tr>
+          </table>
+        </td>
+        {% if cctv_url %}
+        <td>
+          <a href="{{ cctv_url }}" style="display:inline-block;padding:13px 18px;border-radius:10px;border:1px solid #e1dfdd;color:#323130;font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-weight:600;font-size:14px;text-decoration:none;">View CCTV clip</a>
+        </td>
+        {% endif %}
+      </tr>
+    </table>
+  </td>
+</tr>
+
+{% if timeline %}
+<!-- Escalation timeline -->
+<tr>
+  <td class="mobile-padding" style="padding:0 32px 28px 32px;">
+    <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#a19f9d;">Escalation timeline</div>
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top:10px;">
+      {% for step in timeline %}
+      <tr>
+        <td width="60" style="padding:8px 0;vertical-align:top;font-family:'SF Mono','Fira Code',Consolas,monospace;font-size:12px;color:#605e5c;">{{ step.time }}</td>
+        <td width="20" style="padding:8px 0;vertical-align:top;">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:5px;background:{% if step.done %}#cb2431{% else %}#ffffff{% endif %};border:2px solid {% if step.done %}#cb2431{% else %}#e1dfdd{% endif %};margin-top:4px;"></span>
+        </td>
+        <td style="padding:8px 0 8px 8px;">
+          <div style="font-size:13px;font-weight:700;color:{% if step.done %}#201f1e{% else %}#605e5c{% endif %};">{{ step.head }}</div>
+          {% if step.sub %}<div style="font-size:12px;color:#a19f9d;margin-top:1px;">{{ step.sub }}</div>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </td>
+</tr>
+{% endif %}
+{% endblock %}
+
+{% block signature %}{% endblock %}
+
+{% block footer_note %}If you can&rsquo;t action this, forward to <a href="mailto:duty@meadsecurity.co.uk" style="color:#cb2431;text-decoration:none;font-weight:600;">duty@meadsecurity.co.uk</a> immediately. SLA: {{ sla_minutes|default:"15" }} min acknowledgement.{% endblock %}
