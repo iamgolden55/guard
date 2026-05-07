@@ -13,9 +13,6 @@ const schema = z.object({
   lastName: z.string().trim().min(1, "Last name is required"),
   email: z.string().trim().email("Enter a valid email"),
   username: z.string().trim().min(3, "Username must be at least 3 characters"),
-  password: z
-    .string()
-    .min(8, "Temporary password must be at least 8 characters"),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -64,7 +61,6 @@ export function InviteStaffModal({
       lastName: "",
       email: "",
       username: "",
-      password: "",
     },
   });
 
@@ -83,8 +79,6 @@ export function InviteStaffModal({
         first_name: values.firstName,
         last_name: values.lastName,
         email: values.email,
-        password: values.password,
-        role: "staff",
       });
       onClose();
     } catch (err: unknown) {
@@ -96,7 +90,6 @@ export function InviteStaffModal({
           last_name: "lastName",
           email: "email",
           username: "username",
-          password: "password",
         };
         const unmatched: string[] = [];
         for (const [key, msg] of Object.entries(fieldErrors)) {
@@ -123,7 +116,7 @@ export function InviteStaffModal({
       open={open}
       onClose={onClose}
       title="Invite staff member"
-      description="They'll receive temporary credentials and be added to the active roster."
+      description="They'll receive a welcome email with a secure link to set their password and join the team."
       size="md"
       footer={
         <>
@@ -135,7 +128,7 @@ export function InviteStaffModal({
             onClick={handleSubmit(submit)}
             disabled={!isValid || isSubmitting}
           >
-            {isSubmitting ? "Sending invite…" : "Send invite"}
+            {isSubmitting ? "Sending invite…" : "Send invite email"}
           </Button>
         </>
       }
@@ -175,22 +168,13 @@ export function InviteStaffModal({
           <Input {...register("email")} type="email" autoComplete="email" />
         </Field>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <Field label="Username" error={errors.username?.message}>
-            <Input {...register("username")} type="text" autoComplete="off" />
-          </Field>
-          <Field
-            label="Temporary password"
-            hint="They'll be prompted to change this on first sign-in."
-            error={errors.password?.message}
-          >
-            <Input
-              {...register("password")}
-              type="text"
-              autoComplete="new-password"
-            />
-          </Field>
-        </div>
+        <Field
+          label="Username"
+          hint="The new staff member will set their own password via the welcome email."
+          error={errors.username?.message}
+        >
+          <Input {...register("username")} type="text" autoComplete="off" />
+        </Field>
       </form>
     </Modal>
   );
