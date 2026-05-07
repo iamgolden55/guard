@@ -3229,7 +3229,6 @@ def my_profile(request):
                         bank_details.save()
                 except Exception as e:
                     # Log error but continue
-                    import logging
                     logger = logging.getLogger(__name__)
                     logger.error(f"Failed to save bank details for admin user {user.id}: {str(e)}")
 

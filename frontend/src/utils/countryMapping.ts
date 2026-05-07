@@ -41,7 +41,7 @@ export const COUNTRY_NAME_TO_ISO_CODE: Record<string, string> = {
  */
 export function mapCountryNameToCode(
   countryName: string,
-  defaultCode: string = 'GBR'
+  defaultCode = 'GBR'
 ): string {
   const normalizedName = countryName.trim();
   return COUNTRY_NAME_TO_ISO_CODE[normalizedName] || defaultCode;
@@ -62,7 +62,7 @@ export const ISO_CODE_TO_COUNTRY_NAME: Record<string, string> = Object.fromEntri
  */
 export function mapCountryCodeToName(
   countryCode: string,
-  defaultName: string = 'United Kingdom'
+  defaultName = 'United Kingdom'
 ): string {
   const normalizedCode = countryCode.toUpperCase();
   return ISO_CODE_TO_COUNTRY_NAME[normalizedCode] || defaultName;

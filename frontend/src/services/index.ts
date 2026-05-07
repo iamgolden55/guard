@@ -1,28 +1,27 @@
-import api from './api';
-import authService from './authService';
-import shiftService from './shiftService';
-import invoiceService from './invoiceService';
-import deputyService from './deputyService';
-import profileService from './profileService';
-import venueService from './venueService';
-import exchangeService from './exchangeService';
-import userService from './userService';
-import financeIntegrationsService from './financeIntegrationsService';
-import leaveService from './leaveService';
-import holidayService from './holidayService';
-import onboardingService from './onboardingService';
-import companyService from './companyService';
-import { employmentTypeService } from './employmentTypeService';
-import { bankHolidayService } from './bankHolidayService';
-import { staffLeaveRateService } from './staffLeaveRateService';
-import { contractorUnavailabilityService } from './contractorUnavailabilityService';
-import { offlineQueue } from './offlineQueue';
+import api from "./api";
+import authService from "./authService";
+import { bankHolidayService } from "./bankHolidayService";
+import companyService from "./companyService";
+import { contractorUnavailabilityService } from "./contractorUnavailabilityService";
+import dashboardService from "./dashboardService";
+import deputyService from "./deputyService";
+import { employmentTypeService } from "./employmentTypeService";
+import exchangeService from "./exchangeService";
+import financeIntegrationsService from "./financeIntegrationsService";
+import holidayService from "./holidayService";
+import leaveService from "./leaveService";
+import { offlineQueue } from "./offlineQueue";
+import onboardingService from "./onboardingService";
+import profileService from "./profileService";
+import shiftService from "./shiftService";
+import { staffLeaveRateService } from "./staffLeaveRateService";
+import userService from "./userService";
+import venueService from "./venueService";
 
 export {
   api,
   authService,
   shiftService,
-  invoiceService,
   deputyService,
   profileService,
   venueService,
@@ -37,5 +36,6 @@ export {
   bankHolidayService,
   staffLeaveRateService,
   contractorUnavailabilityService,
-  offlineQueue
+  offlineQueue,
+  dashboardService,
 };

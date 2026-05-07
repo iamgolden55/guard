@@ -1,7 +1,7 @@
 // Enhanced WebSocket Service for Report Progress Tracking
 // Optimized for real-time report generation updates with fallback to polling
 
-import { ReportJobProgress, ReportJobStatus, ReportJob } from '../types/reports';
+import { type ReportJobProgress, ReportJobStatus, type ReportJob } from '../types/reports';
 
 interface ReportWebSocketMessage {
   type: 'report_progress' | 'report_complete' | 'report_failed' | 'report_cancelled' | 'heartbeat';

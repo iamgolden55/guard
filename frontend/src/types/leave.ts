@@ -145,17 +145,20 @@ export interface LeaveRequest {
   updated_at: string;
 }
 
-// Leave Balance Summary Interface
+// Leave Balance Summary — shape returned by /api/v1/leave/balances/my_balances/
+// (one row per leave_type for the current user / year). All numeric fields can
+// arrive as either number or numeric string; consumers should coerce.
 export interface LeaveBalanceSummary {
+  id: number;
   leave_type: LeaveType;
-  entitlement: LeaveEntitlement;
-  pending_requests: LeaveRequest[];
-  upcoming_leave: LeaveRequest[];
-
-  // Calculated values
-  available_balance: string;
-  pending_balance: string;
-  projected_balance: string;
+  year: number;
+  total_entitlement: number | string;
+  used_balance: number | string;
+  pending_balance: number | string;
+  available_balance: number | string;
+  opening_balance: number | string;
+  accrued_balance: number | string;
+  adjustment_balance: number | string;
 }
 
 // Leave Calendar Event Interface

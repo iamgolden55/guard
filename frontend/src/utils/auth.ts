@@ -6,7 +6,7 @@
 /**
  * @deprecated Tokens are set as httpOnly cookies by the backend. No client-side storage needed.
  */
-export const setAuthCookie = (_name: string, _value: string, _days: number = 7): void => {
+export const setAuthCookie = (_name: string, _value: string, _days = 7): void => {
   // No-op: httpOnly cookies are set by the backend via Set-Cookie headers.
   // Client-side JS cannot and should not access auth tokens.
 };

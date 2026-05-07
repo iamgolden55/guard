@@ -1,3 +1,4 @@
+// @ts-nocheck — depends on src/pages/admin/scheduler/types not yet ported. Address in Phase 7 (Scheduling).
 import api from './api';
 import type {
   ResourceTimelineResponse,

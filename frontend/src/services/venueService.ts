@@ -1,5 +1,5 @@
 import api from './api';
-import { Venue, VenueRequest, VenueResponse } from '../types/venue';
+import type { Venue, VenueRequest, VenueResponse } from '../types/venue';
 
 // Convert backend fields to frontend format
 const mapToFrontendVenue = (backendVenue: any): Venue => ({

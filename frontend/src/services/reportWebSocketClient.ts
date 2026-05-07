@@ -1,7 +1,7 @@
 // Report WebSocket Client for Django Backend Integration
 // Handles real-time report job progress updates with proper authentication
 
-import { ReportJobProgress, ReportJobStatus, ReportJob } from '../types/reports';
+import { type ReportJobProgress, ReportJobStatus, type ReportJob } from '../types/reports';
 import reportService from './reportService';
 
 interface ReportWebSocketMessage {

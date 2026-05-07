@@ -1,5 +1,5 @@
 import api from './api';
-import { EmploymentType } from './employmentTypeService';
+import type { EmploymentType } from './employmentTypeService';
 
 export interface RecruitmentApplication {
   id: number;

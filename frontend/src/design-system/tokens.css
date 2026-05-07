@@ -1,0 +1,92 @@
+/* ============================================================
+   Mead Security — Token CSS variables
+   Mirrors src/design-system/tokens.ts.
+   The accent vars (--ms-accent-*) swap based on
+   [data-accent="..."] on the html element.
+   ============================================================ */
+
+:root {
+  /* Brand (default = brand-red) */
+  --ms-color-primary: #cb2431;
+  --ms-color-primary-dark: #991b25;
+  --ms-color-primary-soft: #fde7e9;
+  --ms-color-primary-ink: #5b0a10;
+
+  /* Ink scale */
+  --ms-color-ink-0: #ffffff;
+  --ms-color-ink-50: #faf9f8;
+  --ms-color-ink-100: #f3f2f1;
+  --ms-color-ink-200: #edebe9;
+  --ms-color-ink-300: #e1dfdd;
+  --ms-color-ink-400: #c8c6c4;
+  --ms-color-ink-500: #a19f9d;
+  --ms-color-ink-600: #605e5c;
+  --ms-color-ink-700: #3b3a39;
+  --ms-color-ink-800: #323130;
+  --ms-color-ink-900: #201f1e;
+
+  /* Semantic */
+  --ms-color-success: #0f9d58;
+  --ms-color-success-soft: #e6f4ea;
+  --ms-color-success-ink: #0f5132;
+  --ms-color-warn: #d97706;
+  --ms-color-warn-soft: #fff4e5;
+  --ms-color-warn-ink: #7a4a00;
+  --ms-color-danger: #cb2431;
+  --ms-color-danger-soft: #fde7e9;
+  --ms-color-danger-ink: #991b25;
+  --ms-color-info: #2563eb;
+  --ms-color-info-soft: #e7f0fa;
+  --ms-color-info-ink: #0b3a75;
+
+  /* Accent (initially mirrors brand-red; AccentContext rewrites on swap) */
+  --ms-accent-primary: #cb2431;
+  --ms-accent-dark: #991b25;
+  --ms-accent-soft: #fde7e9;
+  --ms-accent-ink: #5b0a10;
+
+  /* Fonts */
+  --ms-font-display: "Plus Jakarta Sans", Inter, system-ui, sans-serif;
+  --ms-font-body: "Inter", system-ui, sans-serif;
+  --ms-font-mono: "SF Mono", "Fira Code", Consolas, monospace;
+
+  /* Shadows */
+  --ms-shadow-xs: 0 1px 2px rgba(32, 31, 30, 0.04);
+  --ms-shadow-sm: 0 2px 6px -2px rgba(32, 31, 30, 0.08), 0 1px 2px rgba(32, 31, 30, 0.04);
+  --ms-shadow-md: 0 10px 24px -8px rgba(32, 31, 30, 0.14), 0 4px 8px -4px rgba(32, 31, 30, 0.06);
+  --ms-shadow-lg: 0 24px 48px -16px rgba(32, 31, 30, 0.22), 0 8px 16px -8px rgba(32, 31, 30, 0.1);
+  --ms-shadow-focus: 0 0 0 3px rgba(203, 36, 49, 0.22);
+
+  /* Motion */
+  --ms-motion-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --ms-motion-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --ms-motion-slow: 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-accent="brand-red"] {
+  --ms-accent-primary: #cb2431;
+  --ms-accent-dark: #991b25;
+  --ms-accent-soft: #fde7e9;
+  --ms-accent-ink: #5b0a10;
+}
+
+[data-accent="deep-navy"] {
+  --ms-accent-primary: #1e3a8a;
+  --ms-accent-dark: #172554;
+  --ms-accent-soft: #dbeafe;
+  --ms-accent-ink: #0b1d47;
+}
+
+[data-accent="forest"] {
+  --ms-accent-primary: #15803d;
+  --ms-accent-dark: #14532d;
+  --ms-accent-soft: #dcfce7;
+  --ms-accent-ink: #0a3d1f;
+}
+
+[data-accent="graphite"] {
+  --ms-accent-primary: #27272a;
+  --ms-accent-dark: #09090b;
+  --ms-accent-soft: #e4e4e7;
+  --ms-accent-ink: #09090b;
+}

@@ -27,6 +27,29 @@ import type {
   ScheduleValidation
 } from '../types/compliance';
 
+// Pull a human-readable error out of a DRF response. DRF returns either:
+//   { detail: "..." } | { message: "..." } | { fieldA: ["err1"], fieldB: [...] } | "..."
+// We surface field errors as "field: message" lines so the user knows which
+// input was rejected — otherwise validation failures look like generic errors.
+function describeError(error: any, fallback: string): string {
+  const data = error?.response?.data;
+  if (data == null) return fallback;
+  if (typeof data === "string") return data;
+  if (typeof data === "object") {
+    if (typeof data.detail === "string") return data.detail;
+    if (typeof data.message === "string") return data.message;
+    if (typeof data.error === "string") return data.error;
+    const lines = Object.entries(data)
+      .filter(([, v]) => Array.isArray(v) || typeof v === "string")
+      .map(([field, v]) => {
+        const text = Array.isArray(v) ? (v as unknown[]).join(", ") : String(v);
+        return `${field}: ${text}`;
+      });
+    if (lines.length > 0) return lines.join("\n");
+  }
+  return fallback;
+}
+
 export class ComplianceService {
   private static baseURL = '/api/v1/compliance';
 
@@ -68,7 +91,7 @@ export class ComplianceService {
         data: response.data
       };
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to create compliance profile');
+      throw new Error(describeError(error, 'Failed to create compliance profile'));
     }
   }
 
@@ -80,7 +103,7 @@ export class ComplianceService {
         data: response.data
       };
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to update compliance profile');
+      throw new Error(describeError(error, 'Failed to update compliance profile'));
     }
   }
 
@@ -242,7 +265,7 @@ export class ComplianceService {
   }
 
   // Reports & Analytics
-  static async getReportSummary(days: number = 7): Promise<ApiResponse<ComplianceReportSummary>> {
+  static async getReportSummary(days = 7): Promise<ApiResponse<ComplianceReportSummary>> {
     try {
       const response = await api.get(`${this.baseURL}/reports/summary/`, {
         params: { days }
@@ -257,7 +280,7 @@ export class ComplianceService {
     }
   }
 
-  static async getTrends(days: number = 30, groupBy: 'day' | 'week' | 'month' = 'day'): Promise<ApiResponse<{
+  static async getTrends(days = 30, groupBy: 'day' | 'week' | 'month' = 'day'): Promise<ApiResponse<{
     trend_data: Array<{
       period: string;
       violation_count: number;
@@ -611,7 +634,7 @@ export class ComplianceService {
     }
   }
 
-  static async getComplianceHistory(userId: number, days: number = 30): Promise<ApiResponse<Array<{
+  static async getComplianceHistory(userId: number, days = 30): Promise<ApiResponse<Array<{
     date: string;
     compliance_score: number;
     violations: number;

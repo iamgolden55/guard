@@ -38,7 +38,7 @@ class HolidayService {
   /**
    * Get holidays for a specific country and year
    */
-  async getHolidays(countryCode: string = 'GB', year: number = new Date().getFullYear()): Promise<Holiday[]> {
+  async getHolidays(countryCode = 'GB', year: number = new Date().getFullYear()): Promise<Holiday[]> {
     const cacheKey = `${countryCode}-${year}`;
 
     // Check cache first
@@ -71,7 +71,7 @@ class HolidayService {
   /**
    * Get holidays for current month
    */
-  async getCurrentMonthHolidays(countryCode: string = 'GB'): Promise<Holiday[]> {
+  async getCurrentMonthHolidays(countryCode = 'GB'): Promise<Holiday[]> {
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
@@ -90,7 +90,7 @@ class HolidayService {
   async getHolidaysInRange(
     startDate: Date,
     endDate: Date,
-    countryCode: string = 'GB'
+    countryCode = 'GB'
   ): Promise<Holiday[]> {
     const startYear = startDate.getFullYear();
     const endYear = endDate.getFullYear();
@@ -129,7 +129,7 @@ class HolidayService {
   /**
    * Check if a specific date is a holiday
    */
-  async isHoliday(date: Date, countryCode: string = 'GB'): Promise<Holiday | null> {
+  async isHoliday(date: Date, countryCode = 'GB'): Promise<Holiday | null> {
     const dateStr = date.toISOString().split('T')[0];
     const year = date.getFullYear();
 
@@ -140,7 +140,7 @@ class HolidayService {
   /**
    * Get next upcoming holiday
    */
-  async getNextHoliday(countryCode: string = 'GB'): Promise<Holiday | null> {
+  async getNextHoliday(countryCode = 'GB'): Promise<Holiday | null> {
     const today = new Date();
     const currentYear = today.getFullYear();
     const nextYear = currentYear + 1;
