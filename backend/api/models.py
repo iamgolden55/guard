@@ -1696,10 +1696,12 @@ class Shift(models.Model):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Track original status to detect changes
-        self._original_status = self.status
-        # Track original staff_user to detect when staff is assigned to an open shift
-        self._original_staff_user_id = self.staff_user_id if self.pk else None
+        # Read from __dict__ so deferred fields (.only()/.defer()) don't trigger
+        # refresh_from_db, which recurses through __init__ during query iteration.
+        self._original_status = self.__dict__.get('status')
+        self._original_staff_user_id = (
+            self.__dict__.get('staff_user_id') if self.pk else None
+        )
 
     def __str__(self):
         staff_name = self.staff_user.username if self.staff_user else "Unassigned"
