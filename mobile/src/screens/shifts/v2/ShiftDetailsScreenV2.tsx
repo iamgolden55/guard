@@ -361,16 +361,63 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
   };
 
   // ─── Check-out flow ─────────────────────────────────────────
+  // Location pre-flight runs BEFORE the camera/signature steps so we don't
+  // collect a photo + signature only to have the server reject the submit
+  // for being off-site. Mirrors check-in's Step 1 (location_check) ordering.
+  const runCheckOutLocationPreflight = async (): Promise<boolean> => {
+    if (!shift) return false;
+    const venueLat = shift.venue?.latitude;
+    const venueLng = shift.venue?.longitude;
+    if (typeof venueLat !== 'number' || typeof venueLng !== 'number') {
+      // No venue coords on the shift object — let the server be the gate
+      // (rare; happens if the shift payload is incomplete). We don't block
+      // the user in this case because we can't compute distance.
+      logger.warn('[ShiftDetailsV2] checkout pre-flight skipped — venue coords missing', {
+        shiftId: shift.id,
+      });
+      return true;
+    }
+    setIsCheckingOut(true);
+    try {
+      const result = await locationService.verifyLocation(
+        { latitude: venueLat, longitude: venueLng },
+        100,
+      );
+      if (!result.success) {
+        Alert.alert(
+          'You’re not at the venue',
+          result.error ??
+            'You need to be at the venue to check out. Move closer and try again.',
+          [{ text: 'OK' }],
+        );
+        setIsCheckingOut(false);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      logger.error('[ShiftDetailsV2] checkout pre-flight error', e);
+      Alert.alert(
+        'Location unavailable',
+        'We couldn’t read your location. Make sure GPS is on and try again.',
+        [{ text: 'OK' }],
+      );
+      setIsCheckingOut(false);
+      return false;
+    }
+  };
+
   const handleCheckOut = () => {
     Alert.alert(
       'End shift',
-      'Ready to check out? You will:\n\n• Take a final venue photo\n• Sign the check-out form',
+      'Ready to check out? You will:\n\n• Confirm you’re at the venue\n• Take a final venue photo\n• Sign the check-out form',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Take photo',
-          onPress: () => {
-            setIsCheckingOut(true);
+          text: 'Continue',
+          onPress: async () => {
+            const ok = await runCheckOutLocationPreflight();
+            if (!ok) return;
+            // Pre-flight passed — open camera. isCheckingOut already true.
             setShowCameraModal(true);
           },
         },
@@ -421,6 +468,39 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
           { text: 'OK', onPress: () => navigation.goBack() },
         ]);
       } catch (apiError: any) {
+        // ApiError = the server actively rejected (4xx/5xx with a parsed body).
+        // Treat as a hard fail: don't optimistically mark shift checked-out,
+        // don't queue for retry. Queueing 4xx caused an infinite glitch loop
+        // when the server kept rejecting the same payload (e.g. off-site
+        // checkout coords).
+        if (apiError instanceof ApiError) {
+          const serverMessage =
+            apiError.response?.detail ||
+            apiError.response?.error ||
+            apiError.statusText ||
+            'Unknown error';
+          if (serverMessage.toLowerCase().includes('already checked out')) {
+            Alert.alert('Already checked out', 'This shift has already been checked out.', [
+              { text: 'OK', onPress: () => navigation.goBack() },
+            ]);
+            setIsCheckingOut(false);
+            return;
+          }
+          if (serverMessage.toLowerCase().includes('location verification failed')) {
+            Alert.alert(
+              'You’re not at the venue',
+              'The server rejected your check-out location. Move closer to the venue and try again.',
+              [{ text: 'OK' }],
+            );
+            setIsCheckingOut(false);
+            return;
+          }
+          Alert.alert('Check-out failed', serverMessage, [{ text: 'OK' }]);
+          setIsCheckingOut(false);
+          return;
+        }
+
+        // Genuine connectivity failures only get the offline-queue treatment.
         let title = 'Check-out saved locally';
         let msg = 'Your check-out was saved but will sync when you have internet.';
         if (apiError instanceof ApiTimeoutError) {
@@ -429,17 +509,6 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
         } else if (apiError instanceof NetworkError) {
           title = 'Offline';
           msg = ERROR_MESSAGES.NETWORK_ERROR + '\nSaved locally; will sync when back online.';
-        } else if (apiError instanceof ApiError) {
-          const serverMessage = apiError.response?.detail || apiError.response?.error || apiError.statusText || 'Unknown error';
-          if (serverMessage.toLowerCase().includes('already checked out')) {
-            Alert.alert('Already checked out', 'This shift has already been checked out.', [
-              { text: 'OK', onPress: () => navigation.goBack() },
-            ]);
-            setIsCheckingOut(false);
-            return;
-          }
-          title = 'Server error';
-          msg = `Server error: ${serverMessage}\nSaved locally; will retry.`;
         }
         dispatch(checkOutShift({
           shiftId: shift.id,
