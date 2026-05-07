@@ -52,28 +52,14 @@ const formatExpiry = (iso?: string) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Mead "M" logo — two red verticals + chevron inside a white-bordered square
+// Mead "M" logo — uses the official LOGOM.png brand asset
 // ─────────────────────────────────────────────────────────────
 const MeadLogo: React.FC<{ size?: number }> = ({ size = 58 }) => (
-  <Svg width={size} height={size} viewBox="0 0 64 64">
-    {/* outer frame */}
-    <Rect
-      x={2}
-      y={2}
-      width={60}
-      height={60}
-      rx={3}
-      stroke="#ffffff"
-      strokeWidth={3}
-      fill="transparent"
-    />
-    {/* left vertical */}
-    <Rect x={12} y={12} width={9} height={40} fill={ACCENT_RED} />
-    {/* right vertical */}
-    <Rect x={43} y={12} width={9} height={40} fill={ACCENT_RED} />
-    {/* middle chevron (V shape) — two angled legs meeting at the top */}
-    <Path d="M21 12 L32 32 L43 12 L38 12 L32 22 L26 12 Z" fill={ACCENT_RED} />
-  </Svg>
+  <Image
+    source={require('../../../../assets/images/LOGOM.png')}
+    style={{ width: size, height: size }}
+    resizeMode="contain"
+  />
 );
 
 // ─────────────────────────────────────────────────────────────
@@ -277,21 +263,30 @@ export const VirtualIDScreenV2: React.FC = () => {
   }, [flipped, flipAnim]);
 
   useEffect(() => {
-    if (flipped) {
-      (async () => {
-        try {
-          const { status } = await Brightness.requestPermissionsAsync();
-          if (status === 'granted') {
-            prevBrightnessRef.current = await Brightness.getBrightnessAsync();
-            await Brightness.setBrightnessAsync(1);
-          }
-        } catch (error) {
-          logger.error('[VirtualIDV2] brightness', error);
+    if (!flipped) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { status } = await Brightness.requestPermissionsAsync();
+        if (status === 'granted' && !cancelled) {
+          prevBrightnessRef.current = await Brightness.getBrightnessAsync();
+          await Brightness.setBrightnessAsync(1);
         }
-      })();
-    } else if (prevBrightnessRef.current !== null) {
-      Brightness.setBrightnessAsync(prevBrightnessRef.current).catch(() => {});
-    }
+      } catch (error) {
+        logger.error('[VirtualIDV2] brightness', error);
+      }
+    })();
+
+    // Cleanup runs on flip-back AND on unmount (e.g. user navigates away
+    // while the QR is showing) so the screen never exits at max brightness.
+    return () => {
+      cancelled = true;
+      if (prevBrightnessRef.current !== null) {
+        Brightness.setBrightnessAsync(prevBrightnessRef.current).catch(() => {});
+        prevBrightnessRef.current = null;
+      }
+    };
   }, [flipped]);
 
   if (!user) {
