@@ -744,18 +744,27 @@ class ShiftViewSet(viewsets.ModelViewSet):
     def manual_checkin(self, request, pk=None):
         """Manager override: manually check in a staff member"""
         shift = self.get_object()
-        
+
         # Check manager permissions
         if not (request.user.role in ['manager', 'admin'] or request.user.is_staff):
             return Response(
-                {"detail": "Manager or admin permissions required"}, 
+                {"detail": "Manager or admin permissions required"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
+        # Draft shifts must be published before manager-override check-in.
+        # Same reasoning as check_in — even managers shouldn't be starting
+        # unpublished shifts; publish first, then check in.
+        if not shift.is_published:
+            return Response(
+                {"detail": "This shift hasn't been published yet. Publish it before performing a manual check-in."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Check if already checked in
         if shift.check_in_time:
             return Response(
-                {"detail": "Shift already checked in"}, 
+                {"detail": "Shift already checked in"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -997,20 +1006,29 @@ class ShiftViewSet(viewsets.ModelViewSet):
     def check_in(self, request, pk=None):
         """Check in for a shift with location verification, signature, and photo"""
         from datetime import timedelta
-        
+
         shift = self.get_object()
-        
+
         # Verify the user is assigned to this shift
         if shift.staff_user != request.user:
             return Response(
-                {"detail": "You are not assigned to this shift"}, 
+                {"detail": "You are not assigned to this shift"},
                 status=status.HTTP_403_FORBIDDEN
             )
-            
+
+        # Draft shifts must be published before anyone can check in.
+        # Without this gate, a staff/admin user assigned to an unpublished
+        # shift can still hit this endpoint and start the shift.
+        if not shift.is_published:
+            return Response(
+                {"detail": "This shift hasn't been published yet. Ask your manager to publish it before checking in."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Check if the shift is already checked in
         if shift.check_in_time:
             return Response(
-                {"detail": "Shift already checked in"}, 
+                {"detail": "Shift already checked in"},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
