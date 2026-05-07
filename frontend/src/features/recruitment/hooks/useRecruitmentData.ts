@@ -118,6 +118,38 @@ export function useRecruitmentData({ filters }: UseRecruitmentDataOptions) {
     staleTime: 5 * 60 * 1000,
   });
 
+  // ── Edit (patch personal/contact fields, etc.) ────────────────────────────
+  const updateApplication = useMutation({
+    mutationFn: ({
+      id,
+      patch,
+    }: {
+      id: number;
+      patch: Partial<RecruitmentApplication>;
+    }) => recruitmentService.patchApplication(id, patch),
+    onMutate: async ({ id, patch }) => {
+      await queryClient.cancelQueries({ queryKey: APPS_KEY_BASE });
+      const snapshot = snapshotAllAppsCaches(queryClient);
+      const queries = queryClient.getQueriesData<RecruitmentApplication[]>({
+        queryKey: APPS_KEY_BASE,
+      });
+      for (const [key, list] of queries) {
+        if (!Array.isArray(list)) continue;
+        queryClient.setQueryData<RecruitmentApplication[]>(
+          key,
+          list.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+        );
+      }
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) restoreAppsCaches(queryClient, ctx.snapshot);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["recruitment"] });
+    },
+  });
+
   // ── Approve ───────────────────────────────────────────────────────────────
   const approveApplication = useMutation({
     mutationFn: ({ id, notes }: { id: number; notes?: string }) =>
@@ -171,5 +203,6 @@ export function useRecruitmentData({ filters }: UseRecruitmentDataOptions) {
     approveApplication,
     rejectApplication,
     convertToUser,
+    updateApplication,
   };
 }

@@ -203,6 +203,14 @@ export default function RecruitmentPage() {
     setToast(`${app?.full_name ?? "Application"} rejected.`);
   };
 
+  const handleSave = async (
+    id: number,
+    patch: Partial<RecruitmentApplication>,
+  ) => {
+    await data.updateApplication.mutateAsync({ id, patch });
+    setToast("Application updated.");
+  };
+
   const handleConvert = async (id: number) => {
     try {
       const result = await data.convertToUser.mutateAsync(id);
@@ -285,7 +293,9 @@ export default function RecruitmentPage() {
           setSelectedApplication(app);
           setConvertOpen(true);
         }}
+        onSave={handleSave}
         isMutating={isMutating}
+        isSaving={data.updateApplication.isPending}
       />
 
       <RejectReasonModal

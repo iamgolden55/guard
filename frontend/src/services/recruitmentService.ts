@@ -141,6 +141,14 @@ export const recruitmentService = {
     return response.data;
   },
 
+  async patchApplication(
+    id: number,
+    data: Partial<RecruitmentApplicationRequest>,
+  ): Promise<RecruitmentApplication> {
+    const response = await api.patch(`/api/v1/recruitment-applications/${id}/`, data);
+    return response.data;
+  },
+
   async approveApplication(id: number, notes?: string): Promise<RecruitmentApplication> {
     const response = await api.post(`/api/v1/recruitment-applications/${id}/approve/`, { notes });
     return response.data.application;
