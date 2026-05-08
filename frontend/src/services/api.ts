@@ -119,10 +119,12 @@ api.interceptors.response.use(
             ? `${API_URL}/api/v1/auth/refresh/`
             : '/api/v1/auth/refresh/';
 
-          // Refresh token is in httpOnly cookie — sent automatically via withCredentials
+          // Send refresh token in body as a fallback for Safari/ITP and any
+          // context where the httpOnly refresh cookie isn't reaching the server.
+          const refreshTokenFallback = localStorage.getItem('refresh_token');
           const response = await axios.post(
             refreshUrl,
-            {},
+            refreshTokenFallback ? { refresh: refreshTokenFallback } : {},
             {
               withCredentials: true,
               headers: {
@@ -131,10 +133,17 @@ api.interceptors.response.use(
             }
           );
 
-          console.log('Token refreshed successfully');
+          // Keep hybrid-auth localStorage in sync with the rotated cookies.
+          // The request interceptor reads access_token from localStorage to
+          // build the Authorization header, so it must follow rotations.
+          if (response.data?.access) {
+            localStorage.setItem('access_token', response.data.access);
+          }
+          if (response.data?.refresh) {
+            localStorage.setItem('refresh_token', response.data.refresh);
+          }
 
-          // New tokens are set as httpOnly cookies by the backend response.
-          // No localStorage storage needed.
+          console.log('Token refreshed successfully');
 
           return response;
         } finally {

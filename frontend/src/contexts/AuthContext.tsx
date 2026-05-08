@@ -249,7 +249,8 @@ function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Sprint 3: Set up automatic token refresh (every 12 hours) - cookie-based
+  // Proactively refresh ahead of the 30-minute backend ACCESS_TOKEN_LIFETIME so
+  // an idle tab never serves a request with an expired access token.
   useEffect(() => {
     // Clear any existing timers
     if (refreshTimerRef.current) {
@@ -257,13 +258,11 @@ function AuthProvider({ children }: { children: ReactNode }) {
       refreshTimerRef.current = null;
     }
 
-    // Sprint 3: If we're authenticated, set up a new refresh timer
     if (authState.isAuthenticated) {
-      // Refresh every 12 hours
-      const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+      const TWENTY_FIVE_MINUTES = 25 * 60 * 1000;
       refreshTimerRef.current = setInterval(() => {
         refreshUserToken();
-      }, TWELVE_HOURS);
+      }, TWENTY_FIVE_MINUTES);
     }
 
     // Cleanup on unmount
