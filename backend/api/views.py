@@ -705,13 +705,59 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def destroy(self, request, *args, **kwargs):
-        # SECURITY: get_object() uses company-scoped get_queryset(), preventing cross-tenant deletion
+        """Soft-delete a user (the "Remove from team" button on the staff page).
+
+        SECURITY: get_object() uses company-scoped get_queryset(), preventing
+        cross-tenant deactivation.
+
+        We do NOT call instance.delete() here — that would CASCADE through
+        Shift, Invoice, IncidentReport, PayRate, ShiftExchange, etc. and wipe
+        out the user's entire history. The User model has a deletion_scheduled_at
+        field for exactly this case (help text: "Hard delete occurs 30 days
+        after this date").
+
+        Refuses if the user has an in-progress shift — they need to check out
+        first to avoid stranding shift state in a half-finished form.
+        """
         instance = self.get_object()
-        username = instance.username
-        instance.delete()
+
+        # Block if there's an in-progress shift — covered by user.shifts via
+        # Shift.staff_user related_name.
+        if instance.shifts.filter(status='in_progress').exists():
+            return Response(
+                {
+                    'detail': (
+                        f'{instance.username} has an in-progress shift. '
+                        'They must check out before being removed from the team.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Soft delete: deactivate the user, schedule for hard delete in 30 days,
+        # and deactivate company memberships so they stop appearing in
+        # company-scoped staff lists / can't log in.
+        instance.is_active = False
+        instance.deletion_scheduled_at = timezone.now()
+        instance.save(update_fields=['is_active', 'deletion_scheduled_at'])
+
+        deactivated_count = instance.company_memberships.filter(
+            is_active=True
+        ).update(is_active=False)
+
+        logger.info(
+            'User %s deactivated by %s — %d active memberships closed',
+            instance.username,
+            request.user.username,
+            deactivated_count,
+        )
+
         return Response({
-            'message': f'User {username} deleted successfully',
-            'status': status.HTTP_200_OK
+            'message': (
+                f'{instance.username} has been deactivated. '
+                'Their records are kept for 30 days then permanently removed.'
+            ),
+            'status': status.HTTP_200_OK,
         })
     
     @action(detail=False, methods=['post'], url_path='invite', permission_classes=[IsAuthenticated])

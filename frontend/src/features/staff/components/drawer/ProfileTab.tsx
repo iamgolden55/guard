@@ -297,9 +297,13 @@ export function ProfileTab({
             variant="danger"
             size="md"
             onClick={() => {
-              if (window.confirm(`Remove ${row.fullName}? This cannot be undone.`)) {
-                void onDelete(row);
-              }
+              const ok = window.confirm(
+                `Deactivate ${row.fullName}?\n\n` +
+                  `They will lose access immediately. Their shift history, invoices, ` +
+                  `and other records are preserved for 30 days, then permanently removed.\n\n` +
+                  `If they have an in-progress shift, they need to check out first.`,
+              );
+              if (ok) void onDelete(row);
             }}
             disabled={isMutating}
           >
