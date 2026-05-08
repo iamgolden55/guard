@@ -4285,7 +4285,11 @@ class RecruitmentApplication(models.Model):
     # Personal Details
     full_name = models.CharField(max_length=255)
     date_of_birth = models.DateField()
-    email = models.EmailField(unique=True)
+    # Email is db-indexed but NOT unique. Re-applications are allowed once a
+    # previous application is closed (rejected, or converted to a user who's
+    # since been deactivated). Outstanding-match enforcement lives on the
+    # serializer's validate_email — see RecruitmentApplicationSerializer.
+    email = models.EmailField(db_index=True)
     phone_number = models.CharField(max_length=20)
     home_address = models.TextField()
     postcode = models.CharField(max_length=20)

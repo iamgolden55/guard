@@ -945,28 +945,40 @@ class RecruitmentApplicationSerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at', 'updated_at', 'reviewed_by', 'reviewed_at', 'converted_to_user')
     
     def validate_email(self, value):
-        """Validate email is unique"""
+        """Block re-application only if there's an active outstanding match.
+
+        Closed records (status='rejected', or converted_to_user that's now
+        deactivated) don't block — the email is free to apply again. This
+        matches what admins reasonably expect after rejecting an applicant
+        or removing a former staff member from the team.
+        """
+        from django.db.models import Q
+
+        qs = RecruitmentApplication.objects.filter(email=value)
         if self.instance:
-            existing = RecruitmentApplication.objects.filter(email=value).exclude(pk=self.instance.pk)
-        else:
-            existing = RecruitmentApplication.objects.filter(email=value)
-        
-        if existing.exists():
-            raise serializers.ValidationError("An application with this email already exists")
-        
+            qs = qs.exclude(pk=self.instance.pk)
+
+        blocking = qs.filter(
+            Q(status='pending')
+            | Q(converted_to_user__isnull=False, converted_to_user__is_active=True)
+        )
+        if blocking.exists():
+            raise serializers.ValidationError(
+                "An application or active staff record with this email already exists."
+            )
         return value
-    
+
     def validate_date_of_birth(self, value):
         """Validate applicant is at least 18 years old"""
         from datetime import date
         today = date.today()
         age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
-        
+
         if age < 18:
             raise serializers.ValidationError("Applicant must be at least 18 years old")
-        
+
         return value
-    
+
     def validate_hours_per_week(self, value):
         """Validate hours per week is reasonable"""
         if value < 0:
@@ -1048,11 +1060,26 @@ class RecruitmentApplicationPublicSerializer(serializers.ModelSerializer):
         )
     
     def validate_email(self, value):
-        """Validate email is unique"""
-        if RecruitmentApplication.objects.filter(email=value).exists():
-            raise serializers.ValidationError("An application with this email already exists")
+        """Block public re-application only if there's an active outstanding match.
+
+        Closed records (status='rejected', or converted_to_user that's now
+        deactivated) don't block — applicants can reapply after rejection
+        or after a former staff member is removed from the team. Same
+        semantics as the admin serializer; duplicated here because the
+        public form is a different ModelSerializer subclass.
+        """
+        from django.db.models import Q
+
+        blocking = RecruitmentApplication.objects.filter(email=value).filter(
+            Q(status='pending')
+            | Q(converted_to_user__isnull=False, converted_to_user__is_active=True)
+        )
+        if blocking.exists():
+            raise serializers.ValidationError(
+                "An application or active staff record with this email already exists."
+            )
         return value
-    
+
     def validate_date_of_birth(self, value):
         """Validate applicant is at least 18 years old"""
         from datetime import date
