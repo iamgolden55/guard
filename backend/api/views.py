@@ -561,18 +561,19 @@ class CookieTokenRefreshView(APIView):
 
             # If ROTATE_REFRESH_TOKENS is enabled, rotate the refresh token
             if settings.SIMPLE_JWT['ROTATE_REFRESH_TOKENS']:
-                # Blacklist old refresh token before rotating
+                # Build a rotated token before invalidating the current one
+                rotated_token = RefreshToken(refresh_token)
+                rotated_token.set_jti()
+                rotated_token.set_exp()
+                rotated_token.set_iat()
+                refresh_token = str(rotated_token)
+
+                # Blacklist old refresh token after rotation is ready
                 if settings.SIMPLE_JWT['BLACKLIST_AFTER_ROTATION']:
                     try:
                         token.blacklist()
                     except Exception:
                         pass  # Token might already be blacklisted
-
-                # Rotate token claims so the client gets a fresh refresh token
-                token.set_jti()
-                token.set_exp()
-                token.set_iat()
-                refresh_token = str(token)
 
             # HYBRID AUTH: Return tokens in response body for Safari/browsers
             # that block cross-site cookies (mirrors LoginView response format)
