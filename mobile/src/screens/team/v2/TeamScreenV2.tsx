@@ -290,11 +290,36 @@ export const TeamScreenV2: React.FC = () => {
     try {
       const response = await axios.get<TeamMemberAPI[]>(API_ENDPOINTS.TEAM.MEMBERS, {
         headers: getAuthHeaders(accessToken),
+        timeout: 15000,
       });
       setRawMembers(response.data);
     } catch (error) {
-      logger.error('[TeamV2] fetch members', error);
-      if (!refreshing) Alert.alert('Error', 'Unable to load team members. Pull down to retry.');
+      const isAxios = axios.isAxiosError(error);
+      const status = isAxios ? error.response?.status : undefined;
+      const isNetworkError =
+        isAxios && !error.response && (error.code === 'ERR_NETWORK' || error.message === 'Network Error');
+      const isTimeout = isAxios && error.code === 'ECONNABORTED';
+
+      if (isNetworkError || isTimeout) {
+        // Transient connectivity issue — breadcrumb only, don't page Sentry.
+        logger.warn('[TeamV2] fetch members offline/timeout', { code: (error as any)?.code });
+        if (!refreshing) {
+          Alert.alert(
+            'Connection issue',
+            'Could not reach the server. Check your connection and pull down to retry.',
+          );
+        }
+      } else if (typeof status === 'number' && status >= 400 && status < 500) {
+        logger.warn('[TeamV2] fetch members rejected', { status });
+        if (!refreshing) {
+          Alert.alert('Unable to load team', 'Please sign in again or pull down to retry.');
+        }
+      } else {
+        logger.error('[TeamV2] fetch members', error);
+        if (!refreshing) {
+          Alert.alert('Error', 'Unable to load team members. Pull down to retry.');
+        }
+      }
     } finally {
       setLoading(false);
     }

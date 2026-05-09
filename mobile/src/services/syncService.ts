@@ -186,12 +186,21 @@ class SyncService {
 
       logger.info('[SyncService] Action completed', { type: queueItem.type });
     } catch (error: any) {
-      logger.error('[SyncService] Action failed', {
+      // 4xx responses are usually expected business-rule rejections (e.g. location
+      // verification failed, shift already closed). Don't page Sentry on those —
+      // surface as a warning. Reserve error reporting for 5xx and unclassified failures.
+      const status = error?.statusCode ?? error?.response?.status;
+      const payload = {
         type: queueItem.type,
-        error: error.message,
-        status: error.statusCode,
-        response: error.response,
-      });
+        error: error?.message,
+        status,
+        response: error?.response,
+      };
+      if (typeof status === 'number' && status >= 400 && status < 500) {
+        logger.warn('[SyncService] Action rejected by server', payload);
+      } else {
+        logger.error('[SyncService] Action failed', payload);
+      }
       await this.handleActionFailure(queueItem, error);
     }
   }
