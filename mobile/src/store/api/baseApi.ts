@@ -7,6 +7,21 @@ const API_BASE_URL = __DEV__
   ? 'http://localhost:8000/api/v1/'
   : 'https://mead-security-api.onrender.com/api/v1/';
 
+type RefreshTokenResponse = {
+  access: string;
+  refresh?: string;
+};
+
+const isRefreshTokenResponse = (data: unknown): data is RefreshTokenResponse => {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  const access = (data as { access?: unknown }).access;
+  const refresh = (data as { refresh?: unknown }).refresh;
+  return typeof access === 'string' && (refresh === undefined || typeof refresh === 'string');
+};
+
 // Base query with authentication
 const baseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
@@ -43,10 +58,13 @@ const baseQueryWithReauth = async (args: any, api: any, extraOptions: any) => {
         extraOptions
       );
 
-      if (refreshResult.data) {
-        // Store the new token
-        const { access } = refreshResult.data as { access: string };
+      if (refreshResult.data && isRefreshTokenResponse(refreshResult.data)) {
+        // Store the new tokens (refresh token may rotate)
+        const { access, refresh } = refreshResult.data;
         await SecureStore.setItemAsync('accessToken', access);
+        if (refresh) {
+          await SecureStore.setItemAsync('refreshToken', refresh);
+        }
 
         // Retry the original query
         result = await baseQuery(args, api, extraOptions);
