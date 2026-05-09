@@ -55,9 +55,16 @@ import { IncidentDetailScreen } from '../screens/incidents/IncidentDetailScreen'
 // Shift Checks Screens
 import { ShiftChecksScreen, FireExitCheckScreen, CapacityCheckScreen, CapacityLogbookScreen, ToiletCheckScreen } from '../screens/checks';
 
+// Side-effect hooks that should run for the lifetime of the authed session
+import { useCapacityReminders } from '../hooks/useCapacityReminders';
+
 const Stack = createStackNavigator<MainStackParamList>();
 
 export const MainNavigator = () => {
+  // Keeps the on-device 30-min capacity-check reminder chain in sync with the
+  // active shift. No-op for shifts that don't require capacity monitoring.
+  useCapacityReminders();
+
   return (
     <View style={styles.container}>
       <NetworkStatusBanner />
