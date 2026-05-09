@@ -258,8 +258,19 @@ export const DashboardHomeV2: React.FC = () => {
     if (shift) navigation.navigate('ShiftDetails', { shift });
   };
 
-  const openIncident = () =>
-    navigation.navigate('IncidentReport', { shiftId: activeShift?.id });
+  const openIncident = useCallback(() => {
+    if (!activeShift) {
+      Alert.alert(
+        'No Active Shift',
+        'You need an active shift to report an incident. Please check in to a shift first.',
+      );
+      return;
+    }
+    navigation.navigate('IncidentReport', {
+      shiftId: activeShift.id,
+      venueId: activeShift.venue.id,
+    });
+  }, [activeShift, navigation]);
 
   const openChecks = () => {
     if (!activeShift) {
@@ -312,7 +323,7 @@ export const DashboardHomeV2: React.FC = () => {
         onPress: openLeaveOrAvailability,
       },
     ],
-    [isContractor],
+    [isContractor, openIncident],
   );
 
   // ── UI ──

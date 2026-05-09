@@ -46,7 +46,8 @@ class IncidentService {
         logger.info('[IncidentService] Voice note processed', { url: incident.voice_note });
       }
 
-      // Save to local database first
+      // Save full rich incident to local database first (keeps mobile-only
+      // fields like photos, witnesses, location_description for offline UX).
       const localIncident = await database.saveIncident({
         ...incident,
         reported_at: new Date().toISOString(),
@@ -54,12 +55,25 @@ class IncidentService {
         sync_status: 'pending',
       });
 
+      // Build server-shaped payload — backend IncidentReport only stores a
+      // narrower set of fields than the mobile model. Title gets prepended to
+      // description so it isn't dropped on the server side.
+      const titlePrefix = incident.title?.trim() ? `${incident.title.trim()}\n\n` : '';
+      const serverPayload = {
+        venue: incident.venue,
+        shift: incident.shift,
+        incident_time: incident.occurred_at,
+        description: `${titlePrefix}${incident.description ?? ''}`.trim(),
+        severity: incident.severity,
+        actions_taken: incident.actions_taken?.trim() || '',
+      };
+
       // Add to sync queue
       await syncService.addToQueue({
         type: 'create_incident',
         entityType: 'incidents',
         entityId: localIncident.id?.toString() || 'temp',
-        payload: localIncident,
+        payload: serverPayload,
         priority: incident.severity === 'critical' ? 0 : 1,
       });
 

@@ -12,6 +12,7 @@ export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical';
 export interface Incident {
   id?: number;
   shift?: number;
+  venue?: number;
   incident_type: IncidentType;
   severity: IncidentSeverity;
   title: string;

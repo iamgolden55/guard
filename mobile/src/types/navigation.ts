@@ -46,8 +46,13 @@ export type MainStackParamList = {
     onAccept: () => void;
   };
   CheckOutFlow: { shiftId: number };
-  IncidentReport: { shiftId?: number };
-  IncidentForm: { shiftId?: number; prefilledType?: string; prefilledSeverity?: string };
+  IncidentReport: { shiftId: number; venueId: number };
+  IncidentForm: {
+    shiftId: number;
+    venueId: number;
+    prefilledType?: string;
+    prefilledSeverity?: string;
+  };
   IncidentDetail: { incidentId: number };
   ShiftChecks: { shiftId: number };
   FireExitCheck: { shiftId: number; checkType?: string };

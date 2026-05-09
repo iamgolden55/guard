@@ -31,6 +31,7 @@ import type {
   Incident,
 } from '../../../types/incident';
 import { incidentService } from '../../../services/incidentService';
+import { syncService } from '../../../services/syncService';
 import { locationService } from '../../../services/locationService';
 import { photoService } from '../../../services/photoService';
 import { logger } from '../../../utils/logger';
@@ -38,7 +39,8 @@ import { useRedesignTheme } from '../../../theme/redesign';
 import { Eyebrow, GlassCard, PrimaryCTA } from '../../../components/redesign';
 
 interface RouteParams {
-  shiftId?: number;
+  shiftId: number;
+  venueId: number;
   prefilledType?: IncidentType;
   prefilledSeverity?: IncidentSeverity;
 }
@@ -112,7 +114,7 @@ const hexAlpha = (hex: string, alpha: number): string => {
 export const IncidentFormScreenV2: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { shiftId, prefilledType, prefilledSeverity } =
+  const { shiftId, venueId, prefilledType, prefilledSeverity } =
     (route.params as RouteParams) || {};
   const insets = useSafeAreaInsets();
   const theme = useRedesignTheme();
@@ -266,10 +268,19 @@ export const IncidentFormScreenV2: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!validateForm()) return;
+    if (!shiftId || !venueId) {
+      Alert.alert(
+        'No Active Shift',
+        'You need an active shift to report an incident. Please go back and check in to a shift first.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }],
+      );
+      return;
+    }
     try {
       setIsSubmitting(true);
       const incident: Incident = {
         shift: shiftId,
+        venue: venueId,
         incident_type: incidentType,
         severity,
         title: title.trim(),
@@ -292,9 +303,12 @@ export const IncidentFormScreenV2: React.FC = () => {
         ambulance_called: ambulanceCalled,
       };
       await incidentService.submitIncident(incident);
+      const { isOnline } = syncService.getNetworkStatus();
       Alert.alert(
-        'Incident reported',
-        'Your incident report has been submitted successfully.',
+        isOnline ? 'Report submitted' : 'Report saved offline',
+        isOnline
+          ? 'Your incident report has been recorded.'
+          : 'Your incident report is saved on this device and will sync the next time you are online.',
         [{ text: 'OK', onPress: () => navigation.goBack() }],
       );
     } catch (error) {

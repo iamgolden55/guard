@@ -130,7 +130,8 @@ const SEVERITY_PALETTE: Record<
 export const IncidentReportScreenV2: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute();
-  const { shiftId } = (route.params as { shiftId?: number }) || {};
+  const { shiftId, venueId } =
+    (route.params as { shiftId: number; venueId: number }) || {};
   const insets = useSafeAreaInsets();
   const theme = useRedesignTheme();
 
@@ -138,6 +139,7 @@ export const IncidentReportScreenV2: React.FC = () => {
     logger.info('[IncidentReport] Quick report selected', { type: incident.type });
     navigation.navigate('IncidentForm', {
       shiftId,
+      venueId,
       prefilledType: incident.type,
       prefilledSeverity: incident.severity,
     });
@@ -145,7 +147,7 @@ export const IncidentReportScreenV2: React.FC = () => {
 
   const handleDetailedReport = () => {
     logger.info('[IncidentReport] Detailed report selected');
-    navigation.navigate('IncidentForm', { shiftId });
+    navigation.navigate('IncidentForm', { shiftId, venueId });
   };
 
   return (

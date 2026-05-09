@@ -145,8 +145,18 @@ export const WiseDashboardScreen = () => {
   };
 
   const handleReportIncident = () => {
+    if (!activeShift) {
+      Alert.alert(
+        'No Active Shift',
+        'You need an active shift to report an incident. Please check in to a shift first.'
+      );
+      return;
+    }
     logger.info('[WiseDashboard] Navigating to IncidentReport');
-    navigation.navigate('IncidentReport', { shiftId: activeShift?.id });
+    navigation.navigate('IncidentReport', {
+      shiftId: activeShift.id,
+      venueId: activeShift.venue.id,
+    });
   };
 
   const handleDoChecks = () => {
