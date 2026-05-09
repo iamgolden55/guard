@@ -108,6 +108,15 @@ export default function App() {
     }
   }, [fontsLoaded, fontError]);
 
+  // Belt-and-braces: GestureHandlerRootView's onLayout can be flaky on
+  // Android (Expo Go in particular), leaving the native splash stuck on top.
+  // Hide via effect as soon as fonts resolve so the RN tree is visible.
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded, fontError]);
+
   // Wait for fonts to load
   if (!fontsLoaded && !fontError) {
     return null;
