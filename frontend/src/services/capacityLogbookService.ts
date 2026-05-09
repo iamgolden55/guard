@@ -51,12 +51,38 @@ export interface CapacityLogbookSignoff {
   signed_at: string | null;
   override_reason: string;
   is_override: boolean;
+  auto_closed: boolean;
   closed_by_staff: number | null;
   closed_by_staff_details: PerformedByDetails | null;
   notes: string;
   total_checks: number;
   total_missed: number;
   created_at: string;
+}
+
+/** Live row returned by /capacity-logbooks/active/ — one entry per shift_group. */
+export interface ActiveCapacityShift {
+  shift_group: string;
+  venue_id: number;
+  venue_name: string;
+  venue_capacity: number;
+  interval_minutes: number;
+  shift_id: number;
+  start_time: string | null;
+  end_time: string | null;
+  check_in_time: string | null;
+  last_check: {
+    id: number;
+    current_count: number;
+    venue_capacity: number;
+    is_at_capacity: boolean;
+    timestamp: string;
+    performed_by_details: PerformedByDetails | null;
+  } | null;
+  next_due_at: string | null;
+  is_overdue: boolean;
+  total_checks: number;
+  total_missed: number;
 }
 
 export interface CapacityLogbookTimeline {
@@ -85,6 +111,17 @@ class CapacityLogbookService {
     // DRF default pagination wraps; non-paginated returns a bare list.
     if (Array.isArray(response.data)) return response.data;
     return response.data.results ?? [];
+  }
+
+  /**
+   * GET /api/v1/capacity-logbooks/active/ — live view of in-progress
+   * monitored shifts in the requester's company.
+   */
+  async listActive(): Promise<ActiveCapacityShift[]> {
+    const response = await api.get<ActiveCapacityShift[]>(
+      '/api/v1/capacity-logbooks/active/',
+    );
+    return Array.isArray(response.data) ? response.data : [];
   }
 
   /**

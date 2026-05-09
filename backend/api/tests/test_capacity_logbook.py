@@ -100,6 +100,7 @@ def _make_active_shift(*, staff, venue, shift_group, started_minutes_ago=120):
         required_security_role="security",
         status="in_progress",
         shift_group=shift_group,
+        is_published=True,  # the ShiftViewSet filters drafts out for staff
     )
 
 
@@ -488,3 +489,182 @@ class MultiTenantIsolationTests(TestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         results = resp.json().get("results", resp.json())
         self.assertEqual(len(results), 0)
+
+
+@patch.object(Venue, "update_coordinates", return_value=True)
+class CheckoutEnforcementTests(TestCase):
+    """The shifts check_out endpoint must reject monitored shifts that haven't been signed off."""
+
+    def setUp(self):
+        self.company = _make_company("CO Co", "co")
+        self.venue = _make_venue(self.company)  # requires_capacity_monitoring=True
+        self.staff = _make_user("co_staff")
+        _make_membership(self.staff, self.company)
+        self.shift = _make_active_shift(
+            staff=self.staff, venue=self.venue, shift_group="co-grp", started_minutes_ago=120
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.staff)
+
+    def test_checkout_rejected_without_signoff(self, _mock):
+        resp = self.client.post(
+            f"/api/v1/shifts/{self.shift.id}/check_out/",
+            {"latitude": 51.5, "longitude": -0.12, "signature": "data:,"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        body = resp.json()
+        self.assertEqual(body.get("code"), "logbook_signoff_required")
+
+    def test_checkout_proceeds_after_signoff(self, _mock):
+        CapacityLogbookSignoff.objects.create(
+            shift_group="co-grp",
+            venue=self.venue,
+            override_reason="Testing — admin not on site",
+        )
+        resp = self.client.post(
+            f"/api/v1/shifts/{self.shift.id}/check_out/",
+            {"latitude": 51.5, "longitude": -0.12, "signature": "data:,"},
+            format="json",
+        )
+        # We don't assert 200 (location verification + downstream model logic
+        # may push us to 400 for unrelated reasons in this test rig); the
+        # important assertion is "no longer the signoff_required code".
+        body = resp.json() if resp.content else {}
+        self.assertNotEqual(
+            body.get("code"), "logbook_signoff_required",
+            f"Expected signoff guard to clear; got {resp.status_code} {body}",
+        )
+
+    def test_unmonitored_venue_skips_signoff_guard(self, _mock):
+        # Flip the flag off and try again — guard should not fire.
+        self.venue.requires_capacity_monitoring = False
+        self.venue.save(update_fields=["requires_capacity_monitoring"])
+        resp = self.client.post(
+            f"/api/v1/shifts/{self.shift.id}/check_out/",
+            {"latitude": 51.5, "longitude": -0.12, "signature": "data:,"},
+            format="json",
+        )
+        body = resp.json() if resp.content else {}
+        self.assertNotEqual(body.get("code"), "logbook_signoff_required")
+
+
+@patch.object(Venue, "update_coordinates", return_value=True)
+class AutoCheckoutSignoffTests(TestCase):
+    """process_auto_checkouts must synthesize an auto_closed signoff for monitored shifts."""
+
+    def setUp(self):
+        from api.models import SystemSettings
+        # Make sure auto-checkout is enabled and that perform_auto_checkout
+        # finds a sensible config; we mock the lower-level methods so the
+        # sweep proceeds without depending on the full lifecycle wiring.
+        SystemSettings.objects.update_or_create(
+            id=1, defaults={"auto_checkout_enabled": True}
+        )
+        self.company = _make_company("AC Co", "ac")
+        self.venue = _make_venue(self.company)
+        self.staff = _make_user("ac_staff")
+        _make_membership(self.staff, self.company)
+        self.shift = _make_active_shift(
+            staff=self.staff, venue=self.venue,
+            shift_group="ac-grp", started_minutes_ago=600,
+        )
+
+    def test_auto_checkout_creates_override_signoff(self, _mock):
+        from api.tasks import process_auto_checkouts
+
+        with patch("api.models.Shift.can_auto_checkout", return_value=True), \
+             patch("api.models.Shift.perform_auto_checkout", return_value=True):
+            process_auto_checkouts()
+
+        signoff = CapacityLogbookSignoff.objects.filter(shift_group="ac-grp").first()
+        self.assertIsNotNone(signoff, "Auto-checkout should have created a signoff")
+        self.assertTrue(signoff.auto_closed)
+        self.assertIn("Auto-closed", signoff.override_reason)
+        self.assertEqual(signoff.signature, "")
+
+    def test_auto_checkout_does_not_double_create(self, _mock):
+        """Re-running the sweep shouldn't create a second signoff."""
+        from api.tasks import process_auto_checkouts
+
+        # Pre-existing manual signoff.
+        CapacityLogbookSignoff.objects.create(
+            shift_group="ac-grp",
+            venue=self.venue,
+            override_reason="Manual override before auto-sweep",
+        )
+
+        with patch("api.models.Shift.can_auto_checkout", return_value=True), \
+             patch("api.models.Shift.perform_auto_checkout", return_value=True):
+            process_auto_checkouts()
+
+        signoffs = CapacityLogbookSignoff.objects.filter(shift_group="ac-grp")
+        self.assertEqual(signoffs.count(), 1)
+        # The original (non-auto) signoff should still be the one.
+        self.assertFalse(signoffs.first().auto_closed)
+
+
+@patch.object(Venue, "update_coordinates", return_value=True)
+class ActiveShiftsEndpointTests(TestCase):
+    """/capacity-logbooks/active/ returns enriched in-progress monitored shifts."""
+
+    def setUp(self):
+        self.company = _make_company("AS Co", "as")
+        self.venue = _make_venue(self.company)
+        # An unmonitored venue in the same company so we verify the filter.
+        self.unmonitored = _make_venue(self.company, name="No Monitor", requires_monitoring=False)
+        self.staff = _make_user("as_staff")
+        _make_membership(self.staff, self.company)
+
+        # Active monitored shift with one check.
+        self.active_shift = _make_active_shift(
+            staff=self.staff, venue=self.venue, shift_group="as-active",
+            started_minutes_ago=70,
+        )
+        CapacityCheck.objects.create(
+            shift=self.active_shift,
+            timestamp=timezone.now() - timedelta(minutes=20),
+            current_count=120,
+            venue_capacity=self.venue.capacity,
+            shift_group="as-active",
+            performed_by=self.staff,
+        )
+
+        # Active *unmonitored* shift — should not appear.
+        _make_active_shift(
+            staff=self.staff, venue=self.unmonitored, shift_group="as-noflag",
+            started_minutes_ago=60,
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.staff)
+
+    def test_returns_only_monitored_active_shifts(self, _mock):
+        resp = self.client.get("/api/v1/capacity-logbooks/active/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        results = resp.json()
+        self.assertEqual(len(results), 1)
+        row = results[0]
+        self.assertEqual(row["shift_group"], "as-active")
+        self.assertEqual(row["venue_name"], "Test Venue")
+        self.assertEqual(row["total_checks"], 1)
+        self.assertIsNotNone(row["last_check"])
+        self.assertEqual(row["last_check"]["current_count"], 120)
+        self.assertIsNotNone(row["next_due_at"])
+
+    def test_other_company_active_shifts_hidden(self, _mock):
+        other_company = _make_company("Other Co", "other")
+        other_venue = _make_venue(other_company)
+        other_staff = _make_user("other_staff")
+        _make_membership(other_staff, other_company)
+        _make_active_shift(
+            staff=other_staff, venue=other_venue, shift_group="other-grp",
+            started_minutes_ago=30,
+        )
+
+        # Our staff still sees only their own company's shift.
+        resp = self.client.get("/api/v1/capacity-logbooks/active/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        groups = {r["shift_group"] for r in resp.json()}
+        self.assertIn("as-active", groups)
+        self.assertNotIn("other-grp", groups)

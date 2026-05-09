@@ -14,12 +14,16 @@ import { tokens } from "../../design-system/tokens";
 import { Icon } from "../../design-system/Icon";
 import {
   capacityLogbookService,
+  type ActiveCapacityShift,
   type CapacityLogbookSignoff,
   type ListLogbookParams,
 } from "../../services/capacityLogbookService";
 import shiftService from "../../services/shiftService";
 import type { Venue } from "../../types";
 import { CapacityLogbookDrawer } from "./components/CapacityLogbookDrawer";
+import { ActiveShiftsTable } from "./components/ActiveShiftsTable";
+
+type TabKey = "active" | "closed";
 
 const HEADER_STYLE: CSSProperties = {
   fontFamily: tokens.font.body,
@@ -73,12 +77,14 @@ export default function CapacityLogbookPage() {
     membershipRole === "owner" ||
     membershipRole === "manager";
 
+  const [tab, setTab] = useState<TabKey>("active");
   const [venues, setVenues] = useState<Venue[]>([]);
   const [logs, setLogs] = useState<CapacityLogbookSignoff[]>([]);
+  const [activeShifts, setActiveShifts] = useState<ActiveCapacityShift[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters
+  // Filters (closed tab only)
   const [venueId, setVenueId] = useState<number | null>(null);
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
@@ -115,36 +121,59 @@ export default function CapacityLogbookPage() {
     };
   }, []);
 
-  // Load logbooks whenever filters change.
+  // Load whichever tab's data is currently selected. Closed tab honours the
+  // venue + date filters; active tab shows everything in-progress and polls
+  // every 15s so the admin sees countdowns advance and last-check rows update
+  // without a manual refresh.
   useEffect(() => {
     let cancelled = false;
-    setIsLoading(true);
-    setError(null);
-    const params: ListLogbookParams = {};
-    if (venueId != null) params.venueId = venueId;
-    if (dateFrom) params.dateFrom = dateFrom;
-    if (dateTo) params.dateTo = dateTo;
-    capacityLogbookService
-      .list(params)
-      .then((results) => {
+    let pollTimer: number | undefined;
+
+    const loadClosed = async () => {
+      const params: ListLogbookParams = {};
+      if (venueId != null) params.venueId = venueId;
+      if (dateFrom) params.dateFrom = dateFrom;
+      if (dateTo) params.dateTo = dateTo;
+      try {
+        const results = await capacityLogbookService.list(params);
         if (cancelled) return;
         setLogs(results);
-      })
-      .catch((e: unknown) => {
+        setError(null);
+      } catch (e: unknown) {
         if (cancelled) return;
-        const message =
-          e instanceof Error ? e.message : "Could not load capacity logbooks.";
-        setError(message);
+        setError(e instanceof Error ? e.message : "Could not load capacity logbooks.");
         setLogs([]);
-      })
-      .finally(() => {
+      }
+    };
+
+    const loadActive = async () => {
+      try {
+        const results = await capacityLogbookService.listActive();
         if (cancelled) return;
-        setIsLoading(false);
-      });
+        setActiveShifts(results);
+        setError(null);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : "Could not load active shifts.");
+        setActiveShifts([]);
+      }
+    };
+
+    setIsLoading(true);
+    const initial = tab === "active" ? loadActive() : loadClosed();
+    initial.finally(() => {
+      if (!cancelled) setIsLoading(false);
+    });
+
+    if (tab === "active") {
+      pollTimer = window.setInterval(loadActive, 15_000);
+    }
+
     return () => {
       cancelled = true;
+      if (pollTimer) window.clearInterval(pollTimer);
     };
-  }, [venueId, dateFrom, dateTo]);
+  }, [tab, venueId, dateFrom, dateTo]);
 
   const filteredLogs = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -253,17 +282,41 @@ export default function CapacityLogbookPage() {
             PDF.
           </p>
         </div>
-        <Button
-          variant="secondary"
-          onClick={handleExportCsv}
-          disabled={exporting || filteredLogs.length === 0}
-          leading={<Icon name="download" size={16} />}
-        >
-          {exporting ? "Preparing…" : "Export CSV"}
-        </Button>
+        {tab === "closed" && (
+          <Button
+            variant="secondary"
+            onClick={handleExportCsv}
+            disabled={exporting || filteredLogs.length === 0}
+            leading={<Icon name="download" size={16} />}
+          >
+            {exporting ? "Preparing…" : "Export CSV"}
+          </Button>
+        )}
       </div>
 
-      {/* Filter bar */}
+      {/* Tabs */}
+      <div
+        role="tablist"
+        style={{
+          display: "flex",
+          gap: 4,
+          borderBottom: `1px solid ${tokens.color.ink200}`,
+          marginBottom: 16,
+        }}
+      >
+        <TabButton active={tab === "active"} onClick={() => setTab("active")}>
+          Active{" "}
+          <span style={{ color: tokens.color.ink500, fontWeight: 500 }}>
+            · {activeShifts.length}
+          </span>
+        </TabButton>
+        <TabButton active={tab === "closed"} onClick={() => setTab("closed")}>
+          Closed
+        </TabButton>
+      </div>
+
+      {/* Filter bar — closed tab only */}
+      {tab === "closed" && (
       <Card padding={16} style={{ marginBottom: 16 }}>
         <div
           style={{
@@ -316,8 +369,17 @@ export default function CapacityLogbookPage() {
           </FilterField>
         </div>
       </Card>
+      )}
 
-      {/* Table */}
+      {/* Active shifts tab */}
+      {tab === "active" ? (
+        <ActiveShiftsTable
+          shifts={activeShifts}
+          isLoading={isLoading}
+          error={error}
+        />
+      ) : (
+      /* Closed-logbooks table */
       <Card padding={0} style={{ overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
           <table
@@ -431,6 +493,7 @@ export default function CapacityLogbookPage() {
           </table>
         </div>
       </Card>
+      )}
 
       {/* Toast */}
       {toast && (
@@ -463,6 +526,39 @@ export default function CapacityLogbookPage() {
 }
 
 // ─── Small helpers ────────────────────────────────────────────────────────
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        background: "transparent",
+        border: "none",
+        padding: "10px 14px",
+        fontFamily: tokens.font.body,
+        fontSize: 13.5,
+        fontWeight: 600,
+        color: active ? tokens.color.ink900 : tokens.color.ink600,
+        cursor: "pointer",
+        borderBottom: `2px solid ${active ? tokens.color.primary : "transparent"}`,
+        marginBottom: -1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 function FilterField({
   label,

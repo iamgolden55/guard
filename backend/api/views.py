@@ -2337,6 +2337,92 @@ class CapacityLogbookSignoffViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.warning(f"Failed to broadcast logbook_signed event: {e}")
 
+    @action(detail=False, methods=['get'], url_path='active')
+    def active(self, request):
+        """
+        Live view of in-progress monitored shifts for the requester's company.
+        Each row carries enough state for the admin "Active" tab to render a
+        live status table (last check, next-due-at, miss count) without extra
+        per-row queries.
+        """
+        from datetime import timedelta
+
+        company = _resolve_request_company(request)
+        shifts = (
+            Shift.objects
+            .filter(
+                status__in=('in_progress', 'active'),
+                venue__requires_capacity_monitoring=True,
+            )
+            .select_related('venue', 'staff_user')
+        )
+        if company:
+            shifts = shifts.filter(venue__company=company)
+
+        # Collapse multi-staff groups so we don't return three rows for one
+        # 3-officer shift_group. We pick the earliest-checked-in shift in each
+        # group as the representative — totals are derived from the group.
+        seen_groups = set()
+        results = []
+        now = timezone.now()
+        for shift in shifts.order_by('start_time'):
+            shift_group = shift.shift_group or f'shift_{shift.id}'
+            if shift_group in seen_groups:
+                continue
+            seen_groups.add(shift_group)
+
+            interval = shift.venue.capacity_check_interval_minutes or 30
+
+            last_check = (
+                CapacityCheck.objects
+                .filter(shift_group=shift_group)
+                .select_related('performed_by')
+                .order_by('-timestamp')
+                .first()
+            )
+            total_checks = CapacityCheck.objects.filter(shift_group=shift_group).count()
+            total_missed = CapacityCheckSlotMiss.objects.filter(shift_group=shift_group).count()
+
+            anchor = last_check.timestamp if last_check else (shift.check_in_time or shift.start_time)
+            next_due_at = (anchor + timedelta(minutes=interval)) if anchor else None
+
+            last_check_payload = None
+            if last_check:
+                performer = None
+                if last_check.performed_by:
+                    performer = {
+                        'id': last_check.performed_by.id,
+                        'first_name': last_check.performed_by.first_name,
+                        'last_name': last_check.performed_by.last_name,
+                    }
+                last_check_payload = {
+                    'id': last_check.id,
+                    'current_count': last_check.current_count,
+                    'venue_capacity': last_check.venue_capacity,
+                    'is_at_capacity': last_check.is_at_capacity,
+                    'timestamp': last_check.timestamp.isoformat(),
+                    'performed_by_details': performer,
+                }
+
+            results.append({
+                'shift_group': shift_group,
+                'venue_id': shift.venue_id,
+                'venue_name': shift.venue.name,
+                'venue_capacity': shift.venue.capacity,
+                'interval_minutes': interval,
+                'shift_id': shift.id,
+                'start_time': shift.start_time.isoformat() if shift.start_time else None,
+                'end_time': shift.end_time.isoformat() if shift.end_time else None,
+                'check_in_time': shift.check_in_time.isoformat() if shift.check_in_time else None,
+                'last_check': last_check_payload,
+                'next_due_at': next_due_at.isoformat() if next_due_at else None,
+                'is_overdue': bool(next_due_at and next_due_at < now),
+                'total_checks': total_checks,
+                'total_missed': total_missed,
+            })
+
+        return Response(results)
+
     @action(detail=False, methods=['get'], url_path='timeline')
     def timeline(self, request):
         """

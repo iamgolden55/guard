@@ -2798,6 +2798,14 @@ class CapacityLogbookSignoff(models.Model):
     notes = models.TextField(blank=True)
     total_checks = models.PositiveIntegerField(default=0, help_text="Snapshot: number of CapacityCheck rows in the shift_group at signoff time")
     total_missed = models.PositiveIntegerField(default=0, help_text="Snapshot: number of CapacityCheckSlotMiss rows in the shift_group at signoff time")
+    auto_closed = models.BooleanField(
+        default=False,
+        help_text=(
+            "True when the signoff was created by the system on auto-checkout "
+            "(no staff input). Distinguishes audit-trail noise from a "
+            "deliberate staff override."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

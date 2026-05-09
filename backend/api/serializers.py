@@ -475,7 +475,7 @@ class CapacityLogbookSignoffSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = (
             'created_at', 'signed_at', 'closed_by_staff',
-            'total_checks', 'total_missed',
+            'total_checks', 'total_missed', 'auto_closed',
         )
 
     def get_closed_by_staff_details(self, obj):

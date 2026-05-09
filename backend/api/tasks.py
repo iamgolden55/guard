@@ -1964,7 +1964,9 @@ def process_auto_checkouts():
     `pending_approval` to `approved` — closing the loop without a manager
     click. Run from CELERY_BEAT_SCHEDULE every 5 minutes.
     """
-    from api.models import Shift
+    from api.models import (
+        Shift, CapacityCheck, CapacityCheckSlotMiss, CapacityLogbookSignoff,
+    )
 
     eligible = Shift.objects.filter(
         status='in_progress',
@@ -1980,6 +1982,34 @@ def process_auto_checkouts():
             if not shift.can_auto_checkout():
                 skipped += 1
                 continue
+
+            # Monitored venues require a logbook signoff before a Shift can
+            # close. Manual checkout funnels through LogbookSignoffModal; the
+            # auto-checkout path bypasses any UI, so we synthesize an
+            # `auto_closed` override signoff here. Without this, an auto-closed
+            # monitored shift would have no admin-visible logbook record at
+            # all (and would be rejected by the server-side checkout guard).
+            if shift.venue and shift.venue.requires_capacity_monitoring:
+                shift_group = shift.shift_group or f'shift_{shift.id}'
+                if not CapacityLogbookSignoff.objects.filter(shift_group=shift_group).exists():
+                    total_checks = CapacityCheck.objects.filter(shift_group=shift_group).count()
+                    total_missed = CapacityCheckSlotMiss.objects.filter(shift_group=shift_group).count()
+                    CapacityLogbookSignoff.objects.create(
+                        shift_group=shift_group,
+                        venue=shift.venue,
+                        override_reason=(
+                            f"Auto-closed by system at {timezone.now().strftime('%H:%M %d %b %Y')} "
+                            f"(no manual signoff captured)"
+                        ),
+                        auto_closed=True,
+                        total_checks=total_checks,
+                        total_missed=total_missed,
+                    )
+                    logger.info(
+                        f"Auto-created override signoff for shift_group={shift_group} "
+                        f"(shift={shift.id}, venue={shift.venue_id})"
+                    )
+
             if shift.perform_auto_checkout():
                 processed += 1
                 logger.info(
