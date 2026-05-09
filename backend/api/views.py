@@ -2086,13 +2086,36 @@ class ShiftTemplateViewSet(viewsets.ModelViewSet):
 # Register the ShiftTemplateViewSet in urls.py like:
 # router.register('shift-templates', ShiftTemplateViewSet)
 
+def _resolve_request_company(request):
+    """
+    Resolve the active company for a request, with a fallback for paths where
+    the tenant middleware didn't run before authentication (notably DRF tests
+    using force_authenticate, where request.user is populated at the APIView
+    level — after middleware). In production, middleware sets current_company
+    from session auth before the view runs, so this fallback is a no-op.
+    """
+    company = getattr(request, 'current_company', None)
+    if company:
+        return company
+    user = getattr(request, 'user', None)
+    if not user or not getattr(user, 'is_authenticated', False):
+        return None
+    membership = (
+        user.company_memberships.filter(is_active=True, company__is_active=True)
+        .select_related('company')
+        .order_by('-joined_at')
+        .first()
+    )
+    return membership.company if membership else None
+
+
 class CompanyScopedCheckMixin:
     """Mixin to add company scoping to venue check viewsets."""
 
     def _get_company_scoped_queryset(self, base_queryset):
         """Apply company scoping then shift/shift_group filtering."""
         # SECURITY: Scope to company first
-        company = getattr(self.request, 'current_company', None)
+        company = _resolve_request_company(self.request)
         if company:
             base_queryset = base_queryset.filter(shift__venue__company=company)
 
@@ -2211,7 +2234,7 @@ class CapacityCheckSlotMissViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSe
 
     def get_queryset(self):
         # Misses are scoped via venue.company (no shift FK on this model).
-        company = getattr(self.request, 'current_company', None)
+        company = _resolve_request_company(self.request)
         qs = CapacityCheckSlotMiss.objects.all().select_related('venue', 'acknowledged_by')
         if company:
             qs = qs.filter(venue__company=company)
@@ -2253,7 +2276,7 @@ class CapacityLogbookSignoffViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'head', 'options']  # signoff is one-shot
 
     def get_queryset(self):
-        company = getattr(self.request, 'current_company', None)
+        company = _resolve_request_company(self.request)
         qs = CapacityLogbookSignoff.objects.all().select_related('venue', 'closed_by_staff')
         if company:
             qs = qs.filter(venue__company=company)

@@ -2193,10 +2193,15 @@ def flag_missed_capacity_checks():
             continue
 
         # Build expected slot starts: start + interval, start + 2*interval, ...
-        # Slot is "missed" if (now - expected_at) > interval + grace AND no check exists in window.
+        # A slot covers the window [expected_at, expected_at + interval). Only
+        # process a slot once its full window has elapsed plus a 5-min grace —
+        # otherwise we'd flag slots whose window staff are still inside.
         slot_idx = 1
         expected_at = start + timedelta(minutes=interval * slot_idx)
-        while expected_at + grace < now and expected_at <= end_cap:
+        while (
+            expected_at + timedelta(minutes=interval) + grace <= now
+            and expected_at <= end_cap
+        ):
             window_end = expected_at + timedelta(minutes=interval)
 
             # Look for any check covering this window across the whole group.
