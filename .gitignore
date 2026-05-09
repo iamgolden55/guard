@@ -111,3 +111,14 @@ temp_backup/
 # ===========================================
 .claude/scheduled_tasks.lock
 backend/agent_memory/
+
+# ===========================================
+# Firebase / FCM secrets
+# ===========================================
+# google-services.json contains a live Google API key. Even though it's a
+# "client" identifier, GitHub's secret scanner flags it and abusers can rack
+# up billing on Maps / Places / Identity Services. Each developer downloads
+# their own copy from the Firebase console; production builds get it from
+# EAS Secrets (eas secret:create --type file).
+mobile/google-services.json
+mobile/GoogleService-Info.plist

@@ -30,7 +30,7 @@ module.exports = {
     ios: {
       supportsTablet: false,
       bundleIdentifier: "com.meadsecurity.staffapp",
-      buildNumber: "9",
+      buildNumber: "10",
       infoPlist: {
         NSCameraUsageDescription: "This app requires camera access to capture venue entrance photos during shift check-in and incident evidence photos.",
         NSPhotoLibraryUsageDescription: "This app requires photo library access to attach existing photos to incident reports.",
@@ -50,12 +50,19 @@ module.exports = {
       package: "com.meadsecurity.staffapp",
       versionCode: 1,
       // Firebase / FCM for Android push notifications.
-      // Drop google-services.json (downloaded from the Firebase console for the
-      // com.meadsecurity.staffapp Android app) into mobile/, then uncomment the
-      // line below. Without this file an EAS Android build will succeed but
-      // backend pushes will silently no-op on Android. See
-      // DEVELOPMENT_BUILD_SETUP.md → "Android: Firebase / FCM setup".
-      googleServicesFile: "./google-services.json",
+      //
+      // google-services.json is GITIGNORED — it contains a live Google API
+      // key that GitHub flags as a secret (and that can be abused for billing).
+      //   • Local dev: download from Firebase console (com.meadsecurity.staffapp
+      //     Android app) and drop into mobile/. The file is on disk but not
+      //     committed.
+      //   • EAS production builds: provided via EAS Secrets:
+      //       eas secret:create --type file --name GOOGLE_SERVICES_JSON \
+      //         --value mobile/google-services.json
+      //     EAS makes it available at build time as $GOOGLE_SERVICES_JSON.
+      // Without this file an EAS Android build will succeed but backend pushes
+      // will silently no-op on Android.
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
       permissions: [
         "CAMERA",
         "RECORD_AUDIO",
