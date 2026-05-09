@@ -276,6 +276,13 @@ export function useStaffData(options: UseStaffDataOptions = {}) {
     mutationFn: (userId: number) => userService.resendInvite(userId),
   });
 
+  // Admin override for the 30-min failed-login lockout. Idempotent — works
+  // whether the user is currently locked or just has a stale failed-attempts
+  // counter. Response carries `was_locked` so callers can tailor the toast.
+  const unlockAccount = useMutation({
+    mutationFn: (userId: number) => userService.unlockAccount(userId),
+  });
+
   // ── Update staff address (admin) ──────────────────────────────────────────
   const updateStaffAddress = useMutation({
     mutationFn: ({
@@ -436,6 +443,7 @@ export function useStaffData(options: UseStaffDataOptions = {}) {
     deleteStaff,
     inviteStaff,
     resendInvite,
+    unlockAccount,
     updateEmploymentType,
     updatePayFrequency,
     updateStaffAddress,

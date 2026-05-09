@@ -73,6 +73,14 @@ class UserService {
     return response.data;
   }
 
+  async unlockAccount(userId: number): Promise<{
+    message: string;
+    was_locked: boolean;
+  }> {
+    const response = await api.post(`/api/v1/users/${userId}/unlock-account/`);
+    return response.data;
+  }
+
   async updateUser(userId: number, userData: Partial<User>): Promise<User> {
     const response = await api.patch<User>(`/api/v1/users/${userId}/`, userData);
     return response.data;

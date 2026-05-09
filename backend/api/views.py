@@ -932,6 +932,89 @@ class UserViewSet(viewsets.ModelViewSet):
             'password_setup_expires_at': reset_token.expires_at.isoformat(),
         }, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'], url_path='unlock-account', permission_classes=[IsAuthenticated])
+    def unlock_account(self, request, pk=None):
+        """Admin/manager clears an active 30-minute lockout immediately.
+
+        After 5 failed login attempts the user is locked out for 30 minutes.
+        This endpoint lets a manager release that lockout on demand instead of
+        making the user wait — useful when the lock is from a forgotten
+        password rather than a real attack. Resets failed_login_attempts and
+        last_failed_login at the same time so the next failure starts a fresh
+        counter.
+        """
+        if request.user.role not in ('admin', 'manager'):
+            return Response(
+                {'error': 'Only admin or manager users can unlock accounts'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        company = self.get_user_company(request)
+        if not company:
+            return Response(
+                {'error': 'No company context found. Please ensure you are associated with a company.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target = self.get_object()
+
+        if not UserCompanyMembership.objects.filter(
+            user=target, company=company, is_active=True,
+        ).exists():
+            return Response(
+                {'error': 'This user is not in your company.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        was_locked = bool(
+            target.account_locked_until and target.account_locked_until > timezone.now()
+        )
+        target.failed_login_attempts = 0
+        target.last_failed_login = None
+        target.account_locked_until = None
+        target.save(update_fields=[
+            'failed_login_attempts',
+            'last_failed_login',
+            'account_locked_until',
+        ])
+
+        ip_address = request.META.get('HTTP_X_FORWARDED_FOR')
+        if ip_address:
+            ip_address = ip_address.split(',')[0].strip()
+        else:
+            ip_address = request.META.get('REMOTE_ADDR', '0.0.0.0')
+
+        try:
+            AuditLog.objects.create(
+                user=request.user,
+                company=company,
+                action='account_unlocked',
+                resource_type='user',
+                resource_id=str(target.id),
+                details={
+                    'target_username': target.username,
+                    'was_locked': was_locked,
+                },
+                ip_address=ip_address,
+                user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
+            )
+        except Exception:
+            logger.exception('Failed to write account_unlocked audit log')
+
+        logger.info(
+            f"Account unlocked: user_id={target.id}, username={target.username}, "
+            f"unlocked_by={request.user.username}, was_locked={was_locked}."
+        )
+
+        return Response({
+            'message': (
+                f"{target.username}'s account has been unlocked."
+                if was_locked
+                else f"{target.username}'s account had no active lockout. Failed-attempt counter reset."
+            ),
+            'was_locked': was_locked,
+        }, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['get'], url_path='staff')
     def staff_users(self, request):
         """Get all staff users for dropdown selections"""

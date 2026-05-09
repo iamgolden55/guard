@@ -61,6 +61,8 @@ export interface ProfileTabProps {
   ) => Promise<void>;
   onApprove?: (row: StaffRow) => Promise<void>;
   onDelete?: (row: StaffRow) => Promise<void>;
+  onUnlockAccount?: (row: StaffRow) => Promise<{ was_locked: boolean }>;
+  isUnlockingAccount?: boolean;
   isMutating: boolean;
 }
 
@@ -71,6 +73,8 @@ export function ProfileTab({
   onUpdatePayFrequency,
   onApprove,
   onDelete,
+  onUnlockAccount,
+  isUnlockingAccount,
   isMutating,
 }: ProfileTabProps) {
   const [employment, setEmployment] = useState<string>(row.employmentType ?? "");
@@ -78,6 +82,30 @@ export function ProfileTab({
   const [employmentError, setEmploymentError] = useState<string | null>(null);
   const [payFreqSaving, setPayFreqSaving] = useState(false);
   const [payFreqError, setPayFreqError] = useState<string | null>(null);
+  const [unlockNotice, setUnlockNotice] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
+
+  const handleUnlock = async () => {
+    if (!onUnlockAccount) return;
+    setUnlockNotice(null);
+    try {
+      const result = await onUnlockAccount(row);
+      setUnlockNotice({
+        tone: "success",
+        text: result.was_locked
+          ? `${row.fullName}'s account has been unlocked.`
+          : `${row.fullName} had no active lockout. Failed-attempt counter reset.`,
+      });
+      window.setTimeout(() => setUnlockNotice(null), 6000);
+    } catch (err) {
+      const errData = (err as { response?: { data?: unknown } } | undefined)?.response?.data;
+      const message =
+        errData && typeof errData === "object" && !Array.isArray(errData) && "error" in errData
+          ? String((errData as { error: unknown }).error)
+          : "Couldn't unlock account. Try again in a moment.";
+      setUnlockNotice({ tone: "danger", text: message });
+      window.setTimeout(() => setUnlockNotice(null), 6000);
+    }
+  };
 
   const handleSaveEmployment = async () => {
     if (!onUpdateEmploymentType) return;
@@ -292,6 +320,16 @@ export function ProfileTab({
             Approve staff member
           </Button>
         )}
+        {!row.isPending && onUnlockAccount && (
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => void handleUnlock()}
+            disabled={isUnlockingAccount}
+          >
+            {isUnlockingAccount ? "Unlocking…" : "Unlock account"}
+          </Button>
+        )}
         {onDelete && (
           <Button
             variant="danger"
@@ -311,6 +349,26 @@ export function ProfileTab({
           </Button>
         )}
       </div>
+      {unlockNotice && (
+        <div
+          style={{
+            fontSize: 12,
+            color: unlockNotice.tone === "danger" ? tokens.color.dangerInk : tokens.color.ink700,
+            background:
+              unlockNotice.tone === "danger"
+                ? `${tokens.color.danger}11`
+                : `${tokens.color.ink100}`,
+            border: `1px solid ${
+              unlockNotice.tone === "danger" ? `${tokens.color.danger}33` : tokens.color.ink200
+            }`,
+            borderRadius: tokens.radius.md,
+            padding: "8px 10px",
+            fontFamily: tokens.font.body,
+          }}
+        >
+          {unlockNotice.text}
+        </div>
+      )}
     </div>
   );
 }

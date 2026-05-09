@@ -70,6 +70,8 @@ export interface StaffDrawerProps {
   isMutatingLicense: boolean;
   onApprove?: (row: StaffRow) => Promise<void>;
   onDelete?: (row: StaffRow) => Promise<void>;
+  onUnlockAccount?: (row: StaffRow) => Promise<{ was_locked: boolean }>;
+  isUnlockingAccount?: boolean;
   isMutating: boolean;
 }
 
@@ -95,6 +97,8 @@ export function StaffDrawer({
   isMutatingLicense,
   onApprove,
   onDelete,
+  onUnlockAccount,
+  isUnlockingAccount,
   isMutating,
 }: StaffDrawerProps) {
   const { palette } = useAccent();
@@ -275,6 +279,8 @@ export function StaffDrawer({
               onUpdatePayFrequency={onUpdatePayFrequency}
               onApprove={onApprove}
               onDelete={onDelete}
+              onUnlockAccount={onUnlockAccount}
+              isUnlockingAccount={isUnlockingAccount}
               isMutating={isMutating}
             />
           )}

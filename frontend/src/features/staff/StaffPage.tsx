@@ -256,6 +256,10 @@ export default function StaffPage() {
     if (selectedRow?.id === row.id) setSelectedRow(null);
   };
 
+  const handleUnlockAccount = async (row: StaffRow) => {
+    return data.unlockAccount.mutateAsync(row.id);
+  };
+
   const handleUpdateEmployment = async (
     userId: number,
     staffProfileId: number | null,
@@ -523,6 +527,8 @@ export default function StaffPage() {
         }
         onApprove={handleApprove}
         onDelete={handleDelete}
+        onUnlockAccount={handleUnlockAccount}
+        isUnlockingAccount={data.unlockAccount.isPending}
         isMutating={isMutating}
       />
 
