@@ -561,11 +561,10 @@ class CookieTokenRefreshView(APIView):
 
             # If ROTATE_REFRESH_TOKENS is enabled, rotate the refresh token
             if settings.SIMPLE_JWT['ROTATE_REFRESH_TOKENS']:
-                # Build a rotated token before invalidating the current one
-                rotated_token = RefreshToken(refresh_token)
-                rotated_token.set_jti()
-                rotated_token.set_exp()
-                rotated_token.set_iat()
+                user_model = get_user_model()
+                user_id_claim = settings.SIMPLE_JWT['USER_ID_CLAIM']
+                user = user_model.objects.get(id=token[user_id_claim])
+                rotated_token = RefreshToken.for_user(user)
                 refresh_token = str(rotated_token)
 
                 # Blacklist old refresh token after rotation is ready

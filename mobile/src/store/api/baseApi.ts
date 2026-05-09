@@ -18,7 +18,8 @@ const isRefreshTokenResponse = (data: unknown): data is RefreshTokenResponse => 
   }
 
   const access = (data as { access?: unknown }).access;
-  return typeof access === 'string';
+  const refresh = (data as { refresh?: unknown }).refresh;
+  return typeof access === 'string' && (refresh === undefined || typeof refresh === 'string');
 };
 
 // Base query with authentication
