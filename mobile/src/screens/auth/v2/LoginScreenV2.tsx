@@ -449,7 +449,7 @@ export const LoginScreenV2: React.FC = () => {
                 <Text style={styles.biometricHint}>
                   Or use{' '}
                   <Text style={{ color: redesignColors.accent, fontWeight: '500' }}>
-                    Face ID / Touch ID
+                    {Platform.OS === 'ios' ? 'Face ID / Touch ID' : 'biometric login'}
                   </Text>
                 </Text>
               </TouchableOpacity>

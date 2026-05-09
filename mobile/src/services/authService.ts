@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
 import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 import { API_ENDPOINTS, getAuthHeaders } from '../config/api.config';
@@ -103,6 +104,12 @@ class AuthService {
       const newAccessToken = response.data.access;
       await SecureStore.setItemAsync('accessToken', newAccessToken);
 
+      // Backend rotates refresh tokens (BLACKLIST_AFTER_ROTATION) — persist the
+      // new one or the next refresh sends a blacklisted token and force-logs out.
+      if (response.data.refresh) {
+        await SecureStore.setItemAsync('refreshToken', response.data.refresh);
+      }
+
       return newAccessToken;
     } catch (error) {
       // Refresh token is invalid or expired
@@ -187,9 +194,9 @@ class AuthService {
     const typeNames = types.map(type => {
       switch (type) {
         case LocalAuthentication.AuthenticationType.FINGERPRINT:
-          return 'Touch ID';
+          return Platform.OS === 'ios' ? 'Touch ID' : 'Fingerprint';
         case LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION:
-          return 'Face ID';
+          return Platform.OS === 'ios' ? 'Face ID' : 'Face Unlock';
         case LocalAuthentication.AuthenticationType.IRIS:
           return 'Iris Recognition';
         default:

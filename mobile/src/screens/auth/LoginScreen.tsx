@@ -458,7 +458,9 @@ export const LoginScreen = () => {
             activeOpacity={0.8}
           >
             <Ionicons name="finger-print" size={24} color="#0061FF" />
-            <Text style={styles.biometricText}>Use Face ID / Touch ID</Text>
+            <Text style={styles.biometricText}>
+              {Platform.OS === 'ios' ? 'Use Face ID / Touch ID' : 'Use biometric login'}
+            </Text>
           </TouchableOpacity>
         )}
       </ScrollView>
