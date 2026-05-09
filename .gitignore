@@ -105,3 +105,9 @@ mobile/.expo/
 *.tmp
 temp_backup/
 .superdesign/
+
+# ===========================================
+# Local agent / runtime state
+# ===========================================
+.claude/scheduled_tasks.lock
+backend/agent_memory/
