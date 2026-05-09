@@ -2137,3 +2137,134 @@ def create_monthly_payroll_run() -> Dict[str, Any]:
     else:
         anchor = date(today.year, today.month - 1, 1)
     return _run_payroll_for_period(PayrollRun.for_calendar_month(anchor))
+
+
+# ---------------------------------------------------------------------------
+# Capacity-check logbook: missed-slot detection
+# ---------------------------------------------------------------------------
+
+@shared_task
+def flag_missed_capacity_checks():
+    """
+    Scan active monitored shifts for elapsed capacity-check windows that have
+    no CapacityCheck logged. For each missed window, create a CapacityCheckSlotMiss
+    row, alert the venue's company managers, and broadcast a WS event to all
+    devices in the shift_group so the mobile cadence engine can escalate.
+
+    Runs every 5 minutes via Celery beat. A 5-minute grace period is allowed
+    after the slot's expected_at before it counts as missed (gives the staff a
+    few minutes to log the count without being penalised).
+    """
+    from .models import (
+        Shift, Venue, CapacityCheck, CapacityCheckSlotMiss, Notification,
+    )
+    from .consumers import broadcast_capacity_event
+
+    grace = timedelta(minutes=5)
+    now = timezone.now()
+
+    active_statuses = ('active', 'in_progress')
+    monitored_shifts = (
+        Shift.objects.filter(
+            status__in=active_statuses,
+            venue__requires_capacity_monitoring=True,
+        )
+        .select_related('venue', 'venue__company')
+    )
+
+    # Collapse multi-staff shifts to a single (shift_group, venue, start, end) tuple.
+    # We iterate by representative shift to avoid duplicate processing.
+    seen_groups = set()
+    new_misses_total = 0
+
+    for shift in monitored_shifts:
+        venue = shift.venue
+        if not venue:
+            continue
+        group_key = shift.shift_group or f'shift_{shift.id}'
+        if group_key in seen_groups:
+            continue
+        seen_groups.add(group_key)
+
+        interval = max(int(venue.capacity_check_interval_minutes or 30), 5)
+        start = shift.start_time
+        end_cap = min(shift.end_time, now) if shift.end_time else now
+        if not start or end_cap <= start:
+            continue
+
+        # Build expected slot starts: start + interval, start + 2*interval, ...
+        # Slot is "missed" if (now - expected_at) > interval + grace AND no check exists in window.
+        slot_idx = 1
+        expected_at = start + timedelta(minutes=interval * slot_idx)
+        while expected_at + grace < now and expected_at <= end_cap:
+            window_end = expected_at + timedelta(minutes=interval)
+
+            # Look for any check covering this window across the whole group.
+            check_filter = (
+                {'shift_group': shift.shift_group}
+                if shift.shift_group else {'shift': shift}
+            )
+            had_check = CapacityCheck.objects.filter(
+                timestamp__gte=expected_at,
+                timestamp__lt=window_end,
+                **check_filter,
+            ).exists()
+
+            if not had_check:
+                miss, created = CapacityCheckSlotMiss.objects.get_or_create(
+                    shift_group=shift.shift_group or f'shift_{shift.id}',
+                    expected_at=expected_at,
+                    defaults={'venue': venue},
+                )
+                if created:
+                    new_misses_total += 1
+                    # Notify managers in the venue's company.
+                    if venue.company:
+                        try:
+                            managers = User.objects.filter(
+                                company_memberships__company=venue.company,
+                                company_memberships__is_active=True,
+                                role__in=['owner', 'admin', 'manager'],
+                            ).distinct()
+                            title = f"Missed capacity check at {venue.name}"
+                            message = (
+                                f"No capacity count was logged for the "
+                                f"{expected_at.strftime('%H:%M')} window at {venue.name}."
+                            )
+                            for manager in managers:
+                                Notification.send(
+                                    user=manager,
+                                    title=title,
+                                    message=message,
+                                    notification_type='compliance_alert',
+                                    priority='high',
+                                    related_type='shift',
+                                    related_id=str(shift.id),
+                                    action_url=f'/shifts/{shift.id}',
+                                    company=venue.company,
+                                )
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to notify managers of missed capacity slot: {e}"
+                            )
+
+                    # Broadcast to staff devices to trigger local escalation.
+                    try:
+                        broadcast_capacity_event(
+                            shift_group=miss.shift_group,
+                            event='capacity_overdue',
+                            payload={
+                                'venue_id': venue.id,
+                                'shift_id': shift.id,
+                                'expected_at': expected_at.isoformat(),
+                            },
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to broadcast capacity_overdue: {e}"
+                        )
+
+            slot_idx += 1
+            expected_at = start + timedelta(minutes=interval * slot_idx)
+
+    return {'shift_groups_scanned': len(seen_groups), 'new_misses': new_misses_total}

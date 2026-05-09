@@ -19,7 +19,7 @@ from rest_framework import viewsets, status, serializers, filters
 import django_filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import AuthenticationFailed, ValidationError
+from rest_framework.exceptions import AuthenticationFailed, ValidationError, PermissionDenied
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -37,6 +37,7 @@ from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
     Shift, ShiftTemplate, FireExitCheck, CapacityCheck, ToiletCheck, ShiftExchange, OpenShiftRequest,
+    CapacityCheckSlotMiss, CapacityLogbookSignoff,
     Invoice, InvoiceItem, PayRate, DeputyConfig, DeputyEmployee,
     DeputyTimesheet, SystemSettings, EmploymentType, RecruitmentApplication,
     WorkingHoursRegulation, ComplianceProfile, ComplianceViolation, WorkingHoursMetrics,
@@ -61,6 +62,7 @@ from .serializers import (
     BankDetailsSerializer, SIALicenseSerializer, StaffAvailabilitySerializer,
     VenueSerializer, VenueTermsAcceptanceSerializer, PreferredVenueSerializer,
     FireExitCheckSerializer, CapacityCheckSerializer, ToiletCheckSerializer,
+    CapacityCheckSlotMissSerializer, CapacityLogbookSignoffSerializer,
     ShiftSerializer, ShiftExchangeSerializer, OpenShiftRequestSerializer, InvoiceSerializer, InvoiceItemSerializer,
     PayRateSerializer, DeputyConfigSerializer, DeputyEmployeeSerializer,
     DeputyTimesheetSerializer, ShiftTemplateSerializer, SystemSettingsSerializer,
@@ -2129,6 +2131,173 @@ class CapacityCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         return self._get_company_scoped_queryset(CapacityCheck.objects.all())
+
+    def perform_create(self, serializer):
+        from datetime import timedelta
+        from .consumers import broadcast_capacity_event
+        check = serializer.save()
+        shift = check.shift
+        venue = shift.venue if shift else None
+
+        # If at/over capacity, alert managers in the venue's company.
+        if check.is_at_capacity and venue and venue.company:
+            try:
+                managers = User.objects.filter(
+                    company_memberships__company=venue.company,
+                    company_memberships__is_active=True,
+                    role__in=['owner', 'admin', 'manager'],
+                ).distinct()
+                performer_name = (
+                    f"{check.performed_by.first_name} {check.performed_by.last_name}".strip()
+                    if check.performed_by else 'Staff'
+                )
+                title = f"Capacity reached at {venue.name}"
+                message = (
+                    f"{performer_name} logged {check.current_count}/{check.venue_capacity} "
+                    f"at {venue.name}. Action: {check.action_taken or '—'}"
+                )
+                for manager in managers:
+                    Notification.send(
+                        user=manager,
+                        title=title,
+                        message=message,
+                        notification_type='compliance_alert',
+                        priority='high',
+                        related_type='shift',
+                        related_id=str(shift.id),
+                        action_url=f'/shifts/{shift.id}',
+                        company=venue.company,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to notify managers about capacity breach: {e}")
+
+        # Broadcast over WebSocket so teammates' devices reschedule reminders.
+        if shift and shift.shift_group:
+            try:
+                interval = venue.capacity_check_interval_minutes if venue else 30
+                logged_at = check.timestamp or timezone.now()
+                next_due_at = logged_at + timedelta(minutes=interval)
+                broadcast_capacity_event(
+                    shift_group=shift.shift_group,
+                    event='capacity_logged',
+                    payload={
+                        'shift_id': shift.id,
+                        'venue_id': venue.id if venue else None,
+                        'current_count': check.current_count,
+                        'venue_capacity': check.venue_capacity,
+                        'is_at_capacity': check.is_at_capacity,
+                        'performed_by': {
+                            'id': check.performed_by.id if check.performed_by else None,
+                            'first_name': check.performed_by.first_name if check.performed_by else '',
+                            'last_name': check.performed_by.last_name if check.performed_by else '',
+                        },
+                        'logged_at': logged_at.isoformat(),
+                        'next_due_at': next_due_at.isoformat(),
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"Failed to broadcast capacity_logged event: {e}")
+
+
+class CapacityCheckSlotMissViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
+    """
+    Read + acknowledge missed capacity-check slots. Filtering by shift_group
+    follows the same convention as the other check ViewSets.
+    """
+    permission_classes = [IsAuthenticated]
+    queryset = CapacityCheckSlotMiss.objects.all()
+    serializer_class = CapacityCheckSlotMissSerializer
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']  # no destructive ops
+
+    def get_queryset(self):
+        # Misses are scoped via venue.company (no shift FK on this model).
+        company = getattr(self.request, 'current_company', None)
+        qs = CapacityCheckSlotMiss.objects.all().select_related('venue', 'acknowledged_by')
+        if company:
+            qs = qs.filter(venue__company=company)
+        shift_group = self.request.query_params.get('shift_group')
+        if shift_group:
+            qs = qs.filter(shift_group=shift_group)
+        return qs.order_by('-expected_at')
+
+    @action(detail=True, methods=['post'])
+    def acknowledge(self, request, pk=None):
+        miss = self.get_object()
+        if miss.acknowledged:
+            return Response(
+                {'detail': 'Already acknowledged.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        reason = (request.data.get('acknowledgement_reason') or '').strip()
+        if not reason:
+            return Response(
+                {'acknowledgement_reason': 'A reason is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        miss.acknowledged = True
+        miss.acknowledged_by = request.user
+        miss.acknowledged_at = timezone.now()
+        miss.acknowledgement_reason = reason
+        miss.save(update_fields=['acknowledged', 'acknowledged_by', 'acknowledged_at', 'acknowledgement_reason'])
+        return Response(self.get_serializer(miss).data)
+
+
+class CapacityLogbookSignoffViewSet(viewsets.ModelViewSet):
+    """
+    End-of-shift signoff of the capacity logbook. One row per shift_group.
+    Snapshots total_checks/total_missed at creation time.
+    """
+    permission_classes = [IsAuthenticated]
+    queryset = CapacityLogbookSignoff.objects.all()
+    serializer_class = CapacityLogbookSignoffSerializer
+    http_method_names = ['get', 'post', 'head', 'options']  # signoff is one-shot
+
+    def get_queryset(self):
+        company = getattr(self.request, 'current_company', None)
+        qs = CapacityLogbookSignoff.objects.all().select_related('venue', 'closed_by_staff')
+        if company:
+            qs = qs.filter(venue__company=company)
+        shift_group = self.request.query_params.get('shift_group')
+        if shift_group:
+            qs = qs.filter(shift_group=shift_group)
+        return qs.order_by('-created_at')
+
+    def perform_create(self, serializer):
+        from .consumers import broadcast_capacity_event
+        shift_group = serializer.validated_data.get('shift_group')
+
+        # Verify the user is part of this shift_group (staff member of one of its shifts).
+        user = self.request.user
+        is_member = Shift.objects.filter(
+            shift_group=shift_group, staff_user=user
+        ).exists()
+        is_privileged = user.role in ('owner', 'admin', 'manager')
+        if not (is_member or is_privileged):
+            raise PermissionDenied("Only staff assigned to this shift_group can sign off the logbook.")
+
+        # Snapshot totals from current state.
+        total_checks = CapacityCheck.objects.filter(shift_group=shift_group).count()
+        total_missed = CapacityCheckSlotMiss.objects.filter(shift_group=shift_group).count()
+
+        signoff = serializer.save(
+            closed_by_staff=user,
+            total_checks=total_checks,
+            total_missed=total_missed,
+        )
+
+        try:
+            broadcast_capacity_event(
+                shift_group=shift_group,
+                event='logbook_signed',
+                payload={
+                    'venue_id': signoff.venue_id,
+                    'closed_by_name': signoff.closed_by_name,
+                    'override_reason': signoff.override_reason,
+                    'logged_at': (signoff.signed_at or signoff.created_at).isoformat(),
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to broadcast logbook_signed event: {e}")
 
 
 class ToiletCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
