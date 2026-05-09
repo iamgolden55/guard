@@ -633,11 +633,26 @@ def broadcast_capacity_event(shift_group: str, event: str, payload: Dict[str, An
         if channel_layer is None:
             return
 
+        # Multi-staff shifts share a real shift_group string; single-staff
+        # shifts use a synthesized 'shift_<id>' key (see ShiftCheck.save).
+        # Resolve recipients for both forms.
         recipient_ids = list(
             Shift.objects.filter(shift_group=shift_group, staff_user__isnull=False)
             .values_list('staff_user_id', flat=True)
             .distinct()
         )
+        if not recipient_ids and shift_group.startswith('shift_'):
+            try:
+                synth_shift_id = int(shift_group[len('shift_'):])
+                staff_user_id = (
+                    Shift.objects.filter(id=synth_shift_id)
+                    .values_list('staff_user_id', flat=True)
+                    .first()
+                )
+                if staff_user_id:
+                    recipient_ids = [staff_user_id]
+            except (ValueError, TypeError):
+                pass
         if not recipient_ids:
             return
 

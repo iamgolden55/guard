@@ -2706,9 +2706,13 @@ class ShiftCheck(models.Model):
     def save(self, *args, **kwargs):
         if not self.timestamp:
             self.timestamp = timezone.now()
-        # Auto-populate shift_group from the associated shift
-        if not self.shift_group and self.shift and self.shift.shift_group:
-            self.shift_group = self.shift.shift_group
+        # Auto-populate shift_group so every check has a stable group key.
+        # Multi-staff shifts pass through the real shift_group; single-staff
+        # shifts get a synthesized 'shift_<id>' so the capacity logbook,
+        # missed-slot detector, and signoff all key off the same value
+        # without special-casing single vs multi-staff anywhere.
+        if not self.shift_group and self.shift:
+            self.shift_group = self.shift.shift_group or f'shift_{self.shift.id}'
         # Auto-populate performed_by from the shift's staff_user if not set
         if not self.performed_by and self.shift and self.shift.staff_user:
             self.performed_by = self.shift.staff_user

@@ -2195,13 +2195,15 @@ class CapacityCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
                 logger.warning(f"Failed to notify managers about capacity breach: {e}")
 
         # Broadcast over WebSocket so teammates' devices reschedule reminders.
-        if shift and shift.shift_group:
+        # check.shift_group is always populated by ShiftCheck.save (real
+        # group for multi-staff, synthesized 'shift_<id>' for single-staff).
+        if check.shift_group:
             try:
                 interval = venue.capacity_check_interval_minutes if venue else 30
                 logged_at = check.timestamp or timezone.now()
                 next_due_at = logged_at + timedelta(minutes=interval)
                 broadcast_capacity_event(
-                    shift_group=shift.shift_group,
+                    shift_group=check.shift_group,
                     event='capacity_logged',
                     payload={
                         'shift_id': shift.id,
