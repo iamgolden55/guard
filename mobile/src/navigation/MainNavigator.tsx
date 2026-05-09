@@ -53,7 +53,7 @@ import { IncidentFormScreenV2 as IncidentFormScreen } from '../screens/incidents
 import { IncidentDetailScreen } from '../screens/incidents/IncidentDetailScreen';
 
 // Shift Checks Screens
-import { ShiftChecksScreen, FireExitCheckScreen, CapacityCheckScreen, ToiletCheckScreen } from '../screens/checks';
+import { ShiftChecksScreen, FireExitCheckScreen, CapacityCheckScreen, CapacityLogbookScreen, ToiletCheckScreen } from '../screens/checks';
 
 const Stack = createStackNavigator<MainStackParamList>();
 
@@ -92,6 +92,7 @@ export const MainNavigator = () => {
           <Stack.Screen name="ShiftChecks" component={ShiftChecksScreen} />
           <Stack.Screen name="FireExitCheck" component={FireExitCheckScreen} />
           <Stack.Screen name="CapacityCheck" component={CapacityCheckScreen} />
+          <Stack.Screen name="CapacityLogbook" component={CapacityLogbookScreen} />
           <Stack.Screen name="ToiletCheck" component={ToiletCheckScreen} />
 
           {/* Profile Screens */}

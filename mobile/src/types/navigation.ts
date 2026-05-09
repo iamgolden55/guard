@@ -57,6 +57,7 @@ export type MainStackParamList = {
   ShiftChecks: { shiftId: number };
   FireExitCheck: { shiftId: number; checkType?: string };
   CapacityCheck: { shiftId: number; checkType?: string };
+  CapacityLogbook: { shiftId: number; shiftGroup?: string };
   ToiletCheck: { shiftId: number; checkType?: string };
   CameraCapture: {
     purpose: 'check-in' | 'check-out' | 'incident' | 'profile';

@@ -36,13 +36,42 @@ interface PongMessage {
   timestamp: string;
 }
 
+export type CapacityEventName =
+  | 'capacity_logged'
+  | 'capacity_overdue'
+  | 'logbook_signed';
+
+export interface CapacityEventMessage {
+  type: 'capacity_event';
+  event: CapacityEventName;
+  shift_group: string;
+  venue_id?: number | null;
+  shift_id?: number | null;
+  current_count?: number | null;
+  venue_capacity?: number | null;
+  is_at_capacity?: boolean | null;
+  performed_by?: {
+    id: number | null;
+    first_name: string;
+    last_name: string;
+  } | null;
+  logged_at?: string | null;
+  next_due_at?: string | null;
+  expected_at?: string | null;
+  closed_by_name?: string | null;
+  override_reason?: string | null;
+  timestamp: string;
+}
+
 type SocketMessage =
   | NotificationSocketMessage
+  | CapacityEventMessage
   | ConnectedMessage
   | ErrorMessage
   | PongMessage;
 
 export type NotificationListener = (message: NotificationSocketMessage) => void;
+export type CapacityEventListener = (message: CapacityEventMessage) => void;
 export type ConnectionStateListener = (connected: boolean) => void;
 export type ErrorListener = (error: Error) => void;
 
@@ -62,6 +91,7 @@ class NotificationWebSocketService {
   private appStateSubscription: { remove: () => void } | null = null;
 
   private notificationListeners = new Set<NotificationListener>();
+  private capacityEventListeners = new Set<CapacityEventListener>();
   private connectionStateListeners = new Set<ConnectionStateListener>();
   private errorListeners = new Set<ErrorListener>();
 
@@ -84,7 +114,7 @@ class NotificationWebSocketService {
   }
 
   async connect(): Promise<void> {
-    if (!this.hasNotificationListeners()) {
+    if (!this.hasAnyListeners()) {
       logger.debug('[NotificationWebSocket] Skipping connect with no listeners');
       return;
     }
@@ -134,7 +164,19 @@ class NotificationWebSocketService {
 
     return () => {
       this.notificationListeners.delete(listener);
-      if (!this.hasNotificationListeners()) {
+      if (!this.hasAnyListeners()) {
+        this.disconnect();
+      }
+    };
+  }
+
+  addCapacityEventListener(listener: CapacityEventListener): () => void {
+    this.capacityEventListeners.add(listener);
+    void this.connect();
+
+    return () => {
+      this.capacityEventListeners.delete(listener);
+      if (!this.hasAnyListeners()) {
         this.disconnect();
       }
     };
@@ -151,15 +193,15 @@ class NotificationWebSocketService {
     return () => this.errorListeners.delete(listener);
   }
 
-  private hasNotificationListeners(): boolean {
-    return this.notificationListeners.size > 0;
+  private hasAnyListeners(): boolean {
+    return this.notificationListeners.size > 0 || this.capacityEventListeners.size > 0;
   }
 
   private handleAppStateChange(nextAppState: AppStateStatus): void {
     if (nextAppState === 'active') {
       this.isBackgrounded = false;
       this.reconnectAttempts = 0;
-      if (this.hasNotificationListeners() && !this.isConnected && !this.isConnecting) {
+      if (this.hasAnyListeners() && !this.isConnected && !this.isConnecting) {
         void this.connect();
       }
       return;
@@ -219,7 +261,7 @@ class NotificationWebSocketService {
         reason: event.reason,
       });
 
-      if (this.hasNotificationListeners()) {
+      if (this.hasAnyListeners()) {
         this.scheduleReconnect();
       }
     };
@@ -247,6 +289,9 @@ class NotificationWebSocketService {
           break;
         case 'notification':
           this.notifyNotificationListeners(message);
+          break;
+        case 'capacity_event':
+          this.notifyCapacityEventListeners(message);
           break;
         case 'pong':
           logger.debug('[NotificationWebSocket] Pong received');
@@ -293,7 +338,7 @@ class NotificationWebSocketService {
   }
 
   private scheduleReconnect(): void {
-    if (this.isBackgrounded || !this.hasNotificationListeners()) {
+    if (this.isBackgrounded || !this.hasAnyListeners()) {
       return;
     }
 
@@ -327,6 +372,16 @@ class NotificationWebSocketService {
         listener(message);
       } catch (error) {
         logger.error('[NotificationWebSocket] Notification listener failed', { error });
+      }
+    });
+  }
+
+  private notifyCapacityEventListeners(message: CapacityEventMessage): void {
+    this.capacityEventListeners.forEach((listener) => {
+      try {
+        listener(message);
+      } catch (error) {
+        logger.error('[NotificationWebSocket] Capacity event listener failed', { error });
       }
     });
   }

@@ -29,6 +29,10 @@ export interface Shift {
     requires_fire_exit_check?: boolean;
     requires_capacity_check?: boolean;
     requires_id_scan?: boolean;
+    // Capacity-monitoring config (only meaningful when requires_capacity_check is true)
+    capacity?: number;
+    capacity_check_interval_minutes?: number;
+    capacity_warning_threshold_pct?: number;
   };
   start_time: string;
   end_time: string;

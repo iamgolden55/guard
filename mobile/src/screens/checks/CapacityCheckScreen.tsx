@@ -21,7 +21,7 @@ import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 import { locationService } from '../../services/locationService';
 import { photoService } from '../../services/photoService';
-import { shiftChecksService } from '../../services/shiftChecksService';
+import { shiftChecksService, type CapacityCheck as CapacityCheckRecord } from '../../services/shiftChecksService';
 import { useAppSelector } from '../../hooks/useRedux';
 import { selectActiveShift } from '../../store/slices/shiftsSlice';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -38,8 +38,9 @@ export const CapacityCheckScreen = () => {
   const colors = getColors(isDark);
   const activeShift = useAppSelector(selectActiveShift);
 
-  // Get venue capacity from shift data (assuming it's available)
-  const venueCapacity = 500; // TODO: Get from venue data
+  // Real venue capacity from the active shift; fall back only if missing.
+  const venueCapacity = activeShift?.venue.capacity ?? 0;
+  const warningThresholdPct = activeShift?.venue.capacity_warning_threshold_pct ?? 80;
 
   // Form state
   const [currentCount, setCurrentCount] = useState('');
@@ -50,11 +51,29 @@ export const CapacityCheckScreen = () => {
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [lastCheck, setLastCheck] = useState<CapacityCheckRecord | null>(null);
 
   useEffect(() => {
     logger.info('[CapacityCheck] Screen loaded', { shiftId });
     loadLocation();
+    loadLastCheck();
   }, [shiftId]);
+
+  const loadLastCheck = async () => {
+    try {
+      const shiftGroup = activeShift?.shift_group;
+      if (!shiftGroup) {
+        // Single-staff shift: filter by shift id instead.
+        const checks = await shiftChecksService.getShiftChecks(shiftId);
+        setLastCheck(checks.capacityChecks[0] || null);
+        return;
+      }
+      const latest = await shiftChecksService.getLatestCapacityCheck(shiftGroup);
+      setLastCheck(latest);
+    } catch (error) {
+      logger.warn('[CapacityCheck] Could not load last check (non-fatal):', error);
+    }
+  };
 
   const loadLocation = async () => {
     try {
@@ -116,8 +135,24 @@ export const CapacityCheckScreen = () => {
   const getCapacityColor = () => {
     const percentage = getCapacityPercentage();
     if (percentage >= 100) return colors.error;
-    if (percentage >= 80) return colors.warning;
+    if (percentage >= warningThresholdPct) return colors.warning;
     return colors.success;
+  };
+
+  const getLastCheckSummary = (): string | null => {
+    if (!lastCheck) return null;
+    const minutesAgo = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(lastCheck.timestamp).getTime()) / 60000),
+    );
+    const performer = lastCheck.performed_by_details;
+    const who = performer
+      ? `${performer.first_name} ${performer.last_name?.charAt(0) || ''}.`.trim()
+      : 'a teammate';
+    if (minutesAgo === 0) {
+      return `Just logged: ${lastCheck.current_count} by ${who}`;
+    }
+    return `Last logged ${minutesAgo} min ago: ${lastCheck.current_count} by ${who}`;
   };
 
   const validateForm = (): boolean => {
@@ -216,6 +251,14 @@ export const CapacityCheckScreen = () => {
               Maximum Venue Capacity: <Body style={styles.capacityNumber}>{venueCapacity}</Body>
             </Body>
           </View>
+          {getLastCheckSummary() && (
+            <View style={styles.lastCheckRow}>
+              <Ionicons name="time-outline" size={16} color={colors.text.secondary} />
+              <Body color={colors.text.secondary} style={styles.lastCheckText}>
+                {getLastCheckSummary()}
+              </Body>
+            </View>
+          )}
         </Card>
 
         {/* Current Count */}
@@ -393,6 +436,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 18,
     color: colors.primary,
+  },
+  lastCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.gray[200],
+  },
+  lastCheckText: {
+    marginLeft: spacing.xs,
+    fontSize: 13,
   },
   formCard: {
     marginBottom: spacing.md,

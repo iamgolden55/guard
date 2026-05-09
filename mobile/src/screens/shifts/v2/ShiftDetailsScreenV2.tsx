@@ -35,6 +35,8 @@ import { CameraModal } from '@components/camera';
 import { SignatureModal } from '@components/signature';
 import { VenueTermsModal } from '@components/terms';
 import { TransferShiftModal, ReleaseShiftModal } from '@components/modals';
+import { LogbookSignoffModal } from '../../../components/LogbookSignoffModal';
+import { shiftChecksService } from '../../../services/shiftChecksService';
 import type { MainStackParamList } from '../../../types/navigation';
 import { Shift, checkInShift, checkOutShift } from '../../../store/slices/shiftsSlice';
 import { useAppDispatch, useAppSelector } from '../../../hooks/useRedux';
@@ -131,6 +133,10 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
 
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
+
+  // Capacity logbook signoff gate (only relevant for monitored venues)
+  const [showLogbookSignoff, setShowLogbookSignoff] = useState(false);
+  const [logbookCounts, setLogbookCounts] = useState({ checks: 0, missed: 0 });
 
   // Refresh shift on focus
   useFocusEffect(
@@ -406,7 +412,7 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
     }
   };
 
-  const handleCheckOut = () => {
+  const proceedToCheckOut = () => {
     Alert.alert(
       'End shift',
       'Ready to check out? You will:\n\n• Confirm you’re at the venue\n• Take a final venue photo\n• Sign the check-out form',
@@ -423,6 +429,36 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
         },
       ],
     );
+  };
+
+  const handleCheckOut = async () => {
+    // Soft block: monitored venues need the logbook signed before checkout.
+    // If no signoff exists yet, prompt the user to capture the venue admin's
+    // signature (or override). Failures fall through to checkout — we never
+    // *hard* block on infrastructure issues.
+    if (shift?.venue.requires_capacity_check && shift.shift_group) {
+      try {
+        const existing = await shiftChecksService.getLogbookSignoff(shift.shift_group);
+        if (!existing) {
+          const [checks, misses] = await Promise.all([
+            shiftChecksService.getCapacityChecksForGroup(shift.shift_group),
+            shiftChecksService.getCapacityMisses(shift.shift_group),
+          ]);
+          setLogbookCounts({ checks: checks.length, missed: misses.length });
+          setShowLogbookSignoff(true);
+          return; // Wait for the modal to resolve.
+        }
+      } catch (e) {
+        logger.warn('[ShiftDetailsV2] Logbook signoff lookup failed; allowing checkout to proceed:', e);
+      }
+    }
+    proceedToCheckOut();
+  };
+
+  const handleLogbookSignoffSubmitted = () => {
+    setShowLogbookSignoff(false);
+    // Continue with the usual checkout flow now that the logbook is closed.
+    proceedToCheckOut();
   };
 
   const handleCheckOutPhotoTaken = (photoUri: string) => {
@@ -1233,6 +1269,18 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
           }
         }}
       />
+      {shift?.shift_group && (
+        <LogbookSignoffModal
+          visible={showLogbookSignoff}
+          shiftGroup={shift.shift_group}
+          venueId={shift.venue.id}
+          venueName={shift.venue.name}
+          totalChecks={logbookCounts.checks}
+          totalMissed={logbookCounts.missed}
+          onClose={() => setShowLogbookSignoff(false)}
+          onSubmitted={handleLogbookSignoffSubmitted}
+        />
+      )}
     </View>
   );
 };

@@ -46,6 +46,49 @@ export interface CapacityCheck extends BaseCheck {
   action_taken?: string;
 }
 
+export interface CapacityCheckSlotMiss {
+  id: number;
+  shift_group: string;
+  venue: number;
+  expected_at: string;
+  detected_at: string;
+  acknowledged: boolean;
+  acknowledged_by?: number | null;
+  acknowledged_by_details?: PerformedByDetails | null;
+  acknowledged_at?: string | null;
+  acknowledgement_reason: string;
+}
+
+export interface CapacityLogbookSignoff {
+  id: number;
+  shift_group: string;
+  venue: number;
+  closed_by_name: string;
+  closed_by_role: string;
+  signature: string;
+  signed_at?: string | null;
+  override_reason: string;
+  closed_by_staff?: number | null;
+  closed_by_staff_details?: PerformedByDetails | null;
+  notes: string;
+  total_checks: number;
+  total_missed: number;
+  created_at: string;
+}
+
+export interface CapacityLogbookView {
+  shift_group: string;
+  venue_id: number;
+  venue_capacity: number;
+  interval_minutes: number;
+  warning_threshold_pct: number;
+  next_due_at: string | null;
+  last_check: CapacityCheck | null;
+  checks: CapacityCheck[];
+  misses: CapacityCheckSlotMiss[];
+  signoff: CapacityLogbookSignoff | null;
+}
+
 /**
  * Toilet Check Interface
  *
@@ -313,6 +356,78 @@ class ShiftChecksService {
       console.error('[ShiftChecksService] Error fetching shift checks:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get all capacity checks for a shift_group, ordered newest-first.
+   * Used by the LogbookScreen to render the chronological audit trail.
+   */
+  async getCapacityChecksForGroup(shiftGroup: string): Promise<CapacityCheck[]> {
+    const response = await apiService.get<{ results: CapacityCheck[] }>(
+      `/api/v1/capacity-checks/?shift_group=${encodeURIComponent(shiftGroup)}`
+    );
+    return response.results || [];
+  }
+
+  /**
+   * Get the latest capacity check for a shift_group (or null).
+   * Used by CapacityCheckScreen to show "last logged X min ago by Y".
+   */
+  async getLatestCapacityCheck(shiftGroup: string): Promise<CapacityCheck | null> {
+    const checks = await this.getCapacityChecksForGroup(shiftGroup);
+    return checks[0] || null;
+  }
+
+  /**
+   * Get missed-slot records for a shift_group.
+   */
+  async getCapacityMisses(shiftGroup: string): Promise<CapacityCheckSlotMiss[]> {
+    const response = await apiService.get<{ results: CapacityCheckSlotMiss[] }>(
+      `/api/v1/capacity-check-misses/?shift_group=${encodeURIComponent(shiftGroup)}`
+    );
+    return response.results || [];
+  }
+
+  /**
+   * Acknowledge a missed slot with a reason.
+   */
+  async acknowledgeMiss(missId: number, reason: string): Promise<CapacityCheckSlotMiss> {
+    return await apiService.post<CapacityCheckSlotMiss>(
+      `/api/v1/capacity-check-misses/${missId}/acknowledge/`,
+      { acknowledgement_reason: reason }
+    );
+  }
+
+  /**
+   * Get the logbook signoff record for a shift_group, if it exists.
+   */
+  async getLogbookSignoff(shiftGroup: string): Promise<CapacityLogbookSignoff | null> {
+    const response = await apiService.get<{ results: CapacityLogbookSignoff[] }>(
+      `/api/v1/capacity-logbooks/?shift_group=${encodeURIComponent(shiftGroup)}`
+    );
+    return (response.results && response.results[0]) || null;
+  }
+
+  /**
+   * Submit the end-of-shift logbook signoff.
+   *
+   * Either signature+name path OR override path:
+   *  - { shift_group, venue, closed_by_name, closed_by_role, signature, notes? }
+   *  - { shift_group, venue, override_reason, notes? }
+   */
+  async submitLogbookSignoff(payload: {
+    shift_group: string;
+    venue: number;
+    closed_by_name?: string;
+    closed_by_role?: string;
+    signature?: string;
+    override_reason?: string;
+    notes?: string;
+  }): Promise<CapacityLogbookSignoff> {
+    return await apiService.post<CapacityLogbookSignoff>(
+      `/api/v1/capacity-logbooks/`,
+      payload
+    );
   }
 }
 

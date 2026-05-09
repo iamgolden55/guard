@@ -285,6 +285,34 @@ export const ShiftChecksScreen = () => {
           ))}
         </View>
 
+        {/* Capacity Logbook CTA — only when venue requires capacity monitoring */}
+        {activeShift?.venue.requires_capacity_check && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CapacityLogbook' as any, { shiftId })}
+            activeOpacity={0.7}
+          >
+            <Card variant="elevated" padding="lg" style={styles.logbookCard}>
+              <View style={styles.logbookRow}>
+                <View
+                  style={[
+                    styles.checkIcon,
+                    { backgroundColor: colors.primary + '20' },
+                  ]}
+                >
+                  <Ionicons name="book-outline" size={24} color={colors.primary} />
+                </View>
+                <View style={styles.logbookInfo}>
+                  <Heading3>Capacity Logbook</Heading3>
+                  <Body color={colors.text.secondary}>
+                    View timeline & sign off at end of shift
+                  </Body>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color={colors.gray[400]} />
+              </View>
+            </Card>
+          </TouchableOpacity>
+        )}
+
         {/* Info Card */}
         <Card variant="flat" padding="lg" style={styles.infoCard}>
           <View style={styles.infoHeader}>
@@ -419,6 +447,17 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     textAlign: 'center',
+  },
+  logbookCard: {
+    marginBottom: spacing.lg,
+  },
+  logbookRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logbookInfo: {
+    flex: 1,
+    marginLeft: spacing.md,
   },
   infoCard: {
     backgroundColor: colors.primary + '10',
