@@ -559,16 +559,19 @@ class CookieTokenRefreshView(APIView):
             # Get new access token
             access_token = str(token.access_token)
 
-            # If ROTATE_REFRESH_TOKENS is enabled, get new refresh token
+            # If ROTATE_REFRESH_TOKENS is enabled, rotate the refresh token
             if settings.SIMPLE_JWT['ROTATE_REFRESH_TOKENS']:
-                # Blacklist old refresh token
+                # Blacklist old refresh token before rotating
                 if settings.SIMPLE_JWT['BLACKLIST_AFTER_ROTATION']:
                     try:
                         token.blacklist()
                     except Exception:
                         pass  # Token might already be blacklisted
 
-                # Generate new refresh token
+                # Rotate token claims so the client gets a fresh refresh token
+                token.set_jti()
+                token.set_exp()
+                token.set_iat()
                 refresh_token = str(token)
 
             # HYBRID AUTH: Return tokens in response body for Safari/browsers

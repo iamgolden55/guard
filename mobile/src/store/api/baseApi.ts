@@ -44,9 +44,12 @@ const baseQueryWithReauth = async (args: any, api: any, extraOptions: any) => {
       );
 
       if (refreshResult.data) {
-        // Store the new token
-        const { access } = refreshResult.data as { access: string };
+        // Store the new tokens (refresh token may rotate)
+        const { access, refresh } = refreshResult.data as { access: string; refresh?: string };
         await SecureStore.setItemAsync('accessToken', access);
+        if (refresh) {
+          await SecureStore.setItemAsync('refreshToken', refresh);
+        }
 
         // Retry the original query
         result = await baseQuery(args, api, extraOptions);
