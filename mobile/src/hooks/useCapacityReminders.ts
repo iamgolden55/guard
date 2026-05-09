@@ -26,7 +26,7 @@ import { useEffect, useRef } from 'react';
 
 import { useAppSelector } from './useRedux';
 import { selectActiveShift, type Shift } from '../store/slices/shiftsSlice';
-import { notificationService } from '../services/notificationService';
+import notificationService from '../services/notificationService';
 import {
   notificationWebSocket,
   type CapacityEventMessage,
