@@ -67,6 +67,19 @@ def record_attendance(
     if hours is not None:
         shift.actual_hours_worked = hours
         update_fields.append('actual_hours_worked')
+
+    # Keep `status` in step with the attendance values being written. Shift.save's
+    # in-memory status mutation (scheduled→active→in_progress→pending_approval)
+    # is otherwise dropped here because we pass update_fields, which restricts
+    # the columns Django persists. Without this, mobile dashboards keep showing
+    # "Start check-in" after an admin records the check-in.
+    if check_out is not None and shift.status in ('in_progress', 'active', 'scheduled'):
+        shift.status = 'pending_approval'
+        update_fields.append('status')
+    elif check_in is not None and shift.status in ('scheduled', 'active', 'open'):
+        shift.status = 'in_progress'
+        update_fields.append('status')
+
     if update_fields:
         # Shift.save() may rewrite actual_hours_worked (it derives the value
         # from check-in/out minus break_duration). The override mutates the

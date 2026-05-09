@@ -60,8 +60,13 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 # No company membership - return only user's own shifts as fallback
                 return Shift.objects.filter(staff_user=self.request.user).order_by('-start_time')
         else:
-            # Regular staff can only see their own shifts
-            return Shift.objects.filter(staff_user=self.request.user).order_by('-start_time')
+            # Regular staff can only see their own published shifts. Drafts
+            # (is_published=False) belong to the manager's scheduling workflow
+            # and must stay invisible until "Publish week" is clicked.
+            return Shift.objects.filter(
+                staff_user=self.request.user,
+                is_published=True,
+            ).order_by('-start_time')
 
     def get_serializer_class(self):
         # Use the camelCase serializer for the frontend
@@ -140,7 +145,9 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
-        shifts = self.queryset.filter(staff_user=request.user)
+        # Route through get_queryset() so role-based filters apply (notably:
+        # staff never see unpublished/draft shifts).
+        shifts = self.get_queryset().filter(staff_user=request.user)
 
         # Apply any additional filters from the filter backend
         shifts = self.filter_queryset(shifts)

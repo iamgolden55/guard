@@ -998,3 +998,95 @@ def audit_invoice_status_change(sender, instance, **kwargs):
         pass
     except Exception as e:
         logger.warning(f"Failed to create audit log for invoice status change: {e}")
+
+
+_STATUS_TRANSITION_TITLES = {
+    'in_progress': ('Shift checked in', 'Your shift at {venue} has started.'),
+    'completed':   ('Shift checked out', 'Your shift at {venue} has been checked out.'),
+    'approved':    ('Shift approved', 'Your shift at {venue} has been approved.'),
+    'rejected':    ('Shift needs review', 'Your shift at {venue} was rejected — please review with your manager.'),
+    'cancelled':   ('Shift cancelled', 'Your shift at {venue} has been cancelled.'),
+    'no_show':     ('Shift marked no-show', 'Your shift at {venue} was marked as no-show.'),
+}
+
+
+@receiver(post_save, sender=Shift)
+def notify_shift_status_change(sender, instance, created, **kwargs):
+    """
+    Emit a `shift_updated` Notification whenever a shift's status transitions.
+
+    Manager-driven actions (manual_checkin, record_attendance, approve, etc.)
+    update the Shift but historically didn't fan-out any notification, so the
+    mobile dashboard had no way to know it should refetch. This signal fills
+    that gap. It piggybacks on the existing post_save WS broadcast on
+    Notification, so the mobile useShiftRealtimeRefresh hook picks it up.
+    """
+    if created:
+        return  # creation handled by notify_shift_assignment
+
+    previous_status = getattr(instance, '_previous_status', None)
+    current_status = instance.status
+    if not previous_status or previous_status == current_status:
+        return
+
+    transition = _STATUS_TRANSITION_TITLES.get(current_status)
+    if not transition:
+        return  # only notify for transitions we have a message for
+
+    target_user = instance.staff_user
+    if not target_user:
+        return
+
+    title, message_template = transition
+    venue_name = instance.venue.name if instance.venue else 'your venue'
+    company = instance.venue.company if instance.venue else None
+
+    try:
+        Notification.send(
+            user=target_user,
+            title=title,
+            message=message_template.format(venue=venue_name),
+            notification_type='shift_updated',
+            related_type='shift',
+            related_id=str(instance.id),
+            action_url=f'/shifts/{instance.id}',
+            company=company,
+        )
+    except Exception as e:
+        logger.warning(f"Could not create shift status-change notification: {e}")
+
+
+@receiver(post_save, sender=Notification)
+def broadcast_notification_over_ws(sender, instance, created, **kwargs):
+    """
+    Push freshly-created Notification rows to the user's NotificationConsumer
+    group so the mobile/web app can react in real-time (e.g. dashboard
+    auto-refresh on shift_assigned). Push is in addition to Expo/FCM — the
+    WebSocket carries the full structured payload that mobile filters on.
+    """
+    if not created:
+        return
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        async_to_sync(channel_layer.group_send)(
+            f'notifications_user_{instance.user_id}',
+            {
+                'type': 'notification',
+                'notification_id': str(instance.id),
+                'notification_type': instance.notification_type,
+                'priority': instance.priority,
+                'title': instance.title,
+                'message': instance.message,
+                'related_type': instance.related_type,
+                'related_id': instance.related_id,
+                'action_url': instance.action_url,
+                'timestamp': instance.created_at.isoformat() if instance.created_at else timezone.now().isoformat(),
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Failed to broadcast notification over WS: {e}")

@@ -429,14 +429,26 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
     # Channel layer message handlers
     async def notification(self, event):
-        """Handle general notification."""
+        """Handle general notification.
+
+        Forwards structured fields (notification_type, related_type, related_id,
+        action_url, priority, notification_id) so clients can filter — the
+        mobile dashboard relies on related_type='shift' + notification_type
+        in {'shift_assigned', ...} to trigger a refetch.
+        """
         await self.send(text_data=json.dumps({
             'type': 'notification',
+            'notification_id': event.get('notification_id'),
+            'notification_type': event.get('notification_type'),
+            'priority': event.get('priority'),
             'title': event.get('title', ''),
             'message': event.get('message', ''),
+            'related_type': event.get('related_type', ''),
+            'related_id': event.get('related_id', ''),
+            'action_url': event.get('action_url', ''),
             'level': event.get('level', 'info'),
             'category': event.get('category', 'general'),
-            'timestamp': event.get('timestamp', timezone.now().isoformat())
+            'timestamp': event.get('timestamp', timezone.now().isoformat()),
         }))
 
     async def system_alert(self, event):
