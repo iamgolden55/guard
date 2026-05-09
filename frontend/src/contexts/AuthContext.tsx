@@ -245,6 +245,18 @@ function AuthProvider({ children }: { children: ReactNode }) {
       return true;
     } catch (error) {
       console.error('Proactive token refresh failed:', error);
+      // Don't silently fail - if proactive refresh fails, logout the user
+      // to prevent them from getting logged out unexpectedly later
+      console.warn('Session refresh failed. User will be logged out.');
+      setAuthState(prev => ({
+        ...prev,
+        isAuthenticated: false,
+        user: null,
+        error: 'Your session expired. Please log in again.'
+      }));
+      localStorage.removeItem('user');
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
       return false;
     }
   }, []);
@@ -260,8 +272,11 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
     if (authState.isAuthenticated) {
       const TWENTY_FIVE_MINUTES = 25 * 60 * 1000;
-      refreshTimerRef.current = setInterval(() => {
-        refreshUserToken();
+      refreshTimerRef.current = setInterval(async () => {
+        const success = await refreshUserToken();
+        if (!success) {
+          console.error('Proactive token refresh failed - user logged out');
+        }
       }, TWENTY_FIVE_MINUTES);
     }
 
