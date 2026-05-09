@@ -1,26 +1,12 @@
-FROM node:20-slim AS build
-
-WORKDIR /app
-
-# Copy package files and install dependencies
-COPY frontend/package.json frontend/package-lock.json* ./
-
-RUN npm ci
-
-# Copy source code
-COPY frontend/ .
-
-RUN npm run build
-
-# Production stage - serve with lightweight static server
 FROM node:20-slim
 
 WORKDIR /app
 
-RUN npm install -g serve
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
 
-COPY --from=build /app/dist ./dist
+# Source files (src/, public/, configs, .env) are bind-mounted from
+# docker-compose.yml so changes hot-reload without rebuilding the image.
 
 EXPOSE 3000
-
-CMD ["serve", "-s", "dist", "-l", "3000"]
+CMD ["npm", "run", "dev"]
