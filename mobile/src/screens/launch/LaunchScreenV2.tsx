@@ -21,14 +21,20 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SvgXml } from 'react-native-svg';
 import {
   redesignColors,
   redesignFonts,
   redesignShadows,
   redesignText,
 } from '../../theme/redesign';
+import {
+  logoMarkSvgOnDark,
+  logoMarkAspectRatio,
+} from '../../assets/logos/logoMain';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const MARK_SIZE = 124;
 
 interface Props {
   onFinish?: () => void;
@@ -54,10 +60,9 @@ export const LaunchScreenV2: React.FC<Props> = ({
   // Thin horizon line
   const lineOpacity = useRef(new Animated.Value(0)).current;
 
-  // Wordmark ("Mead" / "Security") — fade-up + slide-up
+  // Logo — fade in + slide-up
   const wordmarkY = useRef(new Animated.Value(30)).current;
   const wordmark1Opacity = useRef(new Animated.Value(0)).current;
-  const wordmark2Opacity = useRef(new Animated.Value(0)).current;
 
   // Tagline — spread letters + fade in
   const taglineOpacity = useRef(new Animated.Value(0)).current;
@@ -130,7 +135,7 @@ export const LaunchScreenV2: React.FC<Props> = ({
           useNativeDriver: true,
         }),
       ]),
-      // wordmark rises + draws in
+      // logo rises + fades in
       Animated.sequence([
         Animated.delay(800),
         Animated.parallel([
@@ -140,18 +145,11 @@ export const LaunchScreenV2: React.FC<Props> = ({
             easing: Easing.bezier(0.16, 1, 0.3, 1),
             useNativeDriver: true,
           }),
-          Animated.sequence([
-            Animated.timing(wordmark1Opacity, {
-              toValue: 1,
-              duration: 700,
-              useNativeDriver: true,
-            }),
-            Animated.timing(wordmark2Opacity, {
-              toValue: 0.55,
-              duration: 700,
-              useNativeDriver: true,
-            }),
-          ]),
+          Animated.timing(wordmark1Opacity, {
+            toValue: 1,
+            duration: 1100,
+            useNativeDriver: true,
+          }),
         ]),
       ]),
       // tagline fades after wordmark
@@ -221,7 +219,6 @@ export const LaunchScreenV2: React.FC<Props> = ({
     lineOpacity,
     wordmarkY,
     wordmark1Opacity,
-    wordmark2Opacity,
     taglineOpacity,
     footerOpacity,
     ctaOpacity,
@@ -311,32 +308,25 @@ export const LaunchScreenV2: React.FC<Props> = ({
         />
       </Animated.View>
 
-      {/* Wordmark */}
+      {/* Brand lockup — mark + wordmark, sitting in the dark zone */}
       <Animated.View
         style={[
-          styles.wordmarkWrap,
-          { transform: [{ translateY: wordmarkY }] },
+          styles.logoWrap,
+          {
+            opacity: wordmark1Opacity,
+            transform: [{ translateY: wordmarkY }],
+          },
         ]}
       >
-        <Animated.Text
-          style={[styles.wordmark, { opacity: wordmark1Opacity }]}
-        >
-          Mead
-        </Animated.Text>
-        <Animated.Text
-          style={[styles.wordmark, { opacity: wordmark2Opacity }]}
-        >
-          Security
-        </Animated.Text>
+        <SvgXml
+          xml={logoMarkSvgOnDark}
+          width={MARK_SIZE}
+          height={MARK_SIZE / logoMarkAspectRatio}
+        />
+        <Text style={styles.wordmark} allowFontScaling={false}>
+          MEAD  SECURITY
+        </Text>
       </Animated.View>
-
-      {/* Tagline */}
-      <Animated.Text
-        style={[styles.tagline, { opacity: taglineOpacity }]}
-        allowFontScaling={false}
-      >
-        SECURE · PRESENT · PAID
-      </Animated.Text>
 
       {/* CTA — user taps to continue */}
       {!hideCta && (
@@ -408,20 +398,20 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 1,
   },
-  wordmarkWrap: {
+  logoWrap: {
     position: 'absolute',
-    top: '40%',
+    top: '12%',
     left: 0,
     right: 0,
     alignItems: 'center',
   },
   wordmark: {
+    marginTop: 22,
     fontFamily: redesignFonts.sans,
-    fontWeight: '300',
-    fontSize: 56,
+    fontWeight: '400',
+    fontSize: 16,
+    letterSpacing: 5.5,
     color: redesignColors.text.primary,
-    letterSpacing: -2.2,
-    lineHeight: 58,
   },
   tagline: {
     position: 'absolute',
