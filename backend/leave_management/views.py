@@ -47,6 +47,80 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def _notify_leave_decision(leave_request, *, decision, manager, notes):
+    """Email + in-app Notification for an approve/reject decision.
+
+    The Notification post_save signal also broadcasts on the WebSocket so the
+    mobile dashboard refreshes. Failures here are swallowed — the decision has
+    already been recorded; notification delivery is best-effort.
+    """
+    staff_user = leave_request.staff_user
+    if not staff_user:
+        return
+
+    leave_type = getattr(leave_request, 'leave_type', None)
+    leave_type_name = leave_type.name if leave_type else 'Leave'
+    start_date_str = leave_request.start_date.strftime('%a, %d %b %Y') if leave_request.start_date else ''
+    end_date_str = leave_request.end_date.strftime('%a, %d %b %Y') if leave_request.end_date else ''
+    approver_name = (manager.get_full_name() or manager.username) if manager else 'Your manager'
+    approved_at_str = leave_request.approved_at.strftime('%d %b %Y, %H:%M') if leave_request.approved_at else ''
+
+    # Email
+    try:
+        from api.services import email_notification_service
+        is_approved = decision == 'approved'
+        email_notification_service.send_email(
+            user_id=staff_user.id,
+            subject=(
+                f"Leave approved: {leave_type_name} ({start_date_str})"
+                if is_approved
+                else f"Leave update: {leave_type_name} ({start_date_str})"
+            ),
+            template_name='leave_approved' if is_approved else 'leave_rejected',
+            context={
+                'leave_type_name': leave_type_name,
+                'start_date': start_date_str,
+                'end_date': end_date_str,
+                'days_requested': str(leave_request.days_requested),
+                'manager_notes': notes or '',
+                'approver_name': approver_name,
+                'approved_at': approved_at_str,
+            },
+            notification_type='leave_approved' if is_approved else 'leave_rejected',
+        )
+    except Exception as e:
+        logger.warning(f"Failed to send leave decision email: {e}")
+
+    # In-app Notification (also fans out over WebSocket via signal)
+    try:
+        from api.models import Notification
+        if decision == 'approved':
+            title = 'Leave approved'
+            message = (
+                f"Your {leave_type_name} request for {start_date_str} – {end_date_str} has been approved."
+            )
+            notification_type = 'leave_approved'
+        else:
+            title = 'Leave not approved'
+            message = (
+                f"Your {leave_type_name} request for {start_date_str} – {end_date_str} was not approved."
+                + (f" Reason: {notes}" if notes else '')
+            )
+            notification_type = 'leave_rejected'
+
+        Notification.send(
+            user=staff_user,
+            title=title,
+            message=message,
+            notification_type=notification_type,
+            related_type='leave_request',
+            related_id=str(leave_request.id),
+            action_url=f'/leave/requests/{leave_request.id}',
+        )
+    except Exception as e:
+        logger.warning(f"Failed to create leave decision notification: {e}")
+
+
 class LeaveTypeViewSet(ReadOnlyForStaffMixin, viewsets.ModelViewSet):
     """
     ViewSet for managing leave types
@@ -767,26 +841,30 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                     }
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check leave balance
+        # Check leave balance — only when an entitlement record exists for this
+        # type. Unpaid / discretionary leave types don't always have an
+        # entitlement (no balance bucket to deduct from), and the mobile UI
+        # already lets the user "Submit anyway" when balance is exhausted, so
+        # neither case should be a hard 400 here. The manager decides on review.
+        current_year = timezone.now().year
         try:
-            current_year = timezone.now().year
             entitlement = LeaveEntitlement.objects.get(
                 user=request.user,
                 policy__leave_type_id=leave_type_id,
-                year=current_year
+                year=current_year,
             )
-
-            if not entitlement.can_take_leave(serializer.validated_data['days_requested']):
-                return Response({
-                    'error': 'Insufficient leave balance',
-                    'current_balance': entitlement.current_balance,
-                    'requested': serializer.validated_data['days_requested']
-                }, status=status.HTTP_400_BAD_REQUEST)
-
         except LeaveEntitlement.DoesNotExist:
-            return Response({
-                'error': 'No leave entitlement found for this leave type'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            entitlement = None
+
+        if entitlement is not None and not entitlement.can_take_leave(
+            serializer.validated_data['days_requested']
+        ):
+            logger.info(
+                "Leave request submitted with insufficient balance: "
+                f"user={request.user.id} leave_type={leave_type_id} "
+                f"requested={serializer.validated_data['days_requested']} "
+                f"balance={entitlement.current_balance} — manager will decide."
+            )
 
         # Create the request
         self.perform_create(serializer)
@@ -849,6 +927,8 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         # Approve the request — model method handles LeaveBalance + LeaveEntitlement updates
         leave_request.approve(request.user, notes)
 
+        _notify_leave_decision(leave_request, decision='approved', manager=request.user, notes=notes)
+
         return Response({
             'message': 'Leave request approved successfully',
             'leave_request': self.get_serializer(leave_request).data
@@ -872,6 +952,8 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
 
         # Reject the request — model method handles LeaveBalance pending reversal
         leave_request.reject(request.user, notes)
+
+        _notify_leave_decision(leave_request, decision='rejected', manager=request.user, notes=notes)
 
         return Response({
             'message': 'Leave request rejected',

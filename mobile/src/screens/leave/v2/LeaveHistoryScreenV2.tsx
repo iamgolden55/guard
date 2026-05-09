@@ -387,7 +387,7 @@ const RequestCard: React.FC<{
   onCancel: () => void;
 }> = ({ request, cancelling, onPress, onCancel }) => {
   const theme = useRedesignTheme();
-  const typeColor = request.leave_type.color_code || theme.colors.accent;
+  const typeColor = request.leave_type?.color_code || theme.colors.accent;
   const statusColor = STATUS_COLORS[request.status] || theme.colors.text.secondary;
   const isPending = request.status === 'PENDING';
 
@@ -438,7 +438,7 @@ const RequestCard: React.FC<{
               letterSpacing: -0.2,
             }}
           >
-            {request.leave_type.name}
+            {request.leave_type?.name ?? 'Leave'}
           </Text>
           <Text
             allowFontScaling={false}

@@ -144,10 +144,11 @@ export const LeaveRequestScreenV2: React.FC = () => {
         leave_type_id: selectedLeaveTypeId!,
         start_date: leaveService.formatDateForAPI(startDate),
         end_date: leaveService.formatDateForAPI(endDate),
+        days_requested: workingDays,
         reason: reason.trim(),
       }),
     );
-  }, [dispatch, selectedLeaveTypeId, startDate, endDate, reason]);
+  }, [dispatch, selectedLeaveTypeId, startDate, endDate, workingDays, reason]);
 
   const handleSubmit = async () => {
     if (!selectedLeaveTypeId) {

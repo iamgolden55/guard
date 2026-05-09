@@ -140,6 +140,7 @@ export const LeaveRequestScreen: React.FC = () => {
         leave_type_id: selectedLeaveTypeId!,
         start_date: leaveService.formatDateForAPI(startDate),
         end_date: leaveService.formatDateForAPI(endDate),
+        days_requested: workingDays,
         reason: reason.trim(),
       })
     );
