@@ -23,6 +23,7 @@ import ApplyPage from "./features/recruitment/ApplyPage";
 import SchedulingPage from "./features/scheduling/SchedulingPage";
 import StaffPage from "./features/staff/StaffPage";
 import VenuesPage from "./features/venues/VenuesPage";
+import CapacityLogbookPage from "./features/capacity-logs/CapacityLogbookPage";
 import ThemeSmokePage from "./features/dev/ThemeSmokePage";
 import { Card, SectionHeader, textStyles } from "./design-system";
 
@@ -94,6 +95,7 @@ export default function Router() {
           <Route path="/leave" element={<LeaveManagementPage />} />
           <Route path="/recruitment" element={<RecruitmentPage />} />
           <Route path="/venues" element={<VenuesPage />} />
+          <Route path="/capacity-logs" element={<CapacityLogbookPage />} />
         </Route>
       </Route>
 

@@ -466,6 +466,9 @@ class CapacityCheckSlotMissSerializer(serializers.ModelSerializer):
 
 class CapacityLogbookSignoffSerializer(serializers.ModelSerializer):
     closed_by_staff_details = serializers.SerializerMethodField()
+    venue_name = serializers.CharField(source='venue.name', read_only=True)
+    venue_capacity = serializers.IntegerField(source='venue.capacity', read_only=True)
+    is_override = serializers.SerializerMethodField()
 
     class Meta:
         model = CapacityLogbookSignoff
@@ -483,6 +486,9 @@ class CapacityLogbookSignoffSerializer(serializers.ModelSerializer):
                 'last_name': obj.closed_by_staff.last_name,
             }
         return None
+
+    def get_is_override(self, obj):
+        return bool(obj.override_reason) and not obj.signature
 
     def validate(self, attrs):
         attrs = super().validate(attrs)

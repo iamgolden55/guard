@@ -2285,6 +2285,19 @@ class CapacityLogbookSignoffViewSet(viewsets.ModelViewSet):
         shift_group = self.request.query_params.get('shift_group')
         if shift_group:
             qs = qs.filter(shift_group=shift_group)
+        venue_id = self.request.query_params.get('venue')
+        if venue_id:
+            qs = qs.filter(venue_id=venue_id)
+        # Filter by signoff date (UTC). created_at on the signoff is the most
+        # reliable shift-end anchor since it's the moment the venue admin
+        # signed off — matches what the admin will be filtering by ("show me
+        # logbooks closed last week").
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
         return qs.order_by('-created_at')
 
     def perform_create(self, serializer):
@@ -2323,6 +2336,128 @@ class CapacityLogbookSignoffViewSet(viewsets.ModelViewSet):
             )
         except Exception as e:
             logger.warning(f"Failed to broadcast logbook_signed event: {e}")
+
+    @action(detail=False, methods=['get'], url_path='timeline')
+    def timeline(self, request):
+        """
+        Bundled timeline view for a shift_group: signoff (if any) + all
+        capacity checks + all missed slots, scoped to the requester's
+        company. Lets the admin drawer fetch everything in one round-trip
+        instead of three.
+        """
+        shift_group = request.query_params.get('shift_group')
+        if not shift_group:
+            return Response(
+                {'detail': 'shift_group query param is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        company = _resolve_request_company(request)
+        signoff = self.get_queryset().filter(shift_group=shift_group).first()
+
+        check_qs = CapacityCheck.objects.filter(shift_group=shift_group).select_related('performed_by')
+        miss_qs = CapacityCheckSlotMiss.objects.filter(shift_group=shift_group).select_related('venue', 'acknowledged_by')
+        if company:
+            check_qs = check_qs.filter(shift__venue__company=company)
+            miss_qs = miss_qs.filter(venue__company=company)
+
+        return Response({
+            'shift_group': shift_group,
+            'signoff': CapacityLogbookSignoffSerializer(signoff).data if signoff else None,
+            'checks': CapacityCheckSerializer(check_qs.order_by('timestamp'), many=True).data,
+            'misses': CapacityCheckSlotMissSerializer(miss_qs.order_by('expected_at'), many=True).data,
+        })
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        """Render the audit-ready PDF for a closed logbook."""
+        from django.http import FileResponse
+        from .utils.capacity_logbook_pdf import generate_capacity_logbook_pdf
+
+        signoff = self.get_object()
+        checks = list(
+            CapacityCheck.objects.filter(shift_group=signoff.shift_group)
+            .select_related('performed_by')
+            .order_by('timestamp')
+        )
+        misses = list(
+            CapacityCheckSlotMiss.objects.filter(shift_group=signoff.shift_group)
+            .select_related('acknowledged_by')
+            .order_by('expected_at')
+        )
+
+        try:
+            buf = generate_capacity_logbook_pdf(
+                signoff=signoff, checks=checks, misses=misses,
+            )
+        except Exception as e:
+            logger.error(f"Failed to render capacity logbook PDF for {signoff.shift_group}: {e}")
+            return Response(
+                {'detail': 'Failed to generate PDF.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # File name includes venue + date for friendly download UX.
+        date_part = (
+            checks[0].timestamp.strftime('%Y-%m-%d') if checks
+            else signoff.created_at.strftime('%Y-%m-%d')
+        )
+        venue_slug = ''.join(
+            c if c.isalnum() else '-'
+            for c in (signoff.venue.name or 'venue').lower()
+        ).strip('-') or 'venue'
+        filename = f"capacity-logbook-{venue_slug}-{date_part}.pdf"
+
+        return FileResponse(buf, content_type='application/pdf', filename=filename)
+
+    @action(detail=False, methods=['get'], url_path='export-csv')
+    def export_csv(self, request):
+        """
+        Bulk CSV export of logbook signoffs, scoped to the requester's
+        company. Honours the same filters as the list endpoint
+        (?venue=&date_from=&date_to=) so the admin can hit Download with
+        the same filters they're viewing.
+        """
+        import csv
+        from django.http import StreamingHttpResponse
+
+        qs = self.get_queryset()
+
+        class _EchoBuffer:
+            """csv.writer writes here; we yield each row to stream."""
+            def write(self, value):
+                return value
+
+        writer = csv.writer(_EchoBuffer())
+        header = [
+            'shift_group', 'venue', 'date', 'total_checks', 'total_missed',
+            'closed_by_name', 'closed_by_role', 'signed_at', 'override_reason',
+            'submitted_by_staff_id', 'created_at',
+        ]
+
+        def _rows():
+            yield writer.writerow(header)
+            for s in qs.iterator():
+                yield writer.writerow([
+                    s.shift_group,
+                    s.venue.name if s.venue_id else '',
+                    s.created_at.date().isoformat() if s.created_at else '',
+                    s.total_checks,
+                    s.total_missed,
+                    s.closed_by_name,
+                    s.closed_by_role,
+                    s.signed_at.isoformat() if s.signed_at else '',
+                    s.override_reason,
+                    s.closed_by_staff_id or '',
+                    s.created_at.isoformat() if s.created_at else '',
+                ])
+
+        response = StreamingHttpResponse(_rows(), content_type='text/csv')
+        today = timezone.now().date().isoformat()
+        response['Content-Disposition'] = (
+            f'attachment; filename="capacity-logbooks-{today}.csv"'
+        )
+        return response
 
 
 class ToiletCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):

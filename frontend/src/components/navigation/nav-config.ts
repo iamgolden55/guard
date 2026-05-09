@@ -70,6 +70,12 @@ export const NAV: NavGroup[] = [
         icon: "alert",
         path: "/incidents",
       },
+      {
+        id: "capacity-logs",
+        label: "Capacity logs",
+        icon: "history",
+        path: "/capacity-logs",
+      },
     ],
   },
   {
