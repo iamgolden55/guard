@@ -33,6 +33,8 @@ import { Invoice } from '../../types/invoice';
 import { useAppSelector } from '../../hooks/useRedux';
 import { selectAccessToken } from '../../store/slices/authSlice';
 import { downloadAndShareAuthenticated } from '../../utils/document';
+import { useInvoicePaidCelebration } from '../../hooks/useInvoicePaidCelebration';
+import { Confetti } from '../../components/celebration/Confetti';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -118,6 +120,15 @@ export const EarningsScreen: React.FC = () => {
     fetchStats();
     fetchInvoices(1);
   }, [fetchStats, fetchInvoices]);
+
+  // Refetch + celebrate when an invoice is marked paid in real time.
+  const [showConfetti, setShowConfetti] = useState(false);
+  const handleInvoicePaidEvent = useCallback(() => {
+    fetchStats(filterStartDate || undefined, filterEndDate || undefined);
+    fetchInvoices(1, filterStartDate, filterEndDate, true);
+    setShowConfetti(true);
+  }, [fetchStats, fetchInvoices, filterStartDate, filterEndDate]);
+  useInvoicePaidCelebration(handleInvoicePaidEvent);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -358,6 +369,7 @@ export const EarningsScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background.primary }]}>
+      <Confetti visible={showConfetti} onComplete={() => setShowConfetti(false)} />
       {/* Close Button */}
       <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.closeButton, { backgroundColor: isDark ? themeColors.background.tertiary : '#dededeff' }]}>
         <Ionicons name="close" size={28} color={themeColors.text.primary} />

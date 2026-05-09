@@ -6698,6 +6698,7 @@ class Notification(models.Model):
         ('compliance_alert', 'Compliance Alert'),
         ('sia_expiry', 'SIA License Expiry'),
         ('invoice_ready', 'Invoice Ready'),
+        ('invoice_paid', 'Invoice Paid'),
         ('general', 'General'),
     ]
     PRIORITY_CHOICES = [

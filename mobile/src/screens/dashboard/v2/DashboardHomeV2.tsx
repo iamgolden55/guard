@@ -46,6 +46,8 @@ import { shiftChecksService } from '../../../services/shiftChecksService';
 import { ERROR_MESSAGES } from '../../../utils/constants';
 import { useRedesignTheme } from '../../../theme/redesign';
 import { useShiftRealtimeRefresh } from '../../../hooks/useShiftRealtimeRefresh';
+import { useInvoicePaidCelebration } from '../../../hooks/useInvoicePaidCelebration';
+import { Confetti } from '../../../components/celebration/Confetti';
 import {
   Eyebrow,
   GlassCard,
@@ -143,6 +145,7 @@ export const DashboardHomeV2: React.FC = () => {
     toiletChecks: any[];
   } | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   // Live timer ticks once per minute while on-shift
@@ -187,6 +190,11 @@ export const DashboardHomeV2: React.FC = () => {
   );
 
   useShiftRealtimeRefresh(refreshShifts);
+
+  const handleInvoicePaid = useCallback(() => {
+    setShowConfetti(true);
+  }, []);
+  useInvoicePaidCelebration(handleInvoicePaid);
 
   useFocusEffect(
     useCallback(() => {
@@ -344,6 +352,8 @@ export const DashboardHomeV2: React.FC = () => {
       <View pointerEvents="none" style={[styles.ambient, { top: -120, right: -120 }]}>
         <AmbientGlow size={420} intensity={0.32} />
       </View>
+
+      <Confetti visible={showConfetti} onComplete={() => setShowConfetti(false)} />
 
       <ScrollView
         style={styles.scroll}

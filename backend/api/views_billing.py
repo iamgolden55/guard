@@ -5,6 +5,7 @@ endpoint at /api/v1/billing/invoices/ that merges staff Invoice and ClientInvoic
 into a unified InvoiceRecord shape. Mutations are out of scope for this iteration
 EXCEPT statement create/send and Xero export-stub (which records intent only).
 """
+import logging
 from decimal import Decimal
 from itertools import chain
 
@@ -69,6 +70,115 @@ def _current_company(request):
         )
         return membership.company if membership else None
     return None
+
+
+logger = logging.getLogger(__name__)
+
+
+def _notify_invoice_paid(invoice, *, marked_by):
+    """Email + in-app Notification when an admin marks an invoice paid.
+
+    The Notification post_save signal broadcasts the row over WebSocket, so
+    the mobile dashboard fires confetti the moment this lands. Reuses the
+    existing branded `invoice_notification` template (handles paid + pending
+    via its `status` block). Failures are swallowed — payment state has
+    already been recorded.
+    """
+    staff_user = getattr(invoice, 'staff_user', None)
+    if not staff_user:
+        return
+
+    # Resolve company: prefer payroll_run.company, fall back to staff_user's
+    # primary active membership.
+    company = None
+    pr = getattr(invoice, 'payroll_run', None)
+    if pr is not None:
+        company = getattr(pr, 'company', None)
+    if company is None:
+        m = staff_user.company_memberships.filter(
+            is_active=True, company__is_active=True
+        ).select_related('company').first()
+        company = m.company if m else None
+
+    invoice_number = getattr(invoice, 'invoice_number', '') or str(invoice.pk)
+    total_amount = f"{float(invoice.total_amount or 0):,.2f}"
+    total_hours = f"{float(getattr(invoice, 'total_hours', 0) or 0):.2f}"
+    pay_date_label = invoice.paid_date.strftime('%a %d %b') if invoice.paid_date else ''
+    # period_label — match the existing template's "w/c 20 Apr 2026" voice
+    period_label = ''
+    if invoice.start_date:
+        period_label = f"w/c {invoice.start_date.strftime('%d %b %Y')}"
+
+    # Build line items for the table. Match the field names the template
+    # iterates over: line.label / line.hours / line.rate / line.amount.
+    lines = []
+    try:
+        for item in invoice.items.all().select_related('venue'):
+            label = (item.venue.name if item.venue else '') or item.description or 'Shift'
+            if item.item_type == 'overtime_1':
+                label = f"{label} (OT)"
+            elif item.item_type == 'overtime_2':
+                label = f"{label} (OT2)"
+            hours = item.hours_worked if item.hours_worked is not None else item.days
+            lines.append({
+                'label': label,
+                'hours': f"{float(hours or 0):.2f}",
+                'rate': f"{float(item.rate or 0):.2f}",
+                'amount': f"{float(item.amount or 0):.2f}",
+            })
+    except Exception as e:
+        logger.warning(f"Failed to assemble invoice line items for {invoice.pk}: {e}")
+
+    # Bank last4 (best effort, optional in the template)
+    bank_last4 = ''
+    profile = getattr(staff_user, 'profile', None)
+    if profile is not None:
+        acct = getattr(profile, 'bank_account_number', '') or ''
+        if acct:
+            bank_last4 = acct[-4:]
+
+    # Email — reuse the branded `invoice_notification` template (paid variant).
+    try:
+        from .services import email_notification_service
+        email_notification_service.send_email(
+            user_id=staff_user.id,
+            subject=f"Payment received: £{total_amount}",
+            template_name='invoice_notification',
+            context={
+                'invoice_number': invoice_number,
+                'period_label': period_label,
+                'total_amount': total_amount,
+                'total_hours': total_hours,
+                'pay_date': pay_date_label,
+                'status': 'paid',
+                'lines': lines,
+                'bank_last4': bank_last4,
+            },
+            notification_type='invoice_paid',
+        )
+    except Exception as e:
+        logger.warning(f"Failed to send invoice_paid email: {e}")
+
+    # In-app Notification (post_save signal broadcasts on the WS group)
+    try:
+        from .models import Notification
+        Notification.send(
+            user=staff_user,
+            title='Payment received',
+            message=(
+                f"You've been paid £{total_amount}"
+                + (f" for {period_label}" if period_label else '')
+                + '.'
+            ),
+            notification_type='invoice_paid',
+            priority='high',
+            related_type='invoice',
+            related_id=str(invoice.pk),
+            action_url=f'/invoices/{invoice.pk}',
+            company=company,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to create invoice_paid notification: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +336,8 @@ class BillingInvoiceFacadeViewSet(viewsets.ViewSet):
         else:
             instance.paid_date = paid_date
         instance.save(update_fields=['status', 'paid_date', 'updated_at'])
+        if kind == 'staff':
+            _notify_invoice_paid(instance, marked_by=request.user)
         AuditLog.objects.create(
             user=request.user,
             action='invoice_paid',
@@ -1114,6 +1226,7 @@ class PayrollRunViewSet(viewsets.ViewSet):
         invoice.status = 'paid'
         invoice.paid_date = timezone.localdate()
         invoice.save(update_fields=['status', 'paid_date', 'updated_at'])
+        _notify_invoice_paid(invoice, marked_by=request.user)
         AuditLog.objects.create(
             user=request.user,
             action='invoice_paid',
@@ -1235,6 +1348,7 @@ class PayrollRunViewSet(viewsets.ViewSet):
                 invoice.status = 'paid'
                 invoice.paid_date = today
                 invoice.save(update_fields=['status', 'paid_date', 'updated_at'])
+                _notify_invoice_paid(invoice, marked_by=request.user)
                 AuditLog.objects.create(
                     user=request.user,
                     action='invoice_paid',
