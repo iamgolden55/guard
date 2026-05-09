@@ -20,6 +20,7 @@ export type SyncActionType =
   | 'create_incident'
   | 'update_incident'
   | 'create_shift_check'
+  | 'create_logbook_signoff'
   | 'update_shift';
 
 class SyncService {
@@ -220,6 +221,9 @@ class SyncService {
         break;
       case 'create_shift_check':
         await apiService.post(API_ENDPOINTS.SHIFT_CHECKS.CREATE, payload);
+        break;
+      case 'create_logbook_signoff':
+        await apiService.post('/api/v1/capacity-logbooks/', payload);
         break;
       case 'update_shift':
         await apiService.put(API_ENDPOINTS.SHIFTS.DETAIL(payload.id), payload);

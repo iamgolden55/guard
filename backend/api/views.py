@@ -19,7 +19,7 @@ from rest_framework import viewsets, status, serializers, filters
 import django_filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import AuthenticationFailed, ValidationError
+from rest_framework.exceptions import AuthenticationFailed, ValidationError, PermissionDenied
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -37,6 +37,7 @@ from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
     Shift, ShiftTemplate, FireExitCheck, CapacityCheck, ToiletCheck, ShiftExchange, OpenShiftRequest,
+    CapacityCheckSlotMiss, CapacityLogbookSignoff,
     Invoice, InvoiceItem, PayRate, DeputyConfig, DeputyEmployee,
     DeputyTimesheet, SystemSettings, EmploymentType, RecruitmentApplication,
     WorkingHoursRegulation, ComplianceProfile, ComplianceViolation, WorkingHoursMetrics,
@@ -61,6 +62,7 @@ from .serializers import (
     BankDetailsSerializer, SIALicenseSerializer, StaffAvailabilitySerializer,
     VenueSerializer, VenueTermsAcceptanceSerializer, PreferredVenueSerializer,
     FireExitCheckSerializer, CapacityCheckSerializer, ToiletCheckSerializer,
+    CapacityCheckSlotMissSerializer, CapacityLogbookSignoffSerializer,
     ShiftSerializer, ShiftExchangeSerializer, OpenShiftRequestSerializer, InvoiceSerializer, InvoiceItemSerializer,
     PayRateSerializer, DeputyConfigSerializer, DeputyEmployeeSerializer,
     DeputyTimesheetSerializer, ShiftTemplateSerializer, SystemSettingsSerializer,
@@ -2084,13 +2086,36 @@ class ShiftTemplateViewSet(viewsets.ModelViewSet):
 # Register the ShiftTemplateViewSet in urls.py like:
 # router.register('shift-templates', ShiftTemplateViewSet)
 
+def _resolve_request_company(request):
+    """
+    Resolve the active company for a request, with a fallback for paths where
+    the tenant middleware didn't run before authentication (notably DRF tests
+    using force_authenticate, where request.user is populated at the APIView
+    level — after middleware). In production, middleware sets current_company
+    from session auth before the view runs, so this fallback is a no-op.
+    """
+    company = getattr(request, 'current_company', None)
+    if company:
+        return company
+    user = getattr(request, 'user', None)
+    if not user or not getattr(user, 'is_authenticated', False):
+        return None
+    membership = (
+        user.company_memberships.filter(is_active=True, company__is_active=True)
+        .select_related('company')
+        .order_by('-joined_at')
+        .first()
+    )
+    return membership.company if membership else None
+
+
 class CompanyScopedCheckMixin:
     """Mixin to add company scoping to venue check viewsets."""
 
     def _get_company_scoped_queryset(self, base_queryset):
         """Apply company scoping then shift/shift_group filtering."""
         # SECURITY: Scope to company first
-        company = getattr(self.request, 'current_company', None)
+        company = _resolve_request_company(self.request)
         if company:
             base_queryset = base_queryset.filter(shift__venue__company=company)
 
@@ -2129,6 +2154,396 @@ class CapacityCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         return self._get_company_scoped_queryset(CapacityCheck.objects.all())
+
+    def perform_create(self, serializer):
+        from datetime import timedelta
+        from .consumers import broadcast_capacity_event
+        check = serializer.save()
+        shift = check.shift
+        venue = shift.venue if shift else None
+
+        # If at/over capacity, alert managers in the venue's company.
+        if check.is_at_capacity and venue and venue.company:
+            try:
+                managers = User.objects.filter(
+                    company_memberships__company=venue.company,
+                    company_memberships__is_active=True,
+                    role__in=['owner', 'admin', 'manager'],
+                ).distinct()
+                performer_name = (
+                    f"{check.performed_by.first_name} {check.performed_by.last_name}".strip()
+                    if check.performed_by else 'Staff'
+                )
+                title = f"Capacity reached at {venue.name}"
+                message = (
+                    f"{performer_name} logged {check.current_count}/{check.venue_capacity} "
+                    f"at {venue.name}. Action: {check.action_taken or '—'}"
+                )
+                for manager in managers:
+                    Notification.send(
+                        user=manager,
+                        title=title,
+                        message=message,
+                        notification_type='compliance_alert',
+                        priority='high',
+                        related_type='shift',
+                        related_id=str(shift.id),
+                        action_url=f'/shifts/{shift.id}',
+                        company=venue.company,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to notify managers about capacity breach: {e}")
+
+        # Broadcast over WebSocket so teammates' devices reschedule reminders.
+        # check.shift_group is always populated by ShiftCheck.save (real
+        # group for multi-staff, synthesized 'shift_<id>' for single-staff).
+        if check.shift_group:
+            try:
+                interval = venue.capacity_check_interval_minutes if venue else 30
+                logged_at = check.timestamp or timezone.now()
+                next_due_at = logged_at + timedelta(minutes=interval)
+                broadcast_capacity_event(
+                    shift_group=check.shift_group,
+                    event='capacity_logged',
+                    payload={
+                        'shift_id': shift.id,
+                        'venue_id': venue.id if venue else None,
+                        'current_count': check.current_count,
+                        'venue_capacity': check.venue_capacity,
+                        'is_at_capacity': check.is_at_capacity,
+                        'performed_by': {
+                            'id': check.performed_by.id if check.performed_by else None,
+                            'first_name': check.performed_by.first_name if check.performed_by else '',
+                            'last_name': check.performed_by.last_name if check.performed_by else '',
+                        },
+                        'logged_at': logged_at.isoformat(),
+                        'next_due_at': next_due_at.isoformat(),
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"Failed to broadcast capacity_logged event: {e}")
+
+
+class CapacityCheckSlotMissViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
+    """
+    Read + acknowledge missed capacity-check slots. Filtering by shift_group
+    follows the same convention as the other check ViewSets.
+    """
+    permission_classes = [IsAuthenticated]
+    queryset = CapacityCheckSlotMiss.objects.all()
+    serializer_class = CapacityCheckSlotMissSerializer
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']  # no destructive ops
+
+    def get_queryset(self):
+        # Misses are scoped via venue.company (no shift FK on this model).
+        company = _resolve_request_company(self.request)
+        qs = CapacityCheckSlotMiss.objects.all().select_related('venue', 'acknowledged_by')
+        if company:
+            qs = qs.filter(venue__company=company)
+        shift_group = self.request.query_params.get('shift_group')
+        if shift_group:
+            qs = qs.filter(shift_group=shift_group)
+        return qs.order_by('-expected_at')
+
+    @action(detail=True, methods=['post'])
+    def acknowledge(self, request, pk=None):
+        miss = self.get_object()
+        if miss.acknowledged:
+            return Response(
+                {'detail': 'Already acknowledged.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        reason = (request.data.get('acknowledgement_reason') or '').strip()
+        if not reason:
+            return Response(
+                {'acknowledgement_reason': 'A reason is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        miss.acknowledged = True
+        miss.acknowledged_by = request.user
+        miss.acknowledged_at = timezone.now()
+        miss.acknowledgement_reason = reason
+        miss.save(update_fields=['acknowledged', 'acknowledged_by', 'acknowledged_at', 'acknowledgement_reason'])
+        return Response(self.get_serializer(miss).data)
+
+
+class CapacityLogbookSignoffViewSet(viewsets.ModelViewSet):
+    """
+    End-of-shift signoff of the capacity logbook. One row per shift_group.
+    Snapshots total_checks/total_missed at creation time.
+    """
+    permission_classes = [IsAuthenticated]
+    queryset = CapacityLogbookSignoff.objects.all()
+    serializer_class = CapacityLogbookSignoffSerializer
+    http_method_names = ['get', 'post', 'head', 'options']  # signoff is one-shot
+
+    def get_queryset(self):
+        company = _resolve_request_company(self.request)
+        qs = CapacityLogbookSignoff.objects.all().select_related('venue', 'closed_by_staff')
+        if company:
+            qs = qs.filter(venue__company=company)
+        shift_group = self.request.query_params.get('shift_group')
+        if shift_group:
+            qs = qs.filter(shift_group=shift_group)
+        venue_id = self.request.query_params.get('venue')
+        if venue_id:
+            qs = qs.filter(venue_id=venue_id)
+        # Filter by signoff date (UTC). created_at on the signoff is the most
+        # reliable shift-end anchor since it's the moment the venue admin
+        # signed off — matches what the admin will be filtering by ("show me
+        # logbooks closed last week").
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+        return qs.order_by('-created_at')
+
+    def perform_create(self, serializer):
+        from .consumers import broadcast_capacity_event
+        shift_group = serializer.validated_data.get('shift_group')
+
+        # Verify the user is part of this shift_group (staff member of one of its shifts).
+        user = self.request.user
+        is_member = Shift.objects.filter(
+            shift_group=shift_group, staff_user=user
+        ).exists()
+        is_privileged = user.role in ('owner', 'admin', 'manager')
+        if not (is_member or is_privileged):
+            raise PermissionDenied("Only staff assigned to this shift_group can sign off the logbook.")
+
+        # Snapshot totals from current state.
+        total_checks = CapacityCheck.objects.filter(shift_group=shift_group).count()
+        total_missed = CapacityCheckSlotMiss.objects.filter(shift_group=shift_group).count()
+
+        signoff = serializer.save(
+            closed_by_staff=user,
+            total_checks=total_checks,
+            total_missed=total_missed,
+        )
+
+        try:
+            broadcast_capacity_event(
+                shift_group=shift_group,
+                event='logbook_signed',
+                payload={
+                    'venue_id': signoff.venue_id,
+                    'closed_by_name': signoff.closed_by_name,
+                    'override_reason': signoff.override_reason,
+                    'logged_at': (signoff.signed_at or signoff.created_at).isoformat(),
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to broadcast logbook_signed event: {e}")
+
+    @action(detail=False, methods=['get'], url_path='active')
+    def active(self, request):
+        """
+        Live view of in-progress monitored shifts for the requester's company.
+        Each row carries enough state for the admin "Active" tab to render a
+        live status table (last check, next-due-at, miss count) without extra
+        per-row queries.
+        """
+        from datetime import timedelta
+
+        company = _resolve_request_company(request)
+        shifts = (
+            Shift.objects
+            .filter(
+                status__in=('in_progress', 'active'),
+                venue__requires_capacity_monitoring=True,
+            )
+            .select_related('venue', 'staff_user')
+        )
+        if company:
+            shifts = shifts.filter(venue__company=company)
+
+        # Collapse multi-staff groups so we don't return three rows for one
+        # 3-officer shift_group. We pick the earliest-checked-in shift in each
+        # group as the representative — totals are derived from the group.
+        seen_groups = set()
+        results = []
+        now = timezone.now()
+        for shift in shifts.order_by('start_time'):
+            shift_group = shift.shift_group or f'shift_{shift.id}'
+            if shift_group in seen_groups:
+                continue
+            seen_groups.add(shift_group)
+
+            interval = shift.venue.capacity_check_interval_minutes or 30
+
+            last_check = (
+                CapacityCheck.objects
+                .filter(shift_group=shift_group)
+                .select_related('performed_by')
+                .order_by('-timestamp')
+                .first()
+            )
+            total_checks = CapacityCheck.objects.filter(shift_group=shift_group).count()
+            total_missed = CapacityCheckSlotMiss.objects.filter(shift_group=shift_group).count()
+
+            anchor = last_check.timestamp if last_check else (shift.check_in_time or shift.start_time)
+            next_due_at = (anchor + timedelta(minutes=interval)) if anchor else None
+
+            last_check_payload = None
+            if last_check:
+                performer = None
+                if last_check.performed_by:
+                    performer = {
+                        'id': last_check.performed_by.id,
+                        'first_name': last_check.performed_by.first_name,
+                        'last_name': last_check.performed_by.last_name,
+                    }
+                last_check_payload = {
+                    'id': last_check.id,
+                    'current_count': last_check.current_count,
+                    'venue_capacity': last_check.venue_capacity,
+                    'is_at_capacity': last_check.is_at_capacity,
+                    'timestamp': last_check.timestamp.isoformat(),
+                    'performed_by_details': performer,
+                }
+
+            results.append({
+                'shift_group': shift_group,
+                'venue_id': shift.venue_id,
+                'venue_name': shift.venue.name,
+                'venue_capacity': shift.venue.capacity,
+                'interval_minutes': interval,
+                'shift_id': shift.id,
+                'start_time': shift.start_time.isoformat() if shift.start_time else None,
+                'end_time': shift.end_time.isoformat() if shift.end_time else None,
+                'check_in_time': shift.check_in_time.isoformat() if shift.check_in_time else None,
+                'last_check': last_check_payload,
+                'next_due_at': next_due_at.isoformat() if next_due_at else None,
+                'is_overdue': bool(next_due_at and next_due_at < now),
+                'total_checks': total_checks,
+                'total_missed': total_missed,
+            })
+
+        return Response(results)
+
+    @action(detail=False, methods=['get'], url_path='timeline')
+    def timeline(self, request):
+        """
+        Bundled timeline view for a shift_group: signoff (if any) + all
+        capacity checks + all missed slots, scoped to the requester's
+        company. Lets the admin drawer fetch everything in one round-trip
+        instead of three.
+        """
+        shift_group = request.query_params.get('shift_group')
+        if not shift_group:
+            return Response(
+                {'detail': 'shift_group query param is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        company = _resolve_request_company(request)
+        signoff = self.get_queryset().filter(shift_group=shift_group).first()
+
+        check_qs = CapacityCheck.objects.filter(shift_group=shift_group).select_related('performed_by')
+        miss_qs = CapacityCheckSlotMiss.objects.filter(shift_group=shift_group).select_related('venue', 'acknowledged_by')
+        if company:
+            check_qs = check_qs.filter(shift__venue__company=company)
+            miss_qs = miss_qs.filter(venue__company=company)
+
+        return Response({
+            'shift_group': shift_group,
+            'signoff': CapacityLogbookSignoffSerializer(signoff).data if signoff else None,
+            'checks': CapacityCheckSerializer(check_qs.order_by('timestamp'), many=True).data,
+            'misses': CapacityCheckSlotMissSerializer(miss_qs.order_by('expected_at'), many=True).data,
+        })
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        """Render the audit-ready PDF for a closed logbook."""
+        from django.http import FileResponse
+        from .utils.capacity_logbook_pdf import generate_capacity_logbook_pdf
+
+        signoff = self.get_object()
+        checks = list(
+            CapacityCheck.objects.filter(shift_group=signoff.shift_group)
+            .select_related('performed_by')
+            .order_by('timestamp')
+        )
+        misses = list(
+            CapacityCheckSlotMiss.objects.filter(shift_group=signoff.shift_group)
+            .select_related('acknowledged_by')
+            .order_by('expected_at')
+        )
+
+        try:
+            buf = generate_capacity_logbook_pdf(
+                signoff=signoff, checks=checks, misses=misses,
+            )
+        except Exception as e:
+            logger.error(f"Failed to render capacity logbook PDF for {signoff.shift_group}: {e}")
+            return Response(
+                {'detail': 'Failed to generate PDF.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # File name includes venue + date for friendly download UX.
+        date_part = (
+            checks[0].timestamp.strftime('%Y-%m-%d') if checks
+            else signoff.created_at.strftime('%Y-%m-%d')
+        )
+        venue_slug = ''.join(
+            c if c.isalnum() else '-'
+            for c in (signoff.venue.name or 'venue').lower()
+        ).strip('-') or 'venue'
+        filename = f"capacity-logbook-{venue_slug}-{date_part}.pdf"
+
+        return FileResponse(buf, content_type='application/pdf', filename=filename)
+
+    @action(detail=False, methods=['get'], url_path='export-csv')
+    def export_csv(self, request):
+        """
+        Bulk CSV export of logbook signoffs, scoped to the requester's
+        company. Honours the same filters as the list endpoint
+        (?venue=&date_from=&date_to=) so the admin can hit Download with
+        the same filters they're viewing.
+        """
+        import csv
+        from django.http import StreamingHttpResponse
+
+        qs = self.get_queryset()
+
+        class _EchoBuffer:
+            """csv.writer writes here; we yield each row to stream."""
+            def write(self, value):
+                return value
+
+        writer = csv.writer(_EchoBuffer())
+        header = [
+            'shift_group', 'venue', 'date', 'total_checks', 'total_missed',
+            'closed_by_name', 'closed_by_role', 'signed_at', 'override_reason',
+            'submitted_by_staff_id', 'created_at',
+        ]
+
+        def _rows():
+            yield writer.writerow(header)
+            for s in qs.iterator():
+                yield writer.writerow([
+                    s.shift_group,
+                    s.venue.name if s.venue_id else '',
+                    s.created_at.date().isoformat() if s.created_at else '',
+                    s.total_checks,
+                    s.total_missed,
+                    s.closed_by_name,
+                    s.closed_by_role,
+                    s.signed_at.isoformat() if s.signed_at else '',
+                    s.override_reason,
+                    s.closed_by_staff_id or '',
+                    s.created_at.isoformat() if s.created_at else '',
+                ])
+
+        response = StreamingHttpResponse(_rows(), content_type='text/csv')
+        today = timezone.now().date().isoformat()
+        response['Content-Disposition'] = (
+            f'attachment; filename="capacity-logbooks-{today}.csv"'
+        )
+        return response
 
 
 class ToiletCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):

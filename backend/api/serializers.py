@@ -5,6 +5,7 @@ from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
     Shift, FireExitCheck, CapacityCheck, ToiletCheck, TimeAdjustment,
+    CapacityCheckSlotMiss, CapacityLogbookSignoff,
     ShiftExchange, OpenShiftRequest, Invoice, InvoiceItem, PayRate, DeputyConfig,
     DeputyEmployee, DeputyTimesheet, ShiftTemplate, SystemSettings,
     EmploymentType, RecruitmentApplication, EnforcementVisit,
@@ -419,12 +420,92 @@ class CapacityCheckSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Capacity count cannot be negative")
         return value
 
+    def validate(self, attrs):
+        # Require action_taken text whenever the venue is at or over capacity.
+        # The shift links to the venue and supplies the capacity at save-time;
+        # we read venue.capacity directly so this stays consistent even if the
+        # client omits venue_capacity from the payload.
+        attrs = super().validate(attrs)
+        shift = attrs.get('shift') or getattr(self.instance, 'shift', None)
+        if shift is not None:
+            venue_capacity = shift.venue.capacity if shift.venue else attrs.get('venue_capacity')
+            current_count = attrs.get('current_count', getattr(self.instance, 'current_count', None))
+            action_taken = (attrs.get('action_taken') or getattr(self.instance, 'action_taken', '') or '').strip()
+            if current_count is not None and venue_capacity is not None:
+                if current_count >= venue_capacity and not action_taken:
+                    raise serializers.ValidationError({
+                        'action_taken': "action_taken is required when current_count is at or over venue capacity."
+                    })
+        return attrs
+
     def to_representation(self, instance):
         # Include both snake_case and camelCase for compatibility
         representation = super().to_representation(instance)
         representation['count'] = instance.current_count
         representation['comments'] = instance.notes or ''
         return representation
+
+
+class CapacityCheckSlotMissSerializer(serializers.ModelSerializer):
+    acknowledged_by_details = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CapacityCheckSlotMiss
+        fields = '__all__'
+        read_only_fields = ('detected_at', 'acknowledged_by', 'acknowledged_at')
+
+    def get_acknowledged_by_details(self, obj):
+        if obj.acknowledged_by:
+            return {
+                'id': obj.acknowledged_by.id,
+                'first_name': obj.acknowledged_by.first_name,
+                'last_name': obj.acknowledged_by.last_name,
+            }
+        return None
+
+
+class CapacityLogbookSignoffSerializer(serializers.ModelSerializer):
+    closed_by_staff_details = serializers.SerializerMethodField()
+    venue_name = serializers.CharField(source='venue.name', read_only=True)
+    venue_capacity = serializers.IntegerField(source='venue.capacity', read_only=True)
+    is_override = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CapacityLogbookSignoff
+        fields = '__all__'
+        read_only_fields = (
+            'created_at', 'signed_at', 'closed_by_staff',
+            'total_checks', 'total_missed', 'auto_closed',
+        )
+
+    def get_closed_by_staff_details(self, obj):
+        if obj.closed_by_staff:
+            return {
+                'id': obj.closed_by_staff.id,
+                'first_name': obj.closed_by_staff.first_name,
+                'last_name': obj.closed_by_staff.last_name,
+            }
+        return None
+
+    def get_is_override(self, obj):
+        return bool(obj.override_reason) and not obj.signature
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        signature = (attrs.get('signature') or '').strip()
+        closed_by_name = (attrs.get('closed_by_name') or '').strip()
+        override_reason = (attrs.get('override_reason') or '').strip()
+        if signature or closed_by_name:
+            if not (signature and closed_by_name):
+                raise serializers.ValidationError(
+                    "Both signature and closed_by_name are required when signing."
+                )
+        elif not override_reason:
+            raise serializers.ValidationError(
+                "Either signature + closed_by_name, or override_reason, is required."
+            )
+        return attrs
+
 
 class ToiletCheckSerializer(serializers.ModelSerializer):
     # Add camelCase fields for frontend compatibility

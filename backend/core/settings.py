@@ -378,7 +378,7 @@ REST_FRAMEWORK = {
 # JWT settings
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=14),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': False,
@@ -542,6 +542,13 @@ CELERY_BEAT_SCHEDULE = {
         # 1st of each month at 06:00 UTC — generates the previous calendar
         # month's run for officers whose pay_frequency='monthly'.
         'schedule': crontab(day_of_month=1, hour=6, minute=0),
+    },
+    'flag-missed-capacity-checks': {
+        'task': 'api.tasks.flag_missed_capacity_checks',
+        # Every 5 minutes — detects capacity-check windows that elapsed with
+        # no log on monitored shifts, creates a permanent miss record and
+        # alerts managers.
+        'schedule': crontab(minute='*/5'),
     },
 }
 

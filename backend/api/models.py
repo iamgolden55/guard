@@ -1224,7 +1224,17 @@ class Venue(models.Model):
     requires_fire_safety_checks = models.BooleanField(default=False, help_text="Whether this venue requires regular fire safety checks")
     requires_capacity_monitoring = models.BooleanField(default=False, help_text="Whether this venue requires capacity monitoring")
     requires_toilet_checks = models.BooleanField(default=False, help_text="Whether this venue requires regular toilet checks")
-    
+
+    # Capacity-monitoring configuration
+    capacity_check_interval_minutes = models.PositiveSmallIntegerField(
+        default=30,
+        help_text="How often (minutes) staff must log a capacity count when capacity monitoring is required"
+    )
+    capacity_warning_threshold_pct = models.PositiveSmallIntegerField(
+        default=80,
+        help_text="Percentage of venue capacity at which the UI should highlight 'approaching capacity'"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -2696,9 +2706,13 @@ class ShiftCheck(models.Model):
     def save(self, *args, **kwargs):
         if not self.timestamp:
             self.timestamp = timezone.now()
-        # Auto-populate shift_group from the associated shift
-        if not self.shift_group and self.shift and self.shift.shift_group:
-            self.shift_group = self.shift.shift_group
+        # Auto-populate shift_group so every check has a stable group key.
+        # Multi-staff shifts pass through the real shift_group; single-staff
+        # shifts get a synthesized 'shift_<id>' so the capacity logbook,
+        # missed-slot detector, and signoff all key off the same value
+        # without special-casing single vs multi-staff anywhere.
+        if not self.shift_group and self.shift:
+            self.shift_group = self.shift.shift_group or f'shift_{self.shift.id}'
         # Auto-populate performed_by from the shift's staff_user if not set
         if not self.performed_by and self.shift and self.shift.staff_user:
             self.performed_by = self.shift.staff_user
@@ -2732,6 +2746,91 @@ class CapacityCheck(ShiftCheck):
 
     def __str__(self):
         return f"Count: {self.current_count}/{self.venue_capacity} at {self.timestamp}"
+
+
+class CapacityCheckSlotMiss(models.Model):
+    """
+    Records a 30-minute (or venue-configured) capacity-check window that
+    elapsed without any CapacityCheck being logged for the shift_group.
+    Created by the flag_missed_capacity_checks Celery task.
+    """
+    shift_group = models.CharField(max_length=50, db_index=True)
+    venue = models.ForeignKey(Venue, on_delete=models.CASCADE, related_name='capacity_misses')
+    expected_at = models.DateTimeField(help_text="Start of the slot window that was missed")
+    detected_at = models.DateTimeField(auto_now_add=True)
+    acknowledged = models.BooleanField(default=False)
+    acknowledged_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='capacity_misses_acknowledged'
+    )
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    acknowledgement_reason = models.TextField(blank=True)
+
+    class Meta:
+        db_table = 'capacity_check_slot_misses'
+        ordering = ['-expected_at']
+        unique_together = [('shift_group', 'expected_at')]
+        indexes = [models.Index(fields=['shift_group', 'expected_at'])]
+
+    def __str__(self):
+        return f"Missed capacity slot {self.expected_at} for {self.shift_group}"
+
+
+class CapacityLogbookSignoff(models.Model):
+    """
+    End-of-shift signoff of the digital capacity-check logbook.
+    Signed by the venue's duty manager (an external person, not a Guard
+    user). One row per shift_group; if the venue admin is unavailable,
+    staff may submit an override_reason instead of a signature.
+    """
+    shift_group = models.CharField(max_length=50, unique=True, db_index=True)
+    venue = models.ForeignKey(Venue, on_delete=models.CASCADE, related_name='capacity_signoffs')
+    closed_by_name = models.CharField(max_length=120, blank=True, help_text="Typed name of the venue's duty manager (blank if overridden)")
+    closed_by_role = models.CharField(max_length=80, blank=True, help_text="Role/title of the signer, e.g. 'Duty Manager'")
+    signature = models.TextField(blank=True, help_text="Base64-encoded signature image (blank if overridden)")
+    signed_at = models.DateTimeField(null=True, blank=True)
+    override_reason = models.TextField(blank=True, help_text="Reason why no signature was captured (e.g. 'Duty manager left early')")
+    closed_by_staff = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='capacity_signoffs_submitted',
+        help_text="Guard staff member who submitted this signoff"
+    )
+    notes = models.TextField(blank=True)
+    total_checks = models.PositiveIntegerField(default=0, help_text="Snapshot: number of CapacityCheck rows in the shift_group at signoff time")
+    total_missed = models.PositiveIntegerField(default=0, help_text="Snapshot: number of CapacityCheckSlotMiss rows in the shift_group at signoff time")
+    auto_closed = models.BooleanField(
+        default=False,
+        help_text=(
+            "True when the signoff was created by the system on auto-checkout "
+            "(no staff input). Distinguishes audit-trail noise from a "
+            "deliberate staff override."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'capacity_logbook_signoffs'
+        ordering = ['-created_at']
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        super().clean()
+        has_signature = bool(self.signature and self.closed_by_name)
+        has_override = bool(self.override_reason)
+        if not (has_signature or has_override):
+            raise ValidationError("Either a signature with name, or an override_reason, is required.")
+        if has_signature and not self.signed_at:
+            self.signed_at = timezone.now()
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        if self.override_reason:
+            return f"Logbook for {self.shift_group} closed via override"
+        return f"Logbook for {self.shift_group} signed by {self.closed_by_name}"
+
 
 class ToiletCheck(ShiftCheck):
     CONDITION_CHOICES = (

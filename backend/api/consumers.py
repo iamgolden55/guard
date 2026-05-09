@@ -461,6 +461,31 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             'timestamp': event.get('timestamp', timezone.now().isoformat())
         }))
 
+    async def capacity_event(self, event):
+        """
+        Forward capacity-logbook sync events to the client. These are not
+        Notification rows — they're real-time signals that drive the mobile
+        cadence engine: 'capacity_logged' (reschedule reminders),
+        'capacity_overdue' (escalate locally), 'logbook_signed' (mark closed).
+        """
+        await self.send(text_data=json.dumps({
+            'type': 'capacity_event',
+            'event': event.get('event'),
+            'shift_group': event.get('shift_group'),
+            'venue_id': event.get('venue_id'),
+            'shift_id': event.get('shift_id'),
+            'current_count': event.get('current_count'),
+            'venue_capacity': event.get('venue_capacity'),
+            'is_at_capacity': event.get('is_at_capacity'),
+            'performed_by': event.get('performed_by'),
+            'logged_at': event.get('logged_at'),
+            'next_due_at': event.get('next_due_at'),
+            'expected_at': event.get('expected_at'),
+            'closed_by_name': event.get('closed_by_name'),
+            'override_reason': event.get('override_reason'),
+            'timestamp': event.get('timestamp', timezone.now().isoformat()),
+        }))
+
 
 # Utility functions for sending messages to channels
 async def send_report_progress(job_id: str, user_id: int, progress_data: Dict[str, Any]):
@@ -585,3 +610,63 @@ async def send_report_cancelled(job_id: str, user_id: int, cancellation_data: Di
             **data
         }
     )
+
+
+def broadcast_capacity_event(shift_group: str, event: str, payload: Dict[str, Any]) -> None:
+    """
+    Sync-callable helper to fan out a capacity-logbook event to every staff
+    member in a shift_group. Each user receives the event on their existing
+    'notifications_user_{id}' group via the NotificationConsumer.capacity_event
+    handler — no separate group subscription is needed on the mobile client.
+
+    Safe to call from synchronous contexts (DRF perform_create, Celery tasks).
+    """
+    if not shift_group:
+        return
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+        # Local import avoids circular-import risk when loaded from views/tasks
+        from .models import Shift
+
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+
+        # Multi-staff shifts share a real shift_group string; single-staff
+        # shifts use a synthesized 'shift_<id>' key (see ShiftCheck.save).
+        # Resolve recipients for both forms.
+        recipient_ids = list(
+            Shift.objects.filter(shift_group=shift_group, staff_user__isnull=False)
+            .values_list('staff_user_id', flat=True)
+            .distinct()
+        )
+        if not recipient_ids and shift_group.startswith('shift_'):
+            try:
+                synth_shift_id = int(shift_group[len('shift_'):])
+                staff_user_id = (
+                    Shift.objects.filter(id=synth_shift_id)
+                    .values_list('staff_user_id', flat=True)
+                    .first()
+                )
+                if staff_user_id:
+                    recipient_ids = [staff_user_id]
+            except (ValueError, TypeError):
+                pass
+        if not recipient_ids:
+            return
+
+        message = {
+            'type': 'capacity_event',
+            'event': event,
+            'shift_group': shift_group,
+            'timestamp': timezone.now().isoformat(),
+            **payload,
+        }
+        for user_id in recipient_ids:
+            async_to_sync(channel_layer.group_send)(
+                f'notifications_user_{user_id}',
+                message,
+            )
+    except Exception as e:
+        logger.warning(f"Failed to broadcast capacity event '{event}' for {shift_group}: {e}")

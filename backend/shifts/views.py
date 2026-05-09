@@ -1159,10 +1159,31 @@ class ShiftViewSet(viewsets.ModelViewSet):
         # Check if the shift is already checked out
         if shift.check_out_time:
             return Response(
-                {"detail": "Shift already checked out"}, 
+                {"detail": "Shift already checked out"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
+        # Monitored venues: require a logbook signoff before checkout. Mobile
+        # funnels through LogbookSignoffModal first, but older app versions
+        # may skip that gate. Reject server-side so old clients get a clear
+        # error instead of silently closing a shift with no logbook record.
+        if shift.venue and shift.venue.requires_capacity_monitoring:
+            from api.models import CapacityLogbookSignoff
+            shift_group = shift.shift_group or f'shift_{shift.id}'
+            if not CapacityLogbookSignoff.objects.filter(shift_group=shift_group).exists():
+                return Response(
+                    {
+                        "detail": (
+                            "Capacity logbook must be signed off before checkout. "
+                            "Open the Capacity Logbook screen and submit a signoff "
+                            "(or an override reason if the venue admin is unavailable)."
+                        ),
+                        "code": "logbook_signoff_required",
+                        "shift_group": shift_group,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         # Get location, signature, and photo from request
         latitude = request.data.get('latitude')
         longitude = request.data.get('longitude')

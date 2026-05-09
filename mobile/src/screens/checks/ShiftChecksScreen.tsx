@@ -1,34 +1,46 @@
 /**
- * Shift Checks Screen
- * Dashboard showing required venue safety checks for the active shift
+ * Shift Checks Screen — redesign aligned with the Capacity / dashboard V2 visual language.
+ *
+ * Dashboard listing the venue safety checks required for the active shift.
+ * Visuals are drawn from the same redesign tokens (Geist-like sans, warm
+ * paper canvas / near-black dark, red accent, GlassCards, hairline borders,
+ * slim SVG iconography). Functionality is unchanged from the prior version.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, Alert, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+  Alert,
+  StatusBar,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
-import { Container, Heading2, Heading3, Body, Card, Button } from '@components/ui';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { useAppSelector } from '../../hooks/useRedux';
 import { selectActiveShift } from '../../store/slices/shiftsSlice';
-import { colors, getColors, spacing } from '../../theme';
-import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
 import { shiftChecksService } from '../../services/shiftChecksService';
+import { useRedesignTheme, RedesignTheme } from '../../theme/redesign';
+import { Eyebrow, GlassCard, NavBack } from '../../components/redesign';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList, 'ShiftChecks'>;
 type RouteProps = RouteProp<MainStackParamList, 'ShiftChecks'>;
 
+type CheckIconKind = 'fire' | 'capacity' | 'toilet';
+
 interface CheckItem {
   id: string;
   title: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  iconKind: CheckIconKind;
   required: boolean;
   completed: boolean;
   route: keyof MainStackParamList;
-  color: string;
-  // Multi-staff shift attribution
   performedBy?: {
     id: number;
     first_name: string;
@@ -41,14 +53,13 @@ export const ShiftChecksScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { shiftId } = route.params;
-  const { isDark } = useTheme();
-  const colors = getColors(isDark);
+  const insets = useSafeAreaInsets();
+  const theme = useRedesignTheme();
 
   const activeShift = useAppSelector(selectActiveShift);
   const [loading, setLoading] = useState(true);
   const [checks, setChecks] = useState<CheckItem[]>([]);
 
-  // Reload checks whenever screen comes into focus (including after navigation back)
   useFocusEffect(
     useCallback(() => {
       logger.info('[ShiftChecks] Screen focused, loading checks', { shiftId });
@@ -60,13 +71,9 @@ export const ShiftChecksScreen = () => {
     try {
       setLoading(true);
 
-      // Get shift checks from backend
       const shiftChecks = await shiftChecksService.getShiftChecks(shiftId);
 
-      // Define available checks based on venue requirements
       const availableChecks: CheckItem[] = [];
-
-      // Get the most recent check from each type for attribution
       const latestFireExitCheck = shiftChecks.fireExitChecks[0];
       const latestCapacityCheck = shiftChecks.capacityChecks[0];
       const latestToiletCheck = shiftChecks.toiletChecks[0];
@@ -75,11 +82,10 @@ export const ShiftChecksScreen = () => {
         availableChecks.push({
           id: 'fire_exit',
           title: 'Fire Exit Check',
-          icon: 'flame-outline',
+          iconKind: 'fire',
           required: true,
           completed: shiftChecks.fireExitChecks.length > 0,
           route: 'FireExitCheck' as keyof MainStackParamList,
-          color: colors.error,
           performedBy: latestFireExitCheck?.performed_by_details || null,
           timestamp: latestFireExitCheck?.timestamp,
         });
@@ -89,25 +95,22 @@ export const ShiftChecksScreen = () => {
         availableChecks.push({
           id: 'capacity',
           title: 'Capacity Check',
-          icon: 'people-outline',
+          iconKind: 'capacity',
           required: true,
           completed: shiftChecks.capacityChecks.length > 0,
           route: 'CapacityCheck' as keyof MainStackParamList,
-          color: colors.warning,
           performedBy: latestCapacityCheck?.performed_by_details || null,
           timestamp: latestCapacityCheck?.timestamp,
         });
       }
 
-      // Toilet checks are always available (basic venue safety)
       availableChecks.push({
         id: 'toilet',
         title: 'Toilet Check',
-        icon: 'water-outline',
+        iconKind: 'toilet',
         required: false,
         completed: shiftChecks.toiletChecks.length > 0,
         route: 'ToiletCheck' as keyof MainStackParamList,
-        color: colors.info,
         performedBy: latestToiletCheck?.performed_by_details || null,
         timestamp: latestToiletCheck?.timestamp,
       });
@@ -115,7 +118,7 @@ export const ShiftChecksScreen = () => {
       setChecks(availableChecks);
       logger.info('[ShiftChecks] Loaded checks', {
         totalChecks: availableChecks.length,
-        completed: availableChecks.filter(c => c.completed).length,
+        completed: availableChecks.filter((c) => c.completed).length,
       });
     } catch (error) {
       logger.error('[ShiftChecks] Error loading checks:', error);
@@ -127,8 +130,6 @@ export const ShiftChecksScreen = () => {
 
   const handleCheckPress = (check: CheckItem) => {
     logger.info('[ShiftChecks] Check selected', { checkId: check.id });
-
-    // Navigate to specific check screen
     navigation.navigate(check.route as any, {
       shiftId,
       checkType: check.id,
@@ -140,301 +141,614 @@ export const ShiftChecksScreen = () => {
     navigation.goBack();
   };
 
-  // Calculate progress
-  const completedCount = checks.filter(c => c.completed).length;
+  const completedCount = checks.filter((c) => c.completed).length;
   const totalCount = checks.length;
   const progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  const allDone = totalCount > 0 && completedCount === totalCount;
+  const venueName = activeShift?.venue.name || 'Venue';
 
   return (
-    <Container scrollable={false} safeArea style={[styles.container, { backgroundColor: colors.background.secondary }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.background.primary, borderBottomColor: colors.border.light }]}>
-        <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-          <Ionicons name="close" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Heading2>Shift Checks</Heading2>
-          <Body color={colors.text.secondary}>
-            {activeShift?.venue.name || 'Venue Safety Checks'}
-          </Body>
-        </View>
-      </View>
+    <View style={[styles.root, { backgroundColor: theme.colors.canvas }]}>
+      <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Progress Card */}
-        <Card variant="elevated" padding="lg" style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <Ionicons
-              name="checkmark-circle"
-              size={32}
-              color={progressPercent === 100 ? colors.success : colors.gray[400]}
-            />
-            <View style={styles.progressText}>
-              <Heading3>{completedCount} of {totalCount} Complete</Heading3>
-              <Body color={colors.text.secondary}>
-                {progressPercent === 100
-                  ? 'All checks completed!'
-                  : 'Complete all required checks'}
-              </Body>
-            </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingTop: insets.top + 12,
+          paddingHorizontal: 20,
+          paddingBottom: 32 + insets.bottom,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Top bar */}
+        <View style={styles.topBar}>
+          <NavBack onPress={handleClose} />
+          <View style={{ flex: 1 }} />
+          <View
+            style={[
+              styles.countPill,
+              {
+                backgroundColor: theme.colors.surface.chip,
+                borderColor: theme.colors.surface.hairline,
+              },
+            ]}
+          >
+            <Eyebrow tracking={1.8} color={theme.colors.text.secondary}>
+              {completedCount} of {totalCount} done
+            </Eyebrow>
           </View>
-          {totalCount > 0 && (
-            <View style={styles.progressBarContainer}>
-              <View style={styles.progressBarBackground}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    {
-                      width: `${progressPercent}%`,
-                      backgroundColor: progressPercent === 100 ? colors.success : colors.primary,
-                    },
-                  ]}
-                />
-              </View>
-            </View>
-          )}
-        </Card>
+        </View>
 
-        {/* Checks List */}
-        <View style={styles.checksContainer}>
-          {checks.length === 0 && !loading && (
-            <Card variant="flat" padding="xl" style={styles.emptyState}>
-              <Ionicons
-                name="checkmark-done-outline"
-                size={64}
-                color={colors.gray[400]}
-                style={styles.emptyIcon}
-              />
-              <Heading3 style={styles.emptyTitle}>No Checks Required</Heading3>
-              <Body color={colors.text.secondary} style={styles.emptyText}>
-                This venue doesn't require any safety checks
-              </Body>
-            </Card>
-          )}
+        {/* Title block */}
+        <View style={{ marginTop: 16 }}>
+          <Eyebrow color={theme.colors.accent}>{venueName}</Eyebrow>
+          <Text
+            allowFontScaling={false}
+            style={[
+              styles.heading,
+              { color: theme.colors.text.primary, fontFamily: theme.fonts.sans },
+            ]}
+          >
+            Shift checks
+          </Text>
+          <Text
+            allowFontScaling={false}
+            style={{
+              marginTop: 6,
+              fontSize: 13,
+              color: theme.colors.text.secondary,
+              fontFamily: theme.fonts.sans,
+            }}
+          >
+            {allDone
+              ? 'All required checks logged for this shift.'
+              : 'Complete every required check before signing off.'}
+          </Text>
+        </View>
 
-          {checks.map((check) => (
-            <TouchableOpacity
-              key={check.id}
-              onPress={() => handleCheckPress(check)}
-              activeOpacity={0.7}
-            >
-              <Card
-                variant="elevated"
-                padding="lg"
-                style={[
-                  styles.checkCard,
-                  check.completed && styles.checkCardCompleted,
-                ]}
+        {/* Progress hero */}
+        <GlassCard
+          style={{
+            marginTop: 22,
+            padding: 22,
+            borderColor: allDone ? theme.colors.accentBorder : theme.colors.surface.hairline,
+            backgroundColor: allDone ? theme.colors.accentSoft : theme.colors.surface.card,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {allDone ? (
+              <View
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 11,
+                  backgroundColor: theme.colors.accentSoft,
+                  borderWidth: 1,
+                  borderColor: theme.colors.accentBorder,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
-                <View style={styles.checkContent}>
-                  <View
-                    style={[
-                      styles.checkIcon,
-                      { backgroundColor: check.color + '20' },
-                    ]}
-                  >
-                    <Ionicons
-                      name={check.icon}
-                      size={24}
-                      color={check.color}
-                    />
-                  </View>
-                  <View style={styles.checkInfo}>
-                    <View style={styles.checkTitleRow}>
-                      <Heading3 style={styles.checkTitle}>{check.title}</Heading3>
-                      {check.required && (
-                        <View style={styles.requiredBadge}>
-                          <Body style={styles.requiredText}>Required</Body>
-                        </View>
-                      )}
-                    </View>
-                    <Body color={colors.text.secondary}>
-                      {check.completed
-                        ? check.performedBy
-                          ? `Completed by ${check.performedBy.first_name} ${check.performedBy.last_name?.charAt(0)}.`
-                          : 'Completed'
-                        : 'Not completed yet'}
-                    </Body>
-                    {check.completed && check.timestamp && (
-                      <Body color={colors.text.tertiary} style={styles.checkTimestamp}>
-                        {new Date(check.timestamp).toLocaleTimeString('en-US', {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
-                      </Body>
-                    )}
-                  </View>
-                  <View style={styles.checkAction}>
-                    {check.completed ? (
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={28}
-                        color={colors.success}
-                      />
-                    ) : (
-                      <Ionicons
-                        name="chevron-forward"
-                        size={24}
-                        color={colors.gray[400]}
-                      />
-                    )}
-                  </View>
-                </View>
-              </Card>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Info Card */}
-        <Card variant="flat" padding="lg" style={styles.infoCard}>
-          <View style={styles.infoHeader}>
-            <Ionicons
-              name="information-circle-outline"
-              size={20}
-              color={colors.primary}
-            />
-            <Body style={styles.infoTitle}>About Safety Checks</Body>
+                <Svg width={10} height={10} viewBox="0 0 16 16">
+                  <Path
+                    d="M3 8 L7 12 L13 4"
+                    stroke={theme.colors.accent}
+                    strokeWidth={2}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
+              </View>
+            ) : null}
+            <Eyebrow color={allDone ? theme.colors.accent : theme.colors.text.secondary}>
+              {allDone ? 'All checks logged' : 'Progress'}
+            </Eyebrow>
           </View>
-          <Body color={colors.text.secondary} style={styles.infoText}>
-            Safety checks help ensure the venue meets security standards. Complete all
-            required checks during your shift. You can update checks at any time.
-          </Body>
-        </Card>
+
+          <View style={styles.bigNumberRow}>
+            <Text
+              allowFontScaling={false}
+              style={{
+                fontSize: 84,
+                fontFamily: theme.fonts.sans,
+                fontWeight: '300',
+                letterSpacing: -3,
+                lineHeight: 88,
+                color: allDone ? theme.colors.accent : theme.colors.text.primary,
+              }}
+            >
+              {completedCount}
+            </Text>
+            <View style={{ marginLeft: 10, paddingBottom: 14 }}>
+              <Text
+                allowFontScaling={false}
+                style={{
+                  fontSize: 28,
+                  fontFamily: theme.fonts.sans,
+                  fontWeight: '300',
+                  color: theme.colors.text.tertiary,
+                  letterSpacing: -0.6,
+                }}
+              >
+                / {totalCount}
+              </Text>
+              <Text
+                allowFontScaling={false}
+                style={{
+                  marginTop: 4,
+                  fontFamily: theme.fonts.mono,
+                  fontSize: 11,
+                  letterSpacing: 1.8,
+                  textTransform: 'uppercase',
+                  color: theme.colors.text.secondary,
+                }}
+              >
+                Logged
+              </Text>
+            </View>
+          </View>
+
+          {/* Progress bar */}
+          <View
+            style={[
+              styles.bar,
+              {
+                backgroundColor: theme.colors.surface.chip,
+                borderColor: theme.colors.surface.hairline,
+              },
+            ]}
+          >
+            <View
+              style={{
+                width: `${progressPercent}%`,
+                height: '100%',
+                backgroundColor: theme.colors.accent,
+                borderRadius: 4,
+              }}
+            />
+          </View>
+        </GlassCard>
+
+        {/* Checks list */}
+        {checks.length === 0 && !loading ? (
+          <GlassCard style={{ marginTop: 22, alignItems: 'center', paddingVertical: 32 }}>
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                backgroundColor: theme.colors.surface.chip,
+                borderWidth: 1,
+                borderColor: theme.colors.surface.hairlineStrong,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 14,
+              }}
+            >
+              <Svg width={18} height={18} viewBox="0 0 24 24">
+                <Path
+                  d="M3 12 L9 18 L21 6"
+                  stroke={theme.colors.text.secondary}
+                  strokeWidth={1.6}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+            </View>
+            <Text
+              allowFontScaling={false}
+              style={{
+                fontFamily: theme.fonts.sans,
+                color: theme.colors.text.primary,
+                fontSize: 16,
+                fontWeight: '500',
+                marginBottom: 4,
+              }}
+            >
+              No checks required
+            </Text>
+            <Text
+              allowFontScaling={false}
+              style={{
+                fontFamily: theme.fonts.sans,
+                color: theme.colors.text.secondary,
+                fontSize: 13,
+                textAlign: 'center',
+                paddingHorizontal: 28,
+              }}
+            >
+              This venue does not require any safety checks.
+            </Text>
+          </GlassCard>
+        ) : null}
+
+        {checks.length > 0 ? (
+          <View style={{ marginTop: 28, marginBottom: 6, marginLeft: 4 }}>
+            <Eyebrow>Checks</Eyebrow>
+          </View>
+        ) : null}
+
+        {checks.map((check, index) => (
+          <CheckRow
+            key={check.id}
+            check={check}
+            theme={theme}
+            isLast={index === checks.length - 1}
+            onPress={() => handleCheckPress(check)}
+          />
+        ))}
+
+        {/* Capacity Logbook CTA */}
+        {activeShift?.venue.requires_capacity_check ? (
+          <Pressable
+            onPress={() => navigation.navigate('CapacityLogbook' as any, { shiftId })}
+            accessibilityRole="button"
+            accessibilityLabel="Open capacity logbook"
+            style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1, marginTop: 18 }]}
+          >
+            <GlassCard
+              style={{
+                padding: 18,
+                borderColor: theme.colors.accentBorder,
+                backgroundColor: theme.colors.accentSoft,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    borderWidth: 1,
+                    borderColor: theme.colors.accentBorder,
+                    backgroundColor: theme.colors.canvas,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Svg width={18} height={18} viewBox="0 0 24 24">
+                    <Path
+                      d="M4 5 a2 2 0 0 1 2 -2 h6 v18 h-6 a2 2 0 0 1 -2 -2 z M20 5 a2 2 0 0 0 -2 -2 h-6 v18 h6 a2 2 0 0 0 2 -2 z"
+                      stroke={theme.colors.accent}
+                      strokeWidth={1.5}
+                      fill="none"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </Svg>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Eyebrow color={theme.colors.accent}>Audit trail</Eyebrow>
+                  <Text
+                    allowFontScaling={false}
+                    style={{
+                      marginTop: 4,
+                      fontSize: 16,
+                      fontWeight: '500',
+                      color: theme.colors.text.primary,
+                      fontFamily: theme.fonts.sans,
+                      letterSpacing: -0.2,
+                    }}
+                  >
+                    Capacity logbook
+                  </Text>
+                  <Text
+                    allowFontScaling={false}
+                    style={{
+                      marginTop: 2,
+                      fontSize: 13,
+                      color: theme.colors.text.secondary,
+                      fontFamily: theme.fonts.sans,
+                    }}
+                  >
+                    View timeline & sign off at end of shift
+                  </Text>
+                </View>
+                <Svg width={14} height={14} viewBox="0 0 16 16">
+                  <Path
+                    d="M5 3 L11 8 L5 13"
+                    stroke={theme.colors.accent}
+                    strokeWidth={1.6}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
+              </View>
+            </GlassCard>
+          </Pressable>
+        ) : null}
+
+        {/* Helper note */}
+        <View style={{ marginTop: 24, paddingHorizontal: 4 }}>
+          <Text
+            allowFontScaling={false}
+            style={{
+              fontFamily: theme.fonts.mono,
+              fontSize: 10,
+              letterSpacing: 1.6,
+              textTransform: 'uppercase',
+              color: theme.colors.text.tertiary,
+            }}
+          >
+            About safety checks
+          </Text>
+          <Text
+            allowFontScaling={false}
+            style={{
+              marginTop: 8,
+              fontSize: 13,
+              lineHeight: 19,
+              color: theme.colors.text.secondary,
+              fontFamily: theme.fonts.sans,
+            }}
+          >
+            Safety checks confirm the venue meets security standards. Complete every required
+            check during your shift; you can update them at any time.
+          </Text>
+        </View>
       </ScrollView>
-    </Container>
+    </View>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────
+// Check row
+// ─────────────────────────────────────────────────────────────
+interface CheckRowProps {
+  check: CheckItem;
+  theme: RedesignTheme;
+  isLast: boolean;
+  onPress: () => void;
+}
+
+const CheckRow: React.FC<CheckRowProps> = ({ check, theme, isLast, onPress }) => {
+  const completed = check.completed;
+
+  const performerLabel = check.performedBy
+    ? `${check.performedBy.first_name} ${check.performedBy.last_name?.charAt(0) || ''}.`.trim()
+    : null;
+
+  const timeLabel = check.timestamp
+    ? new Date(check.timestamp).toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : null;
+
+  const secondaryLine = completed
+    ? performerLabel
+      ? `Completed by ${performerLabel}${timeLabel ? ` · ${timeLabel}` : ''}`
+      : `Completed${timeLabel ? ` · ${timeLabel}` : ''}`
+    : 'Not completed yet';
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${check.title}`}
+      style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1, marginBottom: isLast ? 0 : 12 }]}
+    >
+      <GlassCard
+        style={{
+          padding: 18,
+          borderColor: completed ? theme.colors.accentBorder : theme.colors.surface.hairline,
+          backgroundColor: completed ? theme.colors.accentSoft : theme.colors.surface.card,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          {/* Leading icon */}
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              borderWidth: 1,
+              borderColor: completed
+                ? theme.colors.accentBorder
+                : theme.colors.surface.hairlineStrong,
+              backgroundColor: completed
+                ? theme.colors.canvas
+                : theme.colors.surface.chip,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <CheckIcon
+              kind={check.iconKind}
+              color={completed ? theme.colors.accent : theme.colors.text.primary}
+            />
+          </View>
+
+          {/* Body */}
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text
+                allowFontScaling={false}
+                style={{
+                  fontFamily: theme.fonts.sans,
+                  fontSize: 16,
+                  fontWeight: '500',
+                  letterSpacing: -0.2,
+                  color: theme.colors.text.primary,
+                }}
+              >
+                {check.title}
+              </Text>
+              {check.required ? (
+                <View
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: theme.colors.accentBorder,
+                    backgroundColor: completed
+                      ? theme.colors.canvas
+                      : theme.colors.accentSoft,
+                  }}
+                >
+                  <Text
+                    allowFontScaling={false}
+                    style={{
+                      fontFamily: theme.fonts.mono,
+                      fontSize: 9,
+                      letterSpacing: 1.6,
+                      textTransform: 'uppercase',
+                      color: theme.colors.accent,
+                      fontWeight: '500',
+                    }}
+                  >
+                    Required
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            <Text
+              allowFontScaling={false}
+              style={{
+                marginTop: 4,
+                fontSize: 13,
+                color: theme.colors.text.secondary,
+                fontFamily: theme.fonts.sans,
+              }}
+            >
+              {secondaryLine}
+            </Text>
+          </View>
+
+          {/* Trailing affordance */}
+          <View
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: completed ? theme.colors.accent : 'transparent',
+            }}
+          >
+            {completed ? (
+              <Svg width={12} height={12} viewBox="0 0 16 16">
+                <Path
+                  d="M3 8 L7 12 L13 4"
+                  stroke="#fff"
+                  strokeWidth={2}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+            ) : (
+              <Svg width={12} height={12} viewBox="0 0 16 16">
+                <Path
+                  d="M5 3 L11 8 L5 13"
+                  stroke={theme.colors.text.tertiary}
+                  strokeWidth={1.6}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+            )}
+          </View>
+        </View>
+      </GlassCard>
+    </Pressable>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────
+// Slim line-art icons matching the Capacity screens' iconography
+// ─────────────────────────────────────────────────────────────
+const CheckIcon: React.FC<{ kind: CheckIconKind; color: string }> = ({ kind, color }) => {
+  if (kind === 'fire') {
+    return (
+      <Svg width={18} height={18} viewBox="0 0 24 24">
+        <Path
+          d="M12 3 c 1 4 5 5 5 10 a5 5 0 0 1 -10 0 c 0 -3 2 -4 3 -7 c 1 2 2 2 2 -3 z"
+          stroke={color}
+          strokeWidth={1.5}
+          fill="none"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+      </Svg>
+    );
+  }
+  if (kind === 'capacity') {
+    return (
+      <Svg width={18} height={18} viewBox="0 0 24 24">
+        <Circle cx="9" cy="8" r="3" stroke={color} strokeWidth={1.5} fill="none" />
+        <Circle cx="17" cy="9" r="2.4" stroke={color} strokeWidth={1.5} fill="none" />
+        <Path
+          d="M3 19 c 0 -3 3 -5 6 -5 s 6 2 6 5"
+          stroke={color}
+          strokeWidth={1.5}
+          fill="none"
+          strokeLinecap="round"
+        />
+        <Path
+          d="M15 19 c 0 -2 2 -4 5 -4"
+          stroke={color}
+          strokeWidth={1.5}
+          fill="none"
+          strokeLinecap="round"
+        />
+      </Svg>
+    );
+  }
+  // toilet — water droplet
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24">
+      <Path
+        d="M12 3 c 4 5 6 8 6 11 a6 6 0 0 1 -12 0 c 0 -3 2 -6 6 -11 z"
+        stroke={color}
+        strokeWidth={1.5}
+        fill="none"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </Svg>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 0,
-  },
-  header: {
+  root: { flex: 1 },
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
+    gap: 12,
   },
-  closeButton: {
-    padding: spacing.sm,
-    marginRight: spacing.md,
+  countPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 36,
+    justifyContent: 'center',
   },
-  headerContent: {
-    flex: 1,
+  heading: {
+    marginTop: 8,
+    fontSize: 32,
+    fontWeight: '400',
+    letterSpacing: -0.8,
+    lineHeight: 36,
   },
-  content: {
-    flex: 1,
-    padding: spacing.lg,
-  },
-  progressCard: {
-    marginBottom: spacing.lg,
-  },
-  progressHeader: {
+  bigNumberRow: {
+    marginTop: 8,
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.md,
+    alignItems: 'flex-end',
   },
-  progressText: {
-    flex: 1,
-    marginLeft: spacing.md,
-  },
-  progressBarContainer: {
-    marginTop: spacing.sm,
-  },
-  progressBarBackground: {
+  bar: {
+    marginTop: 14,
     height: 8,
-    backgroundColor: colors.gray[200],
     borderRadius: 4,
+    borderWidth: 1,
     overflow: 'hidden',
   },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  checksContainer: {
-    marginBottom: spacing.lg,
-  },
-  checkCard: {
-    marginBottom: spacing.md,
-  },
-  checkCardCompleted: {
-    borderWidth: 1,
-    borderColor: colors.success,
-  },
-  checkContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  checkIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkInfo: {
-    flex: 1,
-    marginLeft: spacing.md,
-  },
-  checkTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  checkTitle: {
-    flex: 1,
-  },
-  requiredBadge: {
-    backgroundColor: colors.error + '20',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginLeft: spacing.sm,
-  },
-  requiredText: {
-    fontSize: 11,
-    color: colors.error,
-    fontWeight: '600',
-  },
-  checkAction: {
-    marginLeft: spacing.md,
-  },
-  checkTimestamp: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: spacing['3xl'],
-  },
-  emptyIcon: {
-    marginBottom: spacing.lg,
-  },
-  emptyTitle: {
-    marginBottom: spacing.sm,
-    textAlign: 'center',
-  },
-  emptyText: {
-    textAlign: 'center',
-  },
-  infoCard: {
-    backgroundColor: colors.primary + '10',
-    marginBottom: spacing.xl,
-  },
-  infoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  infoTitle: {
-    marginLeft: spacing.xs,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  infoText: {
-    lineHeight: 20,
-  },
 });
+
+export default ShiftChecksScreen;

@@ -29,7 +29,13 @@ interface Shift {
 interface ScheduledNotification {
   notificationId: string;
   shiftId: number;
-  type: 'advance' | 'soon' | 'imminent' | 'final';
+  type:
+    | 'advance'
+    | 'soon'
+    | 'imminent'
+    | 'final'
+    | 'capacity_due'
+    | 'capacity_overdue_escalation';
   scheduledTime: string;
 }
 
@@ -612,6 +618,192 @@ class NotificationService {
       console.log(`Cancelled ${notificationsForShift.length} notifications for shift ${shiftId}`);
     } catch (error) {
       console.error('Error cancelling shift reminders:', error);
+    }
+  }
+
+  /**
+   * Schedule a chain of capacity-check reminders for an active shift.
+   *
+   * Drives the digital capacity logbook's 30-min cadence on the device:
+   *   - Cancels any existing capacity reminders for the shift
+   *   - Schedules a 'capacity_due' local notification at every interval boundary
+   *     starting from (lastCheckAt ?? startTime) + intervalMin, up to endTime
+   *   - For each due time, also schedules a 5-min-later 'capacity_overdue_escalation'
+   *     re-prompt with high priority/vibration
+   *
+   * Call again on every WS 'capacity_logged' event (with the new lastCheckAt) so
+   * the next reminder fires from the latest check across the shift_group, not
+   * from shift start. Multi-staff continuation falls out for free.
+   */
+  async scheduleCapacityReminders(params: {
+    shiftId: number;
+    venueName: string;
+    startTime: string;
+    endTime: string;
+    intervalMinutes: number;
+    lastCheckAt?: string | null;
+  }): Promise<string[]> {
+    const {
+      shiftId,
+      venueName,
+      startTime,
+      endTime,
+      intervalMinutes,
+      lastCheckAt,
+    } = params;
+
+    try {
+      await this.cancelCapacityReminders(shiftId);
+
+      const intervalMs = Math.max(intervalMinutes, 5) * 60 * 1000;
+      const ESCALATION_DELAY_MS = 5 * 60 * 1000;
+      const MIN_DELAY_SECONDS = 30;
+
+      const start = new Date(startTime).getTime();
+      const end = new Date(endTime).getTime();
+      const anchor = lastCheckAt ? new Date(lastCheckAt).getTime() : start;
+      const now = Date.now();
+
+      const ids: string[] = [];
+      const scheduled: ScheduledNotification[] = [];
+
+      // First due time = anchor + interval. If we're already past one or more
+      // intervals (e.g. anchor was before now), advance to the next future slot.
+      let dueAt = anchor + intervalMs;
+      while (dueAt + ESCALATION_DELAY_MS <= now) {
+        dueAt += intervalMs;
+      }
+
+      while (dueAt <= end) {
+        const dueSec = Math.floor((dueAt - now) / 1000);
+        if (dueSec >= MIN_DELAY_SECONDS) {
+          const dueId = await Notifications.scheduleNotificationAsync({
+            content: {
+              title: '📋 Capacity check due',
+              body: `Time to log the headcount at ${venueName}.`,
+              data: {
+                shiftId,
+                type: 'capacity_due',
+                screen: 'CapacityLogbook',
+              },
+              sound: 'default',
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+              ...(Platform.OS === 'android' && {
+                channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
+              }),
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+              seconds: dueSec,
+              repeats: false,
+            },
+          });
+          ids.push(dueId);
+          scheduled.push({
+            notificationId: dueId,
+            shiftId,
+            type: 'capacity_due',
+            scheduledTime: new Date(dueAt).toISOString(),
+          });
+        }
+
+        const escalationAt = dueAt + ESCALATION_DELAY_MS;
+        const escalationSec = Math.floor((escalationAt - now) / 1000);
+        if (escalationSec >= MIN_DELAY_SECONDS && escalationAt <= end) {
+          const escId = await Notifications.scheduleNotificationAsync({
+            content: {
+              title: '⚠️ Capacity check overdue',
+              body: `No capacity count logged yet at ${venueName}. Log it now.`,
+              data: {
+                shiftId,
+                type: 'capacity_overdue_escalation',
+                screen: 'CapacityLogbook',
+              },
+              sound: 'default',
+              priority: Notifications.AndroidNotificationPriority.MAX,
+              ...(Platform.OS === 'android' && {
+                channelId: NOTIFICATION_CONFIG.CHANNELS.SHIFT_REMINDERS,
+              }),
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+              seconds: escalationSec,
+              repeats: false,
+            },
+          });
+          ids.push(escId);
+          scheduled.push({
+            notificationId: escId,
+            shiftId,
+            type: 'capacity_overdue_escalation',
+            scheduledTime: new Date(escalationAt).toISOString(),
+          });
+        }
+
+        dueAt += intervalMs;
+      }
+
+      // Append to stored list (don't dedupe by shiftId — that would wipe other
+      // reminders. cancelCapacityReminders above already cleared capacity ones.)
+      try {
+        const stored = await AsyncStorage.getItem(STORAGE_KEY.SCHEDULED_NOTIFICATIONS);
+        const existing: ScheduledNotification[] = stored ? JSON.parse(stored) : [];
+        await AsyncStorage.setItem(
+          STORAGE_KEY.SCHEDULED_NOTIFICATIONS,
+          JSON.stringify([...existing, ...scheduled]),
+        );
+      } catch (storageError) {
+        console.error('[Notifications] Error storing capacity reminders:', storageError);
+      }
+
+      console.log(
+        `[Notifications] Scheduled ${ids.length} capacity reminders for shift ${shiftId}`,
+      );
+      return ids;
+    } catch (error) {
+      console.error('[Notifications] Error scheduling capacity reminders:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Cancel all capacity reminders for a shift (both due + escalation chains).
+   * Other shift reminders (advance/soon/imminent) on the same shift are left intact.
+   */
+  async cancelCapacityReminders(shiftId: number): Promise<void> {
+    try {
+      const stored = await AsyncStorage.getItem(STORAGE_KEY.SCHEDULED_NOTIFICATIONS);
+      if (!stored) return;
+      const all: ScheduledNotification[] = JSON.parse(stored);
+      const toCancel = all.filter(
+        (n) =>
+          n.shiftId === shiftId &&
+          (n.type === 'capacity_due' || n.type === 'capacity_overdue_escalation'),
+      );
+      for (const n of toCancel) {
+        try {
+          await Notifications.cancelScheduledNotificationAsync(n.notificationId);
+        } catch (cancelError) {
+          // Notification may have already fired — non-fatal.
+          console.debug(
+            `[Notifications] Could not cancel ${n.notificationId}:`,
+            cancelError,
+          );
+        }
+      }
+      const remaining = all.filter(
+        (n) =>
+          !(
+            n.shiftId === shiftId &&
+            (n.type === 'capacity_due' || n.type === 'capacity_overdue_escalation')
+          ),
+      );
+      await AsyncStorage.setItem(
+        STORAGE_KEY.SCHEDULED_NOTIFICATIONS,
+        JSON.stringify(remaining),
+      );
+    } catch (error) {
+      console.error('[Notifications] Error cancelling capacity reminders:', error);
     }
   }
 
