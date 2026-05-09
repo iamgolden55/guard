@@ -20,7 +20,7 @@ import {
 } from "../../services/capacityLogbookService";
 import shiftService from "../../services/shiftService";
 import type { Venue } from "../../types";
-import { CapacityLogbookDrawer } from "./components/CapacityLogbookDrawer";
+import { CapacityLogbookDrawer, type DrawerSubject } from "./components/CapacityLogbookDrawer";
 import { ActiveShiftsTable } from "./components/ActiveShiftsTable";
 
 type TabKey = "active" | "closed";
@@ -90,8 +90,8 @@ export default function CapacityLogbookPage() {
   const [dateTo, setDateTo] = useState<string>("");
   const [search, setSearch] = useState<string>("");
 
-  // Detail drawer
-  const [selected, setSelected] = useState<CapacityLogbookSignoff | null>(null);
+  // Detail drawer (works for both closed signoffs and active shifts)
+  const [selected, setSelected] = useState<DrawerSubject | null>(null);
 
   // CSV export feedback
   const [exporting, setExporting] = useState(false);
@@ -377,6 +377,10 @@ export default function CapacityLogbookPage() {
           shifts={activeShifts}
           isLoading={isLoading}
           error={error}
+          onRowClick={(row) => setSelected({ kind: "active", row })}
+          selectedShiftGroup={
+            selected?.kind === "active" ? selected.row.shift_group : null
+          }
         />
       ) : (
       /* Closed-logbooks table */
@@ -417,11 +421,12 @@ export default function CapacityLogbookPage() {
                 </tr>
               ) : (
                 filteredLogs.map((log) => {
-                  const isSelected = selected?.id === log.id;
+                  const isSelected =
+                    selected?.kind === "closed" && selected.log.id === log.id;
                   return (
                     <tr
                       key={log.id}
-                      onClick={() => setSelected(log)}
+                      onClick={() => setSelected({ kind: "closed", log })}
                       style={{
                         cursor: "pointer",
                         background: isSelected ? tokens.color.ink50 : "transparent",
@@ -517,7 +522,7 @@ export default function CapacityLogbookPage() {
 
       {/* Detail drawer */}
       <CapacityLogbookDrawer
-        log={selected}
+        subject={selected}
         onClose={() => setSelected(null)}
         onToast={(msg) => setToast(msg)}
       />

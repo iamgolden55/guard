@@ -1,6 +1,7 @@
 // CapacityLogbookDrawer — slide-over with the chronological timeline
-// (capacity checks + missed slots) for a single shift_group, plus a
-// "Download PDF" action that hits the audit-PDF endpoint.
+// (capacity checks + missed slots) for a single shift_group. Works for
+// both closed signoffs (with a Download PDF action) and in-progress
+// shifts (live header, no PDF since there's no signoff yet).
 
 import { useEffect, useState } from "react";
 import { Pill } from "../../../design-system/primitives/Pill";
@@ -9,14 +10,23 @@ import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
 import {
   capacityLogbookService,
+  type ActiveCapacityShift,
   type CapacityCheck,
   type CapacityCheckSlotMiss,
   type CapacityLogbookSignoff,
   type CapacityLogbookTimeline,
 } from "../../../services/capacityLogbookService";
 
+/**
+ * What the drawer is showing. Closed → renders signoff block + PDF.
+ * Active → renders live status (next-due) + auto-refreshes timeline.
+ */
+export type DrawerSubject =
+  | { kind: "closed"; log: CapacityLogbookSignoff }
+  | { kind: "active"; row: ActiveCapacityShift };
+
 export interface CapacityLogbookDrawerProps {
-  log: CapacityLogbookSignoff | null;
+  subject: DrawerSubject | null;
   onClose: () => void;
   onToast?: (message: string) => void;
 }
@@ -52,60 +62,94 @@ function performerName(check: CapacityCheck): string {
   return `${p.first_name} ${p.last_name}`.trim() || "Staff";
 }
 
-export function CapacityLogbookDrawer({ log, onClose, onToast }: CapacityLogbookDrawerProps) {
+export function CapacityLogbookDrawer({ subject, onClose, onToast }: CapacityLogbookDrawerProps) {
   const [timeline, setTimeline] = useState<CapacityLogbookTimeline | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
-  // Fetch the bundled timeline whenever a different log is selected.
+  // Common fields the header reads regardless of subject kind.
+  const view = subject
+    ? subject.kind === "closed"
+      ? {
+          shiftGroup: subject.log.shift_group,
+          venueName: subject.log.venue_name,
+          venueCapacity: subject.log.venue_capacity,
+          dateLabel: formatDate(subject.log.signed_at || subject.log.created_at),
+        }
+      : {
+          shiftGroup: subject.row.shift_group,
+          venueName: subject.row.venue_name,
+          venueCapacity: subject.row.venue_capacity,
+          dateLabel: subject.row.start_time
+            ? formatDate(subject.row.start_time)
+            : "Today",
+        }
+    : null;
+
+  // Fetch the bundled timeline whenever a different subject is selected. For
+  // active shifts also re-fetch every 15s so the drawer stays current as the
+  // shift continues — same cadence as the parent table.
   useEffect(() => {
-    if (!log) {
+    if (!subject) {
       setTimeline(null);
       setError(null);
       return;
     }
     let cancelled = false;
-    setIsLoading(true);
-    setError(null);
-    capacityLogbookService
-      .getTimeline(log.shift_group)
-      .then((t) => {
+    let pollTimer: number | undefined;
+
+    const load = async () => {
+      try {
+        const t = await capacityLogbookService.getTimeline(view!.shiftGroup);
         if (cancelled) return;
         setTimeline(t);
-      })
-      .catch((e: unknown) => {
+        setError(null);
+      } catch (e: unknown) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : "Could not load timeline.");
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setIsLoading(false);
-      });
+      }
+    };
+
+    setIsLoading(true);
+    load().finally(() => {
+      if (!cancelled) setIsLoading(false);
+    });
+
+    if (subject.kind === "active") {
+      pollTimer = window.setInterval(load, 15_000);
+    }
+
     return () => {
       cancelled = true;
+      if (pollTimer) window.clearInterval(pollTimer);
     };
-  }, [log?.id, log?.shift_group]);
+  }, [subject?.kind, view?.shiftGroup]);
 
   // Esc-to-close
   useEffect(() => {
-    if (!log) return;
+    if (!subject) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [log, onClose]);
+  }, [subject, onClose]);
 
-  if (!log) return null;
+  if (!subject || !view) return null;
 
   const entries = buildTimeline(timeline);
-  const signoffShown = timeline?.signoff ?? log;
+  const isActive = subject.kind === "active";
+  const closedLog = subject.kind === "closed" ? subject.log : null;
+  const signoffShown = timeline?.signoff ?? closedLog;
+  const totalChecks = timeline?.checks.length ?? closedLog?.total_checks ?? (isActive ? subject.row.total_checks : 0);
+  const totalMissed = timeline?.misses.length ?? closedLog?.total_missed ?? (isActive ? subject.row.total_missed : 0);
 
   const handleDownload = async () => {
+    if (!closedLog) return;
     setDownloading(true);
     try {
-      const filename = await capacityLogbookService.downloadPdf(log);
+      const filename = await capacityLogbookService.downloadPdf(closedLog);
       onToast?.(`Downloaded ${filename}`);
     } catch (e: unknown) {
       onToast?.(e instanceof Error ? e.message : "PDF download failed.");
@@ -176,13 +220,33 @@ export function CapacityLogbookDrawer({ log, onClose, onToast }: CapacityLogbook
                 letterSpacing: "-0.015em",
               }}
             >
-              {log.venue_name}
+              {view.venueName}
             </div>
             <div style={{ fontSize: 12.5, color: tokens.color.ink600, marginTop: 4 }}>
-              {formatDate(log.signed_at || log.created_at)} · capacity {log.venue_capacity}
+              {view.dateLabel} · capacity {view.venueCapacity}
+              {isActive && (
+                <>
+                  {" · interval "}
+                  {subject.row.interval_minutes} min
+                </>
+              )}
             </div>
             <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-              {log.is_override ? (
+              {isActive ? (
+                subject.row.is_overdue ? (
+                  <Pill tone="danger" dot>
+                    Overdue
+                  </Pill>
+                ) : subject.row.last_check?.is_at_capacity ? (
+                  <Pill tone="warning" dot>
+                    At capacity
+                  </Pill>
+                ) : (
+                  <Pill tone="positive" dot>
+                    On track
+                  </Pill>
+                )
+              ) : closedLog?.is_override ? (
                 <Pill tone="warning" dot>
                   Override
                 </Pill>
@@ -192,11 +256,16 @@ export function CapacityLogbookDrawer({ log, onClose, onToast }: CapacityLogbook
                 </Pill>
               )}
               <Pill tone="neutral">
-                {log.total_checks} check{log.total_checks === 1 ? "" : "s"}
+                {totalChecks} check{totalChecks === 1 ? "" : "s"}
               </Pill>
-              {log.total_missed > 0 && (
+              {totalMissed > 0 && (
                 <Pill tone="danger">
-                  {log.total_missed} missed
+                  {totalMissed} missed
+                </Pill>
+              )}
+              {isActive && subject.row.next_due_at && (
+                <Pill tone="neutral">
+                  Next: {formatTime(subject.row.next_due_at)}
                 </Pill>
               )}
             </div>
@@ -224,7 +293,8 @@ export function CapacityLogbookDrawer({ log, onClose, onToast }: CapacityLogbook
 
         {/* Body — scrolls */}
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {/* Signoff card */}
+          {/* Signoff card — only for closed logbooks. */}
+          {!isActive && signoffShown && (
           <section
             style={{
               padding: "16px 24px",
@@ -302,6 +372,7 @@ export function CapacityLogbookDrawer({ log, onClose, onToast }: CapacityLogbook
               </div>
             )}
           </section>
+          )}
 
           {/* Timeline */}
           <section style={{ padding: "16px 24px" }}>
@@ -351,14 +422,26 @@ export function CapacityLogbookDrawer({ log, onClose, onToast }: CapacityLogbook
           <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleDownload}
-            disabled={downloading}
-            leading={<Icon name="download" size={16} />}
-          >
-            {downloading ? "Preparing…" : "Download PDF"}
-          </Button>
+          {closedLog ? (
+            <Button
+              variant="primary"
+              onClick={handleDownload}
+              disabled={downloading}
+              leading={<Icon name="download" size={16} />}
+            >
+              {downloading ? "Preparing…" : "Download PDF"}
+            </Button>
+          ) : (
+            <span
+              style={{
+                fontSize: 12,
+                color: tokens.color.ink500,
+                alignSelf: "center",
+              }}
+            >
+              PDF available after the shift is signed off.
+            </span>
+          )}
         </footer>
       </aside>
     </>

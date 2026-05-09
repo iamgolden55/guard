@@ -67,12 +67,16 @@ export interface ActiveShiftsTableProps {
   shifts: ActiveCapacityShift[];
   isLoading: boolean;
   error: string | null;
+  onRowClick?: (row: ActiveCapacityShift) => void;
+  selectedShiftGroup?: string | null;
 }
 
 export function ActiveShiftsTable({
   shifts,
   isLoading,
   error,
+  onRowClick,
+  selectedShiftGroup,
 }: ActiveShiftsTableProps) {
   return (
     <Card padding={0} style={{ overflow: "hidden" }}>
@@ -112,8 +116,24 @@ export function ActiveShiftsTable({
               shifts.map((s) => {
                 const nextDue = relativeMinutes(s.next_due_at);
                 const isOverdue = s.is_overdue || nextDue.isOverdue;
+                const isSelected = selectedShiftGroup === s.shift_group;
                 return (
-                  <tr key={s.shift_group}>
+                  <tr
+                    key={s.shift_group}
+                    onClick={onRowClick ? () => onRowClick(s) : undefined}
+                    style={{
+                      cursor: onRowClick ? "pointer" : "default",
+                      background: isSelected ? tokens.color.ink50 : "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!onRowClick || isSelected) return;
+                      (e.currentTarget as HTMLTableRowElement).style.background = tokens.color.ink50;
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!onRowClick || isSelected) return;
+                      (e.currentTarget as HTMLTableRowElement).style.background = "transparent";
+                    }}
+                  >
                     <td style={{ ...CELL_STYLE, fontWeight: 600 }}>
                       {s.venue_name}
                       <div
