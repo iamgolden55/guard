@@ -36,6 +36,10 @@
       },
       "ios": {
         "resourceClass": "m-medium"
+      },
+      "android": {
+        "distribution": "internal",
+        "buildType": "apk"
       }
     }
   },

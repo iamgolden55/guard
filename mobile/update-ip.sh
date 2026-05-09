@@ -2,6 +2,17 @@
 
 # Auto-detect IP and update mobile .env file
 # Run this script whenever your WiFi network changes
+#
+# Platform notes:
+#   • iOS Simulator   → uses the host machine directly; the LAN IP works.
+#   • Physical iPhone → must be on the same Wi-Fi as the Mac; LAN IP works.
+#   • Physical Android → same Wi-Fi as the Mac; LAN IP works.
+#   • Android EMULATOR → does NOT see the host LAN IP. The emulator reaches the
+#                        host at the special address 10.0.2.2 instead.
+#                        If you're running on the Android emulator, override
+#                        the .env value after this script:
+#                          API_BASE_URL=http://10.0.2.2:8000
+#                        (Or run: ./switch-env.sh local-emulator if/when added.)
 
 echo "🔍 Detecting your local IP address..."
 

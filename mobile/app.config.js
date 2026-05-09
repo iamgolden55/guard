@@ -49,6 +49,13 @@ module.exports = {
       },
       package: "com.meadsecurity.staffapp",
       versionCode: 1,
+      // Firebase / FCM for Android push notifications.
+      // Drop google-services.json (downloaded from the Firebase console for the
+      // com.meadsecurity.staffapp Android app) into mobile/, then uncomment the
+      // line below. Without this file an EAS Android build will succeed but
+      // backend pushes will silently no-op on Android. See
+      // DEVELOPMENT_BUILD_SETUP.md → "Android: Firebase / FCM setup".
+      googleServicesFile: "./google-services.json",
       permissions: [
         "CAMERA",
         "RECORD_AUDIO",

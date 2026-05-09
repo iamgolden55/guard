@@ -426,3 +426,130 @@ eas build --platform android --profile development
 ```
 
 **Total time:** ~15 minutes for first build (mostly waiting)
+
+---
+
+## Android: First-Time Setup
+
+The codebase is already cross-platform (Expo managed, `app.config.js` has a complete `android` block, EAS profiles already include Android). This section covers the Android-specific environment setup a developer needs the first time.
+
+### 1. Android Studio + Emulator (AVD)
+
+If you only have a physical Android device (USB debugging on, on the same Wi-Fi as your dev machine), you can skip the emulator.
+
+1. Install Android Studio: <https://developer.android.com/studio>
+2. Open Studio → **More Actions → Virtual Device Manager → Create Virtual Device**
+3. Pick **Pixel 7** (or similar) → **API 34 (Android 14)** → finish.
+4. Start the AVD. Verify `adb devices` shows it:
+   ```bash
+   adb devices
+   # List of devices attached
+   # emulator-5554   device
+   ```
+
+### 2. Networking caveat: emulator vs. physical device
+
+The repo's `update-ip.sh` writes your Mac's **LAN IP** into `mobile/.env` as `API_BASE_URL=http://<lan-ip>:8000`. That works for:
+- iOS Simulator (loopback)
+- Physical iPhone on the same Wi-Fi
+- Physical Android phone on the same Wi-Fi
+
+The Android **emulator** is different — it cannot see your Mac's LAN IP. The emulator reaches the host machine at the special address `10.0.2.2`. So for emulator runs:
+
+```bash
+# In mobile/.env, override after running ./update-ip.sh:
+API_BASE_URL=http://10.0.2.2:8000
+```
+
+(Backend still needs to be running on `0.0.0.0:8000` so it accepts non-localhost connections — `python manage.py runserver 0.0.0.0:8000`.)
+
+### 3. Run on Android via Expo Go (fastest path, no native push)
+
+```bash
+cd mobile
+npm start                # starts Metro
+# In the Metro terminal, press: a
+# (or scan the QR with Expo Go on a physical Android device)
+```
+
+Use this for UI/flow QA. Local shift-reminder notifications work; backend-pushed notifications do **not** (Expo Go limitation — same as iOS).
+
+### 4. Build a development APK (for native push, real builds)
+
+```bash
+cd mobile
+npm run build:android:dev      # → eas build --platform android --profile development
+```
+
+EAS produces an APK; install it via:
+- The QR/install link emailed by EAS, **or**
+- `adb install ~/Downloads/security-staff-mobile.apk`
+
+Launch the dev APK, then point it at your Metro server:
+```bash
+npx expo start --dev-client
+# scan the QR from the dev APK (it has a built-in scanner)
+```
+
+### 5. Android: Firebase / FCM setup (required for push notifications)
+
+Android push goes via FCM, not APNs. Without this configured, backend pushes silently no-op on Android.
+
+1. **Create a Firebase project** (or reuse an existing one): <https://console.firebase.google.com>
+2. **Add an Android app** to the project:
+   - Package name: `com.meadsecurity.staffapp` (must match `app.config.js` android.package)
+3. **Download `google-services.json`** and place it at `mobile/google-services.json`.
+4. **Enable it in `app.config.js`** by uncommenting this line in the `android` block:
+   ```js
+   googleServicesFile: "./google-services.json",
+   ```
+5. **Upload the FCM V1 service-account key to EAS:**
+   - In Firebase Console → Project Settings → Service Accounts → **Generate new private key** → download JSON.
+   - Then run, from `mobile/`:
+     ```bash
+     eas credentials -p android
+     # Select: push notifications
+     # Select: Google Service Account Key for Push Notifications (FCM V1)
+     # Upload the JSON you just downloaded
+     ```
+6. **Re-build** the dev APK so the new `google-services.json` is included:
+   ```bash
+   npm run build:android:dev
+   ```
+
+The app's `notificationService.ts` already creates the three required Android notification channels (SHIFT_REMINDERS, INCIDENT_ALERTS, SYNC_STATUS) and registers `platform: 'android'` with the backend at `/api/v1/notifications/devices/`. No code changes needed.
+
+### 6. Google Sign-In on Android
+
+The `app.config.js` `extra.google` block already reads an Android client ID from the env:
+```js
+androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+```
+
+To wire it up:
+1. Google Cloud Console → APIs & Services → Credentials → **Create OAuth 2.0 Client ID** of type **Android**.
+2. Package: `com.meadsecurity.staffapp`
+3. SHA-1: from your EAS-managed Android signing cert. Find it via:
+   ```bash
+   eas credentials -p android
+   # The Android Keystore section shows the SHA-1 fingerprint.
+   ```
+4. Add the resulting client ID to `mobile/.env`:
+   ```
+   EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=xxxxxxxxxxxx-yyyyyyyyy.apps.googleusercontent.com
+   ```
+5. Re-build the dev APK so the value ships.
+
+Apple Sign-In stays iOS-only (already gated by `Platform.OS === 'ios'` in `LoginScreenV2.tsx` and `RegisterScreenV2.tsx`); Android users use Google Sign-In or email/password.
+
+### 7. Smoke-test checklist on Android
+
+Run these on both a physical Android device and the AVD:
+- Email/password sign-in
+- Google Sign-In (after step 6)
+- Confirm Apple Sign-In button is **not** rendered on Android
+- Dashboard, Scheduling (week view + drag-and-drop), Leave request (date pickers), Shift details (Open in Maps → opens Google Maps via `geo:` intent)
+- Camera capture for shift photos
+- Signature canvas
+- Biometric login button shows "Use biometric login" copy (not "Face ID")
+- Backend-pushed notification arrives and uses the correct channel (after step 5)
