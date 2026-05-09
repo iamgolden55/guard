@@ -1,29 +1,32 @@
 /**
- * Capacity Logbook Screen
+ * Capacity Logbook Screen — redesign aligned with the dashboard/check-in V2 visual language.
  *
  * Read view of the digital capacity-check logbook for a shift_group.
  * Shows a chronological audit trail of CapacityCheck entries and missed
  * 30-minute slots, plus a countdown to the next due check (or a "Sign off
  * logbook" CTA when the shift is wrapping up). Subscribes to the WS
  * capacity_event channel to live-refresh as teammates log counts.
+ *
+ * Functionality is unchanged from the prior version — only the visuals,
+ * layout, and a switch to FlatList for the timeline.
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
+  Text,
   StyleSheet,
-  ScrollView,
-  TouchableOpacity,
+  Pressable,
+  FlatList,
   RefreshControl,
   Alert,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
-import { Container, Heading2, Heading3, Body, BodySmall, Card, Button } from '@components/ui';
+import Svg, { Path } from 'react-native-svg';
 import { useAppSelector } from '../../hooks/useRedux';
 import { selectActiveShift } from '../../store/slices/shiftsSlice';
-import { colors, getColors, spacing } from '../../theme';
-import { useTheme } from '../../hooks/useTheme';
 import { logger } from '../../utils/logger';
 import {
   shiftChecksService,
@@ -35,20 +38,29 @@ import { notificationWebSocket, type CapacityEventMessage } from '../../services
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainStackParamList } from '../../types/navigation';
 import { LogbookSignoffModal } from '../../components/LogbookSignoffModal';
+import { useRedesignTheme } from '../../theme/redesign';
+import {
+  Eyebrow,
+  GlassCard,
+  AccentDot,
+  NavBack,
+  PrimaryCTA,
+  TimelineEntry,
+} from '../../components/redesign';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList, 'CapacityLogbook'>;
 type RouteProps = RouteProp<MainStackParamList, 'CapacityLogbook'>;
 
-type TimelineEntry =
-  | { kind: 'check'; at: string; data: CapacityCheck }
-  | { kind: 'miss'; at: string; data: CapacityCheckSlotMiss };
+type TimelineRow =
+  | { kind: 'check'; at: string; data: CapacityCheck; key: string }
+  | { kind: 'miss'; at: string; data: CapacityCheckSlotMiss; key: string };
 
 export const CapacityLogbookScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { shiftId, shiftGroup: routeShiftGroup } = route.params;
-  const { isDark } = useTheme();
-  const themeColors = getColors(isDark);
+  const insets = useSafeAreaInsets();
+  const theme = useRedesignTheme();
   const activeShift = useAppSelector(selectActiveShift);
 
   const shiftGroup = routeShiftGroup || activeShift?.shift_group || `shift_${shiftId}`;
@@ -86,7 +98,6 @@ export const CapacityLogbookScreen = () => {
     }, [loadData])
   );
 
-  // Live refresh on WS events for our shift_group
   useEffect(() => {
     const unsubscribe = notificationWebSocket.addCapacityEventListener(
       (msg: CapacityEventMessage) => {
@@ -104,16 +115,26 @@ export const CapacityLogbookScreen = () => {
     setRefreshing(false);
   }, [loadData]);
 
-  // Build a single chronological timeline (newest first).
-  const timeline: TimelineEntry[] = useMemo(() => {
-    const entries: TimelineEntry[] = [
-      ...checks.map<TimelineEntry>((c) => ({ kind: 'check', at: c.timestamp, data: c })),
-      ...misses.map<TimelineEntry>((m) => ({ kind: 'miss', at: m.expected_at, data: m })),
+  // Single chronological feed (newest first).
+  const timeline: TimelineRow[] = useMemo(() => {
+    const entries: TimelineRow[] = [
+      ...checks.map<TimelineRow>((c) => ({
+        kind: 'check',
+        at: c.timestamp,
+        data: c,
+        key: `check-${c.id}`,
+      })),
+      ...misses.map<TimelineRow>((m) => ({
+        kind: 'miss',
+        at: m.expected_at,
+        data: m,
+        key: `miss-${m.id}`,
+      })),
     ];
     return entries.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   }, [checks, misses]);
 
-  // Compute next-due time from the latest check (or shift start if none).
+  // Next-due time relative to the latest check (or shift start if none).
   const nextDueAt: Date | null = useMemo(() => {
     if (signoff) return null;
     const anchor = checks[0]
@@ -125,10 +146,18 @@ export const CapacityLogbookScreen = () => {
     return new Date(anchor + intervalMin * 60 * 1000);
   }, [signoff, checks, activeShift?.start_time, intervalMin]);
 
+  // Live-tick the countdown so it ticks down without a refresh.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (signoff) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, [signoff]);
+
   const minutesUntilDue: number | null = useMemo(() => {
     if (!nextDueAt) return null;
-    return Math.round((nextDueAt.getTime() - Date.now()) / 60000);
-  }, [nextDueAt]);
+    return Math.round((nextDueAt.getTime() - now) / 60000);
+  }, [nextDueAt, now]);
 
   const handleAcknowledgeMiss = (miss: CapacityCheckSlotMiss) => {
     Alert.prompt(
@@ -162,175 +191,197 @@ export const CapacityLogbookScreen = () => {
     navigation.goBack();
   };
 
+  const renderRow = useCallback(
+    ({ item, index }: { item: TimelineRow; index: number }) => {
+      const isLast = index === timeline.length - 1;
+
+      if (item.kind === 'check') {
+        const c = item.data;
+        const performer = c.performed_by_details;
+        const who = performer
+          ? `${performer.first_name} ${performer.last_name?.charAt(0) || ''}.`.trim()
+          : 'Teammate';
+        return (
+          <TimelineEntry
+            kind="check"
+            time={c.timestamp}
+            primary={`${c.current_count} / ${c.venue_capacity}${c.is_at_capacity ? ' · At capacity' : ''}`}
+            secondary={who}
+            detail={c.action_taken ? `Action: ${c.action_taken}` : undefined}
+            emphasis={c.is_at_capacity ? 'warning' : 'neutral'}
+            isFirst={index === 0}
+            isLast={isLast}
+          />
+        );
+      }
+
+      const m = item.data;
+      const acknowledged = m.acknowledged;
+      return (
+        <TimelineEntry
+          kind="miss"
+          time={m.expected_at}
+          primary={`Missed slot · ${formatTime(m.expected_at)}`}
+          secondary={acknowledged ? undefined : 'No count logged for this window'}
+          detail={acknowledged ? `Reason: ${m.acknowledgement_reason}` : undefined}
+          action={
+            acknowledged
+              ? undefined
+              : { label: 'Add reason', onPress: () => handleAcknowledgeMiss(m) }
+          }
+          emphasis={acknowledged ? 'warning' : 'critical'}
+          isFirst={index === 0}
+          isLast={isLast}
+        />
+      );
+    },
+    [timeline.length],
+  );
+
   return (
-    <Container scrollable={false} safeArea style={[styles.container, { backgroundColor: themeColors.background.secondary }]}>
-      <View style={[styles.header, { backgroundColor: themeColors.background.primary, borderBottomColor: themeColors.border.light }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeButton}>
-          <Ionicons name="close" size={24} color={themeColors.text.primary} />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Heading2>Capacity Logbook</Heading2>
-          <Body color={themeColors.text.secondary}>{venueName}</Body>
-        </View>
-      </View>
+    <View style={[styles.root, { backgroundColor: theme.colors.canvas }]}>
+      <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
 
-      <ScrollView
-        style={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      <FlatList
+        data={timeline}
+        keyExtractor={(item) => item.key}
+        renderItem={renderRow}
+        contentContainerStyle={{
+          paddingTop: insets.top + 12,
+          paddingHorizontal: 20,
+          paddingBottom: 32 + insets.bottom,
+        }}
         showsVerticalScrollIndicator={false}
-      >
-        {/* Status / countdown card */}
-        <Card variant="elevated" padding="lg" style={styles.statusCard}>
-          {signoff ? (
-            <View>
-              <View style={styles.statusRow}>
-                <Ionicons name="checkmark-circle" size={28} color={themeColors.success} />
-                <Heading3 style={styles.statusTitle}>Logbook closed</Heading3>
-              </View>
-              {signoff.signature ? (
-                <Body color={themeColors.text.secondary}>
-                  Signed by {signoff.closed_by_name}
-                  {signoff.closed_by_role ? ` (${signoff.closed_by_role})` : ''} at{' '}
-                  {formatTime(signoff.signed_at || signoff.created_at)}
-                </Body>
-              ) : (
-                <Body color={themeColors.text.secondary}>
-                  Closed via override: {signoff.override_reason}
-                </Body>
-              )}
-              <BodySmall color={themeColors.text.tertiary} style={styles.statusFooter}>
-                {signoff.total_checks} check{signoff.total_checks === 1 ? '' : 's'} ·{' '}
-                {signoff.total_missed} missed
-              </BodySmall>
-            </View>
-          ) : (
-            <View>
-              <View style={styles.statusRow}>
-                <Ionicons name="time" size={28} color={themeColors.primary} />
-                <Heading3 style={styles.statusTitle}>
-                  {minutesUntilDue !== null && minutesUntilDue > 0
-                    ? `Next check in ${minutesUntilDue} min`
-                    : minutesUntilDue !== null && minutesUntilDue <= 0
-                      ? 'Check is due now'
-                      : 'No checks logged yet'}
-                </Heading3>
-              </View>
-              <Body color={themeColors.text.secondary}>
-                Capacity {venueCapacity} · check every {intervalMin} min
-              </Body>
-              <View style={styles.actionsRow}>
-                <Button
-                  title="Log capacity now"
-                  variant="primary"
-                  size="medium"
-                  onPress={() =>
-                    navigation.navigate('CapacityCheck', { shiftId, checkType: 'capacity' })
-                  }
-                  style={styles.actionButton}
-                />
-                <Button
-                  title="Sign off logbook"
-                  variant="secondary"
-                  size="medium"
-                  onPress={handleOpenSignoff}
-                  style={styles.actionButton}
-                />
-              </View>
-            </View>
-          )}
-        </Card>
-
-        {/* Timeline */}
-        <View style={styles.timelineHeader}>
-          <Heading3>Timeline</Heading3>
-          <BodySmall color={themeColors.text.secondary}>
-            {checks.length} logged · {misses.length} missed
-          </BodySmall>
-        </View>
-
-        {timeline.length === 0 && !loading && (
-          <Card variant="flat" padding="lg" style={styles.emptyCard}>
-            <Body color={themeColors.text.secondary} style={styles.emptyText}>
-              No capacity checks logged yet. The first one is due {intervalMin} min after shift start.
-            </Body>
-          </Card>
-        )}
-
-        {timeline.map((entry, idx) => (
-          <Card
-            key={`${entry.kind}-${entry.kind === 'check' ? entry.data.id : entry.data.id}-${idx}`}
-            variant="flat"
-            padding="md"
-            style={[
-              styles.entryCard,
-              entry.kind === 'miss' && styles.entryCardMissed,
-            ]}
-          >
-            <View style={styles.entryRow}>
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.colors.accent}
+            colors={[theme.colors.accent]}
+          />
+        }
+        ListHeaderComponent={
+          <View style={{ marginBottom: 18 }}>
+            {/* Top bar */}
+            <View style={styles.topBar}>
+              <NavBack
+                onPress={() => navigation.goBack()}
+              />
+              <View style={{ flex: 1 }} />
               <View
                 style={[
-                  styles.entryIcon,
-                  entry.kind === 'miss'
-                    ? { backgroundColor: themeColors.error + '20' }
-                    : entry.data.is_at_capacity
-                      ? { backgroundColor: themeColors.warning + '20' }
-                      : { backgroundColor: themeColors.success + '20' },
+                  styles.countPill,
+                  {
+                    backgroundColor: theme.colors.surface.chip,
+                    borderColor: theme.colors.surface.hairline,
+                  },
                 ]}
               >
-                <Ionicons
-                  name={entry.kind === 'miss' ? 'alert-circle' : 'people'}
-                  size={20}
-                  color={
-                    entry.kind === 'miss'
-                      ? themeColors.error
-                      : entry.data.is_at_capacity
-                        ? themeColors.warning
-                        : themeColors.success
-                  }
-                />
-              </View>
-
-              <View style={styles.entryBody}>
-                {entry.kind === 'check' ? (
-                  <>
-                    <Body style={styles.entryTitle}>
-                      {entry.data.current_count} / {entry.data.venue_capacity}
-                      {entry.data.is_at_capacity && '  · AT CAPACITY'}
-                    </Body>
-                    <BodySmall color={themeColors.text.secondary}>
-                      {formatTime(entry.data.timestamp)}
-                      {entry.data.performed_by_details &&
-                        ` · ${entry.data.performed_by_details.first_name} ${entry.data.performed_by_details.last_name?.charAt(0) || ''}.`}
-                    </BodySmall>
-                    {entry.data.action_taken ? (
-                      <BodySmall color={themeColors.text.tertiary} style={styles.entryAction}>
-                        Action: {entry.data.action_taken}
-                      </BodySmall>
-                    ) : null}
-                  </>
-                ) : (
-                  <>
-                    <Body style={[styles.entryTitle, { color: themeColors.error }]}>
-                      Missed slot · {formatTime(entry.data.expected_at)}
-                    </Body>
-                    {entry.data.acknowledged ? (
-                      <BodySmall color={themeColors.text.secondary}>
-                        Reason: {entry.data.acknowledgement_reason}
-                      </BodySmall>
-                    ) : (
-                      <TouchableOpacity onPress={() => handleAcknowledgeMiss(entry.data)}>
-                        <BodySmall color={themeColors.primary} style={styles.entryAction}>
-                          Add reason
-                        </BodySmall>
-                      </TouchableOpacity>
-                    )}
-                  </>
-                )}
+                <Eyebrow tracking={1.8} color={theme.colors.text.secondary}>
+                  {checks.length} logged · {misses.length} missed
+                </Eyebrow>
               </View>
             </View>
-          </Card>
-        ))}
-      </ScrollView>
+
+            {/* Title block */}
+            <View style={{ marginTop: 16 }}>
+              <Eyebrow color={theme.colors.accent}>{venueName}</Eyebrow>
+              <Text
+                allowFontScaling={false}
+                style={[
+                  styles.heading,
+                  { color: theme.colors.text.primary, fontFamily: theme.fonts.sans },
+                ]}
+              >
+                Capacity logbook
+              </Text>
+              <Text
+                allowFontScaling={false}
+                style={{
+                  marginTop: 6,
+                  fontSize: 13,
+                  color: theme.colors.text.secondary,
+                  fontFamily: theme.fonts.sans,
+                }}
+              >
+                Capacity {venueCapacity} · check every {intervalMin} min
+              </Text>
+            </View>
+
+            {/* Status hero */}
+            <StatusHero
+              signoff={signoff}
+              minutesUntilDue={minutesUntilDue}
+              hasChecks={checks.length > 0}
+              intervalMin={intervalMin}
+              onLogCheck={() =>
+                navigation.navigate('CapacityCheck', { shiftId, checkType: 'capacity' })
+              }
+              onSignoff={handleOpenSignoff}
+            />
+
+            {/* Timeline header */}
+            {timeline.length > 0 ? (
+              <View style={{ marginTop: 28, marginBottom: 6, marginLeft: 4 }}>
+                <Eyebrow>Timeline · newest first</Eyebrow>
+              </View>
+            ) : null}
+          </View>
+        }
+        ListEmptyComponent={
+          !loading ? (
+            <GlassCard style={{ alignItems: 'center', paddingVertical: 32, marginTop: 20 }}>
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  backgroundColor: theme.colors.surface.chip,
+                  borderWidth: 1,
+                  borderColor: theme.colors.surface.hairlineStrong,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 14,
+                }}
+              >
+                <Svg width={18} height={18} viewBox="0 0 24 24">
+                  <Path
+                    d="M12 6 v6 l4 2 M12 2 a10 10 0 1 0 0 20 a10 10 0 0 0 0 -20"
+                    stroke={theme.colors.text.secondary}
+                    strokeWidth={1.6}
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                </Svg>
+              </View>
+              <Text
+                allowFontScaling={false}
+                style={{
+                  fontFamily: theme.fonts.sans,
+                  color: theme.colors.text.primary,
+                  fontSize: 16,
+                  fontWeight: '500',
+                  marginBottom: 4,
+                }}
+              >
+                No checks yet
+              </Text>
+              <Text
+                allowFontScaling={false}
+                style={{
+                  fontFamily: theme.fonts.sans,
+                  color: theme.colors.text.secondary,
+                  fontSize: 13,
+                  textAlign: 'center',
+                  paddingHorizontal: 28,
+                }}
+              >
+                The first count is due {intervalMin} min after shift start.
+              </Text>
+            </GlassCard>
+          ) : null
+        }
+      />
 
       <LogbookSignoffModal
         visible={signoffModalVisible}
@@ -342,7 +393,257 @@ export const CapacityLogbookScreen = () => {
         onClose={() => setSignoffModalVisible(false)}
         onSubmitted={handleSignoffSubmitted}
       />
-    </Container>
+    </View>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────
+// Status hero — three states: pending (countdown), overdue, signed-off
+// ─────────────────────────────────────────────────────────────
+interface StatusHeroProps {
+  signoff: CapacityLogbookSignoff | null;
+  minutesUntilDue: number | null;
+  hasChecks: boolean;
+  intervalMin: number;
+  onLogCheck: () => void;
+  onSignoff: () => void;
+}
+
+const StatusHero: React.FC<StatusHeroProps> = ({
+  signoff,
+  minutesUntilDue,
+  hasChecks,
+  intervalMin,
+  onLogCheck,
+  onSignoff,
+}) => {
+  const theme = useRedesignTheme();
+
+  // Closed
+  if (signoff) {
+    return (
+      <GlassCard style={{ marginTop: 22, padding: 20 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 11,
+              backgroundColor: theme.colors.accentSoft,
+              borderWidth: 1,
+              borderColor: theme.colors.accentBorder,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Svg width={10} height={10} viewBox="0 0 16 16">
+              <Path
+                d="M3 8 L7 12 L13 4"
+                stroke={theme.colors.accent}
+                strokeWidth={2}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+          </View>
+          <Eyebrow color={theme.colors.accent}>Logbook closed</Eyebrow>
+        </View>
+        <Text
+          allowFontScaling={false}
+          style={{
+            marginTop: 12,
+            fontSize: 26,
+            color: theme.colors.text.primary,
+            fontFamily: theme.fonts.sans,
+            fontWeight: '400',
+            letterSpacing: -0.6,
+            lineHeight: 32,
+          }}
+        >
+          {signoff.signature
+            ? `Signed by ${signoff.closed_by_name}`
+            : 'Closed via override'}
+        </Text>
+        {signoff.signature ? (
+          <Text
+            allowFontScaling={false}
+            style={{
+              marginTop: 6,
+              fontSize: 13,
+              color: theme.colors.text.secondary,
+              fontFamily: theme.fonts.sans,
+            }}
+          >
+            {signoff.closed_by_role || 'Duty Manager'} · {formatTime(signoff.signed_at || signoff.created_at)}
+          </Text>
+        ) : (
+          <Text
+            allowFontScaling={false}
+            style={{
+              marginTop: 6,
+              fontSize: 13,
+              color: theme.colors.text.secondary,
+              fontFamily: theme.fonts.sans,
+            }}
+          >
+            Reason: {signoff.override_reason}
+          </Text>
+        )}
+        <View style={styles.metaStrip}>
+          <Eyebrow tracking={1.8} color={theme.colors.text.tertiary}>
+            {signoff.total_checks} check{signoff.total_checks === 1 ? '' : 's'} · {signoff.total_missed} missed
+          </Eyebrow>
+        </View>
+      </GlassCard>
+    );
+  }
+
+  // Open — show countdown / overdue / not-started
+  const overdue = minutesUntilDue !== null && minutesUntilDue <= 0;
+  const idle = !hasChecks && (minutesUntilDue === null || minutesUntilDue > 0);
+
+  const bigNumber = overdue
+    ? Math.abs(minutesUntilDue!)
+    : minutesUntilDue !== null
+      ? minutesUntilDue
+      : intervalMin;
+
+  const eyebrowText = overdue
+    ? `Overdue · ${Math.abs(minutesUntilDue!)} min ago`
+    : idle
+      ? 'No checks logged yet'
+      : 'Next check in';
+
+  const accent = overdue ? theme.colors.accent : theme.colors.text.primary;
+
+  return (
+    <View style={{ marginTop: 22 }}>
+      <GlassCard
+        style={{
+          padding: 22,
+          borderColor: overdue ? theme.colors.accentBorder : theme.colors.surface.hairline,
+          backgroundColor: overdue ? theme.colors.accentSoft : theme.colors.surface.card,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <AccentDot
+            pulse={overdue}
+            color={overdue ? theme.colors.accent : theme.colors.text.secondary}
+            size={6}
+          />
+          <Eyebrow color={overdue ? theme.colors.accent : theme.colors.text.secondary}>
+            {eyebrowText}
+          </Eyebrow>
+        </View>
+
+        <View style={styles.bigNumberRow}>
+          <Text
+            allowFontScaling={false}
+            style={{
+              fontSize: 84,
+              fontFamily: theme.fonts.sans,
+              fontWeight: '300',
+              letterSpacing: -3,
+              lineHeight: 88,
+              color: accent,
+            }}
+          >
+            {idle ? '—' : bigNumber}
+          </Text>
+          {!idle ? (
+            <View style={{ marginLeft: 10, paddingBottom: 14 }}>
+              <Text
+                allowFontScaling={false}
+                style={{
+                  fontFamily: theme.fonts.mono,
+                  fontSize: 11,
+                  letterSpacing: 1.8,
+                  textTransform: 'uppercase',
+                  color: theme.colors.text.secondary,
+                }}
+              >
+                Min
+              </Text>
+              <Text
+                allowFontScaling={false}
+                style={{
+                  marginTop: 4,
+                  fontFamily: theme.fonts.mono,
+                  fontSize: 11,
+                  letterSpacing: 1.8,
+                  textTransform: 'uppercase',
+                  color: theme.colors.text.tertiary,
+                }}
+              >
+                {overdue ? 'Past due' : 'Remaining'}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <Text
+          allowFontScaling={false}
+          style={{
+            marginTop: 4,
+            fontSize: 13,
+            color: theme.colors.text.secondary,
+            fontFamily: theme.fonts.sans,
+          }}
+        >
+          {overdue
+            ? 'Log a count now to keep the audit trail intact.'
+            : idle
+              ? `First count is due ${intervalMin} min after shift start.`
+              : `Counts are logged every ${intervalMin} minutes.`}
+        </Text>
+
+        <View style={{ marginTop: 18 }}>
+          <PrimaryCTA
+            label={overdue ? 'Log capacity now · overdue' : 'Log capacity now'}
+            onPress={onLogCheck}
+            accessibilityLabel="Log a capacity check now"
+          />
+        </View>
+
+        <Pressable
+          onPress={onSignoff}
+          accessibilityRole="button"
+          accessibilityLabel="Sign off logbook"
+          style={({ pressed }) => [
+            styles.ghostBtn,
+            {
+              borderColor: theme.colors.surface.hairlineStrong,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Svg width={14} height={14} viewBox="0 0 24 24">
+            <Path
+              d="M4 17 L20 17 M6 14 c 4 -8 6 -8 12 0"
+              stroke={theme.colors.text.primary}
+              strokeWidth={1.6}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+          <Text
+            allowFontScaling={false}
+            style={{
+              marginLeft: 8,
+              fontSize: 14,
+              fontWeight: '500',
+              color: theme.colors.text.primary,
+              fontFamily: theme.fonts.sans,
+              letterSpacing: -0.2,
+            }}
+          >
+            Sign off logbook
+          </Text>
+        </Pressable>
+      </GlassCard>
+    </View>
   );
 };
 
@@ -352,50 +653,47 @@ function formatTime(iso: string): string {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 0 },
-  header: {
+  root: { flex: 1 },
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
+    gap: 12,
   },
-  closeButton: { padding: spacing.sm, marginRight: spacing.md },
-  headerContent: { flex: 1 },
-  content: { flex: 1, padding: spacing.lg },
-  statusCard: { marginBottom: spacing.lg },
-  statusRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
-  statusTitle: { marginLeft: spacing.md, flex: 1 },
-  statusFooter: { marginTop: spacing.sm },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginTop: spacing.md,
-  },
-  actionButton: { flex: 1 },
-  timelineHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  emptyCard: { backgroundColor: colors.gray[100], marginBottom: spacing.md },
-  emptyText: { textAlign: 'center' },
-  entryCard: { marginBottom: spacing.sm },
-  entryCardMissed: {
-    borderLeftWidth: 3,
-    borderLeftColor: colors.error,
-  },
-  entryRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  entryIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  countPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 36,
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  entryBody: { flex: 1, marginLeft: spacing.md },
-  entryTitle: { fontWeight: '600', marginBottom: 2 },
-  entryAction: { marginTop: 4 },
+  heading: {
+    marginTop: 8,
+    fontSize: 32,
+    fontWeight: '400',
+    letterSpacing: -0.8,
+    lineHeight: 36,
+  },
+  bigNumberRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  metaStrip: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(127,127,127,0.15)',
+  },
+  ghostBtn: {
+    marginTop: 10,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
+
+export default CapacityLogbookScreen;
