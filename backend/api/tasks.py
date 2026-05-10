@@ -1427,6 +1427,24 @@ def send_shift_assignment_email_task(
         Dict with send status
     """
     from .services import email_notification_service
+    from django.utils import timezone
+    from .models import Shift
+
+    # Past-shift guard: belt-and-braces in case this task is invoked outside
+    # the signal flow. A "you've been assigned" email for a shift that
+    # already happened would just confuse the recipient.
+    try:
+        shift = Shift.objects.only('start_time').get(pk=shift_id)
+        if shift.start_time and shift.start_time <= timezone.now():
+            logger.info(
+                f"Skipping shift assignment email for past shift {shift_id} "
+                f"(start_time={shift.start_time})"
+            )
+            return {'status': 'skipped', 'reason': 'past_shift'}
+    except Shift.DoesNotExist:
+        # Shift was deleted between scheduling and execution — let the email
+        # service handle the missing-shift case below if it cares.
+        pass
 
     try:
         success = email_notification_service.send_shift_assignment_email(

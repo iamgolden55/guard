@@ -112,8 +112,23 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
 
     Drafts (is_published=False) never fire notifications — staff are only told
     about shifts after the manager publishes them.
+
+    Past shifts also never fire assignment notifications. Editing a worked
+    shift (e.g. correcting a pay rate after the fact) shouldn't produce a
+    "You've been assigned a shift" message — the shift is already done. Admin
+    edits to past shifts are administrative cleanup, not real assignments.
     """
     if not instance.is_published:
+        return
+
+    # Past-shift guard: a "Shift Assigned" notification for a shift that
+    # already started is misleading. Most admin edits on past shifts are
+    # rate corrections or status cleanup; staff don't need a push for those.
+    if instance.start_time and instance.start_time <= timezone.now():
+        logger.debug(
+            f"Skipping shift notification for past shift {instance.id} "
+            f"(start_time={instance.start_time})"
+        )
         return
 
     previous_staff = getattr(instance, '_previous_staff_user', None)

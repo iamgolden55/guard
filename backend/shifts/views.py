@@ -2448,7 +2448,14 @@ class ShiftViewSet(viewsets.ModelViewSet):
                     # Notify assigned staff (in-app + push). The post_save
                     # signal won't fire an assignment push here — staff_user
                     # didn't change on this save — so we trigger it directly.
-                    if shift.staff_user:
+                    # Skip past shifts: publishing a shift after it's started
+                    # is admin cleanup, not a real assignment, so the staff
+                    # shouldn't get a "you've been assigned" alert.
+                    is_past_shift = (
+                        shift.start_time is not None
+                        and shift.start_time <= timezone.now()
+                    )
+                    if shift.staff_user and not is_past_shift:
                         Notification.objects.create(
                             user=shift.staff_user,
                             company=company,
