@@ -30,7 +30,7 @@ module.exports = {
     ios: {
       supportsTablet: false,
       bundleIdentifier: "com.meadsecurity.staffapp",
-      buildNumber: "10",
+      buildNumber: "11",
       infoPlist: {
         NSCameraUsageDescription: "This app requires camera access to capture venue entrance photos during shift check-in and incident evidence photos.",
         NSPhotoLibraryUsageDescription: "This app requires photo library access to attach existing photos to incident reports.",
