@@ -11,6 +11,7 @@
 
 import Constants from 'expo-constants';
 import axios from 'axios';
+import * as SecureStore from 'expo-secure-store';
 
 // ============================================
 // API Base URLs - Read from .env file
@@ -28,6 +29,78 @@ export const API_PREFIX = '/api/v1';
 
 // Configure axios default baseURL for services that use axios directly
 axios.defaults.baseURL = API_BASE_URL;
+
+// ============================================
+// Global axios interceptors — auto-attach token + refresh on 401
+// ============================================
+// Without these, any direct axios.* call (TeamScreen, profile updates,
+// social login, etc.) bypasses token refresh and silently 401s after the
+// 30-min access token expires. The interceptors unify all direct-axios
+// callers under the same auto-refresh that apiService already does.
+
+// Endpoints that must NOT trigger a refresh-on-401 retry. /token/refresh/ would
+// loop forever; /login/ and the social-auth exchanges return 401 on bad creds,
+// not on expired tokens, so refreshing is pointless. Registration (/users/ POST)
+// is intentionally NOT listed — that path also matches /users/team-members/ etc.
+// which legitimately need the Authorization header. A logged-out registrant has
+// no token in SecureStore, so injection is a harmless no-op there.
+const NO_REFRESH_PATHS = [
+  '/token/refresh/',
+  '/login/',
+  '/auth/apple/',
+  '/auth/google/',
+];
+const matchesNoRefresh = (url?: string): boolean =>
+  !!url && NO_REFRESH_PATHS.some((p) => url.includes(p));
+
+// Request interceptor: inject the freshest token from SecureStore on every
+// request. Overrides any caller-set Authorization (e.g. screens passing a
+// stale token from Redux state) so SecureStore is the single source of truth.
+axios.interceptors.request.use(async (config) => {
+  if (matchesNoRefresh(config.url)) return config;
+  const token = await SecureStore.getItemAsync('accessToken');
+  if (token) {
+    config.headers = config.headers ?? {};
+    (config.headers as any).Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Single-flight refresh — concurrent 401s share one in-flight refresh so
+// we never double-rotate (which would blacklist the just-issued token).
+let refreshPromise: Promise<string | null> | null = null;
+
+axios.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const original = error.config;
+    if (
+      !original ||
+      original._retry ||
+      error.response?.status !== 401 ||
+      matchesNoRefresh(original.url)
+    ) {
+      return Promise.reject(error);
+    }
+    original._retry = true;
+
+    // Lazy-import authService to break the api.config.ts ↔ authService.ts cycle.
+    const authService = (await import('../services/authService')).default;
+
+    if (!refreshPromise) {
+      refreshPromise = authService.refreshAccessToken().finally(() => {
+        refreshPromise = null;
+      });
+    }
+
+    const newToken = await refreshPromise;
+    if (!newToken) return Promise.reject(error);
+
+    original.headers = original.headers ?? {};
+    (original.headers as any).Authorization = `Bearer ${newToken}`;
+    return axios(original);
+  },
+);
 
 // ============================================
 // API Endpoints (Relative paths - baseUrl is prepended by apiService and axios)
