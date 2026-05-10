@@ -2215,15 +2215,31 @@ class Shift(models.Model):
         if not effective_rate:
             return None
 
-        # Capped/adjusted hours (same logic as the legacy calculate_payment)
+        # Scheduled paid hours = scheduled duration minus the (unpaid) break.
         scheduled_duration = self.end_time - self.start_time
         scheduled_hours = Decimal(str(scheduled_duration.total_seconds() / 3600))
         break_hours = Decimal(str(self.break_duration / 60))
         max_payable_hours = scheduled_hours - break_hours
 
-        hours = Decimal(str(effective_hours))
-        if not self.get_latest_time_adjustment() and not self.auto_checkout:
-            hours = min(hours, max_payable_hours)
+        # Pay policy: scheduled hours by default. Two officers on the same
+        # shift always get the same base pay, regardless of small variances
+        # in their actual check-in/out timestamps (e.g. one checked out
+        # 2 minutes early, the other 18 minutes early). Variance handling
+        # is a manager decision via TimeAdjustment, not an automatic dock.
+        #
+        # Override paths:
+        #   - TimeAdjustment: admin-recorded override wins (genuine early
+        #     departure, no-show, manager-approved overtime).
+        #   - auto_checkout: the system already stepped in for an abnormal
+        #     case (forgot to check out, etc.); fall back to actual hours
+        #     still capped at scheduled.
+        adjustment = self.get_latest_time_adjustment()
+        if adjustment and adjustment.adjusted_actual_hours:
+            hours = Decimal(str(adjustment.adjusted_actual_hours))
+        elif self.auto_checkout:
+            hours = min(Decimal(str(effective_hours)), max_payable_hours)
+        else:
+            hours = max_payable_hours
 
         rate = Decimal(str(effective_rate))
 
@@ -2353,14 +2369,20 @@ class Shift(models.Model):
         }
 
     def calculate_payment(self):
-        """Calculate the payment for this shift based on actual hours worked and effective hourly rate
+        """Calculate the payment for this shift.
 
-        Payment is capped at scheduled hours to prevent overtime exploitation from late checkouts.
-        Only auto-checkout and manager-approved overtime can exceed scheduled hours.
-        Uses adjusted hours from TimeAdjustment if available.
+        Default: scheduled hours minus break × effective rate. Two officers
+        on the same shift always receive the same base pay; small
+        check-in/out timing variances do not create per-officer pay drift.
 
-        Implementation note: this delegates to calculate_payment_breakdown() and
-        sums the per-tier amounts so the legacy scalar return matches the
+        Override paths (see calculate_payment_breakdown for the full guard):
+          - TimeAdjustment from an admin (genuine early departure, no-show,
+            manager-approved overtime) wins.
+          - auto_checkout (system-flagged abnormal case) falls back to actual
+            hours, still capped at scheduled.
+
+        Implementation note: this delegates to calculate_payment_breakdown()
+        and sums the per-tier amounts so the legacy scalar return matches the
         breakdown exactly (revenue-neutral split).
         """
         breakdown = self.calculate_payment_breakdown()
