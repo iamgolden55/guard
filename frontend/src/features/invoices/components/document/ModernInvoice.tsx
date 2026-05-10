@@ -1,5 +1,6 @@
 // ModernInvoice — large hero + clean blocks.
 // Ported 1:1 from project/invoice-document.jsx:251-396.
+import { useState } from "react";
 import type { Accent } from "../../../../design-system/accents";
 import {
   COMPANY,
@@ -8,16 +9,32 @@ import {
   daysFromToday,
   isClientParty,
   money,
+  type InvoiceItem,
   type InvoiceRecord,
 } from "../../data/mocks";
 import { StatusStamp } from "./StatusStamp";
 
-export function ModernInvoice({ inv, accent }: { inv: InvoiceRecord; accent: Accent }) {
+interface ModernInvoiceProps {
+  inv: InvoiceRecord;
+  accent: Accent;
+  /** When provided + invoice is editable, the rate cell on shift lines
+   * becomes click-to-edit. Resolves once the API mutation completes. */
+  onEditShiftRate?: (shiftId: number, hourlyRate: number) => Promise<void>;
+}
+
+export function ModernInvoice({ inv, accent, onEditShiftRate }: ModernInvoiceProps) {
   const isStaff = inv.kind === "staff";
   const party = inv.party;
   const clientParty = !isStaff ? (party as import("../../data/mocks").ClientPartyDetails) : null;
   const staffParty = isStaff ? (party as import("../../data/mocks").StaffPartyDetails) : null;
   void isClientParty;
+
+  // Click-to-edit rate state. Only base-rate shift lines on draft staff
+  // invoices are editable — overtime tiers are derived, leave lines aren't
+  // shift-backed. Index-based because items[] don't carry stable client IDs.
+  const rateEditable = isStaff && inv.status === "draft" && Boolean(onEditShiftRate);
+  const isItemEditable = (it: InvoiceItem) =>
+    rateEditable && it.type === "shift" && typeof it.shiftId === "number";
 
   return (
     <div style={{ fontFamily: "'Inter', sans-serif", color: "#201f1e", position: "relative" }}>
@@ -227,16 +244,16 @@ export function ModernInvoice({ inv, accent }: { inv: InvoiceRecord; accent: Acc
                   >
                     {it.hours.toFixed(1)}
                   </td>
-                  <td
-                    style={{
-                      padding: "12px 8px",
-                      textAlign: "right",
-                      color: "#605e5c",
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {money(it.rate)}
-                  </td>
+                  <RateCell
+                    item={it}
+                    accent={accent}
+                    editable={isItemEditable(it)}
+                    onSave={
+                      onEditShiftRate
+                        ? (rate) => onEditShiftRate(it.shiftId as number, rate)
+                        : undefined
+                    }
+                  />
                   <td
                     style={{
                       padding: "12px 16px",
@@ -374,6 +391,159 @@ function SmallLabel({ children }: { children: string }) {
     >
       {children}
     </div>
+  );
+}
+
+// RateCell — read-only money for non-editable lines, click-to-edit input for
+// draft staff base-shift lines. Validates >0 before submit; ⏎ saves, Esc
+// cancels. While the mutation is in flight the cell shows "Saving…" so the
+// admin doesn't double-click.
+function RateCell({
+  item,
+  accent,
+  editable,
+  onSave,
+}: {
+  item: InvoiceItem;
+  accent: Accent;
+  editable: boolean;
+  onSave?: (hourlyRate: number) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const baseTd = {
+    padding: "12px 8px",
+    textAlign: "right" as const,
+    color: "#605e5c",
+    fontVariantNumeric: "tabular-nums" as const,
+  };
+
+  if (!editable) {
+    return <td style={baseTd}>{money(item.rate)}</td>;
+  }
+
+  const enter = () => {
+    setDraft(String(item.rate.toFixed(2)));
+    setError(null);
+    setEditing(true);
+  };
+
+  const cancel = () => {
+    setEditing(false);
+    setDraft("");
+    setError(null);
+  };
+
+  const commit = async () => {
+    const n = Number(draft);
+    if (!Number.isFinite(n) || n <= 0) {
+      setError("Enter a rate above £0");
+      return;
+    }
+    if (Math.abs(n - item.rate) < 0.005) {
+      cancel();
+      return;
+    }
+    if (!onSave) {
+      cancel();
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(n);
+      setEditing(false);
+      setDraft("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <td style={baseTd}>
+        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span style={{ color: "#605e5c" }}>£</span>
+            <input
+              autoFocus
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={draft}
+              disabled={saving}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void commit();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancel();
+                }
+              }}
+              onBlur={() => {
+                // Defer so a click on a sibling button isn't lost. If the user
+                // clicks outside the cell entirely we fall back to commit.
+                window.setTimeout(() => {
+                  if (editing && !saving) void commit();
+                }, 120);
+              }}
+              style={{
+                width: 64,
+                padding: "4px 6px",
+                fontSize: 12,
+                textAlign: "right",
+                border: `1px solid ${accent.primary}`,
+                borderRadius: 4,
+                fontVariantNumeric: "tabular-nums",
+                fontFamily: "inherit",
+              }}
+            />
+          </div>
+          {saving && <span style={{ fontSize: 10, color: "#a19f9d" }}>Saving…</span>}
+          {error && <span style={{ fontSize: 10, color: "#c50f1f" }}>{error}</span>}
+        </div>
+      </td>
+    );
+  }
+
+  return (
+    <td style={baseTd}>
+      <button
+        type="button"
+        onClick={enter}
+        title="Click to edit rate"
+        style={{
+          background: "transparent",
+          border: `1px dashed transparent`,
+          borderRadius: 4,
+          padding: "2px 6px",
+          margin: "-2px -6px",
+          cursor: "pointer",
+          color: "inherit",
+          fontVariantNumeric: "tabular-nums",
+          fontFamily: "inherit",
+          fontSize: "inherit",
+          transition: "border-color .12s, background .12s",
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.borderColor = accent.primary;
+          (e.currentTarget as HTMLButtonElement).style.background = accent.soft;
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent";
+          (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+        }}
+      >
+        {money(item.rate)}
+      </button>
+    </td>
   );
 }
 

@@ -13,6 +13,7 @@ import {
   CLIENT_STATS,
   STAFF_INVOICES,
   STAFF_STATS,
+  money,
   type InvoiceKind,
   type InvoiceRecord,
 } from "./data/mocks";
@@ -48,6 +49,7 @@ const ACTION_LABELS: Record<InvoiceActionId, string> = {
   delete: "Draft discarded",
   edit: "Editor opened",
   export: "Re-syncing to Xero…",
+  recalculate: "Recalculated from shifts",
 };
 
 const LEFT_PANE_KEY = "ms-invoices-left-pane";
@@ -238,6 +240,25 @@ export default function InvoicesPage() {
       case "edit":
         setEditOpen(true);
         break;
+      case "recalculate": {
+        // Snapshot the current total so the toast can show what changed —
+        // the admin's whole reason for clicking this is to confirm a rate
+        // correction landed, so a silent "Recalculated" is uninformative.
+        const before = selected?.total ?? 0;
+        billing.recalculate.mutate(selectedId, {
+          onSuccess: (updated) => {
+            const after = updated?.total ?? before;
+            if (Math.abs(after - before) < 0.005) {
+              fireToast(`Recalculated · still ${money(after)}`);
+            } else {
+              fireToast(`Recalculated · ${money(before)} → ${money(after)}`);
+            }
+          },
+          onError: (e) =>
+            fireToast(e instanceof Error ? e.message : "Recalculate failed"),
+        });
+        break;
+      }
       default:
         fireToast(ACTION_LABELS[id as InvoiceActionId] ?? String(id));
     }
@@ -255,6 +276,23 @@ export default function InvoicesPage() {
     await billing.updateNote.mutateAsync({ invoiceId: selectedId, note });
     setActionToast("Note updated");
     window.setTimeout(() => setActionToast(null), 2200);
+  };
+
+  const handleEditShiftRate = async (shiftId: number, hourlyRate: number) => {
+    if (!selectedId) return;
+    const before = selected?.total ?? 0;
+    const updated = await billing.editShiftRate.mutateAsync({
+      invoiceId: selectedId,
+      shiftId,
+      hourlyRate,
+    });
+    const after = updated?.total ?? before;
+    if (Math.abs(after - before) < 0.005) {
+      setActionToast(`Rate updated · still ${money(after)}`);
+    } else {
+      setActionToast(`Rate updated · ${money(before)} → ${money(after)}`);
+    }
+    window.setTimeout(() => setActionToast(null), 2400);
   };
 
   const handleCreateClientInvoice = async (payload: {
@@ -373,6 +411,7 @@ export default function InvoicesPage() {
                 template={template}
                 accent={palette}
                 paperEffect={paperEffect}
+                onEditShiftRate={USE_MOCKS ? undefined : handleEditShiftRate}
               />
             </div>
           ) : (

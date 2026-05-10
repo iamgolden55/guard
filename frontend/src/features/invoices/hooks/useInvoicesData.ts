@@ -116,6 +116,24 @@ export function useInvoicesData(kind: InvoiceKind) {
     onSuccess: invalidateAll,
   });
 
+  const recalculate = useMutation({
+    mutationFn: (invoiceId: string) => billingService.recalculate(invoiceId),
+    onSuccess: invalidateAll,
+  });
+
+  const editShiftRate = useMutation({
+    mutationFn: ({
+      invoiceId,
+      shiftId,
+      hourlyRate,
+    }: {
+      invoiceId: string;
+      shiftId: number;
+      hourlyRate: number;
+    }) => billingService.editShiftRate(invoiceId, shiftId, hourlyRate),
+    onSuccess: invalidateAll,
+  });
+
   const emailPayslip = useMutation({
     mutationFn: (invoiceId: string) => billingService.emailPayslip(invoiceId),
     onSuccess: invalidateAll,
@@ -140,6 +158,8 @@ export function useInvoicesData(kind: InvoiceKind) {
     emailPayslip,
     issue,
     updateNote,
+    recalculate,
+    editShiftRate,
     createClientInvoice,
   };
 }

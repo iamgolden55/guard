@@ -20,6 +20,7 @@ import { ExportBadge } from "../atoms/ExportBadge";
 export type InvoiceActionId =
   | "issue"
   | "edit"
+  | "recalculate"
   | "delete"
   | "paid"
   | "remind"
@@ -372,6 +373,12 @@ function ActionGroup({
   if (inv.status === "draft") {
     buttons.push({ id: "issue", label: "Issue & send", icon: "send", primary: true });
     buttons.push({ id: "edit", label: "Edit", icon: "edit" });
+    // Pulls fresh shift rates / hours into the line items. Used after an admin
+    // corrects a shift's hourly_rate (e.g. wrong default) and needs the draft
+    // to reflect it without discard+regenerate.
+    if (inv.kind === "staff") {
+      buttons.push({ id: "recalculate", label: "Recalculate from shifts", icon: "refresh" });
+    }
     buttons.push({ id: "delete", label: "Discard", icon: "x" });
   } else if (
     inv.status === "pending" ||

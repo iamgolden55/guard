@@ -180,6 +180,10 @@ class StaffInvoiceItemSerializer(serializers.Serializer):
     hours = serializers.SerializerMethodField()
     rate = serializers.FloatField()
     amount = serializers.FloatField()
+    # Source IDs for the click-to-edit rate cell on the invoice document.
+    # Frontend only enables editing when shiftId is set + type === 'shift'.
+    shiftId = serializers.IntegerField(source='shift_id', allow_null=True)
+    type = serializers.CharField(source='item_type')
 
     def get_desc(self, obj):
         if obj.description:

@@ -480,6 +480,97 @@ class BillingInvoiceFacadeViewSet(viewsets.ViewSet):
         self._bump_run_totals(instance)
         return Response(self._serializer_for(kind)(instance).data)
 
+    @action(detail=True, methods=['post'])
+    def edit_shift_rate(self, request, pk=None):
+        """Update the hourly_rate on one shift attached to this draft invoice
+        and recalculate in a single mutation. Powers the click-to-edit rate
+        cell on the invoice document — saves the admin a trip to Scheduling.
+
+        Body: {"shift_id": <int>, "hourly_rate": <decimal>}.
+
+        Constraints:
+          - Staff invoices only (ClientInvoice line items aren't shift-backed).
+          - Draft only — issued/paid/rejected invoices already represent a
+            committed record; rate corrections there go through `resolve` to
+            preserve audit trail.
+          - The shift must already be on this invoice (no sneaking new shifts in).
+        """
+        from decimal import Decimal, InvalidOperation
+        from .models import Shift
+
+        instance, kind = self._resolve_one(request, pk)
+        if not instance:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if kind != 'staff':
+            return Response(
+                {'detail': 'Edit shift rate is only supported on staff invoices.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if instance.status != 'draft':
+            return Response(
+                {'detail': f"Can only edit rates on draft invoices (current: {instance.status})."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if instance.superseded_by_id is not None:
+            return Response(
+                {'detail': 'Cannot edit a superseded invoice.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        shift_id = request.data.get('shift_id')
+        raw_rate = request.data.get('hourly_rate')
+        if shift_id in (None, ''):
+            return Response({'detail': "Field 'shift_id' is required."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if raw_rate in (None, ''):
+            return Response({'detail': "Field 'hourly_rate' is required."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            new_rate = Decimal(str(raw_rate))
+        except (InvalidOperation, TypeError):
+            return Response({'detail': "'hourly_rate' must be a decimal."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if new_rate <= 0:
+            return Response({'detail': "'hourly_rate' must be greater than 0."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Confirm the shift is actually on this invoice — prevents using this
+        # endpoint as a generic shift-update sidedoor.
+        if not instance.items.filter(shift_id=shift_id).exists():
+            return Response(
+                {'detail': 'That shift is not on this invoice.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            shift = Shift.objects.get(pk=shift_id)
+        except Shift.DoesNotExist:
+            return Response({'detail': 'Shift not found.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        before_rate = shift.hourly_rate
+        before_amount = float(instance.total_amount or 0)
+
+        shift.hourly_rate = new_rate
+        shift.save(update_fields=['hourly_rate', 'updated_at'])
+        instance.recalculate_from_shifts()
+        instance.refresh_from_db()
+
+        AuditLog.objects.create(
+            user=request.user,
+            action='invoice_shift_rate_edited',
+            resource_type=self._resource_type(kind),
+            resource_id=str(instance.pk),
+            details={
+                'shift_id': int(shift_id),
+                'before_rate': float(before_rate) if before_rate is not None else None,
+                'after_rate': float(new_rate),
+                'before_amount': before_amount,
+                'after_amount': float(instance.total_amount or 0),
+            },
+        )
+        self._bump_run_totals(instance)
+        return Response(self._serializer_for(kind)(instance).data)
+
     @action(detail=True, methods=['patch'])
     def update_note(self, request, pk=None):
         """Update an invoice's `note` field (free-text caption shown on the

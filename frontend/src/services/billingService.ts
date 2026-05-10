@@ -157,6 +157,31 @@ class BillingService {
     return response.data;
   }
 
+  /** POST /api/v1/billing/invoices/{id}/recalculate/ — force-rebuilds line
+   * items from current shift state. Use after editing a shift's hourly_rate
+   * so a draft invoice picks up the correction. Refused on paid invoices. */
+  async recalculate(invoiceId: string): Promise<InvoiceRecord> {
+    const response = await api.post<InvoiceRecord>(
+      `/api/v1/billing/invoices/${encodeURIComponent(invoiceId)}/recalculate/`,
+    );
+    return response.data;
+  }
+
+  /** POST /api/v1/billing/invoices/{id}/edit_shift_rate/ — atomic
+   * shift.hourly_rate update + invoice recalculate. Powers the click-to-edit
+   * rate cell on the invoice document. Draft staff invoices only. */
+  async editShiftRate(
+    invoiceId: string,
+    shiftId: number,
+    hourlyRate: number,
+  ): Promise<InvoiceRecord> {
+    const response = await api.post<InvoiceRecord>(
+      `/api/v1/billing/invoices/${encodeURIComponent(invoiceId)}/edit_shift_rate/`,
+      { shift_id: shiftId, hourly_rate: hourlyRate },
+    );
+    return response.data;
+  }
+
   /** PATCH /api/v1/billing/invoices/{id}/update_note/ — updates the note field. */
   async updateNote(invoiceId: string, note: string): Promise<InvoiceRecord> {
     const response = await api.patch<InvoiceRecord>(

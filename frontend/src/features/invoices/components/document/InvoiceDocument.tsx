@@ -15,6 +15,9 @@ export interface InvoiceDocumentProps {
   accent: Accent;
   paperEffect?: boolean;
   scale?: number;
+  /** When provided on a draft staff invoice, base-rate shift cells become
+   * click-to-edit. Resolves once the API mutation completes. */
+  onEditShiftRate?: (shiftId: number, hourlyRate: number) => Promise<void>;
 }
 
 export function InvoiceDocument({
@@ -23,6 +26,7 @@ export function InvoiceDocument({
   accent,
   paperEffect = true,
   scale = 1,
+  onEditShiftRate,
 }: InvoiceDocumentProps) {
   if (!inv) {
     return (
@@ -44,7 +48,9 @@ export function InvoiceDocument({
     <PaperFrame paperEffect={paperEffect} scale={scale}>
       {template === "classic" && <ClassicInvoice inv={inv} accent={accent} />}
       {template === "minimal" && <MinimalInvoice inv={inv} accent={accent} />}
-      {template === "modern" && <ModernInvoice inv={inv} accent={accent} />}
+      {template === "modern" && (
+        <ModernInvoice inv={inv} accent={accent} onEditShiftRate={onEditShiftRate} />
+      )}
     </PaperFrame>
   );
 }

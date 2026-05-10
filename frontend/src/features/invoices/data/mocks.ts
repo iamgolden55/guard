@@ -27,6 +27,13 @@ export interface InvoiceItem {
   hours: number;
   rate: number;
   amount: number;
+  /** Backing Shift PK if this line came from a worked shift. Null for
+   * leave / bank-holiday lines. Used by the click-to-edit rate cell. */
+  shiftId?: number | null;
+  /** 'shift' | 'overtime_1' | 'overtime_2' | 'special' | 'bank_holiday' | 'annual_leave'.
+   * Only base-rate 'shift' lines are inline-editable; overtime tiers derive
+   * from the base rate so editing them directly would be misleading. */
+  type?: string;
 }
 
 export interface InvoiceHistoryEntry {
