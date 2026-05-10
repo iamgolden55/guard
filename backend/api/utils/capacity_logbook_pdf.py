@@ -12,6 +12,7 @@ visual identity. Edit alongside that file if the brand evolves.
 
 import base64
 import io
+import os
 from datetime import datetime, timedelta
 
 from reportlab.lib import colors
@@ -39,6 +40,10 @@ BG_100 = colors.HexColor("#faf9f8")
 BORDER = colors.HexColor("#edebe9")
 SUCCESS_INK = colors.HexColor("#0e6b3a")
 WARN_INK = colors.HexColor("#9a4b00")
+
+# Brand mark — Mead Security wordmark, kept next to this module so the PDF
+# never depends on Django staticfiles wiring.
+_LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "mead_logo.png")
 
 
 def _safe(value, default="—"):
@@ -148,15 +153,40 @@ def generate_capacity_logbook_pdf(*, signoff, checks, misses) -> io.BytesIO:
         textColor=INK600,
         leading=14,
     )
-    story.append(Paragraph("CAPACITY LOGBOOK", eyebrow_style))
-    story.append(Paragraph(_safe(venue.name), title_style))
-    story.append(
+    title_block = [
+        Paragraph("CAPACITY LOGBOOK", eyebrow_style),
+        Paragraph(_safe(venue.name), title_style),
         Paragraph(
             f"{_date_long(shift_date)} · capacity {venue.capacity} · "
             f"check every {venue.capacity_check_interval_minutes} min",
             sub_style,
+        ),
+    ]
+
+    logo_cell = ""
+    if os.path.exists(_LOGO_PATH):
+        try:
+            logo_cell = Image(_LOGO_PATH, width=36 * mm, height=36 * mm)
+        except Exception:
+            logo_cell = ""
+
+    if logo_cell:
+        header_table = Table(
+            [[logo_cell, title_block]],
+            colWidths=[40 * mm, 134 * mm],
         )
-    )
+        header_table.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (0, 0), 6),
+            ("RIGHTPADDING", (1, 0), (1, 0), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        story.append(header_table)
+    else:
+        for el in title_block:
+            story.append(el)
     story.append(Spacer(1, 8 * mm))
 
     # ─── Summary card (3 columns) ───
