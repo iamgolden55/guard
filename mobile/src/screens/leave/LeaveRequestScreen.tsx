@@ -56,6 +56,8 @@ export const LeaveRequestScreen: React.FC = () => {
 
   const balances = useAppSelector(selectLeaveBalances);
   const leaveTypes = useAppSelector(selectLeaveTypes);
+  const leaveTypesLoading = useAppSelector((state) => state.leave.leaveTypesLoading);
+  const leaveTypesError = useAppSelector((state) => state.leave.leaveTypesError);
   const loading = useAppSelector((state) => state.leave.requestsLoading);
   const successMessage = useAppSelector((state) => state.leave.successMessage);
 
@@ -191,12 +193,29 @@ export const LeaveRequestScreen: React.FC = () => {
         {/* Leave Type Selection */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Leave Type</Text>
-          {leaveTypes && leaveTypes.length > 0 ? (
-            leaveTypes.map(renderLeaveTypeOption)
-          ) : (
+          {leaveTypesLoading ? (
             <View style={styles.emptyState}>
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={styles.emptyText}>Loading leave types...</Text>
+            </View>
+          ) : leaveTypesError ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="alert-circle-outline" size={28} color={colors.error} />
+              <Text style={styles.emptyText}>Couldn't load leave types.</Text>
+              <TouchableOpacity onPress={() => dispatch(fetchLeaveTypes())}>
+                <Text style={[styles.emptyText, { color: colors.primary, marginTop: 4 }]}>
+                  Tap to retry
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : leaveTypes && leaveTypes.length > 0 ? (
+            leaveTypes.map(renderLeaveTypeOption)
+          ) : (
+            <View style={styles.emptyState}>
+              <Ionicons name="information-circle-outline" size={28} color={colors.text.secondary} />
+              <Text style={styles.emptyText}>
+                No leave types are set up yet. Ask your admin to configure them.
+              </Text>
             </View>
           )}
         </View>
