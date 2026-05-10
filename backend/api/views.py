@@ -2999,23 +2999,48 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def stats(self, request):
-        """Get earnings statistics for the current user"""
+        """Get earnings statistics for the current user.
+
+        Earnings includes any invoice the staff would actually be paid on:
+        draft / pending / sent / paid / overdue. Rejected, cancelled, and
+        superseded invoices are excluded — they represent withdrawn or
+        replaced records and would inflate the total.
+
+        We do NOT filter by source. Both 'system' (cron-generated) and
+        'admin' (manually created or re-issued via Resolve / Recalculate)
+        are real money owed to the staff member. Filtering source='system'
+        misses replacement drafts created when an admin corrects a rate.
+        """
         user = request.user
-        
-        # Base filtering (Role & Company) - logic duplicated from get_queryset to avoid Date filtering
+
+        # Statuses that represent withdrawn or replaced records — never count
+        # toward earnings. Everything else (draft/pending/sent/paid/overdue)
+        # is a payable record from the staff's POV.
+        EXCLUDED_STATUSES = ('rejected', 'cancelled')
+
         if user.role == 'staff':
-            # Staff only see stats for system-generated invoices
-            base_queryset = Invoice.objects.filter(staff_user=user, source='system')
+            base_queryset = (
+                Invoice.objects.filter(staff_user=user)
+                .filter(superseded_by__isnull=True)
+                .exclude(status__in=EXCLUDED_STATUSES)
+            )
         elif user.role in ['manager', 'admin']:
             company = self.get_user_company(request)
             if not company:
                 base_queryset = Invoice.objects.none()
             else:
                 company_staff_ids = company.memberships.filter(is_active=True).values_list('user_id', flat=True)
-                base_queryset = Invoice.objects.filter(staff_user_id__in=company_staff_ids)
+                base_queryset = (
+                    Invoice.objects.filter(staff_user_id__in=company_staff_ids)
+                    .filter(superseded_by__isnull=True)
+                    .exclude(status__in=EXCLUDED_STATUSES)
+                )
         else:
-            # Default: only system-generated invoices
-            base_queryset = Invoice.objects.filter(staff_user=user, source='system')
+            base_queryset = (
+                Invoice.objects.filter(staff_user=user)
+                .filter(superseded_by__isnull=True)
+                .exclude(status__in=EXCLUDED_STATUSES)
+            )
         
         now = timezone.now()
         current_year = now.year
