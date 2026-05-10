@@ -8,6 +8,8 @@ import {
   View,
   Modal,
   TouchableOpacity,
+  Pressable,
+  Text,
   StyleSheet,
   ActivityIndicator,
   Platform,
@@ -17,6 +19,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Body, BodySmall, Button } from '@components/ui';
 import { colors, spacing, layout } from '../../theme';
+import { useRedesignTheme } from '../../theme/redesign';
+import { Eyebrow, GlassCard, PrimaryCTA } from '../redesign';
 import { logger } from '../../utils/logger';
 
 interface CameraModalProps {
@@ -38,6 +42,7 @@ export const CameraModal: React.FC<CameraModalProps> = ({
     'Include venue signage if visible',
   ],
 }) => {
+  const redesign = useRedesignTheme();
   const [facing, setFacing] = useState<CameraType>('back');
   const [permission, requestPermission] = useCameraPermissions();
   const [isProcessing, setIsProcessing] = useState(false);
@@ -162,20 +167,63 @@ export const CameraModal: React.FC<CameraModalProps> = ({
             {/* Tips Overlay */}
             {showTips && (
               <View style={styles.tipsOverlay}>
-                <View style={styles.tipsCard}>
-                  <Body style={styles.tipsTitle}>Tips for good photos:</Body>
-                  {tips.map((tip, index) => (
-                    <BodySmall key={index} style={styles.tipText}>
-                      • {tip}
-                    </BodySmall>
-                  ))}
-                  <TouchableOpacity
-                    onPress={() => setShowTips(false)}
-                    style={styles.dismissButton}
-                  >
-                    <BodySmall color={colors.primary}>Got it</BodySmall>
-                  </TouchableOpacity>
-                </View>
+                {/* Backdrop — tapping outside the card also dismisses, so a
+                    user with a clumsy thumb is never trapped on this screen. */}
+                <Pressable
+                  style={StyleSheet.absoluteFill}
+                  onPress={() => setShowTips(false)}
+                  accessibilityLabel="Dismiss tips"
+                />
+                <Pressable
+                  // Empty handler claims the touch responder so taps on the
+                  // card itself don't bubble to the backdrop and dismiss.
+                  onPress={() => {}}
+                  style={styles.tipsCardWrap}
+                >
+                  <GlassCard pad={22} style={styles.tipsCard}>
+                    <Eyebrow color={redesign.colors.accent}>{title}</Eyebrow>
+                    <Text
+                      allowFontScaling={false}
+                      style={[
+                        styles.tipsHeading,
+                        {
+                          color: redesign.colors.text.primary,
+                          fontFamily: redesign.fonts.sans,
+                        },
+                      ]}
+                    >
+                      A few quick tips
+                    </Text>
+                    {tips.map((tip, index) => (
+                      <View key={index} style={styles.tipRow}>
+                        <View
+                          style={[
+                            styles.tipBullet,
+                            { backgroundColor: redesign.colors.accent },
+                          ]}
+                        />
+                        <Text
+                          allowFontScaling={false}
+                          style={[
+                            styles.tipText,
+                            {
+                              color: redesign.colors.text.secondary,
+                              fontFamily: redesign.fonts.sans,
+                            },
+                          ]}
+                        >
+                          {tip}
+                        </Text>
+                      </View>
+                    ))}
+                    <PrimaryCTA
+                      label="Got it"
+                      trailingArrow={false}
+                      onPress={() => setShowTips(false)}
+                      style={{ marginTop: 18 }}
+                    />
+                  </GlassCard>
+                </Pressable>
               </View>
             )}
 
@@ -261,29 +309,43 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: spacing.xl,
+    padding: 24,
+  },
+  tipsCardWrap: {
+    width: '100%',
+    maxWidth: 380,
   },
   tipsCard: {
-    backgroundColor: colors.white,
-    borderRadius: layout.borderRadius.lg,
-    padding: spacing.xl,
-    maxWidth: 400,
+    width: '100%',
   },
-  tipsTitle: {
-    fontWeight: '600',
-    marginBottom: spacing.md,
+  tipsHeading: {
+    marginTop: 8,
+    marginBottom: 18,
+    fontSize: 22,
+    fontWeight: '400',
+    letterSpacing: -0.6,
+    lineHeight: 26,
+  },
+  tipRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+    paddingRight: 8,
+  },
+  tipBullet: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    marginTop: 8,
+    marginRight: 12,
   },
   tipText: {
-    color: colors.text.secondary,
-    marginBottom: spacing.sm,
+    flex: 1,
+    fontSize: 14,
     lineHeight: 20,
-  },
-  dismissButton: {
-    marginTop: spacing.md,
-    alignSelf: 'flex-end',
   },
   crosshair: {
     position: 'absolute',
