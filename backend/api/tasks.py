@@ -2204,7 +2204,8 @@ def flag_missed_capacity_checks():
     few minutes to log the count without being penalised).
     """
     from .models import (
-        Shift, Venue, CapacityCheck, CapacityCheckSlotMiss, Notification,
+        Shift, Venue, CapacityCheck, CapacityCheckSlotMiss, CapacityLogbookSignoff,
+        Notification,
     )
     from .consumers import broadcast_capacity_event
 
@@ -2220,6 +2221,18 @@ def flag_missed_capacity_checks():
         .select_related('venue', 'venue__company')
     )
 
+    # Skip groups that already have a signoff. The logbook is conceptually
+    # closed at signoff time; further "missed" rows after that are phantom
+    # data driven by Shift.status drift (e.g. mobile checkout failed silently
+    # after signoff). Without this guard, a stuck shift accumulates one false
+    # miss every interval forever, polluting dashboards and notifications.
+    signed_off_groups = set(
+        CapacityLogbookSignoff.objects
+        .filter(shift_group__isnull=False)
+        .values_list('shift_group', flat=True)
+        .distinct()
+    )
+
     # Collapse multi-staff shifts to a single (shift_group, venue, start, end) tuple.
     # We iterate by representative shift to avoid duplicate processing.
     seen_groups = set()
@@ -2231,6 +2244,8 @@ def flag_missed_capacity_checks():
             continue
         group_key = shift.shift_group or f'shift_{shift.id}'
         if group_key in seen_groups:
+            continue
+        if group_key in signed_off_groups:
             continue
         seen_groups.add(group_key)
 

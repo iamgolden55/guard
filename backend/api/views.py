@@ -2362,6 +2362,21 @@ class CapacityLogbookSignoffViewSet(viewsets.ModelViewSet):
         if company:
             shifts = shifts.filter(venue__company=company)
 
+        # Source of truth for "logbook is done" is the CapacityLogbookSignoff,
+        # not Shift.status. If a venue admin has already signed the logbook
+        # off, the shift is conceptually closed even when the underlying
+        # Shift.status is still 'in_progress' (e.g. mobile checkout failed
+        # silently after signoff, or staff submitted signoff but never tapped
+        # the actual "Check out" button). Without this exclusion, the same
+        # logbook surfaces in BOTH the Active and Closed tabs and the missed-
+        # check cron keeps accumulating phantom "missed" rows.
+        signed_off_groups = set(
+            CapacityLogbookSignoff.objects
+            .filter(shift_group__isnull=False)
+            .values_list('shift_group', flat=True)
+            .distinct()
+        )
+
         # Collapse multi-staff groups so we don't return three rows for one
         # 3-officer shift_group. We pick the earliest-checked-in shift in each
         # group as the representative — totals are derived from the group.
@@ -2371,6 +2386,8 @@ class CapacityLogbookSignoffViewSet(viewsets.ModelViewSet):
         for shift in shifts.order_by('start_time'):
             shift_group = shift.shift_group or f'shift_{shift.id}'
             if shift_group in seen_groups:
+                continue
+            if shift_group in signed_off_groups:
                 continue
             seen_groups.add(shift_group)
 
