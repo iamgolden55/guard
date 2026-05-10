@@ -67,6 +67,10 @@ export const LogbookSignoffModal: React.FC<Props> = ({
   const [adminUnavailable, setAdminUnavailable] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // While the duty manager has a finger on the canvas, freeze the outer
+  // ScrollView — otherwise the sheet hijacks the gesture and the signature
+  // smears across the page as it scrolls.
+  const [isDrawing, setIsDrawing] = useState(false);
 
   // Reset on close
   useEffect(() => {
@@ -78,6 +82,7 @@ export const LogbookSignoffModal: React.FC<Props> = ({
       setAdminUnavailable(false);
       setOverrideReason('');
       setSubmitting(false);
+      setIsDrawing(false);
     }
   }, [visible]);
 
@@ -85,9 +90,18 @@ export const LogbookSignoffModal: React.FC<Props> = ({
     setSignature(sig);
   };
 
+  const handleSignatureBegin = () => {
+    setIsDrawing(true);
+  };
+
+  const handleSignatureEnd = () => {
+    setIsDrawing(false);
+  };
+
   const handleClearSignature = () => {
     sigRef.current?.clearSignature();
     setSignature(null);
+    setIsDrawing(false);
   };
 
   const handleConfirmSignature = () => {
@@ -204,6 +218,7 @@ export const LogbookSignoffModal: React.FC<Props> = ({
             }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            scrollEnabled={!isDrawing}
           >
             {/* Title */}
             <Text
@@ -380,6 +395,8 @@ export const LogbookSignoffModal: React.FC<Props> = ({
                         <Signature
                           ref={sigRef}
                           onOK={handleSignatureCapture}
+                          onBegin={handleSignatureBegin}
+                          onEnd={handleSignatureEnd}
                           webStyle={sigWebStyle}
                           backgroundColor="transparent"
                           penColor={theme.colors.text.primary}
