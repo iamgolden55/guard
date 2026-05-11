@@ -48,7 +48,7 @@ module.exports = {
         backgroundColor: "#0b0b0e"
       },
       package: "com.meadsecurity.staffapp",
-      versionCode: 1,
+      versionCode: 13,
       // Firebase / FCM for Android push notifications.
       //
       // google-services.json is GITIGNORED — it contains a live Google API
