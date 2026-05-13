@@ -1,5 +1,6 @@
 // SchedulingHeader — page-level breadcrumb + title + draft pill + actions.
 // Ported 1:1 from project/scheduling-shell.jsx Topbar (lines 142-188).
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Link } from "react-router-dom";
 import { useAccent } from "../../../contexts/AccentContext";
 import { Button } from "../../../design-system/primitives/Button";
@@ -10,6 +11,8 @@ import { useScheduling, weekCounts } from "../state/SchedulingState";
 export interface SchedulingHeaderProps {
   onPublish: () => void;
   onNewShift: () => void;
+  onBulkSchedule: () => void;
+  onCustomShifts: () => void;
   onCopyLastWeek: () => void;
   isCopying?: boolean;
 }
@@ -17,6 +20,8 @@ export interface SchedulingHeaderProps {
 export function SchedulingHeader({
   onPublish,
   onNewShift,
+  onBulkSchedule,
+  onCustomShifts,
   onCopyLastWeek,
   isCopying,
 }: SchedulingHeaderProps) {
@@ -140,9 +145,109 @@ export function SchedulingHeader({
       >
         {isCopying ? "Copying…" : "Copy last week"}
       </Button>
-      <Button variant="secondary" leading={<Icon name="plus" size={14} />} onClick={onNewShift}>
-        New shift
-      </Button>
+      <div style={{ display: "inline-flex" }}>
+        <Button
+          variant="secondary"
+          leading={<Icon name="plus" size={14} />}
+          onClick={onNewShift}
+          style={{
+            borderTopRightRadius: 0,
+            borderBottomRightRadius: 0,
+            borderRight: "none",
+          }}
+        >
+          New shift
+        </Button>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button
+              type="button"
+              aria-label="More create options"
+              style={{
+                padding: "0 8px",
+                background: "white",
+                border: `1px solid ${tokens.color.ink200}`,
+                borderLeft: `1px solid ${tokens.color.ink200}`,
+                borderTopLeftRadius: 0,
+                borderBottomLeftRadius: 0,
+                borderTopRightRadius: tokens.radius.md,
+                borderBottomRightRadius: tokens.radius.md,
+                boxShadow: tokens.shadow.xs,
+                color: tokens.color.ink900,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Icon name="chevron-down" size={14} />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              align="end"
+              sideOffset={6}
+              style={{
+                background: "white",
+                border: `1px solid ${tokens.color.ink200}`,
+                borderRadius: tokens.radius.md,
+                boxShadow: tokens.shadow.md,
+                padding: 6,
+                minWidth: 200,
+                fontFamily: tokens.font.body,
+                zIndex: tokens.z.overlay,
+              }}
+            >
+              <DropdownMenu.Item
+                onSelect={() => onBulkSchedule()}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 10px",
+                  borderRadius: tokens.radius.sm,
+                  fontSize: 13,
+                  color: tokens.color.ink800,
+                  cursor: "pointer",
+                  outline: "none",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = tokens.color.ink50;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                <Icon name="calendar" size={14} />
+                <span>Bulk schedule…</span>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                onSelect={() => onCustomShifts()}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 10px",
+                  borderRadius: tokens.radius.sm,
+                  fontSize: 13,
+                  color: tokens.color.ink800,
+                  cursor: "pointer",
+                  outline: "none",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = tokens.color.ink50;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                <Icon name="stack" size={14} />
+                <span>Custom shifts…</span>
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </div>
       <Button
         variant="primary"
         accent={palette}

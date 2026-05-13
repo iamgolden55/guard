@@ -5,6 +5,7 @@ Handles automatic setup and lifecycle events for models.
 
 from django.db.models.signals import post_save, pre_save, pre_delete
 from django.dispatch import receiver
+from django.db import transaction
 from datetime import timedelta
 from django.utils import timezone
 from .models import SecurityCompany, Shift, OpenShiftRequest, ShiftExchange, AuditLog, ShiftStatusHistory, Notification
@@ -258,68 +259,85 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
     if instance.status not in ['scheduled', 'open', 'active']:
         return
 
+    # When the caller sets this flag (currently bulk_create + publish flows),
+    # the per-shift assignment channels are suppressed because a grouped digest
+    # email will cover all three. Reminders are unrelated and still fire below.
+    skip_per_shift = getattr(instance, '_skip_per_shift_notifications', False)
+
     try:
-        # Send immediate notification to new assignee
-        success = push_notification_service.send_shift_assignment_notification(
-            user_id=current_staff.id,
-            shift_id=instance.id,
-            venue_name=venue_name,
-            start_time=formatted_time,
-            formatted_date=formatted_date
-        )
-
-        if success:
-            logger.info(
-                f"Shift assignment notification sent for shift {instance.id} "
-                f"to user {current_staff.id}"
+        if not skip_per_shift:
+            # Queue after commit — otherwise a rollback leaves the push as a
+            # phantom notification referring to a shift that no longer exists.
+            shift_id = instance.id
+            staff_user_id = current_staff.id
+            transaction.on_commit(
+                lambda: _safe_send_assignment_push(
+                    shift_id=shift_id,
+                    user_id=staff_user_id,
+                    venue_name=venue_name,
+                    start_time=formatted_time,
+                    formatted_date=formatted_date,
+                )
             )
+
+            # In-app notification for new assignment.
+            # This is a DB write inside the same transaction — rollback handles
+            # it naturally, so no on_commit wrapping needed.
+            try:
+                company = instance.venue.company if instance.venue else None
+                Notification.send(
+                    user=current_staff,
+                    title='Shift Assigned',
+                    message=f'You have been assigned a shift at {venue_name} on {formatted_date} at {formatted_time}.',
+                    notification_type='shift_assigned',
+                    related_type='shift',
+                    related_id=str(instance.id),
+                    action_url=f'/shifts/{instance.id}',
+                    company=company,
+                )
+            except Exception as e:
+                logger.warning(f"Could not create in-app shift assignment notification: {e}")
+
+            try:
+                from .tasks import send_shift_assignment_email_task
+                venue_address = instance.venue.address if instance.venue else None
+                end_time = instance.end_time.strftime('%I:%M %p') if instance.end_time else None
+                email_shift_id = instance.id
+                email_user_id = current_staff.id
+                # Queue after commit — otherwise a rollback queues a task
+                # referring to a shift ID that won't exist when the worker runs.
+                transaction.on_commit(
+                    lambda: send_shift_assignment_email_task.delay(
+                        user_id=email_user_id,
+                        shift_id=email_shift_id,
+                        venue_name=venue_name,
+                        venue_address=venue_address,
+                        start_time=formatted_time,
+                        end_time=end_time,
+                        formatted_date=formatted_date,
+                        hourly_rate=None,
+                    )
+                )
+                logger.info(f"Queued shift assignment email for shift {instance.id}")
+            except Exception as e:
+                logger.warning(f"Could not queue shift assignment email: {e}")
         else:
-            logger.warning(
-                f"Failed to send shift assignment notification for shift {instance.id}"
+            logger.debug(
+                f"Skipping per-shift assignment channels for shift {instance.id} "
+                f"(digest path will send a grouped email)"
             )
 
-        # In-app notification for new assignment
-        try:
-            company = instance.venue.company if instance.venue else None
-            Notification.send(
-                user=current_staff,
-                title='Shift Assigned',
-                message=f'You have been assigned a shift at {venue_name} on {formatted_date} at {formatted_time}.',
-                notification_type='shift_assigned',
-                related_type='shift',
-                related_id=str(instance.id),
-                action_url=f'/shifts/{instance.id}',
-                company=company,
-            )
-        except Exception as e:
-            logger.warning(f"Could not create in-app shift assignment notification: {e}")
-
-        # Schedule reminder tasks via Celery
+        # Reminders are independent of the digest suppression flag — a digest
+        # email doesn't replace the timed pre-shift reminder pings.
         try:
             from .tasks import schedule_shift_reminders
-            schedule_shift_reminders.delay(instance.id)
+            reminder_shift_id = instance.id
+            transaction.on_commit(
+                lambda: schedule_shift_reminders.delay(reminder_shift_id)
+            )
             logger.info(f"Scheduled reminder tasks for shift {instance.id}")
         except Exception as e:
             logger.warning(f"Could not schedule reminder tasks: {e}")
-
-        # Queue email notification task
-        try:
-            from .tasks import send_shift_assignment_email_task
-            venue_address = instance.venue.address if instance.venue else None
-            end_time = instance.end_time.strftime('%I:%M %p') if instance.end_time else None
-            send_shift_assignment_email_task.delay(
-                user_id=current_staff.id,
-                shift_id=instance.id,
-                venue_name=venue_name,
-                venue_address=venue_address,
-                start_time=formatted_time,
-                end_time=end_time,
-                formatted_date=formatted_date,
-                hourly_rate=None  # Could be enhanced to pass pay rate if available
-            )
-            logger.info(f"Queued shift assignment email for shift {instance.id}")
-        except Exception as e:
-            logger.warning(f"Could not queue shift assignment email: {e}")
 
         # Multi-staff shift: Notify existing co-workers about new assignment
         if instance.shift_group:
@@ -330,6 +348,36 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
 
     except Exception as e:
         logger.exception(f"Error sending shift assignment notification: {e}")
+
+
+def _safe_send_assignment_push(
+    *,
+    shift_id,
+    user_id,
+    venue_name,
+    start_time,
+    formatted_date,
+):
+    """Push delivery callback run via transaction.on_commit; never raises."""
+    try:
+        success = push_notification_service.send_shift_assignment_notification(
+            user_id=user_id,
+            shift_id=shift_id,
+            venue_name=venue_name,
+            start_time=start_time,
+            formatted_date=formatted_date,
+        )
+        if success:
+            logger.info(
+                f"Shift assignment notification sent for shift {shift_id} "
+                f"to user {user_id}"
+            )
+        else:
+            logger.warning(
+                f"Failed to send shift assignment notification for shift {shift_id}"
+            )
+    except Exception as e:
+        logger.exception(f"Error sending shift assignment push: {e}")
 
 
 def _notify_coworkers_of_new_assignment(shift, new_staff):

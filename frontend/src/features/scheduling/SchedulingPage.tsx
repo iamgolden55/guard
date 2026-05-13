@@ -28,6 +28,7 @@ import { RosterView } from "./components/RosterView";
 import { Legend } from "./components/Legend";
 import { SchedulingDrawer } from "./components/SchedulingDrawer";
 import { NewShiftModal } from "./components/NewShiftModal";
+import { BulkShiftWizard } from "./components/BulkShiftWizard";
 import { SchedulingToast } from "./components/SchedulingToast";
 import { SchedulingProvider, useScheduling } from "./state/SchedulingState";
 import { useSchedulingData } from "./hooks/useSchedulingData";
@@ -150,11 +151,15 @@ function SchedulingShell({
   const [activeShiftId, setActiveShiftId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
 
   const openCreateModal = useCallback(() => {
     setEditingShift(null);
     setModalOpen(true);
   }, []);
+  const openBulkWizard = useCallback(() => setBulkOpen(true), []);
+  const openCustomWizard = useCallback(() => setCustomOpen(true), []);
   const openEditModal = useCallback((shift: Shift) => {
     setEditingShift(shift);
     setModalOpen(true);
@@ -459,6 +464,8 @@ function SchedulingShell({
       <SchedulingHeader
         onPublish={publishWeek}
         onNewShift={openCreateModal}
+        onBulkSchedule={openBulkWizard}
+        onCustomShifts={openCustomWizard}
         onCopyLastWeek={copyLastWeek}
         isCopying={isCopying}
       />
@@ -533,6 +540,14 @@ function SchedulingShell({
         onClose={() => setModalOpen(false)}
         editingShift={editingShift}
         defaultDate={week.days[currentDay]?.date}
+      />
+
+      <BulkShiftWizard open={bulkOpen} onClose={() => setBulkOpen(false)} />
+
+      <BulkShiftWizard
+        mode="custom"
+        open={customOpen}
+        onClose={() => setCustomOpen(false)}
       />
 
       <DragOverlay dropAnimation={null}>
