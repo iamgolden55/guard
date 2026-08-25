@@ -19,9 +19,12 @@ services:
     region: oregon
     plan: starter  # Paid plan for reliable deployment
     buildCommand: ./build.sh
-    # Migrations run here, not in build.sh: a DB problem should fail the
-    # release, not destroy the build and leave the service with no instance.
-    preDeployCommand: python manage.py migrate --noinput
+    # NOTE: preDeployCommand would be the right home for migrations, but the
+    # Render API does not apply it for this service -- `render services update
+    # --pre-deploy-command` is accepted and silently dropped, and the field is
+    # absent from the API response. Migrations therefore run at the end of
+    # build.sh, behind a database-readiness wait that survives the rebuild
+    # Render fires while Postgres is still waking from suspension.
     startCommand: daphne -b 0.0.0.0 -p $PORT core.asgi:application
     healthCheckPath: /api/v1/health/
     envVars:
