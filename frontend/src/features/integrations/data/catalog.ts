@@ -5,6 +5,13 @@
 //   - "deputy"    → Connectable today via API key (deputyService)
 //   - "soon"      → Backend support pending; tile shows a "Coming soon" notice
 //
+// IMPORTANT: only mark an entry "finance" when ProviderFactory._providers on
+// the backend actually registers that provider key. Xero is currently the only
+// one. The others were listed as connectable and rendered an enabled Connect
+// button that always failed -- 400 "Unsupported provider" for the five with no
+// code, and a raw TypeError for QuickBooks and Sage, whose provider classes
+// leave 11 abstract methods unimplemented and cannot even be instantiated.
+//
 // Brand colors are display-only; logos resolve to /logos/* (legacy assets) or
 // fall back to a monogram derived from the provider name.
 import type { IconName } from "../../../design-system/Icon";
@@ -68,77 +75,70 @@ export const CATALOG: CatalogItem[] = [
   },
   {
     id: "quickbooks",
-    providerKey: "quickbooks",
     name: "QuickBooks Online",
     description: "Sync staff invoices and journals to QuickBooks Online.",
     category: "finance",
-    kind: "finance",
+    kind: "soon",
     brandColor: "#2ca01c",
     icon: "banknote",
     logoPath: "/logos/quickbooks.svg",
   },
   {
     id: "freeagent",
-    providerKey: "freeagent",
     name: "FreeAgent",
     description: "Push approved invoices to FreeAgent for UK contractors.",
     category: "finance",
-    kind: "finance",
+    kind: "soon",
     brandColor: "#3a8de5",
     icon: "banknote",
     logoPath: "/logos/freeagent.svg",
   },
   {
     id: "freshbooks",
-    providerKey: "freshbooks",
     name: "FreshBooks",
     description: "Export invoices and time entries to FreshBooks.",
     category: "finance",
-    kind: "finance",
+    kind: "soon",
     brandColor: "#0075dd",
     icon: "banknote",
     logoPath: "/logos/freshbooks.svg",
   },
   {
     id: "zoho",
-    providerKey: "zoho",
     name: "Zoho Books",
     description: "Sync customers and invoices with Zoho Books.",
     category: "finance",
-    kind: "finance",
+    kind: "soon",
     brandColor: "#e42527",
     icon: "banknote",
     logoPath: "/logos/zoho.svg",
   },
   {
     id: "sage",
-    providerKey: "sage",
     name: "Sage",
     description: "Push payroll runs and journals into Sage Business Cloud.",
     category: "finance",
-    kind: "finance",
+    kind: "soon",
     brandColor: "#00d639",
     icon: "banknote",
     logoPath: "/logos/sage.svg",
   },
   {
     id: "wave",
-    providerKey: "wave",
     name: "Wave",
     description: "Sync invoices to Wave for free accounting.",
     category: "finance",
-    kind: "finance",
+    kind: "soon",
     brandColor: "#1e3a5f",
     icon: "banknote",
     logoPath: "/logos/wave.svg",
   },
   {
     id: "netsuite",
-    providerKey: "netsuite",
     name: "NetSuite",
     description: "Enterprise-grade invoice and payroll exports.",
     category: "finance",
-    kind: "finance",
+    kind: "soon",
     brandColor: "#1d3a5f",
     icon: "banknote",
     logoPath: "/logos/netsuite.svg",

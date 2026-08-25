@@ -1,6 +1,8 @@
 import requests
 import json
 from datetime import datetime, timedelta
+
+from django.utils import timezone
 from typing import Dict, List, Optional, Any
 from urllib.parse import urlencode, parse_qs
 import hmac
@@ -19,26 +21,44 @@ class XeroProvider(AccountingProvider):
     
     PRODUCTION_API_BASE = "https://api.xero.com"
     PRODUCTION_OAUTH_BASE = "https://identity.xero.com"
-    
-    # Xero uses the same URLs for sandbox - it's controlled by the organisation
+
+    # Xero uses the same URLs for sandbox - it's controlled by the organisation.
+    # The "Use sandbox" checkbox in the UI is therefore a no-op for Xero; the
+    # Demo Company org *is* the sandbox.
     SANDBOX_API_BASE = "https://api.xero.com"
     SANDBOX_OAUTH_BASE = "https://identity.xero.com"
+
+    # Consent is served from login.xero.com; only the token endpoint lives on
+    # identity.xero.com. Using identity.xero.com for authorize is a redirect at
+    # best and a hard failure at worst.
+    AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize"
+
+    # Scopes are a property of this adapter (they must match the endpoints the
+    # code below actually calls), so they live in version control where a test
+    # can assert on them -- NOT in AccountingProvider.oauth_scopes, which has
+    # two writers using two different separators and is read by nothing.
+    #
+    #   offline_access          -> without this Xero returns NO refresh token and
+    #                              the connection dies ~30 minutes after consent.
+    #   accounting.contacts     -> write, not .read: upsert_contact() POSTs.
+    #   accounting.transactions -> covers invoice create/read.
+    #   accounting.settings     -> Organisation, Accounts, TaxRates.
+    #
+    # Xero apps registered on/after 2 Mar 2026 use granular scopes instead; if
+    # consent rejects accounting.transactions, swap it for accounting.invoices.
+    # Payroll scopes are deliberately absent -- see create_pay_run().
+    SCOPES = [
+        "offline_access",
+        "accounting.transactions",
+        "accounting.contacts",
+        "accounting.settings",
+    ]
     
     def __init__(self, connection_config: Dict[str, Any]):
         super().__init__(connection_config)
         self.api_base = self.SANDBOX_API_BASE if self.is_sandbox else self.PRODUCTION_API_BASE
         self.oauth_base = self.SANDBOX_OAUTH_BASE if self.is_sandbox else self.PRODUCTION_OAUTH_BASE
-        
-        # Required Xero scopes
-        self.scopes = [
-            "accounting.transactions",
-            "accounting.contacts.read",
-            "accounting.settings",
-            "payroll.employees",
-            "payroll.payruns",
-            "payroll.settings",
-            "files"
-        ]
+        self.scopes = list(self.SCOPES)
     
     @property
     def provider_name(self) -> str:
@@ -46,7 +66,7 @@ class XeroProvider(AccountingProvider):
     
     @property
     def oauth_authorization_url(self) -> str:
-        return f"{self.oauth_base}/connect/authorize"
+        return self.AUTHORIZE_URL
     
     @property
     def oauth_token_url(self) -> str:
@@ -94,7 +114,7 @@ class XeroProvider(AccountingProvider):
         return OAuthTokens(
             access_token=token_data['access_token'],
             refresh_token=token_data.get('refresh_token'),
-            expires_at=datetime.now() + timedelta(seconds=token_data.get('expires_in', 1800)),
+            expires_at=timezone.now() + timedelta(seconds=token_data.get('expires_in', 1800)),
             tenant_id=None,  # Xero requires separate call to get tenants
             scope=token_data.get('scope')
         )
@@ -128,14 +148,14 @@ class XeroProvider(AccountingProvider):
         return OAuthTokens(
             access_token=token_data['access_token'],
             refresh_token=token_data.get('refresh_token'),
-            expires_at=datetime.now() + timedelta(seconds=token_data.get('expires_in', 1800)),
+            expires_at=timezone.now() + timedelta(seconds=token_data.get('expires_in', 1800)),
             tenant_id=self.config.get('tenant_id'),
             scope=token_data.get('scope')
         )
     
     def get_tenants(self) -> List[Dict[str, Any]]:
         """Get available Xero tenants/organisations"""
-        response = self._make_request("GET", f"{self.oauth_base}/connections")
+        response = self._make_request("GET", f"{self.api_base}/connections")
         return response.json()
     
     def _make_request(self, method: str, url: str, data: Optional[Dict] = None, 
@@ -359,7 +379,10 @@ class XeroProvider(AccountingProvider):
     def create_invoice(self, invoice: InvoiceDraft) -> Dict[str, Any]:
         """Create invoice in Xero"""
         xero_invoice = {
-            'Type': 'ACCREC',  # Accounts Receivable
+            # Staff pay invoices are money we owe OUT, and _ensure_contact_exists
+            # creates the staff member as a supplier -- so these are Bills
+            # (ACCPAY), not sales invoices (ACCREC).
+            'Type': 'ACCPAY',  # Accounts Payable (Bill)
             'Contact': {'ContactID': invoice.contact_id},
             'Date': invoice.date.strftime('%Y-%m-%d'),
             'Status': 'DRAFT',

@@ -9,6 +9,34 @@ from .models import (
 User = get_user_model()
 
 
+class ScopedConnectionSerializerMixin:
+    """
+    Restrict the writable `connection` field to connections this request can
+    actually reach.
+
+    ModelSerializer would otherwise expose `connection` as a plain writable PK
+    accepting ANY id, so a POST body could name another company's connection
+    and plant a mapping that silently poisons that company's next export --
+    _build_invoice_draft() reads AccountMapping/VATCodeMapping by connection.
+
+    Fails closed: with no request in context the field accepts nothing.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        field = self.fields.get('connection')
+        if field is None:
+            return
+
+        from .scoping import company_connections
+
+        request = self.context.get('request')
+        field.queryset = (
+            company_connections(request) if request is not None
+            else ProviderConnection.objects.none()
+        )
+
+
 class AccountingProviderSerializer(serializers.ModelSerializer):
     """Serializer for accounting providers"""
     
@@ -57,7 +85,7 @@ class ProviderConnectionSerializer(serializers.ModelSerializer):
         return obj.is_token_valid()
 
 
-class AccountMappingSerializer(serializers.ModelSerializer):
+class AccountMappingSerializer(ScopedConnectionSerializerMixin, serializers.ModelSerializer):
     """Serializer for account mappings"""
     
     connection_name = serializers.CharField(source='connection.company_name', read_only=True)
@@ -72,7 +100,7 @@ class AccountMappingSerializer(serializers.ModelSerializer):
         read_only_fields = ['connection_name', 'created_at', 'updated_at']
 
 
-class VATCodeMappingSerializer(serializers.ModelSerializer):
+class VATCodeMappingSerializer(ScopedConnectionSerializerMixin, serializers.ModelSerializer):
     """Serializer for VAT code mappings"""
     
     connection_name = serializers.CharField(source='connection.company_name', read_only=True)
@@ -87,7 +115,7 @@ class VATCodeMappingSerializer(serializers.ModelSerializer):
         read_only_fields = ['connection_name', 'created_at', 'updated_at']
 
 
-class EarningsTypeMappingSerializer(serializers.ModelSerializer):
+class EarningsTypeMappingSerializer(ScopedConnectionSerializerMixin, serializers.ModelSerializer):
     """Serializer for earnings type mappings"""
     
     connection_name = serializers.CharField(source='connection.company_name', read_only=True)

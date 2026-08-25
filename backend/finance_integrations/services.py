@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.utils import timezone
 from django.conf import settings
 import logging
@@ -258,37 +259,57 @@ class FinanceIntegrationService:
         """Build invoice draft from local invoice"""
         draft = InvoiceDraft(
             contact_id=contact_id,
-            invoice_number=f"INV-{invoice.id}",
+            invoice_number=invoice.invoice_number or f"INV-{invoice.id}",
             reference=f"Staff Invoice for {invoice.staff_user.get_full_name()}",
             date=invoice.created_at,
             due_date=invoice.created_at + timedelta(days=30)  # 30 day payment terms
         )
-        
-        # Add line items from invoice items
+
+        # These are per-connection, not per-line -- looking them up inside the
+        # loop cost two queries per line item and always returned the same row.
+        # 'expense' because staff pay is pushed as an ACCPAY bill (money out).
+        account_mapping = AccountMapping.objects.filter(
+            connection=self.connection,
+            mapping_type='expense',
+            is_default=True
+        ).first()
+
+        # Get VAT mapping (assume standard rate for now)
+        vat_mapping = VATCodeMapping.objects.filter(
+            connection=self.connection,
+            local_vat_code='STANDARD'
+        ).first()
+
         for item in invoice.items.all():
-            # Get account mapping for revenue
-            account_mapping = AccountMapping.objects.filter(
-                connection=self.connection,
-                mapping_type='revenue',
-                is_default=True
-            ).first()
-            
-            # Get VAT mapping (assume standard rate for now)
-            vat_mapping = VATCodeMapping.objects.filter(
-                connection=self.connection,
-                local_vat_code='STANDARD'
-            ).first()
-            
+            # Line items cover shift work (venue + hours_worked) *and* leave /
+            # bank-holiday entries, where venue and hours_worked are both null
+            # and the quantity lives in `days` instead. Guard both, or any
+            # invoice containing a leave line dies mid-export.
+            if item.hours_worked is not None:
+                quantity, unit_label = float(item.hours_worked), 'hours'
+            elif item.days is not None:
+                quantity, unit_label = float(item.days), 'days'
+            else:
+                quantity, unit_label = 1.0, None
+
+            if item.description:
+                description = item.description
+            else:
+                label = item.venue.name if item.venue_id else item.get_item_type_display()
+                description = f"{label} - {item.date.strftime('%Y-%m-%d')}"
+                if unit_label:
+                    description = f"{description} ({quantity:g} {unit_label})"
+
             line_item = InvoiceLineItem(
-                description=f"{item.venue.name} - {item.date.strftime('%Y-%m-%d')} ({item.hours_worked} hours)",
-                quantity=float(item.hours_worked),
+                description=description,
+                quantity=quantity,
                 unit_amount=float(item.rate),
                 account_id=account_mapping.provider_account_id if account_mapping else None,
                 vat_code_id=vat_mapping.provider_vat_code if vat_mapping else None
             )
-            
+
             draft.line_items.append(line_item)
-        
+
         return draft
     
     def _upload_invoice_pdf(self, invoice: Invoice, provider_invoice_id: str) -> None:
@@ -528,6 +549,32 @@ class FinanceIntegrationService:
 
 class ConnectionSetupService:
     """Service for setting up provider connections"""
+
+    # OAuth round-trips are a browser redirect to the provider and back; ten
+    # minutes is generous for a human clicking Allow.
+    OAUTH_STATE_TTL_SECONDS = 600
+
+    @staticmethod
+    def _oauth_state_key(state: str) -> str:
+        return f'finance_oauth_state:{state}'
+
+    @staticmethod
+    def _consume_oauth_state(state: str, user: User, provider_key: str) -> None:
+        """
+        Verify a callback's state against the value stored at initiate time and
+        burn it so a code cannot be replayed. Raises ValueError on mismatch.
+        """
+        if not state:
+            raise ValueError('Missing OAuth state parameter')
+
+        key = ConnectionSetupService._oauth_state_key(state)
+        stored = cache.get(key)
+        if not stored:
+            raise ValueError('OAuth state is unknown or has expired -- please start the connection again')
+        if stored.get('user_id') != user.id or stored.get('provider_key') != provider_key:
+            raise ValueError('OAuth state does not match the user or provider that started this flow')
+
+        cache.delete(key)
     
     @staticmethod
     def initiate_oauth_flow(provider_key: str, user: User, redirect_uri: str, 
@@ -562,15 +609,18 @@ class ConnectionSetupService:
         
         provider = ProviderFactory.create_provider(provider_key, config)
         
-        # Generate state for CSRF protection
+        # Generate state for CSRF protection and persist it so the callback can
+        # verify the response came from a flow *this* user actually started.
         import uuid
         state = str(uuid.uuid4())
-        
-        # Store state in cache/session for verification
-        # In production, you'd store this in Redis or session
-        
+        cache.set(
+            ConnectionSetupService._oauth_state_key(state),
+            {'user_id': user.id, 'provider_key': provider_key},
+            timeout=ConnectionSetupService.OAUTH_STATE_TTL_SECONDS,
+        )
+
         oauth_url = provider.get_oauth_url(state, redirect_uri)
-        
+
         return oauth_url, state
     
     @staticmethod
@@ -653,7 +703,7 @@ class ConnectionSetupService:
         Returns:
             ProviderConnection instance
         """
-        # Verify state (in production, check against stored value)
+        ConnectionSetupService._consume_oauth_state(state, user, provider_key)
 
         # Get provider config
         provider_model = AccountingProvider.objects.get(
@@ -697,17 +747,25 @@ class ConnectionSetupService:
 
         company_info = provider_with_token.get_company_info()
 
-        # Create connection record
-        connection = ProviderConnection.objects.create(
+        # Re-connecting an org that is already linked must UPDATE it. With
+        # objects.create() the unique_together ('provider', 'tenant_id') raises
+        # IntegrityError, and the only workaround -- disconnect first -- CASCADE
+        # deletes every mapping and the whole export audit trail. Any change to
+        # the requested scopes forces exactly this re-consent, so update_or_create
+        # is what makes a scope change survivable.
+        connection, _created = ProviderConnection.objects.update_or_create(
             provider=provider_model,
-            company_name=company_info.name,
             tenant_id=tenant_id or tokens.tenant_id,
-            access_token=tokens.access_token,
-            refresh_token=tokens.refresh_token,
-            token_expires_at=tokens.expires_at,
-            status='connected',
-            is_sandbox=is_sandbox,
-            created_by=user
+            defaults=dict(
+                company_name=company_info.name,
+                access_token=tokens.access_token,
+                refresh_token=tokens.refresh_token,
+                token_expires_at=tokens.expires_at,
+                status='connected',
+                error_message='',
+                is_sandbox=is_sandbox,
+                created_by=user,
+            ),
         )
 
         # Log successful connection

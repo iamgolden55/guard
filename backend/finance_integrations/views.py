@@ -31,6 +31,8 @@ from .serializers import (
 from .services import FinanceIntegrationService, ConnectionSetupService
 from .providers.factory import ProviderFactory
 from api.models import Invoice
+from api.middleware.tenant_middleware import resolve_request_company
+from .scoping import company_connections
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -57,35 +59,8 @@ class ProviderConnectionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        """Filter connections by user's company (multi-tenant isolation)"""
-        user = self.request.user
-
-        # Get current company from tenant middleware or user's active membership
-        current_company_id = getattr(self.request, 'current_company_id', None)
-
-        if current_company_id:
-            # Filter by users who belong to the same company
-            return ProviderConnection.objects.filter(
-                created_by__company_memberships__company_id=current_company_id,
-                created_by__company_memberships__is_active=True
-            ).distinct().select_related('provider', 'created_by')
-
-        # Fallback: If no company context, filter by user's companies
-        if hasattr(user, 'company_memberships'):
-            user_company_ids = user.company_memberships.filter(
-                is_active=True
-            ).values_list('company_id', flat=True)
-
-            if user_company_ids:
-                return ProviderConnection.objects.filter(
-                    created_by__company_memberships__company_id__in=user_company_ids,
-                    created_by__company_memberships__is_active=True
-                ).distinct().select_related('provider', 'created_by')
-
-        # Final fallback: Only show connections created by the current user
-        return ProviderConnection.objects.filter(
-            created_by=user
-        ).select_related('provider', 'created_by')
+        """Filter connections by the request's company (multi-tenant isolation)"""
+        return company_connections(self.request).select_related('provider', 'created_by')
     
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -214,31 +189,10 @@ class ProviderConnectionViewSet(viewsets.ModelViewSet):
 
 def get_user_company_connection_filter(request):
     """
-    Helper to get company-filtered connections for the current user.
-    Returns a queryset of connection IDs the user has access to.
+    IDs of the connections reachable from this request. Empty when no company
+    is in scope -- see company_connections().
     """
-    user = request.user
-    current_company_id = getattr(request, 'current_company_id', None)
-
-    if current_company_id:
-        return ProviderConnection.objects.filter(
-            created_by__company_memberships__company_id=current_company_id,
-            created_by__company_memberships__is_active=True
-        ).values_list('id', flat=True)
-
-    if hasattr(user, 'company_memberships'):
-        user_company_ids = user.company_memberships.filter(
-            is_active=True
-        ).values_list('company_id', flat=True)
-
-        if user_company_ids:
-            return ProviderConnection.objects.filter(
-                created_by__company_memberships__company_id__in=user_company_ids,
-                created_by__company_memberships__is_active=True
-            ).values_list('id', flat=True)
-
-    # Fallback: only connections created by current user
-    return ProviderConnection.objects.filter(created_by=user).values_list('id', flat=True)
+    return company_connections(request).values_list('id', flat=True)
 
 
 class AccountMappingViewSet(viewsets.ModelViewSet):
@@ -487,24 +441,46 @@ class InvoiceExportView(APIView):
         serializer = InvoiceExportRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        try:
-            connection = get_object_or_404(
-                ProviderConnection,
-                id=serializer.validated_data['connection_id']
+        # Check permissions before any lookup.
+        if hasattr(request.user, 'role') and request.user.role not in ['admin', 'manager']:
+            return Response(
+                {'error': 'Insufficient permissions'},
+                status=status.HTTP_403_FORBIDDEN
             )
-            
-            # Check permissions
-            if hasattr(request.user, 'role') and request.user.role not in ['admin', 'manager']:
-                return Response(
-                    {'error': 'Insufficient permissions'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
+
+        # Both lookups stay OUTSIDE the try below: Http404 subclasses Exception,
+        # so a 404 raised inside would be swallowed and returned as a 500.
+        company = resolve_request_company(request)
+        connection = get_object_or_404(
+            company_connections(request),
+            id=serializer.validated_data['connection_id']
+        )
+
+        # Invoices must belong to the same company as the connection. Without
+        # this, any admin could push another company's invoice into this org.
+        invoice_scope = Invoice.objects.none() if not company else Invoice.objects.filter(
+            staff_user__company_memberships__company=company,
+            staff_user__company_memberships__is_active=True
+        ).distinct()
+
+        requested_ids = serializer.validated_data['invoice_ids']
+        invoices = {i.id: i for i in invoice_scope.filter(id__in=requested_ids)}
+        missing = [i for i in requested_ids if i not in invoices]
+        if missing:
+            # Reject the whole batch rather than exporting part of it: a foreign
+            # id means the caller is reaching outside their company, and we do
+            # not disclose whether it exists.
+            return Response(
+                {'error': 'One or more invoices were not found', 'invoice_ids': missing},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        try:
             service = FinanceIntegrationService(connection)
             export_results = []
-            
-            for invoice_id in serializer.validated_data['invoice_ids']:
-                invoice = get_object_or_404(Invoice, id=invoice_id)
+
+            for invoice_id in requested_ids:
+                invoice = invoices[invoice_id]
                 
                 try:
                     export_record = service.export_invoice(invoice, request.user)
@@ -541,47 +517,50 @@ class PayrollExportView(APIView):
         serializer = PayrollExportRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        try:
-            connection = get_object_or_404(
-                ProviderConnection,
-                id=serializer.validated_data['connection_id']
-            )
-            
-            # Check permissions
-            if hasattr(request.user, 'role') and request.user.role not in ['admin']:
-                return Response(
-                    {'error': 'Insufficient permissions'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
-            # Get staff users
-            staff_users = User.objects.filter(
-                id__in=serializer.validated_data['staff_user_ids']
-            )
-            
-            if not staff_users.exists():
-                return Response(
-                    {'error': 'No valid staff users found'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            service = FinanceIntegrationService(connection)
-            export_record = service.export_payroll_batch(
-                start_date=serializer.validated_data['start_date'],
-                end_date=serializer.validated_data['end_date'],
-                staff_users=list(staff_users),
-                user=request.user
-            )
-            
-            export_serializer = PayrollExportSerializer(export_record)
-            return Response(export_serializer.data, status=status.HTTP_201_CREATED)
-            
-        except Exception as e:
-            logger.exception(f"Payroll export failed")
+        # Check permissions before any lookup.
+        if hasattr(request.user, 'role') and request.user.role not in ['admin']:
             return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {'error': 'Insufficient permissions'},
+                status=status.HTTP_403_FORBIDDEN
             )
+
+        # Outside the try -- Http404 would otherwise surface as a 500.
+        company = resolve_request_company(request)
+        connection = get_object_or_404(
+            company_connections(request),
+            id=serializer.validated_data['connection_id']
+        )
+
+        # Staff must belong to the same company as the connection.
+        requested_staff_ids = serializer.validated_data['staff_user_ids']
+        staff_users = User.objects.none() if not company else User.objects.filter(
+            id__in=requested_staff_ids,
+            company_memberships__company=company,
+            company_memberships__is_active=True
+        ).distinct()
+
+        missing_staff = set(requested_staff_ids) - set(staff_users.values_list('id', flat=True))
+        if missing_staff:
+            return Response(
+                {'error': 'One or more staff users were not found',
+                 'staff_user_ids': sorted(missing_staff)},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # The Xero payroll client targets payroll.xro/1.0 -- the AUSTRALIAN
+        # Payroll API. UK payroll is payroll.xro/2.0 with a different
+        # employee/payrun model, so every call here 404s for a UK company.
+        # Fail honestly rather than mysteriously.
+        #
+        # Deliberately placed AFTER the permission and tenant checks so a
+        # cross-company request still gets 404 and learns nothing about what
+        # exists. The service layer (FinanceIntegrationService.export_payroll_batch)
+        # is left intact for whoever ports this to payroll.xro/2.0; re-wiring
+        # this view is then a few lines.
+        return Response(
+            {'error': 'Payroll export is not yet supported for this provider.'},
+            status=status.HTTP_501_NOT_IMPLEMENTED
+        )
 
 
 @method_decorator(csrf_exempt, name='dispatch')

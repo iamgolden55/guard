@@ -1,23 +1,34 @@
 from typing import Dict, Any, Type
 from .base import AccountingProvider
 from .xero import XeroProvider
-from .quickbooks import QuickBooksProvider
-from .sage import SageProvider
+# NOT imported on purpose -- QuickBooksProvider and SageProvider each leave 11
+# of the base class's 17 abstract methods unimplemented, so instantiating
+# either raises TypeError. Registering them made the UI advertise providers
+# that 500 the moment anyone clicks Connect. Re-add once they are finished and
+# ProviderFactoryTests passes for them.
+# from .quickbooks import QuickBooksProvider
+# from .sage import SageProvider
 
 
 class ProviderFactory:
     """Factory for creating accounting provider instances"""
     
+    # Only providers that are actually implemented belong here: this dict is
+    # the single source of truth for what the API advertises as connectable.
     _providers: Dict[str, Type[AccountingProvider]] = {
         'xero': XeroProvider,
-        'quickbooks': QuickBooksProvider,
-        'sage': SageProvider,
-        # Future providers will be added here:
-        # 'freeagent': FreeAgentProvider,
-        # 'freshbooks': FreshBooksProvider,
-        # 'zoho': ZohoProvider,
-        # 'wave': WaveProvider,
-        # 'netsuite': NetSuiteProvider,
+    }
+
+    # Display names for the keys above (and for any future provider).
+    _display_names: Dict[str, str] = {
+        'xero': 'Xero',
+        'quickbooks': 'QuickBooks Online',
+        'sage': 'Sage Business Cloud',
+        'freeagent': 'FreeAgent',
+        'freshbooks': 'FreshBooks',
+        'zoho': 'Zoho Books',
+        'wave': 'Wave Accounting',
+        'netsuite': 'NetSuite',
     }
     
     @classmethod
@@ -49,11 +60,11 @@ class ProviderFactory:
         Returns:
             Dictionary mapping provider keys to display names
         """
-        # Return hardcoded provider names to avoid instantiation issues
+        # Derived from the registry -- a hardcoded list drifts, and this
+        # endpoint is what the admin UI trusts when deciding what to offer.
         return {
-            'xero': 'Xero',
-            'quickbooks': 'QuickBooks Online', 
-            'sage': 'Sage Business Cloud'
+            key: cls._display_names.get(key, key.title())
+            for key in cls._providers
         }
     
     @classmethod

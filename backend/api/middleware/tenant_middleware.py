@@ -210,6 +210,51 @@ def get_current_company(request):
     return getattr(request, 'current_company', None)
 
 
+def resolve_request_company(request):
+    """
+    Resolve the single SecurityCompany in scope for this request, or None.
+
+    TenantMiddleware cannot do this on its own for API traffic: it runs before
+    DRF authenticates the request, and LoginView issues JWTs without ever
+    calling django.contrib.auth.login(), so there is no session and
+    request.user is AnonymousUser at middleware time. request.current_company
+    is therefore None on every API request. This helper works off the
+    DRF-authenticated request.user instead.
+
+    It deliberately returns ONE company, never a set. Filtering by "every
+    company this user belongs to" does not isolate anything: an admin of both
+    A and B could still push A's invoice into B's accounting org.
+
+    Callers must fail closed on None -- return an empty queryset, not
+    everything.
+    """
+    # Honour the middleware's answer if it ever manages to set one; this keeps
+    # the helper correct if TenantMiddleware is fixed to run after DRF auth.
+    company = getattr(request, 'current_company', None)
+    if company:
+        return company
+
+    user = getattr(request, 'user', None)
+    if not user or not user.is_authenticated:
+        return None
+
+    membership = UserCompanyMembership.objects.select_related('company').filter(
+        user=user,
+        is_owner=True,
+        is_active=True,
+        company__is_active=True
+    ).first()
+
+    if not membership:
+        membership = UserCompanyMembership.objects.select_related('company').filter(
+            user=user,
+            is_active=True,
+            company__is_active=True
+        ).order_by('-joined_at').first()
+
+    return membership.company if membership else None
+
+
 def require_company_access(view_func):
     """
     Decorator to require company access for views.

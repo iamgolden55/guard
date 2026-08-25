@@ -1,5 +1,8 @@
 from django.core.management.base import BaseCommand
+
 from finance_integrations.models import AccountingProvider
+from finance_integrations.providers.factory import ProviderFactory
+from finance_integrations.providers.xero import XeroProvider
 
 
 class Command(BaseCommand):
@@ -10,7 +13,10 @@ class Command(BaseCommand):
             {
                 'provider_key': 'xero',
                 'display_name': 'Xero',
-                'oauth_scopes': 'accounting.transactions,accounting.contacts.read,accounting.settings,payroll.employees,payroll.payruns,payroll.settings,files',
+                # Derived from XeroProvider.SCOPES so this row documents what
+                # the code actually requests instead of contradicting it. The
+                # field is descriptive only -- nothing reads it at runtime.
+                'oauth_scopes': ' '.join(XeroProvider.SCOPES),
                 'api_base_url': 'https://api.xero.com',
             },
             {
@@ -57,23 +63,44 @@ class Command(BaseCommand):
             },
         ]
 
+        # Only providers the factory can actually build are active. An active
+        # row with no implementation makes the admin UI offer a Connect button
+        # that always fails. AccountingProviderViewSet filters on is_active,
+        # and it feeds both /integrations and the Invoices provider picker.
+        implemented = set(ProviderFactory.get_supported_providers())
+
         for provider_data in providers:
+            key = provider_data['provider_key']
             provider, created = AccountingProvider.objects.get_or_create(
-                provider_key=provider_data['provider_key'],
+                provider_key=key,
                 defaults={
                     'display_name': provider_data['display_name'],
                     'oauth_scopes': provider_data['oauth_scopes'],
                     'api_base_url': provider_data['api_base_url'],
-                    'is_active': True,
+                    'is_active': key in implemented,
                 }
             )
-            
+
             if created:
+                state = 'active' if provider.is_active else 'inactive (not implemented)'
                 self.stdout.write(
-                    self.style.SUCCESS(f'Created provider: {provider.display_name}')
+                    self.style.SUCCESS(f'Created provider: {provider.display_name} [{state}]')
                 )
             else:
                 self.stdout.write(f'Provider already exists: {provider.display_name}')
+
+        # get_or_create does not touch existing rows, so deactivate stale ones
+        # explicitly -- otherwise an environment seeded before this change keeps
+        # advertising providers that cannot work.
+        deactivated = AccountingProvider.objects.filter(is_active=True).exclude(
+            provider_key__in=implemented
+        ).update(is_active=False)
+        if deactivated:
+            self.stdout.write(
+                self.style.WARNING(
+                    f'Deactivated {deactivated} provider(s) with no implementation'
+                )
+            )
 
         self.stdout.write(
             self.style.SUCCESS('Successfully set up accounting providers')
