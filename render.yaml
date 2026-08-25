@@ -3,6 +3,12 @@
 #
 # IMPORTANT: This file must be at the repository root.
 # The rootDir property tells Render where the backend code is located.
+#
+# Every `sync: false` key below MUST have a value set in the Render dashboard.
+# Django raises at import time when any of the secrets are missing in
+# production, which fails the *build* (build.sh runs collectstatic), not just
+# startup — see backend/core/settings.py, backend/api/fields.py and
+# backend/finance_integrations/models.py.
 
 services:
   # Main web service (Django + WebSockets via Daphne)
@@ -13,6 +19,9 @@ services:
     region: oregon
     plan: starter  # Paid plan for reliable deployment
     buildCommand: ./build.sh
+    # Migrations run here, not in build.sh: a DB problem should fail the
+    # release, not destroy the build and leave the service with no instance.
+    preDeployCommand: python manage.py migrate --noinput
     startCommand: daphne -b 0.0.0.0 -p $PORT core.asgi:application
     healthCheckPath: /api/v1/health/
     envVars:
@@ -39,6 +48,13 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: FRONTEND_URL
+        sync: false
+      # Hard requirements — Django raises on import if these are unset.
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: BANK_ENCRYPTION_KEY
+        sync: false
+      - key: FINANCE_ENCRYPTION_KEY
         sync: false
 
   # Celery worker for background tasks
@@ -68,6 +84,16 @@ services:
           property: connectionString
       - key: DJANGO_SECRET_KEY
         sync: false
+      # Workers import the same models as the web service and crash the same
+      # way without these. FRONTEND_URL is used to build links in task emails.
+      - key: FRONTEND_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: BANK_ENCRYPTION_KEY
+        sync: false
+      - key: FINANCE_ENCRYPTION_KEY
+        sync: false
 
   # Celery beat for scheduled tasks
   - type: worker
@@ -96,6 +122,14 @@ services:
           property: connectionString
       - key: DJANGO_SECRET_KEY
         sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: BANK_ENCRYPTION_KEY
+        sync: false
+      - key: FINANCE_ENCRYPTION_KEY
+        sync: false
 
   # Redis for caching, Celery broker, and Django Channels
   - type: redis
@@ -106,8 +140,11 @@ services:
 
 databases:
   - name: mead-security-db
-    plan: free
+    # NOTE: the live instance (dpg-d5esfbkhg0os73folm60-a) is actually on
+    # basic_256mb, not free — this blueprint had drifted. Corrected here so a
+    # future sync can't downgrade a paid database back to the free tier.
+    plan: basic_256mb
     region: oregon
     databaseName: mead_security
     user: mead_admin
-    ipAllowList: []  # Allow all IPs (required for free tier)
+    ipAllowList: []  # Allow all IPs

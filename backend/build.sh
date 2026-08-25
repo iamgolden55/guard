@@ -14,7 +14,9 @@ mkdir -p logs
 echo "Collecting static files..."
 python manage.py collectstatic --noinput
 
-echo "Running database migrations..."
-python manage.py migrate --noinput
+# NOTE: migrations deliberately do NOT run here. They run as the
+# preDeployCommand in render.yaml. Running them in the build means any
+# database problem fails the build outright, which leaves the service with no
+# running instance at all and returns 502 for every request.
 
 echo "Build completed successfully!"
