@@ -9,6 +9,7 @@ from datetime import timedelta
 from django.utils import timezone
 from .models import SecurityCompany, Shift, OpenShiftRequest, ShiftExchange, AuditLog, ShiftStatusHistory, Notification
 from .services import push_notification_service
+from .services.shift_notifications import notify_shift_assigned
 import logging
 
 logger = logging.getLogger(__name__)
@@ -254,121 +255,15 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
     if not is_new_assignment:
         return
 
-    # Only notify for scheduled shifts (not completed, cancelled, etc.)
-    if instance.status not in ['scheduled', 'open', 'active']:
-        return
-
+    # The fan-out itself (push + in-app + email + reminders + co-workers) is
+    # shared with the batch publish endpoint, so the two paths can't drift
+    # apart again. notify_shift_assigned re-checks the draft, past-shift and
+    # status guards, and never raises.
     try:
-        # Send immediate notification to new assignee
-        success = push_notification_service.send_shift_assignment_notification(
-            user_id=current_staff.id,
-            shift_id=instance.id,
-            venue_name=venue_name,
-            start_time=formatted_time,
-            formatted_date=formatted_date
-        )
-
-        if success:
-            logger.info(
-                f"Shift assignment notification sent for shift {instance.id} "
-                f"to user {current_staff.id}"
-            )
-        else:
-            logger.warning(
-                f"Failed to send shift assignment notification for shift {instance.id}"
-            )
-
-        # In-app notification for new assignment
-        try:
-            company = instance.venue.company if instance.venue else None
-            Notification.send(
-                user=current_staff,
-                title='Shift Assigned',
-                message=f'You have been assigned a shift at {venue_name} on {formatted_date} at {formatted_time}.',
-                notification_type='shift_assigned',
-                related_type='shift',
-                related_id=str(instance.id),
-                action_url=f'/shifts/{instance.id}',
-                company=company,
-            )
-        except Exception as e:
-            logger.warning(f"Could not create in-app shift assignment notification: {e}")
-
-        # Schedule reminder tasks via Celery
-        try:
-            from .tasks import schedule_shift_reminders
-            schedule_shift_reminders.delay(instance.id)
-            logger.info(f"Scheduled reminder tasks for shift {instance.id}")
-        except Exception as e:
-            logger.warning(f"Could not schedule reminder tasks: {e}")
-
-        # Queue email notification task
-        try:
-            from .tasks import send_shift_assignment_email_task
-            venue_address = instance.venue.address if instance.venue else None
-            end_time = instance.end_time.strftime('%I:%M %p') if instance.end_time else None
-            send_shift_assignment_email_task.delay(
-                user_id=current_staff.id,
-                shift_id=instance.id,
-                venue_name=venue_name,
-                venue_address=venue_address,
-                start_time=formatted_time,
-                end_time=end_time,
-                formatted_date=formatted_date,
-                hourly_rate=None  # Could be enhanced to pass pay rate if available
-            )
-            logger.info(f"Queued shift assignment email for shift {instance.id}")
-        except Exception as e:
-            logger.warning(f"Could not queue shift assignment email: {e}")
-
-        # Multi-staff shift: Notify existing co-workers about new assignment
-        if instance.shift_group:
-            try:
-                _notify_coworkers_of_new_assignment(instance, current_staff)
-            except Exception as e:
-                logger.exception(f"Error notifying co-workers: {e}")
-
+        company = instance.venue.company if instance.venue else None
+        notify_shift_assigned(instance, company=company)
     except Exception as e:
         logger.exception(f"Error sending shift assignment notification: {e}")
-
-
-def _notify_coworkers_of_new_assignment(shift, new_staff):
-    """
-    Notify existing co-workers when a new staff member is assigned to a grouped shift.
-
-    Args:
-        shift: The Shift instance that was just assigned
-        new_staff: The User who was just assigned to the shift
-    """
-    # Find other shifts in the same group
-    coworker_shifts = Shift.objects.filter(
-        shift_group=shift.shift_group
-    ).exclude(id=shift.id).select_related('staff_user')
-
-    new_staff_name = new_staff.get_full_name() or new_staff.username
-    venue_name = shift.venue.name if shift.venue else 'Unknown Venue'
-    formatted_date = shift.start_time.strftime('%B %d, %Y')
-    formatted_time = shift.start_time.strftime('%I:%M %p')
-
-    for coworker_shift in coworker_shifts:
-        if coworker_shift.staff_user:
-            try:
-                push_notification_service.send_coworker_assignment_notification(
-                    user_id=coworker_shift.staff_user.id,
-                    shift_id=shift.id,
-                    coworker_name=new_staff_name,
-                    venue_name=venue_name,
-                    shift_date=formatted_date,
-                    shift_time=formatted_time
-                )
-                logger.info(
-                    f"Co-worker notification sent for shift {shift.id} "
-                    f"to user {coworker_shift.staff_user.id} about new co-worker {new_staff.id}"
-                )
-            except Exception as e:
-                logger.exception(
-                    f"Error sending co-worker notification to user {coworker_shift.staff_user.id}: {e}"
-                )
 
 
 # =============================================================================

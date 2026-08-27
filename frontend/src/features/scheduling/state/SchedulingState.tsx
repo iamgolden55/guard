@@ -50,7 +50,6 @@ function reducer(state: Shift[], action: Action): Shift[] {
               ...s,
               officerId: action.officerId,
               status: "assigned" as const,
-              published: false,
               violations: undefined,
             }
           : s,
@@ -67,7 +66,6 @@ function reducer(state: Shift[], action: Action): Shift[] {
           ? {
               ...s,
               ...action.patch,
-              published: false,
               violations: undefined,
             }
           : s,
@@ -207,11 +205,15 @@ function formInputToApi(input: ShiftFormInput): Record<string, unknown> {
     endDate = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
   }
   const end = localDateTimeToIso(endDate, input.endTime);
+  // NOTE: no `is_published` here. This body is shared by create and update,
+  // and sending it on a PATCH would silently revert a published shift to a
+  // draft — pulling it out of the officer's app and re-notifying them when it
+  // was published again. Create paths add `is_published: false` themselves;
+  // omitting the key leaves the flag untouched on update.
   const body: Record<string, unknown> = {
     venue: Number(input.venueId),
     start_time: start,
     end_time: end,
-    is_published: false,
   };
   if (input.officerId) {
     body.staff_user = Number(input.officerId.replace(/^u/, ""));
@@ -291,10 +293,11 @@ export function SchedulingProvider({
     mutationFn: ({ shiftId, officerId }) => {
       const numericId = Number(shiftId);
       const staffId = Number(officerId.replace(/^u/, ""));
+      // No `is_published`: dragging an officer onto an already-published
+      // shift is a reassignment, not a return to draft.
       return schedulerService.updateShift(numericId, {
         staff_user: staffId,
         status: "scheduled",
-        is_published: false,
       });
     },
     onMutate: ({ shiftId, officerId }) => {
@@ -356,7 +359,7 @@ export function SchedulingProvider({
         body.start_time = dayHourToIso(rangeAnchorIso, newDay, target.start);
         body.end_time = dayHourToIso(rangeAnchorIso, newDay, target.end);
       }
-      body.is_published = false;
+      // No `is_published`: moving a published shift keeps it published.
       return schedulerService.updateShift(Number(shiftId), body);
     },
     onMutate: ({ shiftId, patch }) => {
@@ -375,9 +378,10 @@ export function SchedulingProvider({
     mutationFn: async (input) => {
       const count = Math.max(1, Math.min(20, input.officersNeeded ?? 1));
       if (count === 1) {
-        return schedulerService.createShift(
-          formInputToApi(input) as unknown as CreateShiftParams,
-        );
+        return schedulerService.createShift({
+          ...formInputToApi(input),
+          is_published: false,
+        } as unknown as CreateShiftParams);
       }
       // Multi-officer slot: fan out N rows linked by a shared shift_group UUID.
       // First row carries the selected officer; the rest start as open seats so
@@ -388,7 +392,11 @@ export function SchedulingProvider({
           : `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const baseBody = formInputToApi(input);
       const bodies: Record<string, unknown>[] = Array.from({ length: count }, (_, i) => {
-        const body: Record<string, unknown> = { ...baseBody, shift_group: groupId };
+        const body: Record<string, unknown> = {
+          ...baseBody,
+          shift_group: groupId,
+          is_published: false,
+        };
         if (i > 0) {
           body.staff_user = null;
           body.status = "open";
@@ -460,6 +468,7 @@ export function SchedulingProvider({
           shift_group: groupId,
           staff_user: null,
           status: "open",
+          is_published: false,
         }));
         await Promise.all(
           extras.map((b) =>

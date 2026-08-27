@@ -80,30 +80,14 @@ class ShiftViewSet(viewsets.ModelViewSet):
         # Check if this is a copy operation that should allow past dates
         allow_past_dates = self.request.data.get('allow_past_dates', False)
         serializer.context['allow_past_dates'] = allow_past_dates
-        shift = serializer.save()
-        self._send_shift_assignment_email(shift)
-
-    def _send_shift_assignment_email(self, shift):
-        """Send email notification for a newly assigned shift."""
-        try:
-            from api.services.email_notification_service import EmailNotificationService
-            if not shift.staff_user:
-                return
-            email_service = EmailNotificationService()
-            venue_name = shift.venue.name if shift.venue else 'TBD'
-            venue_address = shift.venue.address if shift.venue else None
-            email_service.send_shift_assignment_email(
-                user_id=shift.staff_user.id,
-                shift_id=shift.id,
-                venue_name=venue_name,
-                venue_address=venue_address,
-                start_time=shift.start_time.strftime('%H:%M'),
-                end_time=shift.end_time.strftime('%H:%M'),
-                formatted_date=shift.start_time.strftime('%A, %d %B %Y'),
-                hourly_rate=str(shift.hourly_rate) if shift.hourly_rate else None,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to send shift assignment email for shift {shift.id}: {e}")
+        serializer.save()
+        # No notification here on purpose. Creating a shift is not the same as
+        # telling the officer about it — the scheduler creates drafts, and
+        # staff must only hear about a shift once it's published. The Shift
+        # post_save signal covers the case where a shift is created already
+        # published (e.g. from the manager mobile app), and the publish
+        # endpoint covers drafts going live. See
+        # api/services/shift_notifications.notify_shift_assigned.
 
     def perform_update(self, serializer):
         shift = self.get_object()
@@ -1365,9 +1349,8 @@ class ShiftViewSet(viewsets.ModelViewSet):
         serializer = MultiStaffShiftSerializer(data=request.data, context=context)
         if serializer.is_valid():
             shifts = serializer.save()
-            # Send email notifications for each created shift
-            for shift in shifts:
-                self._send_shift_assignment_email(shift)
+            # No notification here — these shifts are created unpublished, so
+            # the officers hear about them when the manager publishes.
             # Return the created shifts using the regular serializer
             shift_data = ShiftSerializer(shifts, many=True).data
             return Response({
@@ -2405,8 +2388,8 @@ class ShiftViewSet(viewsets.ModelViewSet):
         Batch publish draft shifts. Sets is_published=True and creates notifications
         for assigned staff.
         """
-        from api.models import AuditLog, Notification
-        from api.services import push_notification_service
+        from api.models import AuditLog
+        from api.services.shift_notifications import notify_shift_assigned
         from django.db import transaction
 
         if not request.user.role in ['manager', 'admin']:
@@ -2445,43 +2428,24 @@ class ShiftViewSet(viewsets.ModelViewSet):
                     shift.save(update_fields=['is_published', 'updated_at'])
                     published_count += 1
 
-                    # Notify assigned staff (in-app + push). The post_save
-                    # signal won't fire an assignment push here — staff_user
-                    # didn't change on this save — so we trigger it directly.
-                    # Skip past shifts: publishing a shift after it's started
-                    # is admin cleanup, not a real assignment, so the staff
-                    # shouldn't get a "you've been assigned" alert.
+                    # Notify assigned staff. This is the moment the officer is
+                    # meant to hear about the shift — the post_save signal won't
+                    # fire here because staff_user didn't change on this save,
+                    # so we trigger the shared fan-out directly.
+                    #
+                    # Deferred to on_commit so a publish that rolls back can't
+                    # leave officers holding emails for shifts that never went
+                    # live. Skip past shifts: publishing after the start time is
+                    # admin cleanup, not a real assignment.
                     is_past_shift = (
                         shift.start_time is not None
                         and shift.start_time <= timezone.now()
                     )
                     if shift.staff_user and not is_past_shift:
-                        Notification.objects.create(
-                            user=shift.staff_user,
-                            company=company,
-                            notification_type='shift_assigned',
-                            title='Shift Published',
-                            message=f"You have been assigned a shift at {shift.venue.name if shift.venue else 'Unknown'} "
-                                    f"on {shift.start_time.strftime('%a %d %b')} "
-                                    f"{shift.start_time.strftime('%H:%M')}-{shift.end_time.strftime('%H:%M') if shift.end_time else 'TBD'}",
-                            priority='normal',
-                            related_type='shift',
-                            related_id=str(shift.id),
-                            action_url=f'/shifts/{shift.id}',
-                        )
                         notifications_sent += 1
-                        try:
-                            push_notification_service.send_shift_assignment_notification(
-                                user_id=shift.staff_user_id,
-                                shift_id=shift.id,
-                                venue_name=shift.venue.name if shift.venue else 'Unknown Venue',
-                                start_time=shift.start_time.strftime('%I:%M %p'),
-                                formatted_date=shift.start_time.strftime('%B %d, %Y'),
-                            )
-                        except Exception:
-                            # Don't fail the publish if push delivery fails — the
-                            # in-app Notification is already recorded above.
-                            pass
+                        transaction.on_commit(
+                            lambda s=shift: notify_shift_assigned(s, company=company)
+                        )
 
                     # Audit log
                     AuditLog.objects.create(
