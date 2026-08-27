@@ -9531,7 +9531,11 @@ class AdminDashboardOverviewView(APIView):
         # Bulk-fetch current shifts per user, off the same predicate the KPI
         # uses, so the roster tab and the "Officers on shift" card can't
         # disagree about the same moment.
-        on_duty_now = on_duty_shifts(now).filter(staff_user_id__in=user_ids)
+        # Venue-scoped as well as user-scoped, so this matches the KPI's
+        # queryset exactly rather than agreeing with it by coincidence.
+        on_duty_now = by_venue_co(on_duty_shifts(now)).filter(
+            staff_user_id__in=user_ids
+        )
         currently_on_shift = {
             s.staff_user_id: s for s in on_duty_now.select_related('venue')
         }
