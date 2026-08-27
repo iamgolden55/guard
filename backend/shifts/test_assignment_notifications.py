@@ -243,3 +243,39 @@ class ShiftAssignmentNotificationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         shift.refresh_from_db()
         self.assertTrue(shift.is_published)
+
+    def test_publishing_via_patch_notifies_the_officer(self):
+        """
+        is_published is a writable serializer field, so a draft can go live
+        over PATCH as well as through /publish/. That path used to notify
+        nobody: perform_update sent nothing and the post_save signal bails
+        because staff_user didn't change — the shift appeared in the officer's
+        app without anyone telling them.
+        """
+        shift = self._make_shift(is_published=False)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.patch(
+                f"/api/v1/shifts/{shift.id}/", {"is_published": True}, format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        shift.refresh_from_db()
+        self.assertTrue(shift.is_published)
+        emails = self._assignment_emails()
+        self.assertEqual(len(emails), 1, [m.subject for m in emails])
+        self.assertEqual(emails[0].to, [self.staff.email])
+        self.mock_push.send_shift_assignment_notification.assert_called_once()
+
+    def test_patch_on_an_already_published_shift_does_not_renotify(self):
+        """Only False -> True counts. Re-saving a live shift must stay quiet."""
+        shift = self._make_shift(is_published=True)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.patch(
+                f"/api/v1/shifts/{shift.id}/", {"is_published": True}, format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(self._assignment_emails(), [])
+        self.mock_push.send_shift_assignment_notification.assert_not_called()

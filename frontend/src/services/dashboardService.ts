@@ -19,7 +19,7 @@ export type ActivityKind =
   | "approval"
   | "license"
   | "invoice";
-export type RosterStatus = "on-shift" | "break" | "late" | "off-duty";
+export type RosterStatus = "on-shift" | "late" | "off-duty";
 export type DeltaDir = "up" | "down" | "neutral";
 
 export interface DashboardKpi {

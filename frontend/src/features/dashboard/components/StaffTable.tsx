@@ -14,12 +14,11 @@ const PAGE_SIZE = 10;
 
 const STATUS_TONES: Record<StaffStatus, { tone: PillTone; label: string }> = {
   "on-shift": { tone: "positive", label: "On shift" },
-  break: { tone: "info", label: "On break" },
   late: { tone: "warning", label: "Late" },
   "off-duty": { tone: "neutral", label: "Off duty" },
 };
 
-const STATUS_OPTIONS: StaffStatus[] = ["on-shift", "break", "late", "off-duty"];
+const STATUS_OPTIONS: StaffStatus[] = ["on-shift", "late", "off-duty"];
 
 type Filter = "all" | "active" | "attention";
 
@@ -119,10 +118,7 @@ export function StaffTable({ staff }: StaffTableProps) {
 
   const filtered = useMemo(() => {
     let list = staff;
-    if (filter === "active")
-      list = list.filter(
-        (s) => s.status === "on-shift" || s.status === "break",
-      );
+    if (filter === "active") list = list.filter((s) => s.status === "on-shift");
     else if (filter === "attention")
       list = list.filter((s) => s.status === "late" || s.expiresIn < 30);
     if (selectedRoles.size)
@@ -194,12 +190,7 @@ export function StaffTable({ staff }: StaffTableProps) {
 
   const tabs: [Filter, string, number][] = [
     ["all", "All staff", staff.length],
-    [
-      "active",
-      "On duty",
-      staff.filter((s) => s.status === "on-shift" || s.status === "break")
-        .length,
-    ],
+    ["active", "On duty", staff.filter((s) => s.status === "on-shift").length],
     [
       "attention",
       "Needs attention",

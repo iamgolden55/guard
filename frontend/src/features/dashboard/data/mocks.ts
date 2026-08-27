@@ -5,7 +5,9 @@
 // also held mock data; that has been replaced by the real API. The shapes
 // are kept here because multiple components import them.
 
-export type StaffStatus = "on-shift" | "break" | "late" | "off-duty";
+// No "break": the roster endpoint derives status from the shift window and
+// never emits one, so offering it as a filter matched nothing.
+export type StaffStatus = "on-shift" | "late" | "off-duty";
 export type Urgency = "high" | "medium" | "low";
 export type ActivityKind =
   | "check-in"
