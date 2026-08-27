@@ -9161,10 +9161,14 @@ def on_duty_shifts(now):
     "Mark Present" adjustment read as nobody being on shift.
     """
     return Shift.objects.filter(
+        # end_time is nullable. An open-ended shift someone has checked into is
+        # still someone on duty — dropping it would reintroduce the same blind
+        # spot from the other side. process_auto_checkouts closes out stale
+        # in_progress rows, so this can't strand an officer on duty forever.
+        Q(end_time__gte=now) | Q(end_time__isnull=True, status='in_progress'),
         is_published=True,
         staff_user__isnull=False,
         start_time__lte=now,
-        end_time__gte=now,
     ).exclude(status__in=OFF_DUTY_SHIFT_STATUSES)
 
 

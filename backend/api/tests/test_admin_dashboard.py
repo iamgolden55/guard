@@ -279,3 +279,13 @@ class DashboardOnDutyTests(TestCase):
 
         self.assertEqual(row['required'], 0)
         self.assertIsNone(row['coverage'])
+
+    def test_open_ended_shift_in_progress_counts_as_on_duty(self):
+        """end_time is nullable; a checked-in officer is on duty regardless."""
+        shift = self._live_shift(self.officer)
+        Shift.objects.filter(id=shift.id).update(end_time=None)
+
+        data = self.client.get(self.url).json()
+
+        self.assertEqual(self._roster_entry(data, self.officer)['status'], 'on-shift')
+        self.assertEqual(data['kpis']['officers_on_shift']['value'], 1)
