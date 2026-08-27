@@ -114,8 +114,12 @@ function VenueRows({ venues, primary, dark }: VenueRowsProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
       {venues.map((v) => {
-        const under = v.staffed < v.required;
-        const pct = v.coverage;
+        // A venue with nothing on right now is idle, not under-staffed —
+        // showing it in warning amber at 0% (or, as it used to, a reassuring
+        // 100%) both misread the same empty schedule.
+        const idle = v.coverage === null;
+        const under = !idle && v.staffed < v.required;
+        const pct = v.coverage ?? 0;
         return (
           <div
             key={v.name}
@@ -156,7 +160,9 @@ function VenueRows({ venues, primary, dark }: VenueRowsProps) {
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
-                {v.staffed} / {v.required} officers deployed
+                {idle
+                  ? "No shifts scheduled right now"
+                  : `${v.staffed} / ${v.required} on duty now`}
               </div>
             </div>
             <div style={{ width: 120 }}>
@@ -185,12 +191,16 @@ function VenueRows({ venues, primary, dark }: VenueRowsProps) {
                 fontFamily: tokens.font.display,
                 fontWeight: 700,
                 fontSize: 14,
-                color: under ? tokens.color.warn : tokens.color.success,
+                color: idle
+                  ? tokens.color.ink500
+                  : under
+                    ? tokens.color.warn
+                    : tokens.color.success,
                 width: 44,
                 textAlign: "right",
               }}
             >
-              {pct}%
+              {idle ? "—" : `${pct}%`}
             </div>
           </div>
         );

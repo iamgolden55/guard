@@ -575,6 +575,24 @@ def sync_shift_and_recalc_invoice_on_time_adjustment(sender, instance, created, 
     if instance.adjusted_actual_hours is not None:
         shift.actual_hours_worked = instance.adjusted_actual_hours
         sync_fields.append('actual_hours_worked')
+    # Keep `status` in step with the attendance values, the same way
+    # shifts.services.record_attendance does. Shift.save() mutates status in
+    # memory (scheduled→active→in_progress→pending_approval) but update_fields
+    # restricts which columns are persisted, so the flip was being dropped here.
+    # That left a shift carrying a check_in_time while its status still read
+    # 'scheduled' — a manager's "Mark Present" produced a live-activity entry
+    # and an attended shift that the dashboard still counted as nobody on duty.
+    if instance.adjusted_check_out_time is not None and shift.status in (
+        'in_progress', 'active', 'scheduled',
+    ):
+        shift.status = 'pending_approval'
+        sync_fields.append('status')
+    elif instance.adjusted_check_in_time is not None and shift.status in (
+        'scheduled', 'active', 'open',
+    ):
+        shift.status = 'in_progress'
+        sync_fields.append('status')
+
     if sync_fields:
         shift.save(update_fields=sync_fields)
         logger.info(

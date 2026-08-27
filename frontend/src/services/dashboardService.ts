@@ -52,7 +52,8 @@ export interface DashboardVenueCoverage {
   name: string;
   staffed: number;
   required: number;
-  coverage: number;
+  /** null when the venue has no live shifts — the UI renders "—". */
+  coverage: number | null;
   incidents: number;
 }
 

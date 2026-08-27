@@ -32,7 +32,8 @@ export interface DashboardVenue {
   name: string;
   staffed: number;
   required: number;
-  coverage: number;
+  /** null when nothing is scheduled at this venue right now — not 0%, not 100%. */
+  coverage: number | null;
   incidents: number;
 }
 

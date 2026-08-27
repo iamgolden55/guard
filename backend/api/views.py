@@ -9138,6 +9138,36 @@ class IncidentReportViewSet(viewsets.ModelViewSet):
 # ADMIN DASHBOARD OVERVIEW
 # =============================================================================
 
+# Terminal states: the shift is finished or was called off, so nobody is on
+# duty on account of it.
+OFF_DUTY_SHIFT_STATUSES = ['completed', 'cancelled', 'no_show', 'rejected']
+
+
+def on_duty_shifts(now):
+    """
+    Shifts somebody is on duty for *right now*.
+
+    One predicate, shared by every dashboard panel that claims to describe the
+    present moment. The dashboard used to answer "who is on duty" four
+    different ways — the roster keyed off status='in_progress', the KPI off the
+    live time window, venue coverage off a whole week of assignments, live
+    activity off a 24h check-in feed — so the panels contradicted each other on
+    screen: an officer could appear in Live activity and count toward venue
+    coverage while the roster's "On duty" tab read 0.
+
+    Deliberately independent of check-in state. Whether someone has tapped
+    check-in is a separate question (are they late?) from whether they are
+    rostered on right now, and conflating the two is what made a manager's
+    "Mark Present" adjustment read as nobody being on shift.
+    """
+    return Shift.objects.filter(
+        is_published=True,
+        staff_user__isnull=False,
+        start_time__lte=now,
+        end_time__gte=now,
+    ).exclude(status__in=OFF_DUTY_SHIFT_STATUSES)
+
+
 class AdminDashboardOverviewView(APIView):
     """
     GET /api/v1/admin/dashboard/overview/
@@ -9203,14 +9233,7 @@ class AdminDashboardOverviewView(APIView):
         # window contains now, and they aren't already done. This counts both
         # checked-in officers (status=in_progress) and ones who haven't checked
         # in yet — the dashboard surfaces the latter via the delta below.
-        expected_on_shift_qs = by_venue_co(
-            Shift.objects.filter(
-                is_published=True,
-                staff_user__isnull=False,
-                start_time__lte=now,
-                end_time__gte=now,
-            ).exclude(status__in=['completed', 'cancelled', 'no_show', 'rejected'])
-        )
+        expected_on_shift_qs = by_venue_co(on_duty_shifts(now))
         on_shift = expected_on_shift_qs.count()
         # "Not checked in" excludes shifts whose check-in came via a manager
         # TimeAdjustment (Mark Present). check_in_time alone is null in that
@@ -9360,19 +9383,35 @@ class AdminDashboardOverviewView(APIView):
         venues = by_co(
             Venue.objects.filter(is_active=True)
         ).order_by('name')[:10]
+        # "Live staffing vs contracted requirement" — so it has to mean *now*.
+        # This counted every shift row in the Mon-Sun week, past and future, and
+        # called the total "officers deployed", which is neither live nor a
+        # count of officers. A venue could read 100% staffed on the strength of
+        # shifts that finished on Monday or haven't started yet.
+        live_shifts = by_venue_co(
+            Shift.objects.filter(
+                is_published=True,
+                start_time__lte=now,
+                end_time__gte=now,
+            ).exclude(status__in=OFF_DUTY_SHIFT_STATUSES)
+        )
         for v in venues:
-            week_shifts = Shift.objects.filter(
-                venue=v,
-                start_time__date__gte=week_start,
-                start_time__date__lte=week_end,
+            venue_live = live_shifts.filter(venue=v)
+            # One row per officer slot, so unfilled seats still count as
+            # required. Staffed counts distinct people: two rows for the same
+            # officer is one officer deployed.
+            required = venue_live.count()
+            staffed = (
+                venue_live.filter(staff_user__isnull=False)
+                .values('staff_user_id').distinct().count()
             )
-            required = week_shifts.count()
-            staffed = week_shifts.filter(staff_user__isnull=False).count()
             incidents = IncidentReport.objects.filter(
                 venue=v,
                 created_at__date__gte=week_start,
             ).count()
-            coverage = int(round((staffed / required * 100))) if required else 100
+            # None, not 100: a venue with nothing scheduled right now isn't
+            # fully covered, it's simply not in play. The UI renders it as "—".
+            coverage = int(round((staffed / required * 100))) if required else None
             venue_coverage.append({
                 'id': v.id,
                 'name': v.name,
@@ -9468,9 +9507,19 @@ class AdminDashboardOverviewView(APIView):
         ]
 
         # ---- Staff roster (top 50 active users) ----
+        # Role alone is the wrong filter for "who works shifts". An owner or
+        # admin who also covers venues was excluded outright, so they could
+        # never appear in any roster tab — while their check-in still showed in
+        # Live activity and their assignment still counted toward venue
+        # coverage. Anyone who has actually been assigned a shift belongs here
+        # regardless of role; back-office admins who never work still don't.
+        roster_assignees = by_venue_co(
+            Shift.objects.filter(staff_user__isnull=False)
+        ).values('staff_user_id')
         users_qs = (by_users(
-                        User.objects.filter(
-                            role__in=['staff', 'manager'], is_active=True,
+                        User.objects.filter(is_active=True).filter(
+                            Q(role__in=['staff', 'manager'])
+                            | Q(id__in=roster_assignees)
                         ),
                         field='id',
                     )
@@ -9479,20 +9528,28 @@ class AdminDashboardOverviewView(APIView):
                     .order_by('first_name', 'last_name')[:50])
         user_ids = [u.id for u in users_qs]
 
-        # Bulk-fetch current shifts per user
-        in_progress = {
-            s.staff_user_id: s for s in
-            Shift.objects.filter(staff_user_id__in=user_ids, status='in_progress')
-                         .select_related('venue')
+        # Bulk-fetch current shifts per user, off the same predicate the KPI
+        # uses, so the roster tab and the "Officers on shift" card can't
+        # disagree about the same moment.
+        on_duty_now = on_duty_shifts(now).filter(staff_user_id__in=user_ids)
+        currently_on_shift = {
+            s.staff_user_id: s for s in on_duty_now.select_related('venue')
         }
+        # Late is a subset of on-duty, not a separate status query. The old
+        # version required status='scheduled', which Shift.save() has already
+        # promoted to 'active' by the time the shift starts — so this bucket
+        # could never match and late officers silently read as off-duty.
+        # A manager's "Mark Present" leaves check_in_time null but records a
+        # TimeAdjustment, so an attested officer isn't late either.
         late = {
             s.staff_user_id: s for s in
-            Shift.objects.filter(
-                staff_user_id__in=user_ids,
-                status='scheduled',
+            on_duty_now.filter(
                 start_time__lte=now - datetime.timedelta(minutes=15),
                 check_in_time__isnull=True,
-            ).select_related('venue')
+            )
+            .annotate(_attested=Exists(has_attestation))
+            .filter(_attested=False)
+            .select_related('venue')
         }
         last_completed = {}
         for s in Shift.objects.filter(
@@ -9512,12 +9569,14 @@ class AdminDashboardOverviewView(APIView):
 
         staff_roster = []
         for u in users_qs:
-            if u.id in in_progress:
-                status_str = 'on-shift'
-                venue_name = in_progress[u.id].venue.name
-            elif u.id in late:
+            # Late first: someone rostered on who hasn't turned up is the
+            # actionable state, and reporting them as on duty hides it.
+            if u.id in late:
                 status_str = 'late'
                 venue_name = late[u.id].venue.name
+            elif u.id in currently_on_shift:
+                status_str = 'on-shift'
+                venue_name = currently_on_shift[u.id].venue.name
             else:
                 status_str = 'off-duty'
                 last = last_completed.get(u.id)
