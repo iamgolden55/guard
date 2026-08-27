@@ -1,16 +1,23 @@
 """
 Shared shift-assignment notification fan-out.
 
-Two code paths need to tell an officer "you're on this shift": the Shift
-post_save signal (when staff_user changes) and the batch publish endpoint (when
-a draft goes live). Keeping the fan-out in one place stops them drifting apart
-— which they already did twice. The publish endpoint grew a past-shift guard
-and an in-app notification but never sent the email, while ShiftViewSet
-.perform_create emailed on *every* create with no is_published check, so
-officers were told about draft shifts their manager hadn't published yet.
+Three code paths need to tell an officer "you're on this shift": the Shift
+post_save signal (when staff_user changes), the batch publish endpoint (when a
+draft goes live), and bulk_create. Keeping the fan-out in one place stops them
+drifting apart — which they already did twice. The publish endpoint grew a
+past-shift guard and an in-app notification but never sent the email, while
+ShiftViewSet.perform_create emailed on *every* create with no is_published
+check, so officers were told about draft shifts their manager hadn't published
+yet.
 
 Callers decide *whether* an assignment happened. This module decides *what*
 gets sent, and owns the guards that must hold for every caller.
+
+Channel suppression exists because batch callers speak for many shifts at once:
+publishing a week of work to one officer should land as one email and one push,
+not one of each per shift. `send_email` / `send_push` let a caller take over a
+channel it can do better in aggregate; in-app rows and reminders stay per-shift
+because they are list entries and timed pings, not interruptions.
 """
 
 import logging
@@ -26,13 +33,41 @@ logger = logging.getLogger(__name__)
 NOTIFIABLE_STATUSES = ('scheduled', 'open', 'active')
 
 
-def notify_shift_assigned(shift, company=None):
+def should_notify_assignment(shift):
+    """
+    Whether `shift` is in a state where telling its officer about it is honest.
+
+    Split out from the fan-out so callers that must report a count *before*
+    deferring the send (the publish endpoint) agree with what actually goes
+    out, instead of counting optimistically and overstating.
+    """
+    if not shift.staff_user_id:
+        return False
+
+    # Drafts belong to the manager's scheduling workflow and stay invisible to
+    # staff until "Publish" is clicked, so they must stay silent too.
+    if not shift.is_published:
+        return False
+
+    # A "you've been assigned" alert for a shift that already started is
+    # misleading — edits to worked shifts are admin cleanup, not assignments.
+    if shift.start_time and shift.start_time <= timezone.now():
+        return False
+
+    return shift.status in NOTIFIABLE_STATUSES
+
+
+def notify_shift_assigned(shift, company=None, send_email=True, send_push=True):
     """
     Notify a shift's assigned officer: push + in-app + email + reminders.
 
     Args:
         shift: the Shift instance the officer is assigned to
         company: owning SecurityCompany; derived from the venue when omitted
+        send_email: False when a batch caller sends one digest covering this
+            shift and others, so the per-shift email would be a duplicate
+        send_push: False to suppress the interrupt when a batch caller has
+            already pushed once for the whole group
 
     Returns:
         bool: True if the officer was notified, False if the send was skipped.
@@ -42,31 +77,18 @@ def notify_shift_assigned(shift, company=None):
     """
     from ..models import Notification
 
+    if not should_notify_assignment(shift):
+        logger.debug(f"Skipping assignment notification for shift {shift.id}")
+        return False
+
     staff = shift.staff_user
-    if not staff:
-        return False
 
-    # Drafts belong to the manager's scheduling workflow and stay invisible to
-    # staff until "Publish" is clicked, so they must stay silent too.
-    if not shift.is_published:
-        logger.debug(f"Skipping assignment notification for draft shift {shift.id}")
-        return False
-
-    # A "you've been assigned" alert for a shift that already started is
-    # misleading — edits to worked shifts are admin cleanup, not assignments.
-    if shift.start_time and shift.start_time <= timezone.now():
-        logger.debug(
-            f"Skipping assignment notification for past shift {shift.id} "
-            f"(start_time={shift.start_time})"
-        )
-        return False
-
-    if shift.status not in NOTIFIABLE_STATUSES:
-        logger.debug(
-            f"Skipping assignment notification for shift {shift.id} "
-            f"with status {shift.status}"
-        )
-        return False
+    # bulk_create marks its shifts so the post_save signal doesn't fire N
+    # separate pings for one batch — the caller sends a grouped digest instead.
+    # Reminders are unaffected: a digest doesn't replace a timed pre-shift ping.
+    if getattr(shift, '_skip_per_shift_notifications', False):
+        send_email = False
+        send_push = False
 
     venue_name = shift.venue.name if shift.venue else 'Unknown Venue'
     formatted_date = shift.start_time.strftime('%B %d, %Y')   # "December 15, 2025"
@@ -75,25 +97,26 @@ def notify_shift_assigned(shift, company=None):
         company = shift.venue.company if shift.venue else None
 
     # Push notification
-    try:
-        success = push_notification_service.send_shift_assignment_notification(
-            user_id=staff.id,
-            shift_id=shift.id,
-            venue_name=venue_name,
-            start_time=formatted_time,
-            formatted_date=formatted_date,
-        )
-        if success:
-            logger.info(
-                f"Shift assignment notification sent for shift {shift.id} "
-                f"to user {staff.id}"
+    if send_push:
+        try:
+            success = push_notification_service.send_shift_assignment_notification(
+                user_id=staff.id,
+                shift_id=shift.id,
+                venue_name=venue_name,
+                start_time=formatted_time,
+                formatted_date=formatted_date,
             )
-        else:
-            logger.warning(
-                f"Failed to send shift assignment notification for shift {shift.id}"
-            )
-    except Exception as e:
-        logger.exception(f"Error sending shift assignment push for shift {shift.id}: {e}")
+            if success:
+                logger.info(
+                    f"Shift assignment notification sent for shift {shift.id} "
+                    f"to user {staff.id}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to send shift assignment notification for shift {shift.id}"
+                )
+        except Exception as e:
+            logger.exception(f"Error sending shift assignment push for shift {shift.id}: {e}")
 
     # In-app notification
     try:
@@ -122,26 +145,28 @@ def notify_shift_assigned(shift, company=None):
         logger.warning(f"Could not schedule reminder tasks: {e}")
 
     # Email via Celery
-    try:
-        from ..tasks import send_shift_assignment_email_task
-        venue_address = shift.venue.address if shift.venue else None
-        end_time = shift.end_time.strftime('%I:%M %p') if shift.end_time else None
-        send_shift_assignment_email_task.delay(
-            user_id=staff.id,
-            shift_id=shift.id,
-            venue_name=venue_name,
-            venue_address=venue_address,
-            start_time=formatted_time,
-            end_time=end_time,
-            formatted_date=formatted_date,
-            hourly_rate=str(shift.hourly_rate) if shift.hourly_rate else None,
-        )
-        logger.info(f"Queued shift assignment email for shift {shift.id}")
-    except Exception as e:
-        logger.warning(f"Could not queue shift assignment email: {e}")
+    if send_email:
+        try:
+            from ..tasks import send_shift_assignment_email_task
+            venue_address = shift.venue.address if shift.venue else None
+            end_time = shift.end_time.strftime('%I:%M %p') if shift.end_time else None
+            send_shift_assignment_email_task.delay(
+                user_id=staff.id,
+                shift_id=shift.id,
+                venue_name=venue_name,
+                venue_address=venue_address,
+                start_time=formatted_time,
+                end_time=end_time,
+                formatted_date=formatted_date,
+                hourly_rate=str(shift.hourly_rate) if shift.hourly_rate else None,
+            )
+            logger.info(f"Queued shift assignment email for shift {shift.id}")
+        except Exception as e:
+            logger.warning(f"Could not queue shift assignment email: {e}")
 
-    # Multi-staff shift: let existing co-workers know who joined them
-    if shift.shift_group:
+    # Multi-staff shift: let existing co-workers know who joined them. This is
+    # a push like any other, so it follows push suppression.
+    if shift.shift_group and send_push:
         try:
             notify_coworkers_of_new_assignment(shift, staff)
         except Exception as e:

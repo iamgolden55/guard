@@ -633,3 +633,137 @@ class MultiStaffShiftSerializer(serializers.Serializer):
             created_shifts.append(shift)
 
         return created_shifts
+
+
+BULK_CREATE_MAX_SHIFTS = 200
+
+
+class _BulkExplicitShiftSerializer(serializers.Serializer):
+    venue = serializers.IntegerField()
+    start_time = serializers.DateTimeField()
+    end_time = serializers.DateTimeField()
+    staff_users = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
+    officers_needed = serializers.IntegerField(required=False, min_value=1)
+    required_security_role = serializers.CharField(required=False, default='sg')
+    hourly_rate = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    bill_rate = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    notes = serializers.CharField(required=False, allow_blank=True, default='')
+    is_special_event = serializers.BooleanField(required=False, default=False)
+
+
+class BulkCreateShiftSerializer(serializers.Serializer):
+    """Expands a recurrence pattern or an explicit shift list into a flat slot plan."""
+    mode = serializers.ChoiceField(choices=['recurrence', 'explicit'])
+    is_published = serializers.BooleanField(required=False, default=False)
+    send_notifications = serializers.BooleanField(required=False, default=False)
+    allow_past_dates = serializers.BooleanField(required=False, default=False)
+
+    venue = serializers.IntegerField(required=False)
+    start_date = serializers.DateField(required=False)
+    end_date = serializers.DateField(required=False)
+    days_of_week = serializers.ListField(
+        child=serializers.IntegerField(min_value=0, max_value=6),
+        required=False,
+    )
+    start_time = serializers.CharField(required=False)
+    end_time = serializers.CharField(required=False)
+    officers_needed = serializers.IntegerField(required=False, min_value=1)
+    staff_users = serializers.ListField(child=serializers.IntegerField(), required=False, default=list)
+    required_security_role = serializers.CharField(required=False, default='sg')
+    hourly_rate = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    bill_rate = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    notes = serializers.CharField(required=False, allow_blank=True, default='')
+    is_special_event = serializers.BooleanField(required=False, default=False)
+
+    shifts = _BulkExplicitShiftSerializer(many=True, required=False)
+
+    def validate(self, data):
+        mode = data['mode']
+        if mode == 'recurrence':
+            return self._validate_recurrence(data)
+        return self._validate_explicit(data)
+
+    def _validate_recurrence(self, data):
+        from datetime import datetime as dt, timedelta
+
+        required = ['venue', 'start_date', 'end_date', 'days_of_week', 'start_time', 'end_time', 'officers_needed']
+        missing = [f for f in required if f not in data or data.get(f) in (None, [], '')]
+        if missing:
+            raise serializers.ValidationError(f"Recurrence mode requires: {', '.join(missing)}")
+
+        if data['end_date'] < data['start_date']:
+            raise serializers.ValidationError("end_date must be on or after start_date")
+
+        staff_users = data.get('staff_users') or []
+        if data['officers_needed'] < len(staff_users):
+            raise serializers.ValidationError("officers_needed must be >= number of staff_users")
+
+        try:
+            start_t = dt.strptime(data['start_time'], '%H:%M').time()
+            end_t = dt.strptime(data['end_time'], '%H:%M').time()
+        except (ValueError, TypeError):
+            raise serializers.ValidationError("start_time and end_time must be 'HH:MM' strings")
+
+        tz = timezone.get_current_timezone()
+        target_days = set(data['days_of_week'])
+        slots = []
+        cursor = data['start_date']
+        while cursor <= data['end_date']:
+            if cursor.weekday() in target_days:
+                start_dt = timezone.make_aware(dt.combine(cursor, start_t), tz)
+                end_date = cursor if end_t > start_t else cursor + timedelta(days=1)
+                end_dt = timezone.make_aware(dt.combine(end_date, end_t), tz)
+                slots.append({
+                    'venue': data['venue'],
+                    'start': start_dt,
+                    'end': end_dt,
+                    'officers_needed': data['officers_needed'],
+                    'staff_users': list(staff_users),
+                    'required_security_role': data.get('required_security_role', 'sg'),
+                    'hourly_rate': data.get('hourly_rate'),
+                    'bill_rate': data.get('bill_rate'),
+                    'notes': data.get('notes', ''),
+                    'is_special_event': data.get('is_special_event', False),
+                })
+            cursor += timedelta(days=1)
+
+        total = sum(s['officers_needed'] for s in slots)
+        if total > BULK_CREATE_MAX_SHIFTS:
+            raise serializers.ValidationError(f"Maximum {BULK_CREATE_MAX_SHIFTS} shifts per bulk request")
+
+        data['_plan'] = slots
+        return data
+
+    def _validate_explicit(self, data):
+        raw_shifts = data.get('shifts') or []
+        if not raw_shifts:
+            raise serializers.ValidationError("Explicit mode requires non-empty 'shifts' array")
+
+        slots = []
+        for idx, item in enumerate(raw_shifts):
+            staff = list(item.get('staff_users') or [])
+            officers_needed = item.get('officers_needed') or max(len(staff), 1)
+            if officers_needed < len(staff):
+                raise serializers.ValidationError(f"shifts[{idx}]: officers_needed must be >= len(staff_users)")
+            if item['end_time'] <= item['start_time']:
+                raise serializers.ValidationError(f"shifts[{idx}]: end_time must be after start_time")
+
+            slots.append({
+                'venue': item['venue'],
+                'start': item['start_time'],
+                'end': item['end_time'],
+                'officers_needed': officers_needed,
+                'staff_users': staff,
+                'required_security_role': item.get('required_security_role') or 'sg',
+                'hourly_rate': item.get('hourly_rate'),
+                'bill_rate': item.get('bill_rate'),
+                'notes': item.get('notes', ''),
+                'is_special_event': item.get('is_special_event', False),
+            })
+
+        total = sum(s['officers_needed'] for s in slots)
+        if total > BULK_CREATE_MAX_SHIFTS:
+            raise serializers.ValidationError(f"Maximum {BULK_CREATE_MAX_SHIFTS} shifts per bulk request")
+
+        data['_plan'] = slots
+        return data

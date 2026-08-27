@@ -1478,6 +1478,85 @@ def send_shift_assignment_email_task(
 
 
 @shared_task(bind=True, max_retries=3, queue='notifications')
+def send_shift_schedule_email_task(
+    self,
+    user_id: int,
+    shift_ids: list,
+    company_id: int,
+    period_label: str = ""
+) -> Dict[str, Any]:
+    """
+    Send a digest email listing multiple newly published shifts for a single user.
+
+    Re-queries shifts inside the task so the IDs survive serialization and the
+    payload reflects fresh DB state. Scopes by company_id as defence-in-depth so
+    a leaked shift ID from another tenant can never reach the recipient.
+    """
+    from .services import email_notification_service
+    from .models import Shift
+    from django.contrib.auth import get_user_model
+
+    if not shift_ids:
+        return {'status': 'skipped', 'reason': 'empty_shift_ids'}
+
+    User = get_user_model()
+    if not User.objects.filter(pk=user_id).exists():
+        logger.warning(f"Skipping schedule email: user {user_id} not found")
+        return {'status': 'skipped', 'reason': 'user_not_found'}
+
+    qs = (
+        Shift.objects
+        .filter(id__in=shift_ids, staff_user_id=user_id, venue__company_id=company_id)
+        .select_related('venue')
+        .order_by('start_time')
+    )
+
+    shifts_payload = []
+    for s in qs:
+        shifts_payload.append({
+            'venue_name': s.venue.name if s.venue else 'TBD',
+            'venue_address': s.venue.address if s.venue else None,
+            'start_time': s.start_time,
+            'end_time': s.end_time,
+            'role': s.required_security_role or None,
+            'hourly_rate': str(s.hourly_rate) if s.hourly_rate else None,
+        })
+
+    if not shifts_payload:
+        logger.info(f"Schedule email for user {user_id} has no matching shifts")
+        return {'status': 'skipped', 'reason': 'no_shifts'}
+
+    try:
+        success = email_notification_service.send_shift_schedule_email(
+            user_id=user_id,
+            shifts=shifts_payload,
+            period_label=period_label,
+        )
+
+        if success:
+            logger.info(
+                f"Shift schedule email sent: user={user_id}, count={len(shifts_payload)}"
+            )
+            return {'status': 'sent', 'user_id': user_id, 'count': len(shifts_payload)}
+        else:
+            logger.warning(f"Shift schedule email not sent (preferences): user={user_id}")
+            return {'status': 'skipped', 'reason': 'preferences'}
+
+    except Exception as exc:
+        logger.error(f"Failed to send shift schedule email: {str(exc)}")
+
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (2 ** self.request.retries)
+            logger.info(
+                f"Retrying schedule email in {countdown}s "
+                f"(attempt {self.request.retries + 1}/{self.max_retries})"
+            )
+            raise self.retry(countdown=countdown, exc=exc)
+
+        return {'status': 'failed', 'error': str(exc)}
+
+
+@shared_task(bind=True, max_retries=3, queue='notifications')
 def send_shift_removal_email_task(
     self,
     user_id: int,

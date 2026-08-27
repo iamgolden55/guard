@@ -90,11 +90,27 @@ class ShiftViewSet(viewsets.ModelViewSet):
         # api/services/shift_notifications.notify_shift_assigned.
 
     def perform_update(self, serializer):
+        from django.db import transaction
+        from api.services.shift_notifications import notify_shift_assigned
+
         shift = self.get_object()
         if shift.status == 'in_progress' and self.request.user.role != 'admin':
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("Cannot edit an in-progress shift. Use time adjustments instead.")
-        serializer.save()
+        was_published = shift.is_published
+        updated = serializer.save()
+
+        # Publishing over PATCH is a real path — is_published is a writable
+        # serializer field — and it used to notify nobody: this method sent
+        # nothing, and the post_save signal bails because staff_user didn't
+        # change. An officer could have a shift go live in their app without
+        # ever being told. Only a draft going live counts; ordinary edits to an
+        # already-published shift must stay silent.
+        if not was_published and updated.is_published:
+            company = updated.venue.company if updated.venue else None
+            transaction.on_commit(
+                lambda s=updated, c=company: notify_shift_assigned(s, company=c)
+            )
 
     @action(detail=False, methods=['get'])
     def upcoming(self, request):
@@ -2382,6 +2398,305 @@ class ShiftViewSet(viewsets.ModelViewSet):
 
         return Response({'updated': updated, 'errors': []})
 
+    @action(detail=False, methods=['post'], url_path='bulk_create')
+    def bulk_create(self, request):
+        """Bulk-generate shifts from a recurrence pattern or explicit list, with conflict-aware preview."""
+        from api.utils.shift_validators import validate_shift_warnings
+        from api.models import AuditLog, Venue, UserCompanyMembership
+        from django.contrib.auth import get_user_model
+        from django.db import transaction
+        from .serializers import BulkCreateShiftSerializer, BULK_CREATE_MAX_SHIFTS
+        import uuid
+
+        if not request.user.role in ['manager', 'admin']:
+            return Response({"detail": "Manager or admin permissions required"}, status=status.HTTP_403_FORBIDDEN)
+
+        preview_param = request.query_params.get('preview', '').lower()
+        is_preview = preview_param in ('1', 'true', 'yes')
+
+        serializer = BulkCreateShiftSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        plan = serializer.validated_data['_plan']
+        allow_past_dates = serializer.validated_data.get('allow_past_dates', False)
+        is_published = serializer.validated_data.get('is_published', False)
+        send_notifications = serializer.validated_data.get('send_notifications', False)
+
+        company = getattr(request, 'current_company', None)
+        if not company:
+            from api.models import UserCompanyMembership
+            membership = UserCompanyMembership.objects.filter(
+                user=request.user, is_active=True, company__is_active=True
+            ).select_related('company').order_by('-joined_at').first()
+            company = membership.company if membership else None
+
+        venue_ids = {s['venue'] for s in plan}
+        venues = {v.id: v for v in Venue.objects.filter(id__in=venue_ids).select_related('company')}
+
+        missing = venue_ids - set(venues.keys())
+        if missing:
+            return Response({"detail": f"Venue not found: {sorted(missing)}"}, status=status.HTTP_404_NOT_FOUND)
+
+        if not company:
+            return Response({"detail": "No company context available"}, status=status.HTTP_403_FORBIDDEN)
+
+        for vid, venue in venues.items():
+            if venue.company_id != company.id:
+                return Response({"detail": "Venue does not belong to the current company"}, status=status.HTTP_403_FORBIDDEN)
+
+        User = get_user_model()
+        staff_ids = {sid for s in plan for sid in s['staff_users']}
+
+        # Tenant guard: staff IDs in the payload must be active members of the
+        # current company. Without this, a manager in Company A could assign
+        # Company B users to Company A shifts via crafted IDs.
+        if staff_ids:
+            valid_staff_ids = set(
+                UserCompanyMembership.objects.filter(
+                    user_id__in=staff_ids,
+                    company=company,
+                    is_active=True,
+                ).values_list('user_id', flat=True)
+            )
+            foreign_staff = sorted(set(staff_ids) - valid_staff_ids)
+            if foreign_staff:
+                return Response(
+                    {'detail': f'Staff {foreign_staff} do not belong to the current company'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        users = {u.id: u for u in User.objects.filter(id__in=staff_ids)}
+        missing_staff = staff_ids - set(users.keys())
+        if missing_staff:
+            return Response({"detail": f"Staff user not found: {sorted(missing_staff)}"}, status=status.HTTP_404_NOT_FOUND)
+
+        total_slots = sum(s['officers_needed'] for s in plan)
+        if total_slots > BULK_CREATE_MAX_SHIFTS:
+            return Response(
+                {"detail": f"Maximum {BULK_CREATE_MAX_SHIFTS} shifts per bulk request"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        now = timezone.now()
+        batch_intervals = {}
+        shift_plans = []
+        assigned_total = 0
+        conflict_total = 0
+        open_total = 0
+        skipped_past = 0
+
+        for idx, slot in enumerate(plan):
+            venue = venues[slot['venue']]
+            staff_list = list(slot['staff_users'])
+            padded = staff_list + [None] * (slot['officers_needed'] - len(staff_list))
+
+            # Whole-slot past-time gate. Previously this check sat inside the
+            # per-staff inner loop, so open slots (staff_id=None) bypassed it
+            # and a past-dated unassigned shift would still get a real row.
+            slot_is_past = slot['start'] < now and not allow_past_dates
+
+            slot_results = []
+            if slot_is_past:
+                for staff_id in padded:
+                    slot_results.append({
+                        'staff_user': staff_id,
+                        'status': 'conflict',
+                        'reason': 'start time is in the past',
+                    })
+                    conflict_total += 1
+                skipped_past += 1
+                shift_plans.append({
+                    'index': idx,
+                    'venue': venue,
+                    'start': slot['start'],
+                    'end': slot['end'],
+                    'required_security_role': slot['required_security_role'],
+                    'hourly_rate': slot['hourly_rate'],
+                    'bill_rate': slot['bill_rate'],
+                    'notes': slot['notes'],
+                    'is_special_event': slot['is_special_event'],
+                    'slots': slot_results,
+                    'skip_slot': True,
+                })
+                continue
+
+            for staff_id in padded:
+                if staff_id is None:
+                    slot_results.append({'staff_user': None, 'status': 'open'})
+                    open_total += 1
+                    continue
+
+                staff = users[staff_id]
+                conflict_reason = None
+
+                if conflict_reason is None:
+                    prior = batch_intervals.setdefault(staff_id, [])
+                    overlap = any(slot['start'] < end and slot['end'] > start for start, end in prior)
+                    if overlap:
+                        conflict_reason = "overlap within batch"
+
+                if conflict_reason is None:
+                    result = validate_shift_warnings(
+                        staff_user=staff,
+                        start_time=slot['start'],
+                        end_time=slot['end'],
+                        venue=venue.id,
+                        required_role=slot['required_security_role'],
+                        exclude_shift_id=None,
+                    )
+                    if not result['valid']:
+                        conflict_reason = result['errors'][0]['message'] if result['errors'] else 'conflict'
+                    else:
+                        leave_warning = next((w for w in result.get('warnings', []) if w.get('type') == 'on_leave'), None)
+                        if leave_warning:
+                            conflict_reason = leave_warning['message']
+
+                if conflict_reason:
+                    slot_results.append({'staff_user': staff_id, 'status': 'conflict', 'reason': conflict_reason})
+                    conflict_total += 1
+                else:
+                    batch_intervals[staff_id].append((slot['start'], slot['end']))
+                    slot_results.append({'staff_user': staff_id, 'status': 'ok'})
+                    assigned_total += 1
+
+            shift_plans.append({
+                'index': idx,
+                'venue': venue,
+                'start': slot['start'],
+                'end': slot['end'],
+                'required_security_role': slot['required_security_role'],
+                'hourly_rate': slot['hourly_rate'],
+                'bill_rate': slot['bill_rate'],
+                'notes': slot['notes'],
+                'is_special_event': slot['is_special_event'],
+                'slots': slot_results,
+            })
+
+        if is_preview:
+            return Response({
+                'preview': True,
+                'summary': {
+                    'to_create': len([sp for sp in shift_plans if not sp.get('skip_slot')]),
+                    'assigned_slots': assigned_total,
+                    'conflict_slots': conflict_total,
+                    'open_slots': open_total,
+                    'skipped_past': skipped_past,
+                },
+                'shifts': [
+                    {
+                        'date': sp['start'].date().isoformat(),
+                        'start': sp['start'].isoformat(),
+                        'end': sp['end'].isoformat(),
+                        'preview_group_id': f"preview-{sp['index']}",
+                        'slots': sp['slots'],
+                    }
+                    for sp in shift_plans
+                ],
+            })
+
+        group_buckets = {}
+        for sp in shift_plans:
+            if sp.get('skip_slot'):
+                continue
+            bucket_key = (sp['start'], sp['end'])
+            if bucket_key not in group_buckets:
+                group_buckets[bucket_key] = uuid.uuid4().hex
+            sp['shift_group'] = group_buckets[bucket_key]
+
+        created = []
+        skipped_assignments = 0
+        with transaction.atomic():
+            for sp in shift_plans:
+                if sp.get('skip_slot'):
+                    continue
+                for slot in sp['slots']:
+                    if slot['status'] == 'conflict':
+                        skipped_assignments += 1
+                        staff_user_id = None
+                    elif slot['status'] == 'ok':
+                        staff_user_id = slot['staff_user']
+                    else:
+                        staff_user_id = None
+
+                    shift = Shift(
+                        venue=sp['venue'],
+                        staff_user_id=staff_user_id,
+                        start_time=sp['start'],
+                        end_time=sp['end'],
+                        status='scheduled' if staff_user_id else 'open',
+                        required_security_role=sp['required_security_role'],
+                        hourly_rate=sp['hourly_rate'],
+                        bill_rate=sp['bill_rate'],
+                        notes=sp['notes'] or '',
+                        is_special_event=sp['is_special_event'],
+                        is_published=is_published,
+                        shift_group=sp['shift_group'],
+                    )
+                    # Suppress per-shift assignment push/in-app/email for every
+                    # assigned shift in bulk_create. When send_notifications is
+                    # on, a single digest below replaces them; when it's off,
+                    # bulk creation should stay silent — 50 shifts must never
+                    # produce 50 separate pings.
+                    if is_published and staff_user_id:
+                        shift._skip_per_shift_notifications = True
+                    shift.save()
+                    created.append(shift)
+
+            AuditLog.objects.create(
+                user=request.user,
+                company=company,
+                action='create',
+                resource_type='shift_batch',
+                resource_id='',
+                details={
+                    'mode': serializer.validated_data['mode'],
+                    'total_created': len(created),
+                    'total_assigned_slots': assigned_total,
+                    'total_skipped_assignments': skipped_assignments,
+                    'total_skipped_past': skipped_past,
+                    'shift_groups': sorted(set(group_buckets.values())),
+                },
+                ip_address=request.META.get('REMOTE_ADDR'),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
+            )
+
+        if send_notifications and is_published:
+            from api.tasks import send_shift_schedule_email_task
+            now = timezone.now()
+            email_groups: dict = {}
+            for shift in created:
+                if not shift.staff_user_id:
+                    continue
+                if shift.start_time and shift.start_time <= now:
+                    continue
+                email_groups.setdefault(shift.staff_user_id, []).append(shift.id)
+            for user_id, shift_id_list in email_groups.items():
+                try:
+                    send_shift_schedule_email_task.delay(user_id, shift_id_list, company.id)
+                except Exception as e:
+                    logger.warning(
+                        f"bulk_create digest queue failed for user {user_id}: {e}"
+                    )
+
+        return Response({
+            'preview': False,
+            'created': len(created),
+            'skipped_assignments': skipped_assignments,
+            'skipped_past': skipped_past,
+            'shift_groups': sorted(set(group_buckets.values())),
+            'shifts': [
+                {
+                    'id': s.id,
+                    'shift_group': s.shift_group,
+                    'staff_user': s.staff_user_id,
+                    'venue': s.venue_id,
+                    'start_time': s.start_time.isoformat(),
+                    'end_time': s.end_time.isoformat() if s.end_time else None,
+                    'status': s.status,
+                }
+                for s in created
+            ],
+        }, status=status.HTTP_201_CREATED)
+
     @action(detail=False, methods=['post'], url_path='publish')
     def publish_shifts(self, request):
         """
@@ -2389,7 +2704,10 @@ class ShiftViewSet(viewsets.ModelViewSet):
         for assigned staff.
         """
         from api.models import AuditLog
-        from api.services.shift_notifications import notify_shift_assigned
+        from api.services.shift_notifications import (
+            notify_shift_assigned,
+            should_notify_assignment,
+        )
         from django.db import transaction
 
         if not request.user.role in ['manager', 'admin']:
@@ -2419,6 +2737,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
         company = getattr(request, 'current_company', None)
         published_count = 0
         notifications_sent = 0
+        notification_groups: dict = {}
 
         try:
             with transaction.atomic():
@@ -2428,24 +2747,23 @@ class ShiftViewSet(viewsets.ModelViewSet):
                     shift.save(update_fields=['is_published', 'updated_at'])
                     published_count += 1
 
-                    # Notify assigned staff. This is the moment the officer is
-                    # meant to hear about the shift — the post_save signal won't
-                    # fire here because staff_user didn't change on this save,
-                    # so we trigger the shared fan-out directly.
+                    # Publishing is the moment the officer is meant to hear
+                    # about the shift, and the post_save signal won't cover it —
+                    # staff_user didn't change on this save — so the fan-out is
+                    # triggered here rather than left to the signal.
                     #
-                    # Deferred to on_commit so a publish that rolls back can't
-                    # leave officers holding emails for shifts that never went
-                    # live. Skip past shifts: publishing after the start time is
-                    # admin cleanup, not a real assignment.
+                    # Skip past shifts: publishing after the start time is admin
+                    # cleanup, not a real assignment.
                     is_past_shift = (
                         shift.start_time is not None
                         and shift.start_time <= timezone.now()
                     )
                     if shift.staff_user and not is_past_shift:
-                        notifications_sent += 1
-                        transaction.on_commit(
-                            lambda s=shift: notify_shift_assigned(s, company=company)
-                        )
+                        # Grouped by officer rather than sent here: publishing
+                        # a week of work to one person should land as one email
+                        # and one push, not one of each per shift. The fan-out
+                        # runs after the atomic block.
+                        notification_groups.setdefault(shift.staff_user_id, []).append(shift)
 
                     # Audit log
                     AuditLog.objects.create(
@@ -2464,9 +2782,55 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+        # Fan-out happens after the atomic block so a publish that rolls back
+        # can't leave officers holding mail for shifts that never went live, and
+        # so a broker hiccup surfaces as a missing email rather than a 500.
+        from api.tasks import send_shift_schedule_email_task
+        # current_company can be None if no tenant header was sent; fall back to
+        # the publishing user's primary company so the digest task still receives
+        # a company_id to scope against (defence-in-depth, not a security gate).
+        digest_company_id = company.id if company else None
+        if digest_company_id is None and notification_groups:
+            from api.models import UserCompanyMembership as _UCM
+            membership = _UCM.objects.filter(
+                user=request.user, is_active=True, company__is_active=True
+            ).order_by('-joined_at').first()
+            digest_company_id = membership.company_id if membership else None
+
+        digests_queued = 0
+        for user_id, group in notification_groups.items():
+            # Count what will actually go out. Incrementing inside the publish
+            # loop overstated it: a draft sitting in a terminal status passes
+            # the loop's guards but the notification service still declines it.
+            notifiable = [s for s in group if should_notify_assignment(s)]
+            if not notifiable:
+                continue
+            # One shift for this officer is an ordinary assignment; several are
+            # a schedule, and a schedule reads better as a single digest.
+            single = len(notifiable) == 1
+            for idx, shift in enumerate(notifiable):
+                if notify_shift_assigned(
+                    shift,
+                    company=company,
+                    send_email=single,
+                    send_push=(idx == 0),
+                ):
+                    notifications_sent += 1
+            if not single:
+                try:
+                    send_shift_schedule_email_task.delay(
+                        user_id, [s.id for s in notifiable], digest_company_id
+                    )
+                    digests_queued += 1
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to queue schedule digest for user {user_id}: {e}"
+                    )
+
         return Response({
             'published': published_count,
             'notifications_sent': notifications_sent,
+            'digests_queued': digests_queued,
         })
 
     @action(detail=False, methods=['get'], url_path='schedule_health')

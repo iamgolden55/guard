@@ -136,9 +136,12 @@ class ShiftAssignmentNotificationTests(APITestCase):
 
     def test_creating_a_published_shift_emails_exactly_once(self):
         """Guards the old double-send: sync from the view *and* via the signal."""
-        response = self.client.post(
-            "/api/v1/shifts/", self._payload(is_published=True), format="json",
-        )
+        # The signal defers the fan-out to on_commit so a rollback can't queue
+        # Celery tasks against a shift id that never lands.
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                "/api/v1/shifts/", self._payload(is_published=True), format="json",
+            )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         emails = self._assignment_emails()

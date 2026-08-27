@@ -5,6 +5,7 @@ Handles automatic setup and lifecycle events for models.
 
 from django.db.models.signals import post_save, pre_save, pre_delete
 from django.dispatch import receiver
+from django.db import transaction
 from datetime import timedelta
 from django.utils import timezone
 from .models import SecurityCompany, Shift, OpenShiftRequest, ShiftExchange, AuditLog, ShiftStatusHistory, Notification
@@ -256,12 +257,19 @@ def notify_shift_assignment(sender, instance, created, **kwargs):
         return
 
     # The fan-out itself (push + in-app + email + reminders + co-workers) is
-    # shared with the batch publish endpoint, so the two paths can't drift
-    # apart again. notify_shift_assigned re-checks the draft, past-shift and
-    # status guards, and never raises.
+    # shared with the batch publish and bulk-create endpoints, so the paths
+    # can't drift apart again. notify_shift_assigned re-checks the draft,
+    # past-shift and status guards, honours _skip_per_shift_notifications, and
+    # never raises.
+    #
+    # Deferred to on_commit: queueing inside the transaction would hand Celery
+    # a shift id that a rollback then throws away, and the worker 500s on the
+    # missing row.
     try:
         company = instance.venue.company if instance.venue else None
-        notify_shift_assigned(instance, company=company)
+        transaction.on_commit(
+            lambda s=instance, c=company: notify_shift_assigned(s, company=c)
+        )
     except Exception as e:
         logger.exception(f"Error sending shift assignment notification: {e}")
 

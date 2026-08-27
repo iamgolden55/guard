@@ -190,6 +190,79 @@ class EmailNotificationService:
             notification_type='shift_assignment'
         )
 
+    def send_shift_schedule_email(
+        self,
+        user_id: int,
+        shifts: List[Dict[str, Any]],
+        *,
+        period_label: str = ""
+    ) -> bool:
+        """
+        Send a digest email listing multiple newly scheduled shifts for a user.
+
+        Args:
+            user_id: ID of the user to notify
+            shifts: List of shift dicts. Required keys: venue_name, start_time.
+                Optional keys: venue_address, end_time, role, hourly_rate.
+            period_label: Optional human-readable period (e.g. "next week")
+
+        Returns:
+            bool: True if email was sent successfully
+        """
+        if not shifts:
+            return False
+
+        user = self._get_user(user_id)
+        if not user:
+            logger.warning(f"Cannot send schedule email: User {user_id} not found")
+            return False
+
+        if not user.email:
+            logger.warning(f"Cannot send schedule email: User {user_id} has no email address")
+            return False
+
+        sorted_shifts = sorted(shifts, key=lambda s: s['start_time'])
+
+        formatted_shifts = []
+        for s in sorted_shifts:
+            start = s['start_time']
+            end = s.get('end_time')
+            formatted_shifts.append({
+                'venue_name': s.get('venue_name', 'TBD'),
+                'venue_address': s.get('venue_address'),
+                'formatted_date': start.strftime('%a, %d %b %Y'),
+                'start_str': start.strftime('%H:%M'),
+                'end_str': end.strftime('%H:%M') if end else '',
+                'role': s.get('role'),
+                'hourly_rate': s.get('hourly_rate'),
+            })
+
+        count = len(formatted_shifts)
+        if period_label:
+            subject = f"Your schedule for {period_label}"
+        else:
+            subject = f"Your shift schedule — {count} new shift{'s' if count != 1 else ''}"
+
+        context = {
+            'first_name': user.first_name or user.username,
+            'shifts': formatted_shifts,
+            'count': count,
+            'period_label': period_label,
+            'app_url': self.frontend_url,
+        }
+
+        try:
+            return self.send_email(
+                user_id=user_id,
+                subject=subject,
+                template_name='shift_schedule',
+                context=context,
+                notification_type='shift_assignment',
+            )
+        except Exception as e:
+            logger.exception(f"Failed to send shift schedule email to user {user_id}: {e}")
+            return False
+
     def send_shift_removal_email(
         self,
         user_id: int,
