@@ -88,6 +88,34 @@ def hour_decimal(dt: datetime | None, tz=None) -> float | None:
     return round(local.hour + local.minute / 60 + local.second / 3600, 4)
 
 
+def _local_date(dt: datetime, tz=None):
+    """The calendar date `dt` falls on, in the venue's timezone."""
+    if tz is not None and timezone.is_aware(dt):
+        return dt.astimezone(tz).date()
+    if timezone.is_aware(dt):
+        return timezone.localtime(dt).date()
+    return dt.date()
+
+
+def hour_decimal_from(dt: datetime | None, tz=None, anchor: datetime | None = None) -> float | None:
+    """Hour-decimal projected into `anchor`'s day frame.
+
+    hour_decimal() collapses a datetime to a time of day, so 03:00 the morning
+    after an 18:00 start comes back as 3.0 — behind the start rather than nine
+    hours ahead of it. The timeline ribbon and every duration derived from these
+    numbers need a monotonic scale, so a datetime one day past the anchor is
+    projected to 27.0 instead. This is the same convention `sch_end` already
+    uses; it just has to hold for the actual times too.
+    """
+    if dt is None:
+        return None
+    hours = hour_decimal(dt, tz)
+    if hours is None or anchor is None:
+        return hours
+    day_offset = (_local_date(dt, tz) - _local_date(anchor, tz)).days
+    return round(hours + 24 * day_offset, 4)
+
+
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance in metres. Mirrors the fallback in Venue.verify_location."""
     r = 6371000
@@ -242,8 +270,11 @@ class AttendanceShiftSerializer(serializers.Serializer):
         eff_check_in = shift.get_effective_check_in_time()
         eff_check_out = shift.get_effective_check_out_time()
 
-        act_start = hour_decimal(eff_check_in, tz)
-        act_end = hour_decimal(eff_check_out, tz)
+        # Anchored to the shift's start day for the same reason sch_end is
+        # extended: an officer who checks out at 03:00 after an 18:00 start is
+        # nine hours in, not fifteen hours behind.
+        act_start = hour_decimal_from(eff_check_in, tz, anchor=shift.start_time)
+        act_end = hour_decimal_from(eff_check_out, tz, anchor=shift.start_time)
 
         late_min: int | None = None
         if eff_check_in and shift.start_time:
@@ -287,6 +318,11 @@ class AttendanceShiftSerializer(serializers.Serializer):
             "sch_end": sch_end,
             "act_start": act_start,
             "act_end": act_end,
+            # Absolute timestamps alongside the decimal hours. Hours alone
+            # carry no date, which left the Attendance editor stamping edits
+            # onto whatever day the admin happened to be viewing.
+            "sch_start_at": shift.start_time.isoformat() if shift.start_time else None,
+            "sch_end_at": shift.end_time.isoformat() if shift.end_time else None,
             "status": status_str,
             "late_min": late_min,
             "photo": bool(shift.check_in_photo),

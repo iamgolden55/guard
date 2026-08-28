@@ -1481,7 +1481,26 @@ class ShiftViewSet(viewsets.ModelViewSet):
         reason = (request.data.get('reason') or '').strip()
         source = request.data.get('manager_signature') or 'admin'
 
-        if hours is None and check_in and check_out:
+        # Ordering is checked here, before the model sees it. Shift.clean() also
+        # rejects this, but its message surfaces raw to the admin with no hint
+        # that the real problem is usually a client that built the check-out
+        # from a time of day without carrying the date — an overnight shift
+        # ending at 03:00 stamped onto the start day lands nine hours early.
+        if check_in and check_out and check_out <= check_in:
+            return Response(
+                {
+                    'detail': (
+                        'Check-out must be after check-in. For a shift running '
+                        'past midnight, the check-out belongs to the following day.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Derived from the two timestamps rather than trusted from the client:
+        # a caller computing hours by subtracting clock times gets 0 for an
+        # overnight shift, which silently under-pays the officer.
+        if check_in and check_out:
             duration_hours = Decimal(str((check_out - check_in).total_seconds() / 3600))
             hours = duration_hours.quantize(Decimal('0.01'))
 

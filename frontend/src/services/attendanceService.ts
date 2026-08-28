@@ -102,7 +102,9 @@ export const attendanceService = {
     payload: {
       adjusted_check_in_time?: string;
       adjusted_check_out_time?: string;
-      adjusted_actual_hours: number;
+      /** Optional: with both timestamps present the backend derives this from
+       *  their difference, which is the only way to get it right past midnight. */
+      adjusted_actual_hours?: number;
       reason: string;
       manager_signature: string;
     },

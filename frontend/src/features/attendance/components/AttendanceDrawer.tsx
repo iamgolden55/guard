@@ -1,21 +1,22 @@
+import { localDateTime, resolveShiftRange, toDateIso } from "@/lib/shiftTime";
 // AttendanceDrawer — right-edge drawer with shift detail, time
 // adjustment editor, and audit trail. Ported 1:1 from
 // project/attendance-drawer.jsx.
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { useAccent } from "../../../contexts/AccentContext";
+import { Icon, type IconName } from "../../../design-system/Icon";
 import { Avatar } from "../../../design-system/primitives/Avatar";
 import { Button } from "../../../design-system/primitives/Button";
-import { Icon, type IconName } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
+import { useAttendance } from "../AttendanceContext";
 import {
+  type AttendanceShift,
+  RIBBON_COLORS,
   fmtHr,
   fmtRange2,
   fmtVar,
   ribbonKey,
-  RIBBON_COLORS,
-  type AttendanceShift,
 } from "../data/mocks";
-import { useAttendance } from "../AttendanceContext";
 
 const STATUS_LABEL: Record<AttendanceShift["status"], string> = {
   on_duty: "On duty",
@@ -36,7 +37,73 @@ export interface AttendanceDrawerProps {
   onClose: () => void;
 }
 
-export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps) {
+/** "Thu 27 Aug 18:00" — enough to make the day unambiguous without noise. */
+function fmtStamp(d: Date): string {
+  return d.toLocaleString([], {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Decimal hours as "9h 00m". */
+function fmtDuration(hours: number): string {
+  const total = Math.round(hours * 60);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return `${h}h ${String(m).padStart(2, "0")}m`;
+}
+
+/** The shift's own calendar day, in local time. Falls back to today only when
+ *  the row predates `sch_start_at` being sent. */
+function shiftDateIso(s: AttendanceShift | null | undefined): string {
+  const anchor = s?.sch_start_at ? new Date(s.sch_start_at) : new Date();
+  return toDateIso(Number.isNaN(anchor.getTime()) ? new Date() : anchor);
+}
+
+interface ResolvedEdit {
+  start: Date;
+  end: Date | null;
+  endsNextDay: boolean;
+  hours: number | null;
+}
+
+/** Turn the two "HH:mm" inputs into real timestamps on the shift's day,
+ *  rolling the check-out forward when the shift runs past midnight. */
+function resolveEdit(
+  s: AttendanceShift | null | undefined,
+  inT: string,
+  outT: string,
+): ResolvedEdit {
+  const dateIso = shiftDateIso(s);
+  if (!outT) {
+    return {
+      start: localDateTime(dateIso, inT || "00:00"),
+      end: null,
+      endsNextDay: false,
+      hours: null,
+    };
+  }
+  const { start, end, endsNextDay } = resolveShiftRange(
+    dateIso,
+    inT || "00:00",
+    outT,
+  );
+  return {
+    start,
+    end,
+    endsNextDay,
+    hours: (end.getTime() - start.getTime()) / 3_600_000,
+  };
+}
+
+export function AttendanceDrawer({
+  open,
+  shift,
+  onClose,
+}: AttendanceDrawerProps) {
   const { palette } = useAccent();
   const {
     officerById,
@@ -89,6 +156,17 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
   const o = s ? officerById(s.oid) : undefined;
   const v = s ? venueById(s.vid) : undefined;
   const ribKey = s ? ribbonKey(s) : "on_duty";
+
+  // The time inputs are bare "HH:mm" with no date, so every timestamp built
+  // from them has to be anchored to the shift's own day. This used to anchor
+  // to `new Date()`, which both wrote edits onto whatever day the admin
+  // happened to be viewing and gave an overnight shift a check-out nine hours
+  // before its check-in.
+  const editInT = s
+    ? adjIn || (s.act_start != null ? fmtHr(s.act_start) : fmtHr(s.sch_start))
+    : "";
+  const editOutT = s ? adjOut.trim() : "";
+  const resolvedEdit = resolveEdit(s, editInT, editOutT);
   const headerColor = s
     ? RIBBON_COLORS[ribKey].bg !== "transparent"
       ? RIBBON_COLORS[ribKey].bg
@@ -173,9 +251,17 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                   opacity: 0.8,
                 }}
               >
-                {STATUS_LABEL[s.status] || s.status} {s.geofence_fail && "· Geofence"}
+                {STATUS_LABEL[s.status] || s.status}{" "}
+                {s.geofence_fail && "· Geofence"}
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  marginTop: 8,
+                }}
+              >
                 {o ? (
                   <Avatar name={o.name} hue={o.hue} size={44} />
                 ) : (
@@ -220,11 +306,14 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
               >
                 <Icon name="map-pin" size={13} /> {v.name} · {v.area}
                 <span style={{ opacity: 0.5 }}>·</span>
-                <Icon name="clock" size={13} /> {fmtRange2(s.sch_start, s.sch_end)}
+                <Icon name="clock" size={13} />{" "}
+                {fmtRange2(s.sch_start, s.sch_end)}
               </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto", padding: "20px 22px 24px" }}>
+            <div
+              style={{ flex: 1, overflowY: "auto", padding: "20px 22px 24px" }}
+            >
               <div
                 style={{
                   border: `1px solid ${tokens.color.ink200}`,
@@ -234,7 +323,13 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                 }}
               >
                 <SectionLabel>Scheduled vs actual</SectionLabel>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 10,
+                  }}
+                >
                   <TimeBlock
                     label="Scheduled"
                     sub="Plan"
@@ -244,9 +339,17 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                   />
                   <TimeBlock
                     label="Actual"
-                    sub={s.act_end ? "Recorded" : s.act_start ? "Live" : "Not yet"}
+                    sub={
+                      s.act_end ? "Recorded" : s.act_start ? "Live" : "Not yet"
+                    }
                     inT={s.act_start != null ? fmtHr(s.act_start) : "—"}
-                    outT={s.act_end != null ? fmtHr(s.act_end) : s.act_start ? "—" : "—"}
+                    outT={
+                      s.act_end != null
+                        ? fmtHr(s.act_end)
+                        : s.act_start
+                          ? "—"
+                          : "—"
+                    }
                     tone={
                       ribKey === "no_show"
                         ? "danger"
@@ -290,7 +393,8 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                       gap: 8,
                     }}
                   >
-                    <Icon name="clock" size={12} /> Checked out {s.early_min}m before scheduled end.
+                    <Icon name="clock" size={12} /> Checked out {s.early_min}m
+                    before scheduled end.
                   </div>
                 )}
               </div>
@@ -307,7 +411,13 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                 <VerifyTile
                   icon="map-pin"
                   label="GPS"
-                  state={s.gps_ok === true ? "ok" : s.gps_ok === false ? "bad" : "unknown"}
+                  state={
+                    s.gps_ok === true
+                      ? "ok"
+                      : s.gps_ok === false
+                        ? "bad"
+                        : "unknown"
+                  }
                   value={
                     s.gps_ok === true
                       ? `${s.dist_m}m from venue`
@@ -319,22 +429,44 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                 <VerifyTile
                   icon="eye"
                   label="Photo"
-                  state={s.photo === true ? "ok" : s.photo === false ? "bad" : "unknown"}
+                  state={
+                    s.photo === true
+                      ? "ok"
+                      : s.photo === false
+                        ? "bad"
+                        : "unknown"
+                  }
                   value={
-                    s.photo === true ? "Selfie captured" : s.photo === false ? "Missing" : "—"
+                    s.photo === true
+                      ? "Selfie captured"
+                      : s.photo === false
+                        ? "Missing"
+                        : "—"
                   }
                 />
                 <VerifyTile
                   icon="shield"
                   label="Patrol checks"
-                  state={s.patrol && s.patrol[0] === s.patrol[1] ? "ok" : !s.patrol ? "unknown" : "bad"}
-                  value={s.patrol ? `${s.patrol[0]} of ${s.patrol[1]} complete` : "—"}
+                  state={
+                    s.patrol && s.patrol[0] === s.patrol[1]
+                      ? "ok"
+                      : !s.patrol
+                        ? "unknown"
+                        : "bad"
+                  }
+                  value={
+                    s.patrol ? `${s.patrol[0]} of ${s.patrol[1]} complete` : "—"
+                  }
                 />
                 <VerifyTile
                   icon="pause"
                   label="Breaks taken"
                   state="ok"
-                  value={s.breaks != null ? `${s.breaks} break${s.breaks === 1 ? "" : "s"}` : "—"}
+                  value={
+                    s.breaks != null
+                      ? `${s.breaks} break${s.breaks === 1 ? "" : "s"}`
+                      : "—"
+                  }
                 />
               </div>
 
@@ -375,10 +507,22 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: tokens.color.ink900 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: tokens.color.ink900,
+                      }}
+                    >
                       Time adjustment
                     </div>
-                    <div style={{ fontSize: 11.5, color: tokens.color.ink500, marginTop: 2 }}>
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        color: tokens.color.ink500,
+                        marginTop: 2,
+                      }}
+                    >
                       {s.act_start == null
                         ? "Officer on-site but couldn't check in? Mark present and add a reason."
                         : "Override actual times for payroll. Audit-logged."}
@@ -395,8 +539,13 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                           onClick={() => {
                             const now = new Date();
                             const hh = String(now.getHours()).padStart(2, "0");
-                            const mm = String(now.getMinutes()).padStart(2, "0");
+                            const mm = String(now.getMinutes()).padStart(
+                              2,
+                              "0",
+                            );
                             setAdjIn(`${hh}:${mm}`);
+                            // The date comes from the shift, not from now —
+                            // see resolveEdit.
                             // Leave check-out blank — shift still in progress.
                             setAdjOut("");
                             setReason(
@@ -406,6 +555,33 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                           }}
                         >
                           Mark present
+                        </Button>
+                      )}
+                      {s.act_start != null && s.act_end == null && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          accent={palette}
+                          leading={<Icon name="check" size={12} />}
+                          onClick={() => {
+                            // Prefill the scheduled end rather than the current
+                            // time: an officer who forgot to sign out worked
+                            // until their shift ended, not until the manager
+                            // noticed the next morning. Same value the
+                            // auto-checkout job would have written.
+                            setAdjIn(
+                              s.act_start != null
+                                ? fmtHr(s.act_start)
+                                : fmtHr(s.sch_start),
+                            );
+                            setAdjOut(fmtHr(s.sch_end));
+                            setReason(
+                              "Officer did not check out — closed at scheduled end time. ",
+                            );
+                            setEditing(true);
+                          }}
+                        >
+                          End shift
                         </Button>
                       )}
                       <Button
@@ -420,14 +596,28 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                   )}
                 </div>
                 {editing && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 8,
+                      }}
+                    >
                       <FieldGroup label="Adjusted check-in">
                         <input
                           type="time"
                           value={
                             adjIn ||
-                            (s.act_start != null ? fmtHr(s.act_start) : fmtHr(s.sch_start))
+                            (s.act_start != null
+                              ? fmtHr(s.act_start)
+                              : fmtHr(s.sch_start))
                           }
                           onChange={(e) => setAdjIn(e.target.value)}
                           style={inputCss}
@@ -463,15 +653,50 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                             Leave blank if shift still in progress
                           </div>
                         )}
+                        {resolvedEdit.endsNextDay && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: tokens.color.warn,
+                              marginTop: 4,
+                              fontWeight: 600,
+                            }}
+                          >
+                            → next day
+                          </div>
+                        )}
                       </FieldGroup>
                     </div>
+                    {/* The rollover is inferred, so show the result before it's
+                        saved rather than silently recording a different day. */}
+                    {resolvedEdit.end && (
+                      <div
+                        style={{
+                          fontSize: 11.5,
+                          color: tokens.color.ink600,
+                          background: tokens.color.ink100,
+                          borderRadius: 6,
+                          padding: "7px 9px",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        Records <strong>{fmtStamp(resolvedEdit.start)}</strong>{" "}
+                        → <strong>{fmtStamp(resolvedEdit.end)}</strong>
+                        {resolvedEdit.hours != null &&
+                          ` · ${fmtDuration(resolvedEdit.hours)}`}
+                      </div>
+                    )}
                     <FieldGroup label="Reason (required)">
                       <textarea
                         rows={3}
                         value={reason}
                         onChange={(e) => setReason(e.target.value)}
                         placeholder="e.g. App outage between 10:00–10:30; confirmed via radio"
-                        style={{ ...inputCss, resize: "vertical", lineHeight: 1.5 }}
+                        style={{
+                          ...inputCss,
+                          resize: "vertical",
+                          lineHeight: 1.5,
+                        }}
                       />
                     </FieldGroup>
                     {submitError && (
@@ -487,8 +712,18 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                         {submitError}
                       </div>
                     )}
-                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                      <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        justifyContent: "flex-end",
+                      }}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditing(false)}
+                      >
                         Cancel
                       </Button>
                       <Button
@@ -500,47 +735,15 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                           if (!s) return;
                           setSubmitError(null);
                           try {
-                            const inT =
-                              adjIn ||
-                              (s.act_start != null ? fmtHr(s.act_start) : fmtHr(s.sch_start));
-
-                            // Construct the ISO with the user's local TZ baked in,
-                            // otherwise the backend treats "2026-04-29T12:20:00" as
-                            // naive UTC and the display ends up an hour ahead.
-                            const today = new Date();
-                            const [hh1, mm1] = inT.split(":").map(Number);
-                            const startLocal = new Date(
-                              today.getFullYear(),
-                              today.getMonth(),
-                              today.getDate(),
-                              hh1,
-                              mm1,
-                              0,
-                            );
-                            const startIso = startLocal.toISOString();
-
-                            const outT = adjOut.trim();
-                            let endIso: string | null = null;
-                            let hours = 0;
-                            if (outT) {
-                              const [hh2, mm2] = outT.split(":").map(Number);
-                              const endLocal = new Date(
-                                today.getFullYear(),
-                                today.getMonth(),
-                                today.getDate(),
-                                hh2,
-                                mm2,
-                                0,
-                              );
-                              endIso = endLocal.toISOString();
-                              hours = Math.max(0, hh2 + mm2 / 60 - (hh1 + mm1 / 60));
-                            }
+                            const { start, end } = resolvedEdit;
                             await adjustTime({
                               shiftId: Number(s.id),
                               payload: {
-                                adjusted_check_in_time: startIso,
-                                adjusted_check_out_time: endIso ?? undefined,
-                                adjusted_actual_hours: Math.round(hours * 100) / 100,
+                                adjusted_check_in_time: start.toISOString(),
+                                adjusted_check_out_time: end?.toISOString(),
+                                // Hours are derived server-side from the two
+                                // timestamps. Computing them here from clock
+                                // times yielded 0 for anything past midnight.
                                 reason,
                                 manager_signature: "manager",
                               },
@@ -550,7 +753,10 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                             setAdjIn("");
                             setAdjOut("");
                           } catch (err: unknown) {
-                            const e = err as { response?: { data?: { detail?: string } }; message?: string };
+                            const e = err as {
+                              response?: { data?: { detail?: string } };
+                              message?: string;
+                            };
                             setSubmitError(
                               e?.response?.data?.detail ||
                                 e?.message ||
@@ -567,7 +773,11 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
               </div>
 
               {(() => {
-                const systemEntries: { id: string; title: string; detail: string }[] = [];
+                const systemEntries: {
+                  id: string;
+                  title: string;
+                  detail: string;
+                }[] = [];
                 if (s.auto_checkout) {
                   systemEntries.push({
                     id: "sys-auto-checkout",
@@ -587,154 +797,188 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                 const totalEntries = adjustments.length + systemEntries.length;
                 return (
                   <>
-              <SectionLabel>
-                Audit trail · {isLoadingAdjustments ? "…" : totalEntries}
-              </SectionLabel>
-              {!isLoadingAdjustments && totalEntries === 0 ? (
-                <div
-                  style={{
-                    padding: 14,
-                    textAlign: "center",
-                    fontSize: 12,
-                    color: tokens.color.ink500,
-                    background: tokens.color.ink50,
-                    borderRadius: 8,
-                  }}
-                >
-                  No adjustments recorded
-                </div>
-              ) : (
-                <div
-                  style={{
-                    borderLeft: `2px solid ${tokens.color.ink200}`,
-                    paddingLeft: 14,
-                    marginLeft: 6,
-                  }}
-                >
-                  {systemEntries.map((sys) => (
-                    <div
-                      key={sys.id}
-                      style={{ position: "relative", paddingBottom: 12 }}
-                    >
-                      <span
-                        style={{
-                          position: "absolute",
-                          left: -21,
-                          top: 4,
-                          width: 10,
-                          height: 10,
-                          borderRadius: 5,
-                          background: tokens.color.success,
-                          border: "2px solid white",
-                          boxShadow: `0 0 0 1px ${tokens.color.ink200}`,
-                        }}
-                      />
-                      <div
-                        style={{ fontSize: 12, fontWeight: 600, color: tokens.color.ink900 }}
-                      >
-                        {sys.title}
-                      </div>
-                      <div
-                        style={{ fontSize: 11, color: tokens.color.ink500, marginTop: 1 }}
-                      >
-                        System · {s.checkout_at
-                          ? new Date(s.checkout_at).toLocaleString([], {
-                              year: "numeric",
-                              month: "2-digit",
-                              day: "2-digit",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "on shift completion"}
-                      </div>
+                    <SectionLabel>
+                      Audit trail · {isLoadingAdjustments ? "…" : totalEntries}
+                    </SectionLabel>
+                    {!isLoadingAdjustments && totalEntries === 0 ? (
                       <div
                         style={{
+                          padding: 14,
+                          textAlign: "center",
                           fontSize: 12,
-                          color: tokens.color.ink600,
-                          marginTop: 5,
-                          lineHeight: 1.5,
-                          padding: "8px 10px",
-                          background: tokens.color.successSoft,
-                          borderRadius: 6,
+                          color: tokens.color.ink500,
+                          background: tokens.color.ink50,
+                          borderRadius: 8,
                         }}
                       >
-                        {sys.detail}
+                        No adjustments recorded
                       </div>
-                    </div>
-                  ))}
-                  {adjustments.map((a) => {
-                    const fromIn = a.original_check_in_time
-                      ? new Date(a.original_check_in_time).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "—";
-                    const toIn = a.adjusted_check_in_time
-                      ? new Date(a.adjusted_check_in_time).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "—";
-                    const fromOut = a.original_check_out_time
-                      ? new Date(a.original_check_out_time).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "—";
-                    const toOut = a.adjusted_check_out_time
-                      ? new Date(a.adjusted_check_out_time).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "—";
-                    const at = new Date(a.created_at).toLocaleString([], {
-                      year: "numeric",
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    });
-                    return (
-                      <div key={a.id} style={{ position: "relative", paddingBottom: 12 }}>
-                        <span
-                          style={{
-                            position: "absolute",
-                            left: -21,
-                            top: 4,
-                            width: 10,
-                            height: 10,
-                            borderRadius: 5,
-                            background: palette.primary,
-                            border: "2px solid white",
-                            boxShadow: `0 0 0 1px ${tokens.color.ink200}`,
-                          }}
-                        />
-                        <div
-                          style={{ fontSize: 12, fontWeight: 600, color: tokens.color.ink900 }}
-                        >
-                          Manager #{a.adjusted_by}
-                        </div>
-                        <div style={{ fontSize: 11, color: tokens.color.ink500, marginTop: 1 }}>
-                          {at} · in {fromIn} → {toIn} · out {fromOut} → {toOut}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: tokens.color.ink600,
-                            marginTop: 5,
-                            lineHeight: 1.5,
-                            padding: "8px 10px",
-                            background: tokens.color.ink50,
-                            borderRadius: 6,
-                          }}
-                        >
-                          {a.reason}
-                        </div>
+                    ) : (
+                      <div
+                        style={{
+                          borderLeft: `2px solid ${tokens.color.ink200}`,
+                          paddingLeft: 14,
+                          marginLeft: 6,
+                        }}
+                      >
+                        {systemEntries.map((sys) => (
+                          <div
+                            key={sys.id}
+                            style={{ position: "relative", paddingBottom: 12 }}
+                          >
+                            <span
+                              style={{
+                                position: "absolute",
+                                left: -21,
+                                top: 4,
+                                width: 10,
+                                height: 10,
+                                borderRadius: 5,
+                                background: tokens.color.success,
+                                border: "2px solid white",
+                                boxShadow: `0 0 0 1px ${tokens.color.ink200}`,
+                              }}
+                            />
+                            <div
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: tokens.color.ink900,
+                              }}
+                            >
+                              {sys.title}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: tokens.color.ink500,
+                                marginTop: 1,
+                              }}
+                            >
+                              System ·{" "}
+                              {s.checkout_at
+                                ? new Date(s.checkout_at).toLocaleString([], {
+                                    year: "numeric",
+                                    month: "2-digit",
+                                    day: "2-digit",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })
+                                : "on shift completion"}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 12,
+                                color: tokens.color.ink600,
+                                marginTop: 5,
+                                lineHeight: 1.5,
+                                padding: "8px 10px",
+                                background: tokens.color.successSoft,
+                                borderRadius: 6,
+                              }}
+                            >
+                              {sys.detail}
+                            </div>
+                          </div>
+                        ))}
+                        {adjustments.map((a) => {
+                          const fromIn = a.original_check_in_time
+                            ? new Date(
+                                a.original_check_in_time,
+                              ).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "—";
+                          const toIn = a.adjusted_check_in_time
+                            ? new Date(
+                                a.adjusted_check_in_time,
+                              ).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "—";
+                          const fromOut = a.original_check_out_time
+                            ? new Date(
+                                a.original_check_out_time,
+                              ).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "—";
+                          const toOut = a.adjusted_check_out_time
+                            ? new Date(
+                                a.adjusted_check_out_time,
+                              ).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "—";
+                          const at = new Date(a.created_at).toLocaleString([], {
+                            year: "numeric",
+                            month: "2-digit",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          });
+                          return (
+                            <div
+                              key={a.id}
+                              style={{
+                                position: "relative",
+                                paddingBottom: 12,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  position: "absolute",
+                                  left: -21,
+                                  top: 4,
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: 5,
+                                  background: palette.primary,
+                                  border: "2px solid white",
+                                  boxShadow: `0 0 0 1px ${tokens.color.ink200}`,
+                                }}
+                              />
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  color: tokens.color.ink900,
+                                }}
+                              >
+                                Manager #{a.adjusted_by}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: tokens.color.ink500,
+                                  marginTop: 1,
+                                }}
+                              >
+                                {at} · in {fromIn} → {toIn} · out {fromOut} →{" "}
+                                {toOut}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  color: tokens.color.ink600,
+                                  marginTop: 5,
+                                  lineHeight: 1.5,
+                                  padding: "8px 10px",
+                                  background: tokens.color.ink50,
+                                  borderRadius: 6,
+                                }}
+                              >
+                                {a.reason}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    )}
                   </>
                 );
               })()}
@@ -778,7 +1022,10 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                     });
                     onClose();
                   } catch (err: unknown) {
-                    const e = err as { response?: { data?: { detail?: string; error?: string } }; message?: string };
+                    const e = err as {
+                      response?: { data?: { detail?: string; error?: string } };
+                      message?: string;
+                    };
                     setSubmitError(
                       e?.response?.data?.detail ||
                         e?.response?.data?.error ||
@@ -831,7 +1078,10 @@ export function AttendanceDrawer({ open, shift, onClose }: AttendanceDrawerProps
                     });
                     onClose();
                   } catch (err: unknown) {
-                    const e = err as { response?: { data?: { detail?: string; error?: string } }; message?: string };
+                    const e = err as {
+                      response?: { data?: { detail?: string; error?: string } };
+                      message?: string;
+                    };
                     setSubmitError(
                       e?.response?.data?.detail ||
                         e?.response?.data?.error ||
@@ -881,7 +1131,10 @@ const inputCss: CSSProperties = {
   outline: "none",
 };
 
-function FieldGroup({ label, children }: { label: string; children: ReactNode }) {
+function FieldGroup({
+  label,
+  children,
+}: { label: string; children: ReactNode }) {
   return (
     <label style={{ display: "block" }}>
       <div
@@ -938,7 +1191,9 @@ function TimeBlock({
     warn: { bg: tokens.color.warnSoft, fg: tokens.color.warnInk },
     danger: { bg: tokens.color.dangerSoft, fg: tokens.color.dangerInk },
   };
-  const palette = tone ? tones[tone] : { bg: tokens.color.ink50, fg: tokens.color.ink900 };
+  const palette = tone
+    ? tones[tone]
+    : { bg: tokens.color.ink50, fg: tokens.color.ink900 };
   return (
     <div
       style={{
@@ -1012,7 +1267,11 @@ function VerifyTile({
   value: string;
 }) {
   const color =
-    state === "bad" ? tokens.color.danger : state === "unknown" ? tokens.color.ink500 : tokens.color.success;
+    state === "bad"
+      ? tokens.color.danger
+      : state === "unknown"
+        ? tokens.color.ink500
+        : tokens.color.success;
   const bg =
     state === "bad"
       ? tokens.color.dangerSoft
@@ -1042,7 +1301,9 @@ function VerifyTile({
       >
         <Icon name={icon} size={12} /> {label}
       </div>
-      <div style={{ fontSize: 12, color: tokens.color.ink600, marginTop: 4 }}>{value}</div>
+      <div style={{ fontSize: 12, color: tokens.color.ink600, marginTop: 4 }}>
+        {value}
+      </div>
     </div>
   );
 }

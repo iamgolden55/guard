@@ -58,6 +58,10 @@ export interface AttendanceShift {
   auto_checkout?: boolean;
   auto_approved?: boolean;
   checkout_at?: string | null;
+  /** Absolute scheduled start/end. The decimal hours above carry no date, so
+   *  anything reconstructing a timestamp must anchor to these. */
+  sch_start_at?: string | null;
+  sch_end_at?: string | null;
 }
 
 export interface ShiftAdjustment {

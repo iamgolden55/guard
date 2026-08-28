@@ -1,3 +1,5 @@
+import { resolveShiftRange } from "@/lib/shiftTime";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 // SchedulingState — context holding the live mutable shifts list plus the
 // read-only officer/venue/week catalogues sourced from the API.
 //
@@ -6,6 +8,7 @@
 // optimistic updates; on server error we rollback to the pre-mutation snapshot
 // and refetch so server state wins.
 import {
+  type ReactNode,
   createContext,
   useCallback,
   useContext,
@@ -14,9 +17,7 @@ import {
   useReducer,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import schedulerService, {
   type CreateShiftParams,
 } from "../../../services/schedulerService";
@@ -35,7 +36,11 @@ import type {
 type Action =
   | { type: "assign"; shiftId: string; officerId: string }
   | { type: "unassign"; shiftId: string }
-  | { type: "move"; shiftId: string; patch: Partial<Pick<Shift, "officerId" | "venueId" | "day">> }
+  | {
+      type: "move";
+      shiftId: string;
+      patch: Partial<Pick<Shift, "officerId" | "venueId" | "day">>;
+    }
   | { type: "publish"; shiftIds: string[] }
   | { type: "set"; shifts: Shift[] };
 
@@ -57,7 +62,9 @@ function reducer(state: Shift[], action: Action): Shift[] {
     }
     case "unassign": {
       return state.map((s) =>
-        s.id === action.shiftId ? { ...s, officerId: null, status: "open" as const } : s,
+        s.id === action.shiftId
+          ? { ...s, officerId: null, status: "open" as const }
+          : s,
       );
     }
     case "move": {
@@ -132,7 +139,10 @@ interface SchedulingContextValue {
   venueById: (id: string) => SchedulingVenue | undefined;
   assignOfficer: (shiftId: string, officerId: string) => void;
   unassign: (shiftId: string) => void;
-  moveShift: (shiftId: string, patch: Partial<Pick<Shift, "officerId" | "venueId" | "day">>) => void;
+  moveShift: (
+    shiftId: string,
+    patch: Partial<Pick<Shift, "officerId" | "venueId" | "day">>,
+  ) => void;
   createShift: (input: ShiftFormInput) => Promise<unknown>;
   updateShiftFull: (id: string, input: ShiftFormInput) => Promise<unknown>;
   deleteShift: (id: string) => Promise<unknown>;
@@ -166,45 +176,30 @@ interface SchedulingProviderProps {
 // read-side adapter, which pulls hours via `Date#getHours()` (local time).
 // e.g. shift display says "14:00" → server gets the UTC ISO equivalent of
 // 14:00 in the user's timezone, and a refetch shows "14:00" again.
-function dayHourToIso(anchor: string, day: number, hourDecimal: number): string {
+function dayHourToIso(
+  anchor: string,
+  day: number,
+  hourDecimal: number,
+): string {
   const [yyyy, mm, dd] = anchor.split("-").map(Number);
   const wholeHours = Math.floor(hourDecimal);
   const minutes = Math.round((hourDecimal - wholeHours) * 60);
   const base = new Date(yyyy ?? 1970, (mm ?? 1) - 1, dd ?? 1, 0, 0, 0, 0);
-  const ms = base.getTime() + ((day * 24 + wholeHours) * 60 + minutes) * 60 * 1000;
+  const ms =
+    base.getTime() + ((day * 24 + wholeHours) * 60 + minutes) * 60 * 1000;
   return new Date(ms).toISOString();
-}
-
-/** Combine a yyyy-mm-dd date + HH:mm time into an ISO datetime in local TZ. */
-function localDateTimeToIso(dateIso: string, timeHHmm: string): string {
-  const [yyyy, mm, dd] = dateIso.split("-").map(Number);
-  const [hh, mins] = timeHHmm.split(":").map(Number);
-  return new Date(
-    yyyy ?? 1970,
-    (mm ?? 1) - 1,
-    dd ?? 1,
-    hh ?? 0,
-    mins ?? 0,
-    0,
-    0,
-  ).toISOString();
 }
 
 /** Translate the form input shape to the API request body. End time spilling
  *  past midnight is handled by adding 1 day to the end-date if endTime <= startTime. */
 function formInputToApi(input: ShiftFormInput): Record<string, unknown> {
-  const start = localDateTimeToIso(input.date, input.startTime);
-  const [eh, em] = input.endTime.split(":").map(Number);
-  const [sh, sm] = input.startTime.split(":").map(Number);
-  const endsNextDay =
-    (eh ?? 0) * 60 + (em ?? 0) <= (sh ?? 0) * 60 + (sm ?? 0);
-  let endDate = input.date;
-  if (endsNextDay) {
-    const [y, m, d] = input.date.split("-").map(Number);
-    const next = new Date(y ?? 1970, (m ?? 1) - 1, (d ?? 1) + 1);
-    endDate = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
-  }
-  const end = localDateTimeToIso(endDate, input.endTime);
+  const { start: startAt, end: endAt } = resolveShiftRange(
+    input.date,
+    input.startTime,
+    input.endTime,
+  );
+  const start = startAt.toISOString();
+  const end = endAt.toISOString();
   // NOTE: no `is_published` here. This body is shared by create and update,
   // and sending it on a PATCH would silently revert a published shift to a
   // draft — pulling it out of the officer's app and re-notifying them when it
@@ -234,7 +229,10 @@ function formInputToApi(input: ShiftFormInput): Record<string, unknown> {
  *    (`Shift.get_effective_hourly_rate` at backend/api/models.py:2280).
  *  - 'special_event': set is_special_event=true; backend's special-event rate kicks in.
  *  - 'custom': write the numeric customPayRate to hourly_rate. Not a special event. */
-function applyPayRate(body: Record<string, unknown>, input: ShiftFormInput): void {
+function applyPayRate(
+  body: Record<string, unknown>,
+  input: ShiftFormInput,
+): void {
   const mode = input.payRateType ?? "static";
   if (mode === "special_event") {
     body.is_special_event = true;
@@ -316,7 +314,12 @@ export function SchedulingProvider({
     onSettled: () => invalidateShifts(),
   });
 
-  const unassignMutation = useMutation<unknown, Error, { shiftId: string }, { prev: Shift[] }>({
+  const unassignMutation = useMutation<
+    unknown,
+    Error,
+    { shiftId: string },
+    { prev: Shift[] }
+  >({
     mutationFn: ({ shiftId }) =>
       schedulerService.updateShift(Number(shiftId), {
         staff_user: null,
@@ -329,7 +332,11 @@ export function SchedulingProvider({
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) dispatch({ type: "set", shifts: ctx.prev });
-      showToast({ tone: "danger", title: "Couldn't unassign", body: "Server rejected the change." });
+      showToast({
+        tone: "danger",
+        title: "Couldn't unassign",
+        body: "Server rejected the change.",
+      });
     },
     onSettled: () => invalidateShifts(),
   });
@@ -347,12 +354,15 @@ export function SchedulingProvider({
       const target = shiftsRef.current.find((s) => s.id === shiftId);
       if (!target) throw new Error("Shift not found in local state");
       const newDay = patch.day ?? target.day;
-      const newOfficer = patch.officerId !== undefined ? patch.officerId : target.officerId;
+      const newOfficer =
+        patch.officerId !== undefined ? patch.officerId : target.officerId;
       const newVenue = patch.venueId ?? target.venueId;
       const body: Record<string, unknown> = {};
       if (patch.venueId !== undefined) body.venue = Number(newVenue);
       if (patch.officerId !== undefined) {
-        body.staff_user = newOfficer ? Number(newOfficer.replace(/^u/, "")) : null;
+        body.staff_user = newOfficer
+          ? Number(newOfficer.replace(/^u/, ""))
+          : null;
         body.status = newOfficer ? "scheduled" : "open";
       }
       if (patch.day !== undefined) {
@@ -369,7 +379,11 @@ export function SchedulingProvider({
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) dispatch({ type: "set", shifts: ctx.prev });
-      showToast({ tone: "danger", title: "Couldn't move shift", body: "Server rejected the change." });
+      showToast({
+        tone: "danger",
+        title: "Couldn't move shift",
+        body: "Server rejected the change.",
+      });
     },
     onSettled: () => invalidateShifts(),
   });
@@ -391,18 +405,21 @@ export function SchedulingProvider({
           ? crypto.randomUUID()
           : `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const baseBody = formInputToApi(input);
-      const bodies: Record<string, unknown>[] = Array.from({ length: count }, (_, i) => {
-        const body: Record<string, unknown> = {
-          ...baseBody,
-          shift_group: groupId,
-          is_published: false,
-        };
-        if (i > 0) {
-          body.staff_user = null;
-          body.status = "open";
-        }
-        return body;
-      });
+      const bodies: Record<string, unknown>[] = Array.from(
+        { length: count },
+        (_, i) => {
+          const body: Record<string, unknown> = {
+            ...baseBody,
+            shift_group: groupId,
+            is_published: false,
+          };
+          if (i > 0) {
+            body.staff_user = null;
+            body.status = "open";
+          }
+          return body;
+        },
+      );
       const results = await Promise.all(
         bodies.map((b) =>
           schedulerService.createShift(b as unknown as CreateShiftParams),
@@ -438,7 +455,10 @@ export function SchedulingProvider({
     { id: string; input: ShiftFormInput }
   >({
     mutationFn: async ({ id, input }) => {
-      const extraSeats = Math.max(0, Math.min(20, (input.officersNeeded ?? 1) - 1));
+      const extraSeats = Math.max(
+        0,
+        Math.min(20, (input.officersNeeded ?? 1) - 1),
+      );
       const baseBody = formInputToApi(input);
 
       // If we're adding extra seats, ensure the edited row has a shift_group so
@@ -463,13 +483,16 @@ export function SchedulingProvider({
 
       // Then fan out the extra open seats linked to the same group.
       if (extraSeats > 0 && groupId) {
-        const extras: Record<string, unknown>[] = Array.from({ length: extraSeats }, () => ({
-          ...baseBody,
-          shift_group: groupId,
-          staff_user: null,
-          status: "open",
-          is_published: false,
-        }));
+        const extras: Record<string, unknown>[] = Array.from(
+          { length: extraSeats },
+          () => ({
+            ...baseBody,
+            shift_group: groupId,
+            staff_user: null,
+            status: "open",
+            is_published: false,
+          }),
+        );
         await Promise.all(
           extras.map((b) =>
             schedulerService.createShift(b as unknown as CreateShiftParams),
@@ -497,22 +520,24 @@ export function SchedulingProvider({
       }),
   });
 
-  const deleteMutation = useMutation<unknown, Error, string, { prev: Shift[] }>({
-    mutationFn: (id) => schedulerService.deleteShift(Number(id)),
-    onMutate: (id) => {
-      const prev = shiftsRef.current;
-      dispatch({ type: "set", shifts: prev.filter((s) => s.id !== id) });
-      return { prev };
+  const deleteMutation = useMutation<unknown, Error, string, { prev: Shift[] }>(
+    {
+      mutationFn: (id) => schedulerService.deleteShift(Number(id)),
+      onMutate: (id) => {
+        const prev = shiftsRef.current;
+        dispatch({ type: "set", shifts: prev.filter((s) => s.id !== id) });
+        return { prev };
+      },
+      onError: (_err, _id, ctx) => {
+        if (ctx?.prev) dispatch({ type: "set", shifts: ctx.prev });
+        showToast({ tone: "danger", title: "Couldn't delete shift" });
+      },
+      onSuccess: () => {
+        showToast({ tone: "success", title: "Shift deleted" });
+      },
+      onSettled: () => invalidateShifts(),
     },
-    onError: (_err, _id, ctx) => {
-      if (ctx?.prev) dispatch({ type: "set", shifts: ctx.prev });
-      showToast({ tone: "danger", title: "Couldn't delete shift" });
-    },
-    onSuccess: () => {
-      showToast({ tone: "success", title: "Shift deleted" });
-    },
-    onSettled: () => invalidateShifts(),
-  });
+  );
 
   const copyWeekMutation = useMutation<unknown, Error, void>({
     mutationFn: async () => {
@@ -528,7 +553,13 @@ export function SchedulingProvider({
         start: `${fmt(prevStart)}T00:00:00Z`,
         end: `${fmt(prevEnd)}T23:59:59Z`,
         group_by: "venue",
-      })) as { events?: Array<{ start: string; end: string; extendedProps?: Record<string, unknown> }> };
+      })) as {
+        events?: Array<{
+          start: string;
+          end: string;
+          extendedProps?: Record<string, unknown>;
+        }>;
+      };
 
       const events = response?.events ?? [];
       if (events.length === 0) {
@@ -561,8 +592,11 @@ export function SchedulingProvider({
             body.status = "open";
           }
           if (ext.requiredRole) body.required_security_role = ext.requiredRole;
-          if (ext.breakDuration != null) body.break_duration = ext.breakDuration;
-          return schedulerService.createShift(body as unknown as CreateShiftParams);
+          if (ext.breakDuration != null)
+            body.break_duration = ext.breakDuration;
+          return schedulerService.createShift(
+            body as unknown as CreateShiftParams,
+          );
         }),
       );
       return events.length;
@@ -583,9 +617,16 @@ export function SchedulingProvider({
       }),
   });
 
-  const publishMutation = useMutation<unknown, Error, { shiftIds: string[] }, { prev: Shift[] }>({
+  const publishMutation = useMutation<
+    unknown,
+    Error,
+    { shiftIds: string[] },
+    { prev: Shift[] }
+  >({
     mutationFn: ({ shiftIds }) =>
-      schedulerService.publishShifts({ shift_ids: shiftIds.map((id) => Number(id)) }),
+      schedulerService.publishShifts({
+        shift_ids: shiftIds.map((id) => Number(id)),
+      }),
     onMutate: ({ shiftIds }) => {
       const prev = shiftsRef.current;
       dispatch({ type: "publish", shiftIds });
@@ -593,16 +634,25 @@ export function SchedulingProvider({
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) dispatch({ type: "set", shifts: ctx.prev });
-      showToast({ tone: "danger", title: "Couldn't publish", body: "Server rejected the change." });
+      showToast({
+        tone: "danger",
+        title: "Couldn't publish",
+        body: "Server rejected the change.",
+      });
     },
     onSuccess: () => {
-      showToast({ tone: "success", title: "Week published", body: "Officers will be notified." });
+      showToast({
+        tone: "success",
+        title: "Week published",
+        body: "Officers will be notified.",
+      });
     },
     onSettled: () => invalidateShifts(),
   });
 
   const assignOfficer = useCallback(
-    (shiftId: string, officerId: string) => assignMutation.mutate({ shiftId, officerId }),
+    (shiftId: string, officerId: string) =>
+      assignMutation.mutate({ shiftId, officerId }),
     [assignMutation],
   );
   const unassign = useCallback(
@@ -610,8 +660,10 @@ export function SchedulingProvider({
     [unassignMutation],
   );
   const moveShift = useCallback(
-    (shiftId: string, patch: Partial<Pick<Shift, "officerId" | "venueId" | "day">>) =>
-      moveMutation.mutate({ shiftId, patch }),
+    (
+      shiftId: string,
+      patch: Partial<Pick<Shift, "officerId" | "venueId" | "day">>,
+    ) => moveMutation.mutate({ shiftId, patch }),
     [moveMutation],
   );
   const createShift = useCallback(
@@ -619,14 +671,18 @@ export function SchedulingProvider({
     [createMutation],
   );
   const updateShiftFull = useCallback(
-    (id: string, input: ShiftFormInput) => updateFullMutation.mutateAsync({ id, input }),
+    (id: string, input: ShiftFormInput) =>
+      updateFullMutation.mutateAsync({ id, input }),
     [updateFullMutation],
   );
   const deleteShift = useCallback(
     (id: string) => deleteMutation.mutateAsync(id),
     [deleteMutation],
   );
-  const copyLastWeek = useCallback(() => copyWeekMutation.mutateAsync(), [copyWeekMutation]);
+  const copyLastWeek = useCallback(
+    () => copyWeekMutation.mutateAsync(),
+    [copyWeekMutation],
+  );
   const publishShift = useCallback(
     (id: string) => publishMutation.mutate({ shiftIds: [id] }),
     [publishMutation],
@@ -636,7 +692,11 @@ export function SchedulingProvider({
       .filter((s) => !s.published && s.status !== "open")
       .map((s) => s.id);
     if (draftIds.length === 0) {
-      showToast({ tone: "info", title: "Nothing to publish", body: "No drafts in the current view." });
+      showToast({
+        tone: "info",
+        title: "Nothing to publish",
+        body: "No drafts in the current view.",
+      });
       return;
     }
     publishMutation.mutate({ shiftIds: draftIds });
@@ -701,12 +761,17 @@ export function SchedulingProvider({
     ],
   );
 
-  return <SchedulingContext.Provider value={value}>{children}</SchedulingContext.Provider>;
+  return (
+    <SchedulingContext.Provider value={value}>
+      {children}
+    </SchedulingContext.Provider>
+  );
 }
 
 export function useScheduling(): SchedulingContextValue {
   const ctx = useContext(SchedulingContext);
-  if (!ctx) throw new Error("useScheduling must be used inside SchedulingProvider");
+  if (!ctx)
+    throw new Error("useScheduling must be used inside SchedulingProvider");
   return ctx;
 }
 
@@ -740,7 +805,11 @@ export function weekCounts(shifts: Shift[]): WeekCounts {
     // including open shifts that haven't been broadcast yet.
     draft: shifts.filter((s) => !s.published).length,
     open: shifts.filter((s) => s.status === "open").length,
-    hardViols: shifts.filter((s) => (s.violations || []).some((v) => v.tier === "hard")).length,
-    softViols: shifts.filter((s) => (s.violations || []).some((v) => v.tier === "soft")).length,
+    hardViols: shifts.filter((s) =>
+      (s.violations || []).some((v) => v.tier === "hard"),
+    ).length,
+    softViols: shifts.filter((s) =>
+      (s.violations || []).some((v) => v.tier === "soft"),
+    ).length,
   };
 }

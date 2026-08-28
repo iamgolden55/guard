@@ -108,7 +108,7 @@ export function useAttendanceData(opts: UseAttendanceDataOptions = {}) {
       payload: {
         adjusted_check_in_time?: string;
         adjusted_check_out_time?: string;
-        adjusted_actual_hours: number;
+        adjusted_actual_hours?: number;
         reason: string;
         manager_signature: string;
       };
