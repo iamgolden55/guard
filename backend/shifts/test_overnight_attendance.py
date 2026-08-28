@@ -352,3 +352,70 @@ class OvernightBulkCreateTests(APITestCase):
         local_end = timezone.localtime(shift.end_time)
         self.assertEqual(local_end.date(), local_start.date())
         self.assertEqual((shift.end_time - shift.start_time), timedelta(hours=8))
+
+
+class StrandedShiftAuditTests(APITestCase):
+    """The read-only diagnostic for shifts auto-checkout never closed."""
+
+    def setUp(self):
+        self.company = SecurityCompany.objects.create(
+            name="Stranded Co", registration_number="NIGHT004",
+        )
+        self.staff = User.objects.create_user(
+            username="stranded_staff", email="stranded@night.test",
+            password="testpass123", role="staff",
+            first_name="Sam", last_name="Stranded",
+        )
+        UserCompanyMembership.objects.create(
+            user=self.staff, company=self.company, is_active=True,
+        )
+        self.venue = Venue.objects.create(
+            company=self.company, name="Stranded Venue",
+            address="4 Night St", city="Bristol", postal_code="BS1 4AA",
+            country="UK", capacity=100, contact_name="Venue Contact",
+            contact_phone="07700900003", contact_email="stranded@night.test",
+            terms_and_conditions="Standard terms",
+        )
+
+    def _run(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command('audit_stranded_shifts', stdout=out)
+        return out.getvalue()
+
+    def test_reports_a_shift_whose_status_hid_it_from_auto_checkout(self):
+        """
+        The failure mode worth surfacing: a real check-in recorded, but the
+        status flip dropped, so can_auto_checkout() never looks at it.
+        """
+        start = timezone.now() - timedelta(hours=12)
+        shift = Shift.objects.create(
+            venue=self.venue, staff_user=self.staff,
+            start_time=start, end_time=start + timedelta(hours=9),
+            status="scheduled", required_security_role="sg", is_published=True,
+        )
+        shift.check_in_time = start
+        shift.save(update_fields=["check_in_time"])
+        Shift.objects.filter(id=shift.id).update(status="scheduled")
+
+        output = self._run()
+
+        self.assertIn("not 'in_progress'", output)
+        self.assertIn("Sam Stranded", output)
+        self.assertIn("ran past midnight", output)
+
+    def test_checked_out_shifts_are_not_reported(self):
+        start = timezone.now() - timedelta(hours=12)
+        shift = Shift.objects.create(
+            venue=self.venue, staff_user=self.staff,
+            start_time=start, end_time=start + timedelta(hours=9),
+            status="scheduled", required_security_role="sg", is_published=True,
+        )
+        shift.check_in_time = start
+        shift.check_out_time = start + timedelta(hours=9)
+        shift.save(update_fields=["check_in_time", "check_out_time"])
+
+        self.assertIn("(none)", self._run())
