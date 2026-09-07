@@ -24,6 +24,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from decimal import Decimal
 import logging
+import re
 import requests
 from datetime import datetime, date, timedelta
 from django.db import models
@@ -2624,6 +2625,14 @@ class BlackoutPeriodsViewSet(viewsets.ModelViewSet):
         })
 
 
+#: The holiday proxy builds both an outbound URL path and a cache key from
+#: query parameters. Constrain them at the door: two letters, and a year range
+#: wide enough for accrual planning and narrow enough to bound the cache.
+_ISO_3166_ALPHA2 = re.compile(r'^[A-Z]{2}$')
+MIN_HOLIDAY_YEAR = 2000
+MAX_HOLIDAY_YEAR = 2100
+
+
 class HolidayViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet for fetching public holidays via proxy to avoid CORS issues
@@ -2635,10 +2644,38 @@ class HolidayViewSet(viewsets.ReadOnlyModelViewSet):
         Get public holidays for a specific country and year
         Proxies requests to Nager.Date API to avoid CORS issues
         """
-        country_code = request.query_params.get('country', 'GB')  # Default to UK
-        year = request.query_params.get('year', datetime.now().year)
+        # Validate before either the outbound path or the cache key is built
+        # from them. Both were assembled straight from query params: the path
+        # segment reached a third-party API unescaped, and the cache key was
+        # attacker-chosen and unbounded, so a loop over made-up country codes
+        # filled the cache with junk and evicted everything real.
+        country_code = (request.query_params.get('country') or 'GB').strip().upper()
+        if not _ISO_3166_ALPHA2.fullmatch(country_code):
+            return Response(
+                {'detail': 'country must be a two-letter ISO 3166-1 code.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # Create cache key
+        raw_year = request.query_params.get('year') or datetime.now().year
+        try:
+            year = int(raw_year)
+        except (TypeError, ValueError):
+            return Response(
+                {'detail': 'year must be a four-digit year.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not (MIN_HOLIDAY_YEAR <= year <= MAX_HOLIDAY_YEAR):
+            return Response(
+                {
+                    'detail': (
+                        f'year must be between {MIN_HOLIDAY_YEAR} and '
+                        f'{MAX_HOLIDAY_YEAR}.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Both components are now constrained, so the key space is bounded.
         cache_key = f'holidays_{country_code}_{year}'
 
         # Try to get from cache first (cache for 24 hours)

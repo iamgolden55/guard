@@ -381,11 +381,12 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
 
-        # Join general notifications group
-        await self.channel_layer.group_add(
-            'notifications_general',
-            self.channel_name
-        )
+        # A 'notifications_general' group used to be joined here — every
+        # authenticated user on the platform, in one group. Nothing has ever
+        # broadcast to it, so it leaked nothing; but any future send would have
+        # been cross-tenant by construction, with no way to notice. Per-user
+        # groups above are the pattern; a company-wide broadcast should join a
+        # company-scoped group, not a global one.
 
         await self.accept()
 
@@ -403,10 +404,6 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                 self.channel_name
             )
 
-        await self.channel_layer.group_discard(
-            'notifications_general',
-            self.channel_name
-        )
 
     async def receive(self, text_data):
         """Handle messages from client."""

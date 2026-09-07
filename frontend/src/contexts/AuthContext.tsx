@@ -4,6 +4,7 @@ import { authService } from '../services';
 import onboardingService from '../services/onboardingService';
 import companyService from '../services/companyService';
 import api from '../services/api';
+import { logger } from '../lib/logger';
 
 // Define the context value structure
 interface AuthContextValue {
@@ -107,7 +108,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
         return result;
       } catch (apiError) {
-        console.error('API call failed, falling back to localStorage:', apiError);
+        logger.error('API call failed, falling back to localStorage:', apiError);
 
         // Fallback to localStorage if API call fails
         const savedProgress = onboardingService.getProgress();
@@ -126,7 +127,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
         // No API data AND no localStorage data — don't block the user
         // with onboarding. Default to completed so they reach the dashboard.
         // If they truly need onboarding, the dashboard will handle it.
-        console.warn('No onboarding data available (API failed, no localStorage). Defaulting to completed.');
+        logger.warn('No onboarding data available (API failed, no localStorage). Defaulting to completed.');
         return {
           isCompleted: true,
           currentStep: 5,
@@ -135,7 +136,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
         };
       }
     } catch (error) {
-      console.error('Failed to fetch onboarding status:', error);
+      logger.error('Failed to fetch onboarding status:', error);
       // Same fallback — don't block users when we can't determine status
       return {
         isCompleted: true,
@@ -194,7 +195,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
         companyName: membership.company_name
       };
     } catch (error) {
-      console.error('fetchCompanyMembership error:', error);
+      logger.error('fetchCompanyMembership error:', error);
       return null;
     }
   }, []);
@@ -229,7 +230,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
         }
       }));
     } catch (error) {
-      console.error('Failed to refresh company membership after onboarding:', error);
+      logger.error('Failed to refresh company membership after onboarding:', error);
       // Don't throw - the onboarding is still complete, user can refresh page
     }
   }, [fetchCompanyMembership]);
@@ -244,7 +245,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
       // Just return success
       return true;
     } catch (error) {
-      console.error('Proactive token refresh failed:', error);
+      logger.error('Proactive token refresh failed:', error);
       return false;
     }
   }, []);
@@ -307,7 +308,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
             user.lastName = user.lastName || '';
           }
         } catch (error) {
-          console.error('Failed to parse user data:', error);
+          logger.error('Failed to parse user data:', error);
         }
       }
 
@@ -425,7 +426,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
             // Mark onboarding as successfully fetched
             onboardingFetchedRef.current = true;
           } catch (secondError) {
-            console.error('Profile fetch failed after token refresh:', secondError);
+            logger.error('Profile fetch failed after token refresh:', secondError);
             // Clear all auth data — stale session
             localStorage.removeItem('user');
             localStorage.removeItem('access_token');
@@ -467,7 +468,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
       try {
         onboardingStatus = await fetchOnboardingStatus(response.user);
       } catch (e) {
-        console.error('Post-login onboarding fetch failed (defaulting to completed):', e);
+        logger.error('Post-login onboarding fetch failed (defaulting to completed):', e);
         // Default to completed so the user reaches the dashboard rather than
         // being incorrectly redirected to onboarding due to a transient API error
         onboardingStatus = {
@@ -482,7 +483,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
       try {
         companyMembership = await fetchCompanyMembership();
       } catch (e) {
-        console.error('Post-login company fetch failed:', e);
+        logger.error('Post-login company fetch failed:', e);
         companyMembership = null;
       }
 
@@ -503,7 +504,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
       isLoggingInRef.current = false; // Allow token validation useEffect to run again
     } catch (error: any) {
-      console.error('Login failed:', error);
+      logger.error('Login failed:', error);
       isLoggingInRef.current = false; // Reset flag on error
 
       // Extract the actual error message from the API response
@@ -531,7 +532,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
       // After successful registration, log the user in
       await login(formData.username, formData.password);
     } catch (error) {
-      console.error('Registration failed:', error);
+      logger.error('Registration failed:', error);
       setAuthState(prev => ({
         ...prev,
         isLoading: false,
@@ -594,7 +595,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
           user: user
         }));
       } catch (error) {
-        console.error('Failed to refresh user data from localStorage:', error);
+        logger.error('Failed to refresh user data from localStorage:', error);
       }
     }
   };
@@ -603,13 +604,13 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const isUserRole = (role: string): boolean => {
     // CRITICAL: Always check if user is loaded
     if (!authState.user) {
-      console.warn('isUserRole called but no user loaded');
+      logger.warn('isUserRole called but no user loaded');
       return false;
     }
 
     if (!authState.currentMembership) {
       // Fallback to user role if no company membership (shouldn't happen in normal flow)
-      console.warn('isUserRole: No membership found, using user role as fallback', {
+      logger.warn('isUserRole: No membership found, using user role as fallback', {
         userRole: authState.user.role,
         targetRole: role
       });

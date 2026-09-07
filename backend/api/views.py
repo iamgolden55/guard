@@ -248,9 +248,22 @@ class LoginView(APIView):
                              'errors': 'missing required parameters'}, status=400)
 
         try:
-            # Retrieve the user from the database - accept both username and email
+            # Retrieve the user from the database - accept both username and email.
+            #
+            # `.get()` here raised MultipleObjectsReturned — a 500 on the login
+            # screen — if an email were ever duplicated. Email uniqueness is
+            # validated in the serialiser but not constrained in the database,
+            # so it is only as unique as every write path has been careful, and
+            # a login 500 is a bad way to discover otherwise. An exact username
+            # match wins; failing that, the earliest account with that email.
             from django.db.models import Q
-            user = User.objects.get(Q(username=username_or_email) | Q(email=username_or_email))
+            user = (
+                User.objects.filter(username=username_or_email).first()
+                or User.objects.filter(email__iexact=username_or_email)
+                .order_by('id').first()
+            )
+            if user is None:
+                raise User.DoesNotExist
 
             # SECURITY FIX: Check if account is locked
             from django.utils import timezone
@@ -628,9 +641,23 @@ class UserViewSet(viewsets.ModelViewSet):
         """
         Allow registration without authentication, but require
         authentication for all other actions.
+
+        Open registration is the amplifier behind several of the findings in
+        this audit: anyone on the internet could create an account and reach
+        every authenticated route. Those routes are now gated individually,
+        which is where the fix belongs — but a platform selling to security
+        companies probably does not want a public signup form either.
+
+        `REGISTRATION_REQUIRES_INVITE` closes it. Default False, because
+        turning it on stops self-signup for real prospective users and that is
+        a product decision, not a patch. Set it in the environment when the
+        invite journey is the one you want.
         """
         if self.action == 'create':
-            permission_classes = [AllowAny]
+            if getattr(settings, 'REGISTRATION_REQUIRES_INVITE', False):
+                permission_classes = [IsAuthenticated, IsManagerOrAdmin]
+            else:
+                permission_classes = [AllowAny]
         else:
             permission_classes = [IsAuthenticated]
         return [permission() for permission in permission_classes]

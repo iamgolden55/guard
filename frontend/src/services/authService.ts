@@ -1,6 +1,7 @@
 import api from './api';
 import { type LoginRequest, type LoginResponse, type RefreshTokenResponse, type RegisterRequest, type User, UserRole } from '../types';
 import { setAuthCookie, getAuthToken, removeAuthTokens } from '../utils/auth';
+import { logger } from '../lib/logger';
 
 class AuthService {
   async login(credentials: LoginRequest): Promise<LoginResponse> {
@@ -42,7 +43,7 @@ class AuthService {
 
       return formattedResponse;
     } catch (error) {
-      console.error('Login API error:', error);
+      logger.error('Login API error:', error);
       throw error;
     }
   }
@@ -68,7 +69,7 @@ class AuthService {
         localStorage.setItem('refresh_token', (response as any).data.refresh);
       }
     } catch (error) {
-      console.error('Refresh token API error:', error);
+      logger.error('Refresh token API error:', error);
       throw error;
     }
   }
@@ -99,7 +100,7 @@ class AuthService {
       localStorage.setItem('user', JSON.stringify(mappedUser));
       return mappedUser;
     } catch (error) {
-      console.error('GetUserProfile error:', error);
+      logger.error('GetUserProfile error:', error);
       throw error;
     }
   }
@@ -110,7 +111,7 @@ class AuthService {
     try {
       await api.post('/api/v1/logout/', {});
     } catch (error) {
-      console.error('Logout API error (continuing with local cleanup):', error);
+      logger.error('Logout API error (continuing with local cleanup):', error);
       // Continue with local cleanup even if API call fails
     }
 
@@ -139,7 +140,7 @@ class AuthService {
 
         return user;
       } catch (error) {
-        console.error('Failed to parse user data:', error);
+        logger.error('Failed to parse user data:', error);
         return null;
       }
     }

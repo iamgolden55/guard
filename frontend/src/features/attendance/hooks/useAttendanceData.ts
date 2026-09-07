@@ -10,7 +10,8 @@
 //                                                   placeholder audit row and
 //                                                   invalidates live + adjustments.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { conflictMessage, isConflictError } from "../../../lib/apiError";
 import attendanceService, {
   type AttendanceStats,
   type LiveAttendancePayload,
@@ -77,6 +78,9 @@ export function useAttendanceData(opts: UseAttendanceDataOptions = {}) {
   const livePollMs = opts.livePollMs === undefined ? 30_000 : opts.livePollMs;
 
   const queryClient = useQueryClient();
+  // Set when a write loses to concurrent state; cleared by the consumer once
+  // shown. Kept here rather than in the mutation so it survives the refetch.
+  const [conflict, setConflict] = useState<string | null>(null);
 
   const liveQuery = useQuery<LiveAttendancePayload>({
     queryKey: LIVE_KEY(date),
@@ -113,6 +117,22 @@ export function useAttendanceData(opts: UseAttendanceDataOptions = {}) {
         manager_signature: string;
       };
     }) => attendanceService.adjustShiftTime(shiftId, payload),
+    // A 409 means the correction was refused because the state moved — the
+    // invoice behind this shift is already approved or exported, so it cannot
+    // be restated in place. Previously the backend skipped the recalculation
+    // and returned success, and the operator believed a correction had landed
+    // that had not. Surface it and refetch, so the screen shows what is now
+    // true rather than what was requested.
+    onError: (err) => {
+      if (isConflictError(err)) {
+        setConflict(
+          conflictMessage(
+            err,
+            "This shift has changed since you opened it. Refreshing.",
+          ),
+        );
+      }
+    },
     onSettled: (_data, _err, vars) => {
       queryClient.invalidateQueries({ queryKey: ADJUSTMENTS_KEY(vars.shiftId) });
       queryClient.invalidateQueries({ queryKey: LIVE_KEY(date) });
@@ -163,6 +183,10 @@ export function useAttendanceData(opts: UseAttendanceDataOptions = {}) {
   }, [venues, timesheetVenues]);
 
   return {
+    // Set when a write was refused because the underlying state moved on.
+    // Show it, then call clearConflict().
+    conflict,
+    clearConflict: () => setConflict(null),
     // Live tab
     shifts,
     officers,

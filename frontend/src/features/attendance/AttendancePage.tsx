@@ -130,6 +130,41 @@ export default function AttendancePage() {
         onToggleLeftRail={() => setLeftRailOpen((v) => !v)}
         onToggleVenueGrid={() => setVenueGridOpen((v) => !v)}
       />
+      {data.conflict && (
+        // A correction was refused because the state moved on — most often an
+        // invoice that is already approved or exported and cannot be restated
+        // in place. Say so where the operator is looking, rather than leaving
+        // them to assume it saved.
+        <div
+          role="alert"
+          style={{
+            margin: "12px 16px 0",
+            padding: "12px 14px",
+            borderRadius: 8,
+            border: "1px solid #FCD34D",
+            background: "#FEF3C7",
+            color: "#92400E",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+          }}
+        >
+          <span style={{ flex: 1 }}>{data.conflict}</span>
+          <button
+            type="button"
+            onClick={data.clearConflict}
+            style={{
+              background: "transparent",
+              border: 0,
+              color: "#92400E",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       {view === "live" && (
         <LiveView
           onSelect={handleSelectShift}

@@ -1,5 +1,6 @@
 import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
 import type { Shift } from '../types/shift';
+import { logger } from '../lib/logger';
 
 // Base API configuration
 const API_URL = import.meta.env.VITE_API_URL;
@@ -57,7 +58,7 @@ api.interceptors.request.use(
     return config;
   },
   (error: AxiosError) => {
-    console.error('API Request interceptor error:', error);
+    logger.error('API Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
@@ -143,7 +144,7 @@ api.interceptors.response.use(
             localStorage.setItem('refresh_token', response.data.refresh);
           }
 
-          console.log('Token refreshed successfully');
+          logger.debug('Token refreshed successfully');
 
           return response;
         } finally {
@@ -162,7 +163,7 @@ api.interceptors.response.use(
 
         return api(originalRequest);
       } catch (refreshError: any) {
-        console.error('Token refresh failed:', refreshError?.response?.data || refreshError);
+        logger.error('Token refresh failed:', refreshError?.response?.data || refreshError);
 
         // Set flag to prevent other handlers from trying
         isSessionInvalidating = true;
@@ -183,7 +184,7 @@ api.interceptors.response.use(
 
     // For network errors, provide more helpful information
     if (error.message === 'Network Error') {
-      console.error('Network error detected. API server may be down or network connectivity issues.');
+      logger.error('Network error detected. API server may be down or network connectivity issues.');
       
       // Create a more descriptive error
       const enhancedError = new Error(
@@ -218,7 +219,7 @@ export const getProfile = async (userId: number | undefined) => {
       throw new Error('Profile not found');
     }
   } catch (error: any) {
-    console.error('Error fetching profile:', error);
+    logger.error('Error fetching profile:', error);
     throw error;
   }
 };
@@ -228,7 +229,7 @@ export const updateProfile = async (profileId: number, data: any) => {
     const response = await api.patch(`/staff-profiles/${profileId}/`, data);
     return response;
   } catch (error: any) {
-    console.error('Error updating profile:', error);
+    logger.error('Error updating profile:', error);
     throw error;
   }
 };
@@ -239,7 +240,7 @@ export const login = async (username: string, password: string) => {
     const response = await api.post('/login/', { username, password });
     return response;
   } catch (error: any) {
-    console.error('Login error:', error);
+    logger.error('Login error:', error);
     throw error;
   }
 };
@@ -249,7 +250,7 @@ export const register = async (userData: any) => {
     const response = await api.post('/users/', userData);
     return response;
   } catch (error: any) {
-    console.error('Registration error:', error);
+    logger.error('Registration error:', error);
     throw error;
   }
 };
@@ -273,20 +274,20 @@ export const getShifts = async (params?: any): Promise<any[]> => {
       queryString = `?${queryParams.toString()}`;
     }
     
-    console.log(`Fetching shifts with query: ${queryString}`);
+    logger.debug(`Fetching shifts with query: ${queryString}`);
     // Use the api instance which has proper auth and interceptors configured
     // In dev: /api/v1/shifts is proxied by Vite to http://localhost:8000/api/v1/shifts
     const response = await api.get(`/api/v1/shifts${queryString}`);
     
     // Ensure we got a valid response with data
     if (!response.data) {
-      console.warn('Empty data response from shifts endpoint');
+      logger.warn('Empty data response from shifts endpoint');
       return [];
     }
     
     // Handle paginated response format
     if (response.data && typeof response.data === 'object' && 'results' in response.data) {
-      console.log(`Found paginated response, extracting ${response.data.results.length} shifts from total: ${response.data.count}`);
+      logger.debug(`Found paginated response, extracting ${response.data.results.length} shifts from total: ${response.data.count}`);
       return Array.isArray(response.data.results) ? response.data.results : [];
     }
     
@@ -295,10 +296,10 @@ export const getShifts = async (params?: any): Promise<any[]> => {
       return response.data;
     }
     
-    console.warn('Unexpected shift data format:', response.data);
+    logger.warn('Unexpected shift data format:', response.data);
     return [];
   } catch (error: any) {
-    console.error('Error fetching shifts:', error);
+    logger.error('Error fetching shifts:', error);
     // Return empty array rather than throwing to avoid breaking UI
     return [];
   }
@@ -315,19 +316,19 @@ export const getFilteredShifts = async (venueId?: string, staffId?: string): Pro
     
     // Ensure we got a valid response with data
     if (!response.data) {
-      console.warn('Empty data response from filtered shifts endpoint');
+      logger.warn('Empty data response from filtered shifts endpoint');
       return [];
     }
     
     // Ensure the data is an array
     if (!Array.isArray(response.data)) {
-      console.warn('Filtered shift data is not an array:', response.data);
+      logger.warn('Filtered shift data is not an array:', response.data);
       return [];
     }
     
     return response.data;
   } catch (error: any) {
-    console.error('Error fetching filtered shifts:', error);
+    logger.error('Error fetching filtered shifts:', error);
     return [];
   }
 };
@@ -339,7 +340,7 @@ export const createShift = async (shiftData: Record<string, any>): Promise<Shift
     const response = await api.post(`/api/v1/shifts/`, shiftData);
     return response.data;
   } catch (error: any) {
-    console.error('Error creating shift:', error);
+    logger.error('Error creating shift:', error);
     return null;
   }
 };
@@ -351,11 +352,11 @@ export const updateShift = async (id: string | number, shiftData: Record<string,
     const response = await api.put(`/api/v1/shifts/${id}/`, shiftData);
     return response.data;
   } catch (error: any) {
-    console.error('Error updating shift:', error);
+    logger.error('Error updating shift:', error);
     // Log the detailed error response for debugging
     if (error.response) {
-      console.error('Error response data:', error.response.data);
-      console.error('Error response status:', error.response.status);
+      logger.error('Error response data:', error.response.data);
+      logger.error('Error response status:', error.response.status);
     }
     return null;
   }
@@ -368,14 +369,14 @@ export const deleteShift = async (id: string | number): Promise<boolean> => {
     await api.delete(`/api/v1/shifts/${id}/`);
     return true;
   } catch (error: any) {
-    console.error('Error deleting shift:', error);
+    logger.error('Error deleting shift:', error);
 
     // Log detailed error information for debugging
     if (error.response) {
-      console.error('Delete error details:');
-      console.error('  Status:', error.response.status);
-      console.error('  Status Text:', error.response.statusText);
-      console.error('  Data:', error.response.data);
+      logger.error('Delete error details:');
+      logger.error('  Status:', error.response.status);
+      logger.error('  Status Text:', error.response.statusText);
+      logger.error('  Data:', error.response.data);
     }
 
     return false;
@@ -397,7 +398,7 @@ export const bulkCreateShifts = async (shifts: Array<{
     let successCount = 0;
     let errorCount = 0;
 
-    console.log(`Starting bulk creation of ${shifts.length} shifts...`);
+    logger.debug(`Starting bulk creation of ${shifts.length} shifts...`);
 
     for (const shift of shifts) {
       try {
@@ -443,27 +444,27 @@ export const bulkCreateShifts = async (shifts: Array<{
           }
         }
       } catch (shiftError: any) {
-        console.error('Error creating individual shift:', shiftError);
+        logger.error('Error creating individual shift:', shiftError);
         
         // Log detailed error information for debugging
         if (shiftError.response) {
-          console.error('Shift creation error details:');
-          console.error('  Status:', shiftError.response.status);
-          console.error('  Status Text:', shiftError.response.statusText);
-          console.error('  Data:', shiftError.response.data);
-          console.error('  Headers:', shiftError.response.headers);
-          console.error('  Failed shift data:', shift);
+          logger.error('Shift creation error details:');
+          logger.error('  Status:', shiftError.response.status);
+          logger.error('  Status Text:', shiftError.response.statusText);
+          logger.error('  Data:', shiftError.response.data);
+          logger.error('  Headers:', shiftError.response.headers);
+          logger.error('  Failed shift data:', shift);
           
           // Try to extract specific validation errors
           if (shiftError.response.data && typeof shiftError.response.data === 'object') {
-            console.error('  Validation errors:', JSON.stringify(shiftError.response.data, null, 2));
+            logger.error('  Validation errors:', JSON.stringify(shiftError.response.data, null, 2));
           }
         } else if (shiftError.request) {
-          console.error('No response received for shift creation:', shiftError.request);
-          console.error('  Failed shift data:', shift);
+          logger.error('No response received for shift creation:', shiftError.request);
+          logger.error('  Failed shift data:', shift);
         } else {
-          console.error('Error setting up shift creation request:', shiftError.message);
-          console.error('  Failed shift data:', shift);
+          logger.error('Error setting up shift creation request:', shiftError.message);
+          logger.error('  Failed shift data:', shift);
         }
         
         errorCount++;
@@ -472,11 +473,11 @@ export const bulkCreateShifts = async (shifts: Array<{
     }
     
     // Log summary of bulk creation operation
-    console.log(`Bulk creation completed: ${successCount} successful, ${errorCount} failed out of ${shifts.length} total shifts`);
+    logger.debug(`Bulk creation completed: ${successCount} successful, ${errorCount} failed out of ${shifts.length} total shifts`);
     
     return results.length > 0 ? results : null;
   } catch (error: any) {
-    console.error('Error creating bulk shifts:', error);
+    logger.error('Error creating bulk shifts:', error);
     return null;
   }
 };
@@ -487,7 +488,7 @@ export const publishShifts = async (shiftIds: string[]): Promise<boolean> => {
     await api.post('/api/v1/shifts/publish/', { shiftIds });
     return true;
   } catch (error: any) {
-    console.error('Error publishing shifts:', error);
+    logger.error('Error publishing shifts:', error);
     return false;
   }
 };
@@ -498,7 +499,7 @@ export const assignStaffToShift = async (shiftId: string | number, staffId: stri
     const response = await api.put(`/api/v1/shifts/${shiftId}/assign/`, { staffId });
     return response.data;
   } catch (error: any) {
-    console.error('Error assigning staff to shift:', error);
+    logger.error('Error assigning staff to shift:', error);
     return null;
   }
 };
@@ -523,7 +524,7 @@ export const fetchPendingEarnings = async (): Promise<PendingEarnings> => {
     const response = await api.get('/api/v1/users/me/pending-earnings/');
     return response.data;
   } catch (error: any) {
-    console.error('Error fetching pending earnings:', error);
+    logger.error('Error fetching pending earnings:', error);
     throw error;
   }
 };
@@ -556,7 +557,7 @@ export const fetchWeeklyEarnings = async (): Promise<WeeklyEarnings> => {
     const response = await api.get('/api/v1/users/me/weekly-earnings/');
     return response.data;
   } catch (error: any) {
-    console.error('Error fetching weekly earnings:', error);
+    logger.error('Error fetching weekly earnings:', error);
     throw error;
   }
 };

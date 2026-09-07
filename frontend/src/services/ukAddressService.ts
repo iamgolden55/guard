@@ -2,6 +2,8 @@
 // UK Address Service using GetAddress.io for property-level address lookup
 // This service provides access to Royal Mail PAF data for accurate UK addresses
 
+import { logger } from '../lib/logger';
+
 export interface UKAddressResult {
   id: string;
   label: string;
@@ -121,7 +123,7 @@ class UKAddressService {
       };
 
     } catch (error) {
-      console.error('UKAddressService error:', error);
+      logger.error('UKAddressService error:', error);
       if (error instanceof Error) {
         throw error;
       }
@@ -284,7 +286,7 @@ class UKAddressService {
    */
   async lookupPostcode(postcode: string): Promise<UKAddressResponse> {
     if (this.shouldUseDemoData()) {
-      console.log('Using demo data for UK address lookup. Configure VITE_GETADDRESS_API_KEY for real data.');
+      logger.debug('Using demo data for UK address lookup. Configure VITE_GETADDRESS_API_KEY for real data.');
       return this.getDemoData(postcode);
     }
 

@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import type { UserRole } from "../types";
 import { Spinner } from "./Spinner";
+import { logger } from '../lib/logger';
 
 interface AuthGuardProps {
   children?: React.ReactNode;
@@ -48,7 +49,7 @@ const AuthGuard: React.FC<AuthGuardProps> = ({
     const user = localStorage.getItem("user");
     if (user) {
       refreshUserToken().catch((err) => {
-        console.error("AuthGuard: Token refresh failed during recovery attempt:", err);
+        logger.error("AuthGuard: Token refresh failed during recovery attempt:", err);
       });
     }
     return <Navigate to="/login" state={{ from: location }} replace />;

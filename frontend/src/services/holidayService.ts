@@ -1,4 +1,5 @@
 import api from './api';
+import { logger } from '../lib/logger';
 
 export interface Holiday {
   date: string;
@@ -63,7 +64,7 @@ class HolidayService {
 
       return holidays;
     } catch (error) {
-      console.error('Error fetching holidays from backend:', error);
+      logger.error('Error fetching holidays from backend:', error);
       return this.getFallbackHolidays(year);
     }
   }
@@ -180,7 +181,7 @@ class HolidayService {
       }
       return await response.json();
     } catch (error) {
-      console.error('Error fetching supported countries:', error);
+      logger.error('Error fetching supported countries:', error);
       // Return common countries as fallback
       return [
         { countryCode: 'GB', name: 'United Kingdom' },

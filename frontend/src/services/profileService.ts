@@ -1,5 +1,6 @@
 import api from './api';
 import type { ProfileUpdateRequest, SIALicenseUpdateRequest, StaffProfile, SIALicense } from '../types';
+import { logger } from '../lib/logger';
 
 class ProfileService {
   /**
@@ -33,7 +34,7 @@ class ProfileService {
           };
           localStorage.setItem('user', JSON.stringify(updatedUser));
         } catch (error) {
-          console.error('Failed to update user in localStorage:', error);
+          logger.error('Failed to update user in localStorage:', error);
         }
       }
     }

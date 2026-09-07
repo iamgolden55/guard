@@ -3,6 +3,7 @@
 
 import { type ReportJobProgress, ReportJobStatus, type ReportJob } from '../types/reports';
 import reportService from './reportService';
+import { logger } from '../lib/logger';
 
 interface ReportWebSocketMessage {
   type: 'report_progress' | 'report_complete' | 'report_failed' | 'report_cancelled' | 'heartbeat';
@@ -68,7 +69,7 @@ class ReportWebSocketClient {
     const host = port ? `${hostname}:${port}` : hostname;
     this.wsUrl = `${protocol}//${host}/ws/reports/`;
 
-    console.log('ReportWebSocketClient initialized with URL:', this.wsUrl);
+    logger.debug('ReportWebSocketClient initialized with URL:', this.wsUrl);
 
     // Handle page visibility and network changes
     this.setupEventListeners();
@@ -77,7 +78,7 @@ class ReportWebSocketClient {
   // Initialize with authentication token
   public initialize(token: string): void {
     this.token = token;
-    console.log('ReportWebSocketClient initialized with token');
+    logger.debug('ReportWebSocketClient initialized with token');
   }
 
   // Set callback handlers
@@ -107,12 +108,12 @@ class ReportWebSocketClient {
 
         // Add JWT token as query parameter for Django backend
         const url = `${this.wsUrl}?token=${encodeURIComponent(authToken)}`;
-        console.log('Connecting to Report WebSocket:', this.wsUrl);
+        logger.debug('Connecting to Report WebSocket:', this.wsUrl);
 
         this.ws = new WebSocket(url);
 
         this.ws.onopen = () => {
-          console.log('Report WebSocket connected successfully');
+          logger.debug('Report WebSocket connected successfully');
           this.isConnected = true;
           this.connectionState = 'connected';
           this.reconnectAttempts = 0;
@@ -138,14 +139,14 @@ class ReportWebSocketClient {
         };
 
         this.ws.onerror = (error) => {
-          console.error('Report WebSocket error:', error);
+          logger.error('Report WebSocket error:', error);
           this.connectionState = 'error';
           this.callbacks.onConnectionChange?.(false);
           reject(error);
         };
 
       } catch (error) {
-        console.error('Failed to create Report WebSocket connection:', error);
+        logger.error('Failed to create Report WebSocket connection:', error);
         this.connectionState = 'error';
         this.callbacks.onConnectionChange?.(false);
         reject(error);
@@ -170,13 +171,13 @@ class ReportWebSocketClient {
     }
 
     this.callbacks.onConnectionChange?.(false);
-    console.log('Report WebSocket disconnected');
+    logger.debug('Report WebSocket disconnected');
   }
 
   // Subscribe to job progress updates
   public subscribeToJob(jobId: string): void {
     this.subscribedJobs.add(jobId);
-    console.log('Subscribed to job:', jobId);
+    logger.debug('Subscribed to job:', jobId);
 
     if (this.isConnected && this.ws) {
       this.sendSubscribeMessage(jobId);
@@ -191,7 +192,7 @@ class ReportWebSocketClient {
   // Unsubscribe from job updates
   public unsubscribeFromJob(jobId: string): void {
     this.subscribedJobs.delete(jobId);
-    console.log('Unsubscribed from job:', jobId);
+    logger.debug('Unsubscribed from job:', jobId);
 
     if (this.isConnected && this.ws) {
       this.ws.send(JSON.stringify({
@@ -220,7 +221,7 @@ class ReportWebSocketClient {
   private handleMessage(event: MessageEvent): void {
     try {
       const message: ReportWebSocketMessage = JSON.parse(event.data);
-      console.log('Report WebSocket message received:', message);
+      logger.debug('Report WebSocket message received:', message);
 
       switch (message.type) {
         case 'report_progress':
@@ -261,15 +262,15 @@ class ReportWebSocketClient {
           break;
 
         default:
-          console.warn('Unknown WebSocket message type:', message.type);
+          logger.warn('Unknown WebSocket message type:', message.type);
       }
     } catch (error) {
-      console.error('Failed to parse WebSocket message:', error);
+      logger.error('Failed to parse WebSocket message:', error);
     }
   }
 
   private handleClose(event: CloseEvent): void {
-    console.log('Report WebSocket closed:', event.code, event.reason);
+    logger.debug('Report WebSocket closed:', event.code, event.reason);
     this.isConnected = false;
     this.connectionState = 'disconnected';
     this.stopHeartbeat();
@@ -292,7 +293,7 @@ class ReportWebSocketClient {
 
   private attemptReconnect(): void {
     this.reconnectAttempts++;
-    console.log(`Attempting to reconnect Report WebSocket (${this.reconnectAttempts}/${this.options.maxReconnectAttempts})`);
+    logger.debug(`Attempting to reconnect Report WebSocket (${this.reconnectAttempts}/${this.options.maxReconnectAttempts})`);
 
     const delay = Math.min(
       this.options.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
@@ -301,11 +302,11 @@ class ReportWebSocketClient {
 
     this.reconnectTimeout = setTimeout(() => {
       this.connect().catch(error => {
-        console.error('Report WebSocket reconnection failed:', error);
+        logger.error('Report WebSocket reconnection failed:', error);
         if (this.reconnectAttempts < this.options.maxReconnectAttempts) {
           this.attemptReconnect();
         } else {
-          console.error('Max reconnection attempts reached for Report WebSocket');
+          logger.error('Max reconnection attempts reached for Report WebSocket');
           this.connectionState = 'error';
         }
       });
@@ -314,7 +315,7 @@ class ReportWebSocketClient {
 
   private sendSubscribeMessage(jobId: string): void {
     if (this.ws && this.isConnected) {
-      console.log('Sending subscribe message for job:', jobId);
+      logger.debug('Sending subscribe message for job:', jobId);
       this.ws.send(JSON.stringify({
         type: 'subscribe',
         jobId: jobId
@@ -353,7 +354,7 @@ class ReportWebSocketClient {
       return;
     }
 
-    console.log(`Starting polling fallback for job ${jobId}`);
+    logger.debug(`Starting polling fallback for job ${jobId}`);
     const pollInterval = setInterval(async () => {
       try {
         const progress = await reportService.getJobProgress(jobId);
@@ -384,7 +385,7 @@ class ReportWebSocketClient {
           this.unsubscribeFromJob(jobId);
         }
       } catch (error) {
-        console.error(`Polling failed for job ${jobId}:`, error);
+        logger.error(`Polling failed for job ${jobId}:`, error);
         // Don't stop polling on errors, the job might still be active
       }
     }, this.options.pollingInterval);
@@ -397,7 +398,7 @@ class ReportWebSocketClient {
     if (interval) {
       clearInterval(interval);
       this.pollingIntervals.delete(jobId);
-      console.log(`Stopped polling for job ${jobId}`);
+      logger.debug(`Stopped polling for job ${jobId}`);
     }
   }
 
@@ -422,14 +423,14 @@ class ReportWebSocketClient {
 
     // Handle network status changes
     window.addEventListener('online', () => {
-      console.log('Network online, attempting Report WebSocket reconnection');
+      logger.debug('Network online, attempting Report WebSocket reconnection');
       if (!this.isConnected) {
-        this.connect().catch(console.error);
+        this.connect().catch((error) => logger.error('WebSocket reconnect failed', error));
       }
     });
 
     window.addEventListener('offline', () => {
-      console.log('Network offline, Report WebSocket will use fallback polling');
+      logger.debug('Network offline, Report WebSocket will use fallback polling');
     });
 
     // Handle page unload

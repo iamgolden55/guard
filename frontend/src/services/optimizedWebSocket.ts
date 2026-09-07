@@ -2,6 +2,7 @@
 // SSMS-COMPLIANCE-2025 - High-performance real-time updates
 
 import { ComplianceViolation, LiveComplianceStatus } from '../types/compliance';
+import { logger } from '../lib/logger';
 
 interface WebSocketMessage {
   type: 'violation_detected' | 'violation_resolved' | 'status_update' | 'compliance_metrics_update' | 'alert_updated' | 'heartbeat';
@@ -82,7 +83,7 @@ class OptimizedComplianceWebSocket {
         this.initializeMessageQueue(connectionId);
 
         ws.onopen = () => {
-          console.log(`WebSocket connection opened: ${connectionId}`);
+          logger.debug(`WebSocket connection opened: ${connectionId}`);
           this.connections.set(connectionId, ws);
           this.startHeartbeat(connectionId, fullConfig.heartbeatInterval!);
           this.processQueuedMessages(connectionId);
@@ -99,7 +100,7 @@ class OptimizedComplianceWebSocket {
         };
 
         ws.onerror = (error) => {
-          console.error(`WebSocket error for ${connectionId}:`, error);
+          logger.error(`WebSocket error for ${connectionId}:`, error);
           reject(error);
         };
 
@@ -107,7 +108,7 @@ class OptimizedComplianceWebSocket {
         this.connections.set(connectionId, ws);
 
       } catch (error) {
-        console.error(`Failed to create WebSocket connection ${connectionId}:`, error);
+        logger.error(`Failed to create WebSocket connection ${connectionId}:`, error);
         reject(error);
       }
     });
@@ -153,7 +154,7 @@ class OptimizedComplianceWebSocket {
         this.updateConnectionStats(connectionId, { messagesSent: 1 });
         return true;
       } catch (error) {
-        console.error(`Failed to send message on ${connectionId}:`, error);
+        logger.error(`Failed to send message on ${connectionId}:`, error);
         this.queueMessage(connectionId, message);
         return false;
       }
@@ -238,18 +239,18 @@ class OptimizedComplianceWebSocket {
           try {
             listener(message);
           } catch (error) {
-            console.error(`Error in message listener for ${connectionId}:`, error);
+            logger.error(`Error in message listener for ${connectionId}:`, error);
           }
         });
       }
 
     } catch (error) {
-      console.error(`Failed to parse WebSocket message for ${connectionId}:`, error);
+      logger.error(`Failed to parse WebSocket message for ${connectionId}:`, error);
     }
   }
 
   private handleConnectionClose(connectionId: string, event: CloseEvent, config: ConnectionConfig): void {
-    console.log(`WebSocket connection closed: ${connectionId}`, event.code, event.reason);
+    logger.debug(`WebSocket connection closed: ${connectionId}`, event.code, event.reason);
 
     this.stopHeartbeat(connectionId);
 
@@ -264,7 +265,7 @@ class OptimizedComplianceWebSocket {
   private attemptReconnection(connectionId: string, config: ConnectionConfig): void {
     const stats = this.connectionStats.get(connectionId);
     if (!stats || stats.reconnectAttempts >= config.maxReconnectAttempts!) {
-      console.log(`Max reconnection attempts reached for ${connectionId}`);
+      logger.debug(`Max reconnection attempts reached for ${connectionId}`);
       this.cleanup(connectionId);
       return;
     }
@@ -276,11 +277,11 @@ class OptimizedComplianceWebSocket {
       30000 // Max 30 seconds
     );
 
-    console.log(`Attempting to reconnect ${connectionId} in ${backoffDelay}ms (attempt ${stats.reconnectAttempts + 1})`);
+    logger.debug(`Attempting to reconnect ${connectionId} in ${backoffDelay}ms (attempt ${stats.reconnectAttempts + 1})`);
 
     const timeout = setTimeout(() => {
       this.connect(connectionId, config).catch(error => {
-        console.error(`Reconnection failed for ${connectionId}:`, error);
+        logger.error(`Reconnection failed for ${connectionId}:`, error);
         this.attemptReconnection(connectionId, config);
       });
     }, backoffDelay);
@@ -432,7 +433,7 @@ class OptimizedComplianceWebSocket {
     this.messageQueues.delete(connectionId);
     this.messageBuffer.delete(connectionId);
 
-    console.log(`Cleaned up WebSocket connection: ${connectionId}`);
+    logger.debug(`Cleaned up WebSocket connection: ${connectionId}`);
   }
 
   private generateMessageId(): string {
@@ -456,12 +457,12 @@ class OptimizedComplianceWebSocket {
     // Handle network status changes
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
-        console.log('Network back online, attempting to reconnect all WebSocket connections');
+        logger.debug('Network back online, attempting to reconnect all WebSocket connections');
         this.reconnectAllConnections();
       });
 
       window.addEventListener('offline', () => {
-        console.log('Network offline, WebSocket connections will be queued');
+        logger.debug('Network offline, WebSocket connections will be queued');
       });
     }
   }
@@ -480,7 +481,7 @@ class OptimizedComplianceWebSocket {
 
   private reconnectAllConnections(): void {
     // This would require storing original configs, simplified for now
-    console.log('Reconnecting all connections...');
+    logger.debug('Reconnecting all connections...');
     for (const [connectionId, connection] of this.connections) {
       if (connection.readyState !== WebSocket.OPEN) {
         // Trigger reconnection logic

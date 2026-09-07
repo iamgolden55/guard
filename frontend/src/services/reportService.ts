@@ -1,5 +1,6 @@
 import api from './api';
 import { reportWebSocketClient } from './reportWebSocketClient';
+import { logger } from '../lib/logger';
 import type {
   ReportJob,
   ReportJobProgress,
@@ -27,9 +28,9 @@ class ReportService {
     try {
       await reportWebSocketClient.connect();
       this.isWebSocketInitialized = true;
-      console.log('Report WebSocket initialized successfully');
+      logger.debug('Report WebSocket initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize WebSocket, will use polling fallback:', error);
+      logger.error('Failed to initialize WebSocket, will use polling fallback:', error);
     }
   }
 
@@ -180,10 +181,10 @@ class ReportService {
   // Get available report types
   async getReportTypes(): Promise<Array<{ id: string; name: string; description: string }>> {
     try {
-      console.log('ReportService: Making API call to /api/v1/reports/types/');
+      logger.debug('ReportService: Making API call to /api/v1/reports/types/');
       const response = await api.get<Array<{ id: string; name: string; description: string }>>('/api/v1/reports/types/');
 
-      console.log('ReportService: Raw API response:', {
+      logger.debug('ReportService: Raw API response:', {
         status: response.status,
         headers: response.headers,
         data: response.data,
@@ -193,26 +194,26 @@ class ReportService {
 
       // The API service returns response.data, but we need to handle various response formats
       if (!response.data) {
-        console.error('ReportService: API returned null/undefined data');
+        logger.error('ReportService: API returned null/undefined data');
         throw new Error('No data received from report types API');
       }
 
       return response.data;
     } catch (error: any) {
-      console.error('ReportService: Error fetching report types:', error);
+      logger.error('ReportService: Error fetching report types:', error);
 
       // Log detailed error information
       if (error.response) {
-        console.error('ReportService: API error response:', {
+        logger.error('ReportService: API error response:', {
           status: error.response.status,
           statusText: error.response.statusText,
           data: error.response.data,
           headers: error.response.headers
         });
       } else if (error.request) {
-        console.error('ReportService: No response received:', error.request);
+        logger.error('ReportService: No response received:', error.request);
       } else {
-        console.error('ReportService: Request setup error:', error.message);
+        logger.error('ReportService: Request setup error:', error.message);
       }
 
       // Re-throw with more context
@@ -232,7 +233,7 @@ class ReportService {
           clearInterval(pollInterval);
         }
       } catch (error) {
-        console.error('Error polling job progress:', error);
+        logger.error('Error polling job progress:', error);
         clearInterval(pollInterval);
       }
     }, intervalMs);

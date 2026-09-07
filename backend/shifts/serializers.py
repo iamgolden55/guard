@@ -395,7 +395,12 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
     shift_group = serializers.CharField(required=False, allow_null=True)
     startTime = serializers.DateTimeField(source='start_time')
     endTime = serializers.DateTimeField(source='end_time')
-    staffUser = serializers.PrimaryKeyRelatedField(source='staff_user', queryset=Shift.objects.all().values_list('staff_user', flat=True).distinct())
+    # A *values* queryset was passed here, so `.get(pk=...)` returned an int
+    # rather than a User and the assignment to a FK could never have worked.
+    # The shim is read-only now (P0-2), so this field is only ever serialised
+    # out — but a broken queryset waiting for whoever makes it writable again
+    # is worse than no queryset, and `read_only` says what is actually true.
+    staffUser = serializers.PrimaryKeyRelatedField(source='staff_user', read_only=True)
     checkInTime = serializers.DateTimeField(source='check_in_time', read_only=True)
     checkOutTime = serializers.DateTimeField(source='check_out_time', read_only=True)
     hourlyRate = serializers.DecimalField(source='hourly_rate', max_digits=10, decimal_places=2, required=False, allow_null=True)

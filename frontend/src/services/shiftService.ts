@@ -16,6 +16,7 @@ import type {
   ScheduledShiftStatus
 } from '../types';
 import type { AcceptedVenueTerms } from '../types/profile';
+import { logger } from '../lib/logger';
 
 // Sprint 3: Use main api client for cookie-based authentication
 // All shift endpoints should use /api/v1/shifts/ and go through Vite proxy
@@ -45,7 +46,7 @@ class ShiftService {
       const response = await api.get<{ hasAccepted: boolean }>(`/api/v1/venues/${venueId}/terms_acceptance/`);
       return response.data.hasAccepted;
     } catch (error) {
-      console.error('Error checking terms acceptance:', error);
+      logger.error('Error checking terms acceptance:', error);
       return false; // If there's an error, assume terms haven't been accepted
     }
   }
@@ -63,13 +64,13 @@ class ShiftService {
       
       // Check for empty response
       if (!response || !response.data) {
-        console.warn('Empty response from users API');
+        logger.warn('Empty response from users API');
         return [];
       }
       
       // Ensure data is an array
       if (!Array.isArray(response.data)) {
-        console.warn('Users data is not an array:', response.data);
+        logger.warn('Users data is not an array:', response.data);
         return [];
       }
       
@@ -88,7 +89,7 @@ class ShiftService {
       
       return profiles;
     } catch (error) {
-      console.error('Error fetching staff profiles:', error);
+      logger.error('Error fetching staff profiles:', error);
       return [];
     }
   }
@@ -405,7 +406,7 @@ class ShiftService {
       
       return transformedShifts;
     } catch (error: any) {
-      console.error('getMyShifts: Failed to fetch shifts:', error);
+      logger.error('getMyShifts: Failed to fetch shifts:', error);
       throw error;
     }
   }
@@ -426,7 +427,7 @@ class ShiftService {
       // Legacy non-paginated response
       return { results: response.data, count: response.data.length, total_pages: 1, current_page: 1 };
     } catch (error: any) {
-      console.error('Failed to fetch manager shifts:', error);
+      logger.error('Failed to fetch manager shifts:', error);
       throw error;
     }
   }
@@ -444,7 +445,7 @@ class ShiftService {
 
       return shifts;
     } catch (error: any) {
-      console.error('Failed to fetch incomplete shifts:', error);
+      logger.error('Failed to fetch incomplete shifts:', error);
       throw error;
     }
   }
@@ -462,7 +463,7 @@ class ShiftService {
 
       return shifts;
     } catch (error: any) {
-      console.error('Failed to fetch active shifts:', error);
+      logger.error('Failed to fetch active shifts:', error);
       throw error;
     }
   }
@@ -507,27 +508,10 @@ class ShiftService {
     return response.data;
   }
 
-  async startShift(data: {
-    venueId: number,
-    startSignature: string, // base64 data URL
-    termsAccepted: boolean // Flag indicating venue terms were accepted
-  }): Promise<Shift> {
-    // If terms were accepted, record that first
-    if (data.termsAccepted) {
-      await this.acceptVenueTerms(data.venueId);
-    }
-
-    const response = await shiftApi.post<Shift>('/api/v1/shifts/submit/', data);
-    return response.data;
-  }
-
-  async endShift(shiftId: number, endSignature: string): Promise<Shift> {
-    const response = await shiftApi.post<Shift>(`/api/v1/shifts/${shiftId}/end/`, {
-      endSignature
-    });
-    return response.data;
-  }
-
+  // startShift / endShift lived here, calling /api/v1/shifts/submit/ and
+  // /api/v1/shifts/{id}/end/. Neither route exists in any router, so both were
+  // a guaranteed 404 for whoever wired them into a screen. Check-in and
+  // check-out go through checkInShift / checkOutShift above.
   async managerApproval(shiftId: number, data: {
     approved: boolean,
     managerSignature: string,
@@ -631,7 +615,7 @@ class ShiftService {
         }
       };
     } catch (error) {
-      console.error('Error fetching venue check status:', error);
+      logger.error('Error fetching venue check status:', error);
       throw error;
     }
   }
@@ -733,7 +717,7 @@ class ShiftService {
       // Filter for eligible staff (approved with valid SIA license)
       return transformedStaff.filter(staff => staff.isApproved);
     } catch (error) {
-      console.error('Error fetching eligible staff for exchange:', error);
+      logger.error('Error fetching eligible staff for exchange:', error);
       throw error;
     }
   }
@@ -763,7 +747,7 @@ class ShiftService {
       
       return { canRelease: true };
     } catch (error) {
-      console.error('Error checking if shift can be released:', error);
+      logger.error('Error checking if shift can be released:', error);
       return {
         canRelease: false,
         reason: "Error checking shift eligibility"
@@ -790,7 +774,7 @@ class ShiftService {
       
       return { canExchange: true };
     } catch (error) {
-      console.error('Error checking if shift can be exchanged:', error);
+      logger.error('Error checking if shift can be exchanged:', error);
       return {
         canExchange: false,
         reason: "Error checking exchange eligibility"

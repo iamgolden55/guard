@@ -2,6 +2,7 @@
 // Optimized for real-time report generation updates with fallback to polling
 
 import { type ReportJobProgress, ReportJobStatus, type ReportJob } from '../types/reports';
+import { logger } from '../lib/logger';
 
 interface ReportWebSocketMessage {
   type: 'report_progress' | 'report_complete' | 'report_failed' | 'report_cancelled' | 'heartbeat';
@@ -104,7 +105,7 @@ class ReportWebSocketService {
         this.ws = new WebSocket(url);
 
         this.ws.onopen = () => {
-          console.log('Report WebSocket connected');
+          logger.debug('Report WebSocket connected');
           this.isConnected = true;
           this.connectionState = 'connected';
           this.reconnectAttempts = 0;
@@ -130,14 +131,14 @@ class ReportWebSocketService {
         };
 
         this.ws.onerror = (error) => {
-          console.error('Report WebSocket error:', error);
+          logger.error('Report WebSocket error:', error);
           this.connectionState = 'error';
           this.callbacks.onConnectionChange?.(false);
           reject(error);
         };
 
       } catch (error) {
-        console.error('Failed to create WebSocket connection:', error);
+        logger.error('Failed to create WebSocket connection:', error);
         this.connectionState = 'error';
         this.callbacks.onConnectionChange?.(false);
         reject(error);
@@ -248,15 +249,15 @@ class ReportWebSocketService {
           break;
 
         default:
-          console.warn('Unknown WebSocket message type:', message.type);
+          logger.warn('Unknown WebSocket message type:', message.type);
       }
     } catch (error) {
-      console.error('Failed to parse WebSocket message:', error);
+      logger.error('Failed to parse WebSocket message:', error);
     }
   }
 
   private handleClose(event: CloseEvent): void {
-    console.log('Report WebSocket closed:', event.code, event.reason);
+    logger.debug('Report WebSocket closed:', event.code, event.reason);
     this.isConnected = false;
     this.connectionState = 'disconnected';
     this.stopHeartbeat();
@@ -277,7 +278,7 @@ class ReportWebSocketService {
 
   private attemptReconnect(): void {
     this.reconnectAttempts++;
-    console.log(`Attempting to reconnect WebSocket (${this.reconnectAttempts}/${this.options.maxReconnectAttempts})`);
+    logger.debug(`Attempting to reconnect WebSocket (${this.reconnectAttempts}/${this.options.maxReconnectAttempts})`);
 
     const delay = Math.min(
       this.options.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
@@ -286,11 +287,11 @@ class ReportWebSocketService {
 
     this.reconnectTimeout = setTimeout(() => {
       this.connect().catch(error => {
-        console.error('Reconnection failed:', error);
+        logger.error('Reconnection failed:', error);
         if (this.reconnectAttempts < this.options.maxReconnectAttempts) {
           this.attemptReconnect();
         } else {
-          console.error('Max reconnection attempts reached');
+          logger.error('Max reconnection attempts reached');
           this.connectionState = 'error';
         }
       });
@@ -364,7 +365,7 @@ class ReportWebSocketService {
           this.unsubscribeFromJob(jobId);
         }
       } catch (error) {
-        console.error(`Polling failed for job ${jobId}:`, error);
+        logger.error(`Polling failed for job ${jobId}:`, error);
         // Don't stop polling on errors, the job might still be active
       }
     }, this.options.pollingInterval);
@@ -401,14 +402,14 @@ class ReportWebSocketService {
 
     // Handle network status changes
     window.addEventListener('online', () => {
-      console.log('Network online, attempting WebSocket reconnection');
+      logger.debug('Network online, attempting WebSocket reconnection');
       if (!this.isConnected) {
-        this.connect().catch(console.error);
+        this.connect().catch((error) => logger.error('WebSocket reconnect failed', error));
       }
     });
 
     window.addEventListener('offline', () => {
-      console.log('Network offline, WebSocket will use fallback polling');
+      logger.debug('Network offline, WebSocket will use fallback polling');
     });
 
     // Handle page unload

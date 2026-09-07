@@ -1,4 +1,5 @@
 import api from './api';
+import { logger } from '../lib/logger';
 
 // Types for exchange-related data
 export interface ShiftExchange {
@@ -107,8 +108,8 @@ export const exchangeService = {
    */
   async getMyExchanges(): Promise<ShiftExchange[]> {
     const response = await api.get('/api/v1/shift-exchanges/');
-    console.log('getMyExchanges API response:', response);
-    console.log('getMyExchanges response data:', response.data);
+    logger.debug('getMyExchanges API response:', response);
+    logger.debug('getMyExchanges response data:', response.data);
 
     // Handle paginated response structure
     if (response.data.results && Array.isArray(response.data.results)) {
@@ -140,17 +141,17 @@ export const exchangeService = {
    * Manager approves an exchange request
    */
   async approveExchange(exchangeId: number, notes?: string): Promise<{ message: string; exchange: ShiftExchange }> {
-    console.log('approveExchange called with:', { exchangeId, notes });
+    logger.debug('approveExchange called with:', { exchangeId, notes });
     try {
       const result = await api.post(`/api/v1/shift-exchanges/${exchangeId}/approve/`, {
         notes: notes || ''
       });
-      console.log('approveExchange success:', result.data);
+      logger.debug('approveExchange success:', result.data);
       return result.data;
     } catch (error: any) {
-      console.error('approveExchange error:', error);
-      console.error('approveExchange error response:', error.response);
-      console.error('approveExchange error response data:', error.response?.data);
+      logger.error('approveExchange error:', error);
+      logger.error('approveExchange error response:', error.response);
+      logger.error('approveExchange error response data:', error.response?.data);
       throw error;
     }
   },
@@ -180,8 +181,8 @@ export const exchangeService = {
    */
   async getMyOpenShiftRequests(): Promise<OpenShiftRequest[]> {
     const response = await api.get('/api/v1/open-shift-requests/');
-    console.log('getMyOpenShiftRequests API response:', response);
-    console.log('getMyOpenShiftRequests response data:', response.data);
+    logger.debug('getMyOpenShiftRequests API response:', response);
+    logger.debug('getMyOpenShiftRequests response data:', response.data);
 
     // Handle paginated response structure
     if (response.data.results && Array.isArray(response.data.results)) {
@@ -278,10 +279,10 @@ export const exchangeService = {
       this.getMyOpenShiftRequests()
     ]);
 
-    console.log('getPendingApprovals - exchanges:', exchanges);
-    console.log('getPendingApprovals - openRequests:', openRequests);
-    console.log('getPendingApprovals - exchanges type:', typeof exchanges, Array.isArray(exchanges));
-    console.log('getPendingApprovals - openRequests type:', typeof openRequests, Array.isArray(openRequests));
+    logger.debug('getPendingApprovals - exchanges:', exchanges);
+    logger.debug('getPendingApprovals - openRequests:', openRequests);
+    logger.debug('getPendingApprovals - exchanges type:', typeof exchanges, Array.isArray(exchanges));
+    logger.debug('getPendingApprovals - openRequests type:', typeof openRequests, Array.isArray(openRequests));
 
     // Ensure we have arrays to work with
     const exchangeArray = Array.isArray(exchanges) ? exchanges : [];

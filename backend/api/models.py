@@ -1838,6 +1838,11 @@ class Shift(models.Model):
         self._original_staff_user_id = (
             self.__dict__.get('staff_user_id') if self.pk else None
         )
+        # Needed by `_assignment_changed`, which keeps the availability and
+        # leave queries off every non-scheduling save.
+        self._original_start_time = (
+            self.__dict__.get('start_time') if self.pk else None
+        )
 
     def __str__(self):
         staff_name = self.staff_user.username if self.staff_user else "Unassigned"
@@ -1879,10 +1884,32 @@ class Shift(models.Model):
                 if self.check_out_time > max_checkout:
                     raise ValidationError(f"Check-out time is too far from scheduled end time. Check-out: {self.check_out_time}, Scheduled end: {self.end_time}")
 
-        # Validate staff availability/leave for assigned shifts
-        if self.staff_user and self.start_time:
+        # Validate staff availability/leave — but only when the assignment is
+        # actually being made or moved.
+        #
+        # This used to run on every save: check-in, check-out, auto-checkout,
+        # every attendance correction and every row in a bulk path, each
+        # issuing availability and leave queries to re-answer a question about
+        # scheduling that nothing had changed. Worse than the cost, it could
+        # fail: approve someone's leave after their shift was scheduled and
+        # they could no longer check in or out of it, because closing the shift
+        # re-ran a scheduling rule against data that had moved underneath it.
+        if self.staff_user and self.start_time and self._assignment_changed():
             shift_date = self.start_time.date() if hasattr(self.start_time, 'date') else self.start_time
             self._validate_staff_availability(shift_date)
+
+    def _assignment_changed(self):
+        """Is this save creating or moving an assignment?
+
+        True on insert, and when `staff_user` or `start_time` differs from what
+        is stored. Anything else — attendance, status, rates, notes — leaves
+        the scheduling question already answered.
+        """
+        if not self.pk:
+            return True
+        if self._original_staff_user_id != self.staff_user_id:
+            return True
+        return self._original_start_time != self.start_time
 
     def _validate_staff_availability(self, shift_date):
         """
@@ -2618,6 +2645,19 @@ class Shift(models.Model):
         scheduled_hours = Decimal(str(scheduled_duration.total_seconds() / 3600))
         break_hours = Decimal(str((self.break_duration or 0) / 60))
         max_payable_hours = scheduled_hours - break_hours
+
+        # NOTE (P3-4, deliberately unfixed): these carry the full float
+        # expansion — a 20-minute break gives 0.3333333333333333 — while the
+        # columns they eventually land in are DecimalField(decimal_places=2).
+        # Django quantises hours and amounts independently on write, so stored
+        # hours x stored rate does not equal the stored amount.
+        #
+        # Quantising here would fix that, and would also change what people are
+        # paid: 7.6666... h at 15.00 stores 115.00, whereas 7.67 h at 15.00
+        # stores 115.05. Pennies, but pennies in someone's wages, so it is a
+        # decision rather than a tidy-up. It is invisible today because
+        # `break_duration` is always 0 (see P-M1b) and whole-hour shifts divide
+        # exactly; it becomes real as soon as breaks are recorded.
 
         # Only after the row exists — a reverse FK lookup on an unsaved
         # instance raises, and this runs from `save()` on first insert.

@@ -11,6 +11,7 @@ import {
   type CompanyInfoData
 } from '../types';
 import { mapCountryNameToCode } from '../utils/countryMapping';
+import { logger } from '../lib/logger';
 
 /**
  * Service for managing onboarding API calls
@@ -74,7 +75,7 @@ class OnboardingService {
       const response = await api.post(`${this.baseUrl}/initiate/`, payload);
       return response.data;
     } catch (error: any) {
-      console.error('Failed to initiate onboarding:', error);
+      logger.error('Failed to initiate onboarding:', error);
 
       // Extract specific error message from backend
       if (error.response?.data?.message) {
@@ -126,7 +127,7 @@ class OnboardingService {
       // Fallback to direct response data if structure is different
       return response.data;
     } catch (error) {
-      console.error('Failed to get onboarding progress:', error);
+      logger.error('Failed to get onboarding progress:', error);
       throw new Error('Failed to retrieve onboarding progress');
     }
   }
@@ -158,7 +159,7 @@ class OnboardingService {
       const response = await api.put(`${this.baseUrl}/company-info/`, payload);
       return response.data;
     } catch (error) {
-      console.error('Failed to save company info:', error);
+      logger.error('Failed to save company info:', error);
       throw new Error('Failed to save company information');
     }
   }
@@ -204,7 +205,7 @@ class OnboardingService {
       const response = await api.put(`${this.baseUrl}/regional-setup/`, payload);
       return response.data;
     } catch (error) {
-      console.error('Failed to save regional setup:', error);
+      logger.error('Failed to save regional setup:', error);
       throw new Error('Failed to save regional compliance settings');
     }
   }
@@ -272,7 +273,7 @@ class OnboardingService {
       const response = await api.put(`${this.baseUrl}/staff-config/`, payload);
       return response.data;
     } catch (error) {
-      console.error('Failed to save staff configuration:', error);
+      logger.error('Failed to save staff configuration:', error);
       throw new Error('Failed to save staff operations settings');
     }
   }
@@ -342,7 +343,7 @@ class OnboardingService {
       const response = await api.put(`${this.baseUrl}/integrations/`, payload);
       return response.data;
     } catch (error) {
-      console.error('Failed to save integrations setup:', error);
+      logger.error('Failed to save integrations setup:', error);
       throw new Error('Failed to save integrations configuration');
     }
   }
@@ -359,7 +360,7 @@ class OnboardingService {
       const response = await api.put(`${this.baseUrl}/account-setup/`, payload);
       return response.data;
     } catch (error) {
-      console.error('Failed to save account finalization:', error);
+      logger.error('Failed to save account finalization:', error);
       throw new Error('Failed to save account settings');
     }
   }
@@ -380,7 +381,7 @@ class OnboardingService {
       const response = await api.post(`${this.baseUrl}/complete/`, payload);
       return response.data;
     } catch (error) {
-      console.error('Failed to complete onboarding:', error);
+      logger.error('Failed to complete onboarding:', error);
       throw new Error('Failed to complete onboarding process');
     }
   }
@@ -402,7 +403,7 @@ class OnboardingService {
       const response = await api.post(`${this.baseUrl}/validate-step/`, payload);
       return response.data;
     } catch (error) {
-      console.error('Failed to validate step:', error);
+      logger.error('Failed to validate step:', error);
       throw new Error('Failed to validate step data');
     }
   }
@@ -415,7 +416,7 @@ class OnboardingService {
       const response = await api.get(`${this.baseUrl}/regional-compliance/${countryCode}/`);
       return response.data;
     } catch (error) {
-      console.error('Failed to get regional compliance:', error);
+      logger.error('Failed to get regional compliance:', error);
       throw new Error('Failed to retrieve compliance configuration');
     }
   }
@@ -436,7 +437,7 @@ class OnboardingService {
       const response = await api.post(`${this.baseUrl}/test-integration/`, payload);
       return response.data;
     } catch (error) {
-      console.error('Failed to test integration:', error);
+      logger.error('Failed to test integration:', error);
       throw new Error('Failed to test integration connection');
     }
   }
@@ -459,7 +460,7 @@ class OnboardingService {
       });
       return response.data;
     } catch (error) {
-      console.error('Failed to upload logo:', error);
+      logger.error('Failed to upload logo:', error);
       throw new Error('Failed to upload company logo');
     }
   }
@@ -477,7 +478,7 @@ class OnboardingService {
       };
       await api.post(`${this.baseUrl}/save-progress/`, payload);
     } catch (error) {
-      console.error('Failed to save progress:', error);
+      logger.error('Failed to save progress:', error);
       // Don't throw error for progress saving failures
     }
   }
@@ -494,7 +495,7 @@ class OnboardingService {
       const response = await api.get(`${this.baseUrl}/load-progress/${sessionId}/`);
       return response.data;
     } catch (error) {
-      console.error('Failed to load progress:', error);
+      logger.error('Failed to load progress:', error);
       return null;
     }
   }
@@ -506,7 +507,7 @@ class OnboardingService {
     try {
       await api.delete(`${this.baseUrl}/clear-progress/${sessionId}/`);
     } catch (error) {
-      console.error('Failed to clear progress:', error);
+      logger.error('Failed to clear progress:', error);
       // Don't throw error for cleanup failures
     }
   }
@@ -524,7 +525,7 @@ class OnboardingService {
       const response = await api.get(`${this.baseUrl}/countries/`);
       return response.data;
     } catch (error) {
-      console.error('Failed to get available countries:', error);
+      logger.error('Failed to get available countries:', error);
       throw new Error('Failed to retrieve available countries');
     }
   }
@@ -542,7 +543,7 @@ class OnboardingService {
       const response = await api.get(`${this.baseUrl}/stats/`);
       return response.data;
     } catch (error) {
-      console.error('Failed to get onboarding stats:', error);
+      logger.error('Failed to get onboarding stats:', error);
       // Return defaults if stats unavailable
       return {
         averageCompletionTime: 15,
@@ -570,7 +571,7 @@ class OnboardingService {
       };
       await api.post(`${this.baseUrl}/notify-completion/`, payload);
     } catch (error) {
-      console.error('Failed to send completion notification:', error);
+      logger.error('Failed to send completion notification:', error);
       // Don't throw error for notification failures
     }
   }
@@ -589,7 +590,7 @@ class OnboardingService {
       const stored = localStorage.getItem(this.STORAGE_KEYS.PROGRESS);
       return stored ? JSON.parse(stored) : null;
     } catch (error) {
-      console.error('Failed to get progress from localStorage:', error);
+      logger.error('Failed to get progress from localStorage:', error);
       return null;
     }
   }
@@ -608,7 +609,7 @@ class OnboardingService {
       };
       localStorage.setItem(this.STORAGE_KEYS.PROGRESS, JSON.stringify(progress));
     } catch (error) {
-      console.error('Failed to update progress in localStorage:', error);
+      logger.error('Failed to update progress in localStorage:', error);
     }
   }
 
@@ -620,7 +621,7 @@ class OnboardingService {
       const stored = localStorage.getItem(this.STORAGE_KEYS.WIZARD_DATA);
       return stored ? JSON.parse(stored) : null;
     } catch (error) {
-      console.error('Failed to get wizard data from localStorage:', error);
+      logger.error('Failed to get wizard data from localStorage:', error);
       return null;
     }
   }
@@ -634,7 +635,7 @@ class OnboardingService {
       const updated = { ...existing, ...data };
       localStorage.setItem(this.STORAGE_KEYS.WIZARD_DATA, JSON.stringify(updated));
     } catch (error) {
-      console.error('Failed to save wizard data to localStorage:', error);
+      logger.error('Failed to save wizard data to localStorage:', error);
     }
   }
 
@@ -646,7 +647,7 @@ class OnboardingService {
       localStorage.removeItem(this.STORAGE_KEYS.PROGRESS);
       localStorage.removeItem(this.STORAGE_KEYS.WIZARD_DATA);
     } catch (error) {
-      console.error('Failed to clear progress from localStorage:', error);
+      logger.error('Failed to clear progress from localStorage:', error);
     }
   }
 
@@ -708,7 +709,7 @@ class OnboardingService {
         { id: 'edinburgh', name: 'Edinburgh', countryCode: 'GB' }
       ];
     } catch (error) {
-      console.error('Failed to get available regions:', error);
+      logger.error('Failed to get available regions:', error);
       // Return default UK regions as fallback
       return [
         { id: 'uk', name: 'United Kingdom', countryCode: 'GB' },

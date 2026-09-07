@@ -6,6 +6,8 @@
 /**
  * @deprecated Tokens are set as httpOnly cookies by the backend. No client-side storage needed.
  */
+import { logger } from '../lib/logger';
+
 export const setAuthCookie = (_name: string, _value: string, _days = 7): void => {
   // No-op: httpOnly cookies are set by the backend via Set-Cookie headers.
   // Client-side JS cannot and should not access auth tokens.
@@ -28,7 +30,7 @@ export const removeAuthTokens = (): void => {
     try {
       localStorage.removeItem('user');
     } catch (error) {
-      console.error('Failed to remove user data:', error);
+      logger.error('Failed to remove user data:', error);
     }
   }
 };

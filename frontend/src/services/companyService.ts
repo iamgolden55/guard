@@ -1,4 +1,5 @@
 import api from './api';
+import { logger } from '../lib/logger';
 import type {
   SecurityCompany,
   UserCompanyMembership,
@@ -27,7 +28,7 @@ class CompanyService {
       }
       return response.data;
     } catch (error) {
-      console.error('Failed to get current company context:', error);
+      logger.error('Failed to get current company context:', error);
       return null;
     }
   }
@@ -43,7 +44,7 @@ class CompanyService {
       const response = await api.get(`${this.baseUrl}/`);
       return response.data;
     } catch (error) {
-      console.error('Failed to get user companies:', error);
+      logger.error('Failed to get user companies:', error);
       throw new Error('Failed to retrieve user companies');
     }
   }
@@ -58,7 +59,7 @@ class CompanyService {
       });
       return response.data;
     } catch (error) {
-      console.error('Failed to switch company:', error);
+      logger.error('Failed to switch company:', error);
       throw new Error('Failed to switch company context');
     }
   }
@@ -71,7 +72,7 @@ class CompanyService {
       const response = await api.get(`${this.baseUrl}/${companyId}/`);
       return response.data;
     } catch (error) {
-      console.error('Failed to get company by ID:', error);
+      logger.error('Failed to get company by ID:', error);
       throw new Error('Failed to retrieve company details');
     }
   }
@@ -84,7 +85,7 @@ class CompanyService {
       const response = await api.patch(`${this.baseUrl}/${companyId}/`, updates);
       return response.data;
     } catch (error) {
-      console.error('Failed to update company:', error);
+      logger.error('Failed to update company:', error);
       throw new Error('Failed to update company information');
     }
   }
@@ -100,7 +101,7 @@ class CompanyService {
       const response = await api.get(url);
       return response.data;
     } catch (error) {
-      console.error('Failed to get subscription details:', error);
+      logger.error('Failed to get subscription details:', error);
       throw new Error('Failed to retrieve subscription information');
     }
   }
@@ -116,7 +117,7 @@ class CompanyService {
       const response = await api.get(url);
       return response.data;
     } catch (error) {
-      console.error('Failed to get company limits:', error);
+      logger.error('Failed to get company limits:', error);
       throw new Error('Failed to retrieve company limits');
     }
   }
@@ -132,7 +133,7 @@ class CompanyService {
       const response = await api.get(url);
       return response.data;
     } catch (error) {
-      console.error('Failed to get company members:', error);
+      logger.error('Failed to get company members:', error);
       throw new Error('Failed to retrieve company members');
     }
   }
@@ -153,7 +154,7 @@ class CompanyService {
       });
       return response.data;
     } catch (error) {
-      console.error('Failed to invite user:', error);
+      logger.error('Failed to invite user:', error);
       throw new Error('Failed to send user invitation');
     }
   }
@@ -169,7 +170,7 @@ class CompanyService {
       });
       return response.data;
     } catch (error) {
-      console.error('Failed to update user role:', error);
+      logger.error('Failed to update user role:', error);
       throw new Error('Failed to update user permissions');
     }
   }
@@ -181,7 +182,7 @@ class CompanyService {
     try {
       await api.delete(`${this.baseUrl}/${companyId}/members/${userId}/`);
     } catch (error) {
-      console.error('Failed to remove user:', error);
+      logger.error('Failed to remove user:', error);
       throw new Error('Failed to remove user from company');
     }
   }
@@ -200,7 +201,7 @@ class CompanyService {
       });
       return response.data;
     } catch (error) {
-      console.error('Failed to accept invitation:', error);
+      logger.error('Failed to accept invitation:', error);
       throw new Error('Failed to accept company invitation');
     }
   }
@@ -212,7 +213,7 @@ class CompanyService {
     try {
       await api.post(`${this.baseUrl}/${companyId}/leave/`);
     } catch (error) {
-      console.error('Failed to leave company:', error);
+      logger.error('Failed to leave company:', error);
       throw new Error('Failed to leave company');
     }
   }
@@ -226,7 +227,7 @@ class CompanyService {
         new_owner_id: newOwnerId
       });
     } catch (error) {
-      console.error('Failed to transfer ownership:', error);
+      logger.error('Failed to transfer ownership:', error);
       throw new Error('Failed to transfer company ownership');
     }
   }
@@ -240,7 +241,7 @@ class CompanyService {
         data: { confirmation: confirmationText }
       });
     } catch (error) {
-      console.error('Failed to delete company:', error);
+      logger.error('Failed to delete company:', error);
       throw new Error('Failed to delete company');
     }
   }
@@ -268,7 +269,7 @@ class CompanyService {
       });
       return response.data;
     } catch (error) {
-      console.error('Failed to get activity log:', error);
+      logger.error('Failed to get activity log:', error);
       throw new Error('Failed to retrieve activity log');
     }
   }
@@ -286,7 +287,7 @@ class CompanyService {
     try {
       await api.patch(`${this.baseUrl}/${companyId}/settings/`, settings);
     } catch (error) {
-      console.error('Failed to update company settings:', error);
+      logger.error('Failed to update company settings:', error);
       throw new Error('Failed to update company settings');
     }
   }
@@ -308,7 +309,7 @@ class CompanyService {
       const response = await api.get(url);
       return response.data;
     } catch (error) {
-      console.error('Failed to get company settings:', error);
+      logger.error('Failed to get company settings:', error);
       throw new Error('Failed to retrieve company settings');
     }
   }
@@ -332,7 +333,7 @@ class CompanyService {
       });
       return response.data;
     } catch (error) {
-      console.error('Failed to check resource limit:', error);
+      logger.error('Failed to check resource limit:', error);
       throw new Error('Failed to check resource availability');
     }
   }
@@ -365,7 +366,7 @@ class CompanyService {
       const response = await api.get(url);
       return response.data;
     } catch (error) {
-      console.error('Failed to get dashboard data:', error);
+      logger.error('Failed to get dashboard data:', error);
       throw new Error('Failed to retrieve dashboard information');
     }
   }
@@ -385,7 +386,7 @@ class CompanyService {
       });
       return response.data;
     } catch (error) {
-      console.error('Failed to upload company logo:', error);
+      logger.error('Failed to upload company logo:', error);
       throw new Error('Failed to upload company logo');
     }
   }
@@ -404,7 +405,7 @@ class CompanyService {
       });
       return response.data;
     } catch (error) {
-      console.error('Failed to search companies:', error);
+      logger.error('Failed to search companies:', error);
       throw new Error('Failed to search companies');
     }
   }
@@ -429,7 +430,7 @@ class CompanyService {
       const response = await api.get(url);
       return response.data;
     } catch (error) {
-      console.error('Failed to get compliance report:', error);
+      logger.error('Failed to get compliance report:', error);
       throw new Error('Failed to retrieve compliance information');
     }
   }

@@ -46,7 +46,13 @@ if SENTRY_DSN:
         environment='development' if DEBUG else 'production',
     )
 
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,172.16.32.165,10.0.4.21,10.0.4.27,192.168.0.127,192.168.1.82,10.167.91.217').split(',')
+# The default is for local development only; production sets
+# DJANGO_ALLOWED_HOSTS explicitly. It used to carry a list of somebody's LAN
+# addresses from an Expo debugging session, which said more about one
+# developer's router than about this application.
+ALLOWED_HOSTS = os.getenv(
+    'DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0'
+).split(',')
 
 
 # Application definition
@@ -533,6 +539,21 @@ from celery.schedules import crontab  # noqa: E402
 # With the flag off, behaviour is identical to before: `payable_hours` is
 # populated and reconcilable, and nothing reads it.
 OT_BASIS_ALIGNED = os.getenv('OT_BASIS_ALIGNED', 'False') == 'True'
+
+# ---------------------------------------------------------------------------
+# Registration
+# ---------------------------------------------------------------------------
+# POST /api/v1/users/ is AllowAny, so anyone on the internet can create an
+# account. That is the amplifier behind several findings in this audit: every
+# authenticated route was one signup away. Those routes are individually gated
+# now, which is the real fix — but a platform sold to security companies
+# probably wants accounts created by a manager rather than a public form.
+#
+# Off by default: turning it on stops self-signup for genuine prospects, which
+# is a product decision rather than a patch.
+REGISTRATION_REQUIRES_INVITE = (
+    os.getenv('REGISTRATION_REQUIRES_INVITE', 'False') == 'True'
+)
 
 CELERY_BEAT_SCHEDULE = {
     'update-expired-sia-licenses': {

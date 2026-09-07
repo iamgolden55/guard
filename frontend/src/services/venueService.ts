@@ -1,5 +1,6 @@
 import api from './api';
 import type { Venue, VenueRequest, VenueResponse } from '../types/venue';
+import { logger } from '../lib/logger';
 
 // Convert backend fields to frontend format
 const mapToFrontendVenue = (backendVenue: any): Venue => ({
@@ -56,48 +57,48 @@ class VenueService {
     
     while (retryCount <= maxRetries) {
       try {
-        console.log(`Attempting to fetch venues (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+        logger.debug(`Attempting to fetch venues (attempt ${retryCount + 1}/${maxRetries + 1})...`);
 
         // Sprint 3: Authentication via httpOnly cookies (sent automatically with api.get)
         const response = await api.get('/api/v1/venues/');
-        console.log('Venue API response:', response);
+        logger.debug('Venue API response:', response);
         
         // Handle different response formats
         if (Array.isArray(response.data)) {
           // If response.data is already an array of venues
-          console.log(`Received ${response.data.length} venues in array format`);
+          logger.debug(`Received ${response.data.length} venues in array format`);
           return response.data.map(mapToFrontendVenue);
         } else if (response.data.venues && Array.isArray(response.data.venues)) {
           // If response.data has a venues property that is an array
-          console.log(`Received ${response.data.venues.length} venues in object.venues format`);
+          logger.debug(`Received ${response.data.venues.length} venues in object.venues format`);
           return response.data.venues.map(mapToFrontendVenue);
         } else if (response.data && typeof response.data === 'object') {
           // Try to handle other potential response formats
-          console.log('Received unexpected response format, attempting to extract venues');
-          console.log('Response data keys:', Object.keys(response.data));
+          logger.debug('Received unexpected response format, attempting to extract venues');
+          logger.debug('Response data keys:', Object.keys(response.data));
           
           // Look for any array property that might contain venues
           for (const key of Object.keys(response.data)) {
             if (Array.isArray(response.data[key])) {
-              console.log(`Found array in response.data.${key}, trying to use it`);
+              logger.debug(`Found array in response.data.${key}, trying to use it`);
               return response.data[key].map(mapToFrontendVenue);
             }
           }
           
           // If we find a single venue object, wrap it in an array
           if (response.data.id || response.data.name) {
-            console.log('Found a single venue object, converting to array');
+            logger.debug('Found a single venue object, converting to array');
             return [mapToFrontendVenue(response.data)];
           }
           
-          console.error('Could not identify venues in the response:', response.data);
+          logger.error('Could not identify venues in the response:', response.data);
           throw new Error('Unexpected API response format');
         } else {
-          console.error('Unexpected response format:', response.data);
+          logger.error('Unexpected response format:', response.data);
           throw new Error('Unexpected API response format');
         }
       } catch (error: any) {
-        console.error('Error fetching venues (attempt ' + (retryCount + 1) + '):', error);
+        logger.error('Error fetching venues (attempt ' + (retryCount + 1) + '):', error);
         
         // If we've reached max retries, throw the error
         if (retryCount === maxRetries) {
@@ -106,7 +107,7 @@ class VenueService {
         
         // Check if the error is 401 (unauthorized) - no point retrying
         if (error.response && error.response.status === 401) {
-          console.error('Authentication error - token invalid or expired');
+          logger.error('Authentication error - token invalid or expired');
           throw error;
         }
         
@@ -128,7 +129,7 @@ class VenueService {
       const response = await api.get(`/api/v1/venues/${id}/`);
       return mapToFrontendVenue(response.data);
     } catch (error) {
-      console.error(`Error fetching venue with ID ${id}:`, error);
+      logger.error(`Error fetching venue with ID ${id}:`, error);
       throw error;
     }
   }
@@ -140,7 +141,7 @@ class VenueService {
       const response = await api.post<VenueResponse>('/api/v1/venues/', backendData);
       return mapToFrontendVenue(response.data.venue);
     } catch (error) {
-      console.error('Error creating venue:', error);
+      logger.error('Error creating venue:', error);
       throw error;
     }
   }
@@ -152,7 +153,7 @@ class VenueService {
       const response = await api.put<VenueResponse>(`/api/v1/venues/${id}/`, backendData);
       return mapToFrontendVenue(response.data.venue);
     } catch (error) {
-      console.error(`Error updating venue with ID ${id}:`, error);
+      logger.error(`Error updating venue with ID ${id}:`, error);
       throw error;
     }
   }
@@ -163,7 +164,7 @@ class VenueService {
       const response = await api.patch<VenueResponse>(`/api/v1/venues/${id}/`, { is_active: isActive });
       return mapToFrontendVenue(response.data.venue);
     } catch (error) {
-      console.error(`Error updating status of venue with ID ${id}:`, error);
+      logger.error(`Error updating status of venue with ID ${id}:`, error);
       throw error;
     }
   }
@@ -173,7 +174,7 @@ class VenueService {
     try {
       await api.delete(`/api/v1/venues/${id}/`);
     } catch (error) {
-      console.error(`Error deleting venue with ID ${id}:`, error);
+      logger.error(`Error deleting venue with ID ${id}:`, error);
       throw error;
     }
   }

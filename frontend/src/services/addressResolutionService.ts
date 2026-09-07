@@ -1,6 +1,7 @@
 // @ts-nocheck — depends on Google Maps SDK + types not installed in this rewrite. Restore in Phase 8 (venue management) by adding @types/google.maps + @googlemaps/js-api-loader.
 import type { VenueLocationData } from '../components/VenueLocationPicker';
 import ukAddressService, { type UKAddressResult } from './ukAddressService';
+import { logger } from '../lib/logger';
 
 export interface AddressComponent {
   long_name: string;
@@ -70,15 +71,15 @@ class AddressResolutionService {
           this.autocompleteService = new google.maps.places.AutocompleteService();
         }
 
-        console.log('AddressResolutionService: Google Maps services initialized. Places:', !!window.google.maps.places);
+        logger.debug('AddressResolutionService: Google Maps services initialized. Places:', !!window.google.maps.places);
       } else {
-        console.warn('AddressResolutionService: Geocoder found, but Places Service missing or incomplete.');
+        logger.warn('AddressResolutionService: Geocoder found, but Places Service missing or incomplete.');
         attempts++;
 
         if (attempts < maxAttempts) {
           setTimeout(waitForGoogleMaps, 500);
         } else {
-          console.warn('AddressResolutionService: Google Maps not available after maximum attempts');
+          logger.warn('AddressResolutionService: Google Maps not available after maximum attempts');
         }
       }
     };
@@ -110,10 +111,10 @@ class AddressResolutionService {
           const dummyMap = new google.maps.Map(document.createElement('div'));
           this.placesService = new google.maps.places.PlacesService(dummyMap);
           this.autocompleteService = new google.maps.places.AutocompleteService();
-          console.log('AddressResolutionService: Services initialized successfully via ensureServicesInitialized');
+          logger.debug('AddressResolutionService: Services initialized successfully via ensureServicesInitialized');
           return;
         } else {
-          console.warn('AddressResolutionService: Google Maps loaded but Places API not available. Check API key permissions.');
+          logger.warn('AddressResolutionService: Google Maps loaded but Places API not available. Check API key permissions.');
           return;
         }
       }
@@ -122,7 +123,7 @@ class AddressResolutionService {
       elapsed += checkInterval;
     }
 
-    console.warn('AddressResolutionService: Timed out waiting for Google Maps. Services may not work correctly.');
+    logger.warn('AddressResolutionService: Timed out waiting for Google Maps. Services may not work correctly.');
   }
 
   /**
@@ -143,7 +144,7 @@ class AddressResolutionService {
     try {
       // Strategy 1: Check if input is a UK postcode and use UK Address Service
       if (this.isPostcode(query)) {
-        console.log('Using UK Address Service for postcode:', query);
+        logger.debug('Using UK Address Service for postcode:', query);
 
         try {
           const ukAddresses = await ukAddressService.lookupPostcode(query);
@@ -166,11 +167,11 @@ class AddressResolutionService {
             };
 
             result.totalResults = convertedAddresses.length;
-            console.log(`Found ${result.totalResults} addresses from UK Address Service`);
+            logger.debug(`Found ${result.totalResults} addresses from UK Address Service`);
             return result;
           }
         } catch (ukError) {
-          console.warn('UK Address Service failed, falling back to Google Maps:', ukError);
+          logger.warn('UK Address Service failed, falling back to Google Maps:', ukError);
         }
       }
 
@@ -188,7 +189,7 @@ class AddressResolutionService {
 
       // Strategy 4: Places API Text Search (performTextSearch) - robust search for venue names
       if (result.exactMatches.length === 0 && !this.isPostcode(query)) {
-        console.log('Strategy 4: Attempting Text Search due to no exact matches');
+        logger.debug('Strategy 4: Attempting Text Search due to no exact matches');
         const placeSearchResults = await this.performTextSearch(query);
 
         // Add unique results
@@ -197,14 +198,14 @@ class AddressResolutionService {
           !result.postcodeExpansions.some(postcode => postcode.placeId === addr.placeId)
         );
 
-        console.log(`Text Search found ${newResults.length} new results`);
+        logger.debug(`Text Search found ${newResults.length} new results`);
         result.exactMatches.push(...newResults);
       }
 
       // Strategy 5: Places API autocomplete for additional suggestions
       // This is especially useful for venue names when Text Search fails
       if (result.exactMatches.length === 0 && !this.isPostcode(query)) {
-        console.log('Strategy 5: Using Places Autocomplete as primary source for venue name search');
+        logger.debug('Strategy 5: Using Places Autocomplete as primary source for venue name search');
       }
 
       const placesResults = await this.getPlacesSuggestions(query);
@@ -218,7 +219,7 @@ class AddressResolutionService {
           confidence: Math.max(addr.confidence, 0.85) // Boost to at least 85%
         }));
         result.exactMatches = boostedResults;
-        console.log(`Promoted ${boostedResults.length} autocomplete results to exact matches with boosted confidence`);
+        logger.debug(`Promoted ${boostedResults.length} autocomplete results to exact matches with boosted confidence`);
       } else {
         result.suggestedAlternatives = placesResults.filter(addr =>
           !result.exactMatches.some(exact => exact.placeId === addr.placeId) &&
@@ -237,9 +238,9 @@ class AddressResolutionService {
 
       return result;
     } catch (error) {
-      console.error('AddressResolutionService: Error resolving address. Full error:', error);
+      logger.error('AddressResolutionService: Error resolving address. Full error:', error);
       // Log the state of services for debugging
-      console.log('Service State:', {
+      logger.debug('Service State:', {
         hasGeocoder: !!this.geocoder,
         hasPlacesService: !!this.placesService,
         hasAutocomplete: !!this.autocompleteService
@@ -270,7 +271,7 @@ class AddressResolutionService {
             );
             resolve(options);
           } else {
-            console.warn('Geocoding failed:', status);
+            logger.warn('Geocoding failed:', status);
             resolve([]);
           }
         }
@@ -328,7 +329,7 @@ class AddressResolutionService {
         await new Promise(resolve => setTimeout(resolve, 100));
 
       } catch (error) {
-        console.warn(`Failed to search for addresses with query: ${searchQuery}`, error);
+        logger.warn(`Failed to search for addresses with query: ${searchQuery}`, error);
       }
     }
 
@@ -388,7 +389,7 @@ class AddressResolutionService {
           detailedResults.push(details);
         }
       } catch (error) {
-        console.warn('Failed to get place details for:', prediction.place_id, error);
+        logger.warn('Failed to get place details for:', prediction.place_id, error);
       }
     }
 
@@ -436,7 +437,7 @@ class AddressResolutionService {
           await new Promise(resolve => setTimeout(resolve, 50));
 
         } catch (error) {
-          console.warn(`Failed to geocode: ${num} ${streetName} ${postcode}`, error);
+          logger.warn(`Failed to geocode: ${num} ${streetName} ${postcode}`, error);
         }
       }
 
@@ -481,7 +482,7 @@ class AddressResolutionService {
           detailedResults.push(details);
         }
       } catch (error) {
-        console.warn('Failed to get place details for:', prediction.place_id, error);
+        logger.warn('Failed to get place details for:', prediction.place_id, error);
       }
     }
 
@@ -527,7 +528,7 @@ class AddressResolutionService {
         const geocodingResults = await this.performGeocoding(variation);
         results.push(...geocodingResults);
       } catch (error) {
-        console.warn(`Address validation failed for variation: ${variation}`, error);
+        logger.warn(`Address validation failed for variation: ${variation}`, error);
       }
     }
 
@@ -592,7 +593,7 @@ class AddressResolutionService {
                   detailedResults.push(details);
                 }
               } catch (error) {
-                console.warn('Failed to get place details:', error);
+                logger.warn('Failed to get place details:', error);
               }
             }
 
@@ -613,12 +614,12 @@ class AddressResolutionService {
   private async performTextSearch(query: string): Promise<AddressOption[]> {
     // Check if new Places API is available
     if (!window.google?.maps?.places?.Place?.searchByText) {
-      console.warn('performTextSearch: New Places API (Place.searchByText) not available. Falling back to legacy...');
+      logger.warn('performTextSearch: New Places API (Place.searchByText) not available. Falling back to legacy...');
       return this.performTextSearchLegacy(query);
     }
 
     try {
-      console.log('performTextSearch: Using new Place.searchByText API for query:', query);
+      logger.debug('performTextSearch: Using new Place.searchByText API for query:', query);
 
       const request = {
         textQuery: query + ' UK', // Bias towards UK results
@@ -629,7 +630,7 @@ class AddressResolutionService {
 
       const { places } = await google.maps.places.Place.searchByText(request);
 
-      console.log('performTextSearch result:', { status: 'OK', count: places?.length });
+      logger.debug('performTextSearch result:', { status: 'OK', count: places?.length });
 
       if (places && places.length > 0) {
         const options = await Promise.all(
@@ -640,7 +641,7 @@ class AddressResolutionService {
 
       return [];
     } catch (error) {
-      console.error('performTextSearch error with new API:', error);
+      logger.error('performTextSearch error with new API:', error);
       // Fallback to legacy if new API fails
       return this.performTextSearchLegacy(query);
     }
@@ -651,7 +652,7 @@ class AddressResolutionService {
    */
   private async performTextSearchLegacy(query: string): Promise<AddressOption[]> {
     if (!this.placesService) {
-      console.warn('performTextSearchLegacy: PlacesService not available.');
+      logger.warn('performTextSearchLegacy: PlacesService not available.');
       return [];
     }
 
@@ -661,7 +662,7 @@ class AddressResolutionService {
           query: query,
         },
         (results, status) => {
-          console.log('performTextSearchLegacy result:', { status, count: results?.length });
+          logger.debug('performTextSearchLegacy result:', { status, count: results?.length });
 
           if (status === google.maps.places.PlacesServiceStatus.OK && results) {
             const options = results.map(place =>
@@ -669,7 +670,7 @@ class AddressResolutionService {
             );
             resolve(options);
           } else {
-            console.warn('performTextSearchLegacy failed:', status);
+            logger.warn('performTextSearchLegacy failed:', status);
             resolve([]);
           }
         }
@@ -712,7 +713,7 @@ class AddressResolutionService {
         buildingType: this.determineBuildingType(place.types || [])
       };
     } catch (error) {
-      console.error('Error mapping new Place to AddressOption:', error);
+      logger.error('Error mapping new Place to AddressOption:', error);
       return null;
     }
   }
@@ -755,13 +756,13 @@ class AddressResolutionService {
               await new Promise(resolve => setTimeout(resolve, 50));
 
             } catch (error) {
-              console.warn(`Failed to search for ${num} ${streetName}:`, error);
+              logger.warn(`Failed to search for ${num} ${streetName}:`, error);
             }
           }
         }
       }
     } catch (error) {
-      console.warn('Failed to find streets in postcode:', error);
+      logger.warn('Failed to find streets in postcode:', error);
     }
 
     return results;
