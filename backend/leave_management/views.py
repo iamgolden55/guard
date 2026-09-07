@@ -42,6 +42,7 @@ from .permissions import (
     ReadOnlyForStaffMixin
 )
 from .services import LeaveBalanceService, LeaveAccrualService
+from api.middleware.tenant_middleware import resolve_request_company
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -70,16 +71,40 @@ def company_user_ids(user):
     )
 
 
-def scoped_leave_requests(user, queryset=None):
-    """LeaveRequest queryset limited to the user's company."""
+def company_user_ids_for_request(request):
+    """As `company_user_ids`, but honouring the request's company selection.
+
+    Prefer this wherever a request object is at hand: it routes through the
+    shared resolver, so the `X-Company-ID` header a two-company manager sends
+    picks the company their screen is showing.
+    """
+    company = resolve_request_company(request)
+    if not company:
+        return []
+    return list(
+        company.memberships.filter(is_active=True).values_list('user_id', flat=True)
+    )
+
+
+def scoped_leave_requests(user_or_request, queryset=None):
+    """LeaveRequest queryset limited to the company in scope.
+
+    Accepts a request (preferred — honours `X-Company-ID`) or a bare user.
+    """
     qs = LeaveRequest.objects.all() if queryset is None else queryset
-    return qs.filter(staff_user_id__in=company_user_ids(user))
+    return qs.filter(staff_user_id__in=_scope_ids(user_or_request))
 
 
-def scoped_entitlements(user, queryset=None):
-    """LeaveEntitlement queryset limited to the user's company."""
+def scoped_entitlements(user_or_request, queryset=None):
+    """LeaveEntitlement queryset limited to the company in scope."""
     qs = LeaveEntitlement.objects.all() if queryset is None else queryset
-    return qs.filter(user_id__in=company_user_ids(user))
+    return qs.filter(user_id__in=_scope_ids(user_or_request))
+
+
+def _scope_ids(user_or_request):
+    if hasattr(user_or_request, 'user'):
+        return company_user_ids_for_request(user_or_request)
+    return company_user_ids(user_or_request)
 
 
 def _notify_leave_decision(leave_request, *, decision, manager, notes):
@@ -217,7 +242,7 @@ class LeaveTypeViewSet(ReadOnlyForStaffMixin, viewsets.ModelViewSet):
 
         stats = []
         for leave_type in self.get_queryset().filter(is_active=True):
-            entitlements = scoped_entitlements(request.user).filter(
+            entitlements = scoped_entitlements(request).filter(
                 policy__leave_type=leave_type,
                 year=current_year
             )
@@ -464,7 +489,7 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         accrual_service = LeaveAccrualService()
         updated_count = 0
 
-        for entitlement in scoped_entitlements(request.user).filter(year=year):
+        for entitlement in scoped_entitlements(request).filter(year=year):
             accrual_service.update_user_accruals(entitlement.user, year)
             updated_count += 1
 
@@ -488,7 +513,7 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         # Both branches were identical and both unscoped, so a manager in one
         # company saw every company's entitlements. Admin and manager see the
         # same thing today; the difference is company, not role.
-        entitlements = scoped_entitlements(request.user).filter(year=year)
+        entitlements = scoped_entitlements(request).filter(year=year)
 
         # Group by user
         user_summaries = {}
@@ -1254,7 +1279,7 @@ class LeaveCalendarViewSet(viewsets.ReadOnlyModelViewSet):
         # filter here, so a manager's calendar rendered every approved leave
         # request on the platform — other companies' staff names and dates
         # included.
-        queryset = scoped_leave_requests(self.request.user, super().get_queryset())
+        queryset = scoped_leave_requests(self.request, super().get_queryset())
 
         # Filter by user role
         if not (self.request.user.role in ['manager', 'admin']):
@@ -1316,7 +1341,7 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
         current_year = timezone.now().year
 
         # Quick metrics
-        scoped = scoped_leave_requests(request.user)
+        scoped = scoped_leave_requests(request)
         total_requests = scoped.filter(created_at__year=current_year).count()
         pending_requests = scoped.filter(status='pending').count()
         approved_requests = scoped.filter(status='approved', created_at__year=current_year).count()
@@ -1354,7 +1379,7 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
         department_filters = request.query_params.getlist('department')
 
         # Base queryset
-        requests_qs = scoped_leave_requests(request.user).filter(created_at__year=year)
+        requests_qs = scoped_leave_requests(request).filter(created_at__year=year)
 
         # Apply date range filters
         if start_date:
@@ -1487,7 +1512,7 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
         year = int(request.query_params.get('year', current_year))
 
         # Entitlement statistics
-        entitlements = scoped_entitlements(request.user).filter(year=year)
+        entitlements = scoped_entitlements(request).filter(year=year)
         entitlement_stats = entitlements.aggregate(
             total_entitled=Sum('annual_entitlement'),
             total_accrued=Sum('accrued_to_date'),
@@ -1638,7 +1663,7 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
         trends = []
 
         for leave_type in LeaveType.objects.filter(is_active=True):
-            entitlements = scoped_entitlements(request.user).filter(
+            entitlements = scoped_entitlements(request).filter(
                 policy__leave_type=leave_type,
                 year=year
             )
@@ -1678,7 +1703,7 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
         year = int(request.query_params.get('year', current_year))
 
         # Team utilization by employment type
-        team_stats = scoped_entitlements(request.user).filter(year=year).values(
+        team_stats = scoped_entitlements(request).filter(year=year).values(
             'user__profile__employment_type__name'
         ).annotate(
             team_size=Count('user', distinct=True),
@@ -1722,7 +1747,7 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
         end_date = request.query_params.get('end_date')
 
         # Base queryset
-        requests_qs = scoped_leave_requests(request.user).filter(created_at__year=year)
+        requests_qs = scoped_leave_requests(request).filter(created_at__year=year)
 
         if start_date:
             requests_qs = requests_qs.filter(start_date__gte=start_date)
@@ -1798,7 +1823,7 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
         status_filters = request.query_params.getlist('status')
 
         # Base queryset, company-scoped and filtered by year
-        queryset = scoped_leave_requests(request.user).filter(created_at__year=year)
+        queryset = scoped_leave_requests(request).filter(created_at__year=year)
 
         # Apply optional filters
         if start_date:
@@ -2108,7 +2133,7 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
         page_size = min(int(request.query_params.get('page_size', 25)), 100)
 
         # Build queryset with filters
-        queryset = scoped_leave_requests(request.user).filter(created_at__year=year)
+        queryset = scoped_leave_requests(request).filter(created_at__year=year)
 
         if start_date:
             queryset = queryset.filter(start_date__gte=start_date)
@@ -2358,7 +2383,7 @@ class LeaveSettingsViewSet(viewsets.ViewSet):
             accrual_status = 'not_configured'
 
         # Get pending notification count (approximate based on pending leave requests)
-        pending_notifications = scoped_leave_requests(request.user).filter(
+        pending_notifications = scoped_leave_requests(request).filter(
             status='pending'
         ).count()
 
@@ -2373,7 +2398,7 @@ class LeaveSettingsViewSet(viewsets.ViewSet):
             database_response_time = 'N/A'
 
         # Get system statistics
-        scoped = scoped_leave_requests(request.user)
+        scoped = scoped_leave_requests(request)
         total_leave_requests = scoped.count()
         pending_approvals = scoped.filter(status='pending').count()
 

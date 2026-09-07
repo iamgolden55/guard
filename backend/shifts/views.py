@@ -14,6 +14,7 @@ from .serializers import (
     MultiStaffShiftSerializer
 )
 from api.permissions import IsManagerOrAdmin
+from api.middleware.tenant_middleware import resolve_request_company
 from .filters import ShiftFilter
 from django.db.models import Q
 from django.db import IntegrityError
@@ -38,28 +39,22 @@ class ShiftViewSet(viewsets.ModelViewSet):
         """Filter shifts to only show the current user's shifts unless they're a manager/admin
 
         SECURITY: Admin/manager users see all shifts from their company ONLY, not the entire database.
-        Uses middleware-provided company context (respects X-Company-ID header) for multi-tenant isolation.
+        Company is resolved after DRF authentication by
+        `resolve_request_company`, which honours the X-Company-ID header. The
+        middleware cannot do it: it runs before DRF authenticates, so on JWT
+        traffic `request.current_company` is always None.
         """
         user_role = getattr(self.request.user, 'role', 'staff')
 
         if user_role in ['manager', 'admin']:
-            # SECURITY FIX: Use middleware-provided company context (respects X-Company-ID header)
-            company = getattr(self.request, 'current_company', None)
+            # One resolver for the whole codebase, so the X-Company-ID header
+            # the admin's company switcher sends actually selects a company.
+            # The two-step this replaced always took its fallback branch on
+            # JWT traffic, whatever the switcher displayed.
+            company = resolve_request_company(self.request)
             if company:
                 return Shift.objects.filter(venue__company=company).order_by('-start_time')
-
-            # Fallback: Get user's primary company membership (most recently joined with manager+ role)
-            from api.models import UserCompanyMembership
-            membership = UserCompanyMembership.objects.filter(
-                user=self.request.user,
-                is_active=True,
-                company__is_active=True
-            ).select_related('company').order_by('-joined_at').first()
-
-            if membership and membership.company:
-                # Return all shifts for venues in the user's company
-                return Shift.objects.filter(venue__company=membership.company).order_by('-start_time')
-            else:
+            if True:
                 # No company membership - return only user's own shifts as fallback
                 return Shift.objects.filter(staff_user=self.request.user).order_by('-start_time')
         else:
@@ -303,7 +298,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
         venue_id = request.query_params.get('venueId')
 
         # SECURITY FIX: Scope venues to user's current company
-        company = getattr(request, 'current_company', None)
+        company = resolve_request_company(request)
         if company:
             venues_queryset = Venue.objects.filter(company=company)
         else:
@@ -395,7 +390,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
         venue_id = request.query_params.get('venueId')
 
         # SECURITY FIX: Scope venues to user's current company
-        company = getattr(request, 'current_company', None)
+        company = resolve_request_company(request)
         if company:
             venues_queryset = Venue.objects.filter(company=company)
         else:
@@ -495,7 +490,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
         venue_id = request.query_params.get('venueId')
 
         # SECURITY FIX: Scope staff users to the user's current company
-        company = getattr(request, 'current_company', None)
+        company = resolve_request_company(request)
         if not company:
             return Response([])
 
@@ -1700,10 +1695,10 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # SECURITY FIX: Use middleware-provided company context (respects X-Company-ID header)
+        # Resolved after DRF authentication, so the X-Company-ID header works.
         from api.models import UserCompanyMembership
 
-        company = getattr(request, 'current_company', None)
+        company = resolve_request_company(request)
         if not company:
             # Fallback: Get user's primary company
             membership = UserCompanyMembership.objects.filter(
@@ -1918,7 +1913,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
     def _company_for_request(self, request):
         """Resolve the active company for the current request, with multi-tenant fallback."""
         from api.models import UserCompanyMembership
-        company = getattr(request, 'current_company', None)
+        company = resolve_request_company(request)
         if company:
             return company
         membership = UserCompanyMembership.objects.filter(
@@ -2082,7 +2077,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
 
         # Build resources
         resources = []
-        company = getattr(request, 'current_company', None)
+        company = resolve_request_company(request)
 
         if group_by == 'venue':
             venue_qs = Venue.objects.filter(is_active=True)
@@ -2396,7 +2391,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
 
         # Apply atomically
         updated = []
-        company = getattr(request, 'current_company', None)
+        company = resolve_request_company(request)
 
         try:
             with transaction.atomic():
@@ -2472,13 +2467,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
         is_published = serializer.validated_data.get('is_published', False)
         send_notifications = serializer.validated_data.get('send_notifications', False)
 
-        company = getattr(request, 'current_company', None)
-        if not company:
-            from api.models import UserCompanyMembership
-            membership = UserCompanyMembership.objects.filter(
-                user=request.user, is_active=True, company__is_active=True
-            ).select_related('company').order_by('-joined_at').first()
-            company = membership.company if membership else None
+        company = resolve_request_company(request)
 
         venue_ids = {s['venue'] for s in plan}
         venues = {v.id: v for v in Venue.objects.filter(id__in=venue_ids).select_related('company')}
@@ -2809,7 +2798,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
         else:
             return Response({"detail": "Provide shift_ids or date_range"}, status=status.HTTP_400_BAD_REQUEST)
 
-        company = getattr(request, 'current_company', None)
+        company = resolve_request_company(request)
         published_count = 0
         notifications_sent = 0
         notification_groups: dict = {}
@@ -2861,16 +2850,10 @@ class ShiftViewSet(viewsets.ModelViewSet):
         # can't leave officers holding mail for shifts that never went live, and
         # so a broker hiccup surfaces as a missing email rather than a 500.
         from api.tasks import send_shift_schedule_email_task
-        # current_company can be None if no tenant header was sent; fall back to
-        # the publishing user's primary company so the digest task still receives
-        # a company_id to scope against (defence-in-depth, not a security gate).
+        # The resolver already falls back to the publishing user's membership,
+        # so the digest task gets a company_id to scope against
+        # (defence-in-depth, not a security gate).
         digest_company_id = company.id if company else None
-        if digest_company_id is None and notification_groups:
-            from api.models import UserCompanyMembership as _UCM
-            membership = _UCM.objects.filter(
-                user=request.user, is_active=True, company__is_active=True
-            ).order_by('-joined_at').first()
-            digest_company_id = membership.company_id if membership else None
 
         digests_queued = 0
         for user_id, group in notification_groups.items():
@@ -3023,16 +3006,7 @@ class FrontendShiftViewSet(viewsets.GenericViewSet):
         user_role = getattr(self.request.user, 'role', 'staff')
 
         if user_role in ['manager', 'admin']:
-            company = getattr(self.request, 'current_company', None)
-            if not company:
-                from api.models import UserCompanyMembership
-                membership = UserCompanyMembership.objects.filter(
-                    user=self.request.user,
-                    is_active=True,
-                    company__is_active=True
-                ).select_related('company').order_by('-joined_at').first()
-                company = membership.company if membership else None
-
+            company = resolve_request_company(self.request)
             if company:
                 return Shift.objects.filter(venue__company=company).order_by('-start_time')
             return Shift.objects.filter(staff_user=self.request.user).order_by('-start_time')

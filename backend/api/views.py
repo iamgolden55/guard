@@ -23,6 +23,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import AuthenticationFailed, ValidationError, PermissionDenied
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from api.permissions import IsManagerOrAdmin, IsAdminRole
+from api.middleware.tenant_middleware import resolve_request_company
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -635,23 +636,15 @@ class UserViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
     
     def get_user_company(self, request):
-        """Get the user's current company context.
+        """The single company in scope for this request.
 
-        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
-        for multi-tenant isolation. Falls back to user's primary company.
+        Delegates to the shared resolver so the `X-Company-ID` header is
+        honoured. This used to be one of two dozen near-identical copies, each
+        carrying a comment claiming it respected that header while in fact
+        always taking its fallback branch — `TenantMiddleware` runs before DRF
+        authenticates, so `request.current_company` was invariably None.
         """
-        # Prefer middleware-provided context (set by TenantMiddleware)
-        if hasattr(request, 'current_company') and request.current_company:
-            return request.current_company
-
-        # Fallback: Get first company where user is owner/admin/manager
-        membership = request.user.company_memberships.filter(
-            is_active=True,
-            role__in=['owner', 'admin', 'manager'],
-            company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-
-        return membership.company if membership else None
+        return resolve_request_company(request)
 
     def get_queryset(self):
         """
@@ -1332,14 +1325,7 @@ def payroll_preview(request):
         end_date = datetime.strptime(request.data['end_date'], '%Y-%m-%d').date()
 
         # Get company context for multi-tenant isolation
-        company = None
-        if hasattr(request, 'current_company') and request.current_company:
-            company = request.current_company
-        else:
-            membership = request.user.company_memberships.filter(
-                is_active=True, company__is_active=True
-            ).select_related('company').order_by('-joined_at').first()
-            company = membership.company if membership else None
+        company = resolve_request_company(request)
 
         if not company:
             return Response({'error': 'No company context found'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1426,14 +1412,7 @@ def payroll_generate(request):
         end_date = datetime.strptime(request.data['end_date'], '%Y-%m-%d').date()
 
         # Get company context for multi-tenant isolation
-        company = None
-        if hasattr(request, 'current_company') and request.current_company:
-            company = request.current_company
-        else:
-            membership = request.user.company_memberships.filter(
-                is_active=True, company__is_active=True
-            ).select_related('company').order_by('-joined_at').first()
-            company = membership.company if membership else None
+        company = resolve_request_company(request)
 
         if not company:
             return Response({'error': 'No company context found'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1576,12 +1555,8 @@ class StaffProfileViewSet(viewsets.ModelViewSet):
         return queryset
 
     def _get_user_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
     
     def update(self, request, *args, **kwargs):
         """
@@ -1645,12 +1620,8 @@ class EmergencyContactViewSet(viewsets.ModelViewSet):
         return EmergencyContact.objects.filter(staff_profile__user=user)
 
     def _get_user_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
 
 class BankDetailsViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -1668,12 +1639,8 @@ class BankDetailsViewSet(viewsets.ModelViewSet):
         return BankDetails.objects.filter(staff_profile__user=user)
 
     def _get_user_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
 
 class SIALicenseViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -1779,12 +1746,8 @@ class SIALicenseViewSet(viewsets.ModelViewSet):
         return SIALicense.objects.filter(staff_profile__user=user)
 
     def _get_user_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
 
 class StaffAvailabilityViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -1802,12 +1765,8 @@ class StaffAvailabilityViewSet(viewsets.ModelViewSet):
         return StaffAvailability.objects.filter(staff_profile__user=user)
 
     def _get_user_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
 
 class VenueViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -1834,23 +1793,15 @@ class VenueViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
     
     def get_user_company(self, request):
-        """Get the user's current company context.
+        """The single company in scope for this request.
 
-        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
-        for multi-tenant isolation. Falls back to user's primary company.
+        Delegates to the shared resolver so the `X-Company-ID` header is
+        honoured. This used to be one of two dozen near-identical copies, each
+        carrying a comment claiming it respected that header while in fact
+        always taking its fallback branch — `TenantMiddleware` runs before DRF
+        authenticates, so `request.current_company` was invariably None.
         """
-        # Prefer middleware-provided context (set by TenantMiddleware)
-        if hasattr(request, 'current_company') and request.current_company:
-            return request.current_company
-
-        # Fallback: Get first company where user is owner/admin/manager
-        membership = request.user.company_memberships.filter(
-            is_active=True,
-            role__in=['owner', 'admin', 'manager'],
-            company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-
-        return membership.company if membership else None
+        return resolve_request_company(request)
 
     def get_queryset(self):
         """
@@ -2090,12 +2041,8 @@ class VenueTermsAcceptanceViewSet(viewsets.ModelViewSet):
         return VenueTermsAcceptance.objects.filter(staff_user=user)
 
     def _get_user_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
 
 class PreferredVenueViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -2113,12 +2060,8 @@ class PreferredVenueViewSet(viewsets.ModelViewSet):
         return PreferredVenue.objects.filter(staff_profile__user=user)
 
     def _get_user_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
 
 class ShiftTemplateViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -2132,12 +2075,8 @@ class ShiftTemplateViewSet(viewsets.ModelViewSet):
         return ShiftTemplate.objects.none()
 
     def _get_user_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
     
     @action(detail=True, methods=['post'])
     def apply(self, request, *args, **kwargs):
@@ -2229,26 +2168,14 @@ class ShiftTemplateViewSet(viewsets.ModelViewSet):
 # router.register('shift-templates', ShiftTemplateViewSet)
 
 def _resolve_request_company(request):
+    """Kept as a thin alias; the real resolver lives in the tenant middleware.
+
+    Its old docstring said the middleware sets `current_company` from session
+    auth "before the view runs, so this fallback is a no-op". The opposite was
+    true: API traffic is JWT, DRF authenticates after all middleware, and the
+    fallback was the only branch that ever ran.
     """
-    Resolve the active company for a request, with a fallback for paths where
-    the tenant middleware didn't run before authentication (notably DRF tests
-    using force_authenticate, where request.user is populated at the APIView
-    level — after middleware). In production, middleware sets current_company
-    from session auth before the view runs, so this fallback is a no-op.
-    """
-    company = getattr(request, 'current_company', None)
-    if company:
-        return company
-    user = getattr(request, 'user', None)
-    if not user or not getattr(user, 'is_authenticated', False):
-        return None
-    membership = (
-        user.company_memberships.filter(is_active=True, company__is_active=True)
-        .select_related('company')
-        .order_by('-joined_at')
-        .first()
-    )
-    return membership.company if membership else None
+    return resolve_request_company(request)
 
 
 class CompanyScopedCheckMixin:
@@ -2734,12 +2661,8 @@ class ShiftExchangeViewSet(viewsets.ModelViewSet):
             )
 
     def _get_user_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
     
     def perform_create(self, serializer):
         """Set the requesting user to the current user"""
@@ -2891,12 +2814,8 @@ class OpenShiftRequestViewSet(viewsets.ModelViewSet):
                 )
 
     def _get_user_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
 
     def create(self, request, *args, **kwargs):
         """
@@ -3121,23 +3040,15 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         )
 
     def get_user_company(self, request):
-        """Get the user's current company context.
+        """The single company in scope for this request.
 
-        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
-        for multi-tenant isolation. Falls back to user's primary company.
+        Delegates to the shared resolver so the `X-Company-ID` header is
+        honoured. This used to be one of two dozen near-identical copies, each
+        carrying a comment claiming it respected that header while in fact
+        always taking its fallback branch — `TenantMiddleware` runs before DRF
+        authenticates, so `request.current_company` was invariably None.
         """
-        # Prefer middleware-provided context (set by TenantMiddleware)
-        if hasattr(request, 'current_company') and request.current_company:
-            return request.current_company
-
-        # Fallback: Get first company where user is owner/admin/manager
-        membership = request.user.company_memberships.filter(
-            is_active=True,
-            role__in=['owner', 'admin', 'manager'],
-            company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-
-        return membership.company if membership else None
+        return resolve_request_company(request)
 
     def get_queryset(self):
         """Filter invoices based on user role and company context"""
@@ -3542,12 +3453,8 @@ class InvoiceItemViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceItemSerializer
 
     def _get_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
 
     def get_queryset(self):
         """SECURITY: Scope invoice items to the requesting user's company."""
@@ -3567,12 +3474,8 @@ class PayRateViewSet(viewsets.ModelViewSet):
     serializer_class = PayRateSerializer
 
     def _get_company(self):
-        if hasattr(self.request, 'current_company') and self.request.current_company:
-            return self.request.current_company
-        membership = self.request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(self.request)
 
     def get_queryset(self):
         """SECURITY: Scope pay rates to the requesting user's company."""
@@ -3631,7 +3534,7 @@ class DeputyEmployeeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """SECURITY: Scope Deputy employees to the requesting user's company."""
-        company = getattr(self.request, 'current_company', None)
+        company = resolve_request_company(self.request)
         if not company:
             return DeputyEmployee.objects.none()
         company_user_ids = company.memberships.filter(
@@ -3648,7 +3551,7 @@ class DeputyTimesheetViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """SECURITY: Scope Deputy timesheets to the requesting user's company."""
-        company = getattr(self.request, 'current_company', None)
+        company = resolve_request_company(self.request)
         if not company:
             return DeputyTimesheet.objects.none()
         company_user_ids = company.memberships.filter(
@@ -3662,23 +3565,15 @@ class SystemSettingsView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get_user_company(self, request):
-        """Get the user's current company context.
+        """The single company in scope for this request.
 
-        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
-        for multi-tenant isolation. Falls back to user's primary company.
+        Delegates to the shared resolver so the `X-Company-ID` header is
+        honoured. This used to be one of two dozen near-identical copies, each
+        carrying a comment claiming it respected that header while in fact
+        always taking its fallback branch — `TenantMiddleware` runs before DRF
+        authenticates, so `request.current_company` was invariably None.
         """
-        # Prefer middleware-provided context (set by TenantMiddleware)
-        if hasattr(request, 'current_company') and request.current_company:
-            return request.current_company
-
-        # Fallback: Get first company where user is owner/admin
-        membership = request.user.company_memberships.filter(
-            is_active=True,
-            role__in=['owner', 'admin'],
-            company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-
-        return membership.company if membership else None
+        return resolve_request_company(request)
 
     def get(self, request):
         """Get the system settings for the user's company"""
@@ -4593,23 +4488,15 @@ class EmploymentTypeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_user_company(self, request):
-        """Get the user's current company context.
+        """The single company in scope for this request.
 
-        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
-        for multi-tenant isolation. Falls back to user's primary company.
+        Delegates to the shared resolver so the `X-Company-ID` header is
+        honoured. This used to be one of two dozen near-identical copies, each
+        carrying a comment claiming it respected that header while in fact
+        always taking its fallback branch — `TenantMiddleware` runs before DRF
+        authenticates, so `request.current_company` was invariably None.
         """
-        # Prefer middleware-provided context (set by TenantMiddleware)
-        if hasattr(request, 'current_company') and request.current_company:
-            return request.current_company
-
-        # Fallback: Get first company where user is owner/admin/manager
-        membership = request.user.company_memberships.filter(
-            is_active=True,
-            role__in=['owner', 'admin', 'manager'],
-            company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-
-        return membership.company if membership else None
+        return resolve_request_company(request)
 
     def get_queryset(self):
         """Filter employment types by company context"""
@@ -4678,23 +4565,15 @@ class RecruitmentApplicationViewSet(viewsets.ModelViewSet):
         return [IsAdminUser()]
 
     def get_user_company(self, request):
-        """Get the user's current company context.
+        """The single company in scope for this request.
 
-        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
-        for multi-tenant isolation. Falls back to user's primary company.
+        Delegates to the shared resolver so the `X-Company-ID` header is
+        honoured. This used to be one of two dozen near-identical copies, each
+        carrying a comment claiming it respected that header while in fact
+        always taking its fallback branch — `TenantMiddleware` runs before DRF
+        authenticates, so `request.current_company` was invariably None.
         """
-        # Prefer middleware-provided context (set by TenantMiddleware)
-        if hasattr(request, 'current_company') and request.current_company:
-            return request.current_company
-
-        # Fallback: Get first company where user is owner/admin/manager
-        membership = request.user.company_memberships.filter(
-            is_active=True,
-            role__in=['owner', 'admin', 'manager'],
-            company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-
-        return membership.company if membership else None
+        return resolve_request_company(request)
 
     def get_queryset(self):
         """
@@ -7643,23 +7522,15 @@ class OnboardingViewSet(viewsets.ViewSet):
         return [permission() for permission in permission_classes]
 
     def get_user_company(self, request):
-        """Get the user's current company context.
+        """The single company in scope for this request.
 
-        SECURITY: Prefers middleware-provided company context (respects X-Company-ID header)
-        for multi-tenant isolation. Falls back to user's primary company.
+        Delegates to the shared resolver so the `X-Company-ID` header is
+        honoured. This used to be one of two dozen near-identical copies, each
+        carrying a comment claiming it respected that header while in fact
+        always taking its fallback branch — `TenantMiddleware` runs before DRF
+        authenticates, so `request.current_company` was invariably None.
         """
-        # Prefer middleware-provided context (set by TenantMiddleware)
-        if hasattr(request, 'current_company') and request.current_company:
-            return request.current_company
-
-        # Fallback: Get first company where user is owner/admin
-        membership = request.user.company_memberships.filter(
-            is_active=True,
-            role__in=['owner', 'admin'],
-            company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-
-        return membership.company if membership else None
+        return resolve_request_company(request)
 
     @action(detail=False, methods=['post'], url_path='initiate')
     def initiate_onboarding(self, request):
@@ -8342,14 +8213,8 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         qs = Notification.objects.filter(user=user)
 
-        # Company scoping via middleware or membership
-        company = getattr(self.request, 'current_company', None)
-        if not company:
-            membership = user.company_memberships.filter(
-                is_active=True
-            ).select_related('company').first()
-            if membership:
-                company = membership.company
+        # Company scoping through the shared resolver
+        company = resolve_request_company(self.request)
 
         if company:
             qs = qs.filter(Q(company=company) | Q(company__isnull=True))
@@ -9076,15 +8941,8 @@ class ClientInvoiceViewSet(viewsets.ModelViewSet):
     serializer_class = ClientInvoiceSerializer
 
     def get_user_company(self, request):
-        """Get the user's current company context."""
-        if hasattr(request, 'current_company') and request.current_company:
-            return request.current_company
-        membership = request.user.company_memberships.filter(
-            is_active=True,
-            role__in=['owner', 'admin', 'manager'],
-            company__is_active=True
-        ).select_related('company').order_by('-joined_at').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(request)
 
     def check_admin_or_manager(self, request):
         """Raise 403 if user is not admin or manager."""
@@ -9374,12 +9232,8 @@ class IncidentReportViewSet(viewsets.ModelViewSet):
         ).select_related('venue', 'reported_by', 'shift', 'resolved_by')
 
     def get_user_company(self, request):
-        if hasattr(request, 'current_company') and request.current_company:
-            return request.current_company
-        membership = request.user.company_memberships.filter(
-            is_active=True, company__is_active=True
-        ).select_related('company').first()
-        return membership.company if membership else None
+        """The single company in scope; see `resolve_request_company`."""
+        return resolve_request_company(request)
 
     def perform_create(self, serializer):
         serializer.save(reported_by=self.request.user)

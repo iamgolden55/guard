@@ -5,6 +5,7 @@ Ensures users can only access data belonging to their companies.
 import logging
 from django.http import JsonResponse
 from django.utils.deprecation import MiddlewareMixin
+from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.db import models
@@ -31,6 +32,15 @@ class TenantMiddleware(MiddlewareMixin):
         1. HTTP header: X-Company-ID
         2. URL parameter: company_id
         3. Default to user's primary company
+
+        **Only the session-authenticated path reaches any of that.** This
+        middleware sits after `AuthenticationMiddleware`, which resolves
+        `request.user` from the session, and DRF authenticates JWTs after every
+        middleware has run — so on API traffic `request.user` is
+        `AnonymousUser` here and this method returns immediately with
+        `current_company = None`. Never rely on `request.current_company` in a
+        view; call `resolve_request_company(request)`, which runs after
+        authentication and honours the same header.
         """
         # Skip for unauthenticated users
         if not request.user or not request.user.is_authenticated:
@@ -210,6 +220,35 @@ def get_current_company(request):
     return getattr(request, 'current_company', None)
 
 
+class CompanyAccessDenied(DRFPermissionDenied):
+    """The caller asked for a company they are not a member of.
+
+    Raised rather than returning None, because the two mean different things:
+    None is "you named no company, here is your default", while this is "you
+    named a company and the answer is no". Silently falling back on a rejected
+    `X-Company-ID` would serve data the caller did not ask for and believes
+    they are not looking at.
+
+    Subclasses DRF's `PermissionDenied` so it renders as a 403 through the
+    framework's own handler, with no project-wide exception handler needed.
+    """
+    default_detail = 'You do not have access to the requested company.'
+
+
+def _requested_company_id(request):
+    """The company the caller explicitly asked for, if any.
+
+    Header first (what the admin's company switcher sends), then a URL or form
+    parameter for the web interface.
+    """
+    company_id = request.META.get('HTTP_X_COMPANY_ID')
+    if not company_id:
+        company_id = request.GET.get('company_id')
+        if not company_id and request.method == 'POST':
+            company_id = request.POST.get('company_id')
+    return (company_id or '').strip() or None
+
+
 def resolve_request_company(request):
     """
     Resolve the single SecurityCompany in scope for this request, or None.
@@ -218,8 +257,14 @@ def resolve_request_company(request):
     DRF authenticates the request, and LoginView issues JWTs without ever
     calling django.contrib.auth.login(), so there is no session and
     request.user is AnonymousUser at middleware time. request.current_company
-    is therefore None on every API request. This helper works off the
-    DRF-authenticated request.user instead.
+    is therefore None on every API request, and the `X-Company-ID` header the
+    middleware reads was never once acted on — company switching in the admin
+    UI changed the label and nothing else.
+
+    This helper runs after DRF authentication, off `request.user`, so it can
+    honour that header. Membership is validated before the company is
+    returned, and a company the user does not belong to raises
+    `CompanyAccessDenied` rather than quietly falling back.
 
     It deliberately returns ONE company, never a set. Filtering by "every
     company this user belongs to" does not isolate anything: an admin of both
@@ -228,15 +273,44 @@ def resolve_request_company(request):
     Callers must fail closed on None -- return an empty queryset, not
     everything.
     """
-    # Honour the middleware's answer if it ever manages to set one; this keeps
-    # the helper correct if TenantMiddleware is fixed to run after DRF auth.
+    # Resolved once per request. Without this the header would be re-validated
+    # by every scoped queryset on the page.
+    cached = getattr(request, '_resolved_company', None)
+    if cached is not None:
+        return cached
+
+    # Honour the middleware's answer if it ever manages to set one — that is
+    # the session-authenticated path (Django admin), where it does work.
     company = getattr(request, 'current_company', None)
     if company:
+        request._resolved_company = company
         return company
 
     user = getattr(request, 'user', None)
     if not user or not user.is_authenticated:
         return None
+
+    requested_id = _requested_company_id(request)
+    if requested_id:
+        membership = UserCompanyMembership.objects.select_related('company').filter(
+            user=user,
+            company_id=requested_id,
+            is_active=True,
+            company__is_active=True,
+        ).first() if _looks_like_uuid(requested_id) else None
+
+        if not membership:
+            logger.warning(
+                "User %s requested company %s they have no active membership of",
+                user.username, requested_id,
+            )
+            raise CompanyAccessDenied(
+                'You do not have access to the requested company.'
+            )
+
+        request._resolved_company = membership.company
+        request.company_id = membership.company.id
+        return membership.company
 
     membership = UserCompanyMembership.objects.select_related('company').filter(
         user=user,
@@ -252,7 +326,21 @@ def resolve_request_company(request):
             company__is_active=True
         ).order_by('-joined_at').first()
 
-    return membership.company if membership else None
+    resolved = membership.company if membership else None
+    if resolved is not None:
+        request._resolved_company = resolved
+        request.company_id = resolved.id
+    return resolved
+
+
+def _looks_like_uuid(value):
+    """Company ids are UUIDs; anything else would raise on the query."""
+    import uuid as _uuid
+    try:
+        _uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 
 def require_company_access(view_func):

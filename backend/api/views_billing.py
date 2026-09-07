@@ -17,6 +17,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.middleware.tenant_middleware import resolve_request_company
+
 from .models import (
     AuditLog,
     ClientInvoice,
@@ -56,20 +58,13 @@ except ImportError:  # pragma: no cover — finance_integrations always present 
 # ---------------------------------------------------------------------------
 
 def _current_company(request):
-    """Resolve the company in scope from the TenantMiddleware or fall back to membership."""
-    if hasattr(request, 'current_company') and request.current_company:
-        return request.current_company
-    user = getattr(request, 'user', None)
-    if user and user.is_authenticated:
-        membership = (
-            user.company_memberships
-            .filter(is_active=True, company__is_active=True)
-            .select_related('company')
-            .order_by('-joined_at')
-            .first()
-        )
-        return membership.company if membership else None
-    return None
+    """The single company in scope; see `resolve_request_company`.
+
+    Was a module-level copy of the same fallback repeated across `api/views.py`,
+    none of which ever read the `X-Company-ID` header they were documented as
+    respecting.
+    """
+    return resolve_request_company(request)
 
 
 logger = logging.getLogger(__name__)
