@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import notificationService from '../services/notificationService';
 import { colors } from '../theme/colors';
+import { logger } from '../utils/logger';
 
 export const NotificationTestScreen = () => {
   const [permissionStatus, setPermissionStatus] = useState<string>('Unknown');
@@ -60,7 +61,7 @@ export const NotificationTestScreen = () => {
       [
         {
           text: 'OK',
-          onPress: () => console.log('Scheduled notifications:', scheduled),
+          onPress: () => logger.debug('Scheduled notifications:', scheduled),
         },
       ]
     );

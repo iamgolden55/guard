@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import offlineExchangeService from '../../services/offlineExchangeService';
 import { spacing } from '../../theme';
+import { logger } from '../../utils/logger';
 
 // Amber color palette for offline/sync states
 const amberColors = {
@@ -97,14 +98,14 @@ export const SyncStatusBanner: React.FC = () => {
     setIsSyncing(true);
     try {
       const result = await offlineExchangeService.syncQueuedActions();
-      console.log(`Sync completed: ${result.success} success, ${result.failed} failed`);
+      logger.debug(`Sync completed: ${result.success} success, ${result.failed} failed`);
 
       // Clear completed actions after successful sync
       if (result.success > 0) {
         await offlineExchangeService.clearCompletedActions();
       }
     } catch (error) {
-      console.error('Sync failed:', error);
+      logger.error('Sync failed:', error);
     } finally {
       setIsSyncing(false);
     }

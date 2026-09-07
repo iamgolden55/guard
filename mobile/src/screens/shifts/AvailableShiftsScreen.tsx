@@ -22,6 +22,7 @@ import { Button } from '@components/ui';
 import { colors, spacing, getColors } from '../../theme';
 import { useTheme } from '../../hooks/useTheme';
 import exchangeService, { OpenShiftRequest } from '../../services/exchangeService';
+import { logger } from '../../utils/logger';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -41,7 +42,7 @@ export const AvailableShiftsScreen: React.FC = () => {
       const shifts = await exchangeService.getAvailableShifts();
       setAvailableShifts(shifts);
     } catch (error) {
-      console.error('Error fetching available shifts:', error);
+      logger.error('Error fetching available shifts:', error);
       Alert.alert('Error', 'Failed to load available shifts. Please try again.');
     } finally {
       setLoading(false);
@@ -92,7 +93,7 @@ export const AvailableShiftsScreen: React.FC = () => {
                 ]
               );
             } catch (error: any) {
-              console.error('Error claiming shift:', error);
+              logger.error('Error claiming shift:', error);
               Alert.alert('Error', error.message || 'Failed to claim shift. Please try again.');
             } finally {
               setClaimingShiftId(null);

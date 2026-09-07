@@ -4,6 +4,7 @@
  */
 
 import { apiService } from './api';
+import { logger } from '../utils/logger';
 
 /**
  * Details of the staff member who performed a check
@@ -156,7 +157,7 @@ class ShiftChecksService {
         payload.notes = data.notes.trim();
       }
 
-      console.log('[ShiftChecksService] Submitting fire exit check payload:', {
+      logger.debug('[ShiftChecksService] Submitting fire exit check payload:', {
         ...payload,
         photo_evidence: payload.photo_evidence ? `${payload.photo_evidence.length} chars` : 'none',
       });
@@ -168,7 +169,7 @@ class ShiftChecksService {
 
       return response;
     } catch (error) {
-      console.error('[ShiftChecksService] Error submitting fire exit check:', error);
+      logger.error('[ShiftChecksService] Error submitting fire exit check:', error);
       throw error;
     }
   }
@@ -218,7 +219,7 @@ class ShiftChecksService {
         payload.notes = data.notes.trim();
       }
 
-      console.log('[ShiftChecksService] Submitting capacity check payload:', {
+      logger.debug('[ShiftChecksService] Submitting capacity check payload:', {
         ...payload,
         photo_evidence: payload.photo_evidence ? `${payload.photo_evidence.length} chars` : 'none',
       });
@@ -230,7 +231,7 @@ class ShiftChecksService {
 
       return response;
     } catch (error) {
-      console.error('[ShiftChecksService] Error submitting capacity check:', error);
+      logger.error('[ShiftChecksService] Error submitting capacity check:', error);
       throw error;
     }
   }
@@ -289,7 +290,7 @@ class ShiftChecksService {
         payload.notes = data.notes.trim();
       }
 
-      console.log('[ShiftChecksService] Submitting toilet check payload:', {
+      logger.debug('[ShiftChecksService] Submitting toilet check payload:', {
         ...payload,
         photo_evidence: payload.photo_evidence ? `${payload.photo_evidence.length} chars` : 'none',
       });
@@ -301,7 +302,7 @@ class ShiftChecksService {
 
       return response;
     } catch (error) {
-      console.error('[ShiftChecksService] Error submitting toilet check:', error);
+      logger.error('[ShiftChecksService] Error submitting toilet check:', error);
       throw error;
     }
   }
@@ -353,7 +354,7 @@ class ShiftChecksService {
         toiletChecks,
       };
     } catch (error) {
-      console.error('[ShiftChecksService] Error fetching shift checks:', error);
+      logger.error('[ShiftChecksService] Error fetching shift checks:', error);
       throw error;
     }
   }

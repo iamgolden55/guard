@@ -25,27 +25,27 @@ export async function debugSyncQueue() {
     const queueJson = await AsyncStorage.getItem(STORAGE_KEYS.SYNC_QUEUE);
     const queue = queueJson ? JSON.parse(queueJson) : [];
 
-    console.log('='.repeat(60));
-    console.log('SYNC QUEUE DEBUG');
-    console.log('='.repeat(60));
-    console.log(`Total items: ${queue.length}`);
-    console.log('');
+    logger.debug('='.repeat(60));
+    logger.debug('SYNC QUEUE DEBUG');
+    logger.debug('='.repeat(60));
+    logger.debug(`Total items: ${queue.length}`);
+    logger.debug('');
 
     queue.forEach((item: any, index: number) => {
-      console.log(`Item ${index + 1}:`);
-      console.log(`  Type: ${item.type}`);
-      console.log(`  Entity: ${item.entityType}`);
-      console.log(`  Status: ${item.status}`);
-      console.log(`  Attempts: ${item.attempts}`);
-      console.log(`  Priority: ${item.priority}`);
-      console.log(`  Created: ${item.createdAt}`);
+      logger.debug(`Item ${index + 1}:`);
+      logger.debug(`  Type: ${item.type}`);
+      logger.debug(`  Entity: ${item.entityType}`);
+      logger.debug(`  Status: ${item.status}`);
+      logger.debug(`  Attempts: ${item.attempts}`);
+      logger.debug(`  Priority: ${item.priority}`);
+      logger.debug(`  Created: ${item.createdAt}`);
       if (item.error) {
-        console.log(`  Error: ${item.error}`);
+        logger.debug(`  Error: ${item.error}`);
       }
-      console.log('');
+      logger.debug('');
     });
 
-    console.log('='.repeat(60));
+    logger.debug('='.repeat(60));
 
     return queue;
   } catch (error) {
@@ -103,13 +103,13 @@ export async function fixSyncQueueTypes() {
 
     await AsyncStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(updatedQueue));
 
-    console.log('='.repeat(60));
-    console.log('SYNC QUEUE FIX COMPLETE');
-    console.log('='.repeat(60));
-    console.log(`Fixed: ${fixed} items`);
-    console.log(`Removed: ${removed} items`);
-    console.log(`Remaining: ${updatedQueue.length} items`);
-    console.log('='.repeat(60));
+    logger.debug('='.repeat(60));
+    logger.debug('SYNC QUEUE FIX COMPLETE');
+    logger.debug('='.repeat(60));
+    logger.debug(`Fixed: ${fixed} items`);
+    logger.debug(`Removed: ${removed} items`);
+    logger.debug(`Remaining: ${updatedQueue.length} items`);
+    logger.debug('='.repeat(60));
 
     return { fixed, removed, remaining: updatedQueue.length };
   } catch (error) {
@@ -130,11 +130,11 @@ export async function clearAllSyncQueue() {
 
     await AsyncStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify([]));
 
-    console.log('='.repeat(60));
-    console.log('SYNC QUEUE CLEARED');
-    console.log('='.repeat(60));
-    console.log(`Removed ${count} items from sync queue`);
-    console.log('='.repeat(60));
+    logger.debug('='.repeat(60));
+    logger.debug('SYNC QUEUE CLEARED');
+    logger.debug('='.repeat(60));
+    logger.debug(`Removed ${count} items from sync queue`);
+    logger.debug('='.repeat(60));
 
     logger.warn('[Debug] Cleared entire sync queue', { count });
 
@@ -153,11 +153,11 @@ export async function forceSyncNow() {
     // Note: Import syncService at the top of your file where you use this function
     // to avoid dynamic imports which don't work in React Native development builds
     logger.info('[Debug] Forcing sync now - import syncService manually');
-    console.log('='.repeat(60));
-    console.log('FORCE SYNC - MANUAL TRIGGER NEEDED');
-    console.log('='.repeat(60));
-    console.log('Import syncService at the top and call syncService.processQueue()');
-    console.log('='.repeat(60));
+    logger.debug('='.repeat(60));
+    logger.debug('FORCE SYNC - MANUAL TRIGGER NEEDED');
+    logger.debug('='.repeat(60));
+    logger.debug('Import syncService at the top and call syncService.processQueue()');
+    logger.debug('='.repeat(60));
 
     return true;
   } catch (error) {

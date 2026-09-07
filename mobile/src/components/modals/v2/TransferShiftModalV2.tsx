@@ -26,6 +26,7 @@ import { apiService } from '../../../services/api';
 import type { Shift } from '../../../store/slices/shiftsSlice';
 import { useRedesignTheme } from '../../../theme/redesign';
 import { Eyebrow, GlassCard, PrimaryCTA } from '../../redesign';
+import { logger } from '../../../utils/logger';
 
 interface StaffMember {
   id: number;
@@ -89,7 +90,7 @@ export const TransferShiftModalV2: React.FC<Props> = ({
       );
       setStaffMembers(Array.isArray(response) ? response : []);
     } catch (err) {
-      console.error('Error fetching staff:', err);
+      logger.error('Error fetching staff:', err);
       Alert.alert('Error', 'Failed to load staff members. Please try again.');
     } finally {
       setLoading(false);
@@ -133,7 +134,7 @@ export const TransferShiftModalV2: React.FC<Props> = ({
         ],
       );
     } catch (err: any) {
-      console.error('Error creating exchange:', err);
+      logger.error('Error creating exchange:', err);
       Alert.alert(
         'Error',
         err.message || 'Failed to create transfer request. Please try again.',

@@ -23,6 +23,7 @@ import { colors, spacing, getColors } from '../../theme';
 import { useTheme } from '../../hooks/useTheme';
 import exchangeService, { ShiftExchange, OpenShiftRequest } from '../../services/exchangeService';
 import { useAuth } from '../../hooks/useAuth';
+import { logger } from '../../utils/logger';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -49,7 +50,7 @@ export const ShiftExchangesScreen: React.FC = () => {
       setDirectExchanges(data.direct_exchanges);
       setOpenRequests(data.open_requests);
     } catch (error) {
-      console.error('Error fetching exchange data:', error);
+      logger.error('Error fetching exchange data:', error);
       Alert.alert('Error', 'Failed to load exchanges. Please try again.');
     } finally {
       setLoading(false);

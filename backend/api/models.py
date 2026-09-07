@@ -1737,6 +1737,27 @@ class Shift(models.Model):
     manager_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_shifts')
     terms_accepted = models.BooleanField(default=False, help_text="whether venue terms were accepted for this shift")
     actual_hours_worked = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    # What the officer's device says happened, kept beside what the server
+    # observed. An offline check-in queued at 18:00 in a basement and synced at
+    # 23:00 was recorded as 23:00, because `check_in()` stamps `timezone.now()`
+    # and ignores the client's `check_in_time` entirely. Overwriting the
+    # trusted value would make attendance client-settable, so the reported time
+    # lands in its own column and pay keeps reading the server's until a
+    # manager reconciles the two.
+    reported_check_in_time = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Client-asserted check-in time from an offline replay. "
+                  "Never used for pay; for manager reconciliation only.",
+    )
+    reported_check_out_time = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Client-asserted check-out time from an offline replay.",
+    )
+    needs_attendance_review = models.BooleanField(
+        default=False,
+        help_text="An offline replay recorded a time the server could not "
+                  "verify. Surfaces in the manager attendance-exceptions queue.",
+    )
     payable_hours = models.DecimalField(
         max_digits=5, decimal_places=2, null=True, blank=True,
         help_text=(
@@ -2144,8 +2165,16 @@ class Shift(models.Model):
         return record
 
     def check_in(self, latitude, longitude, signature=None, photo=None,
-                 accuracy=None, mocked=None):
-        """Staff checks in for their shift with location verification and time restrictions"""
+                 accuracy=None, mocked=None, occurred_at=None,
+                 offline_replay=False):
+        """Staff checks in for their shift with location verification and time restrictions.
+
+        `occurred_at` is honoured only alongside `offline_replay`, and only
+        into `reported_check_in_time` — never into `check_in_time`, which stays
+        server-stamped. That keeps the replay from becoming a
+        pay-manipulation vector while giving a manager the officer's own
+        account of when they actually started.
+        """
         from datetime import timedelta
         
         # Time-based restrictions
@@ -2170,6 +2199,15 @@ class Shift(models.Model):
             # For same-day shifts: must be on the same date
             is_valid_checkin_period = (current_date == shift_start_date)
         
+        # An offline replay that syncs after midnight would otherwise be
+        # rejected outright ("Cannot check in to a shift from a previous
+        # date"), which is exactly how a worked shift ended up with no
+        # attendance record and nobody told. Accept it and flag it instead;
+        # a manager decides, rather than the queue silently giving up.
+        if offline_replay and not is_valid_checkin_period:
+            self.needs_attendance_review = True
+            is_valid_checkin_period = True
+
         if not is_valid_checkin_period:
             if current_date < shift_start_date:
                 days_diff = (shift_start_date - current_date).days
@@ -2210,6 +2248,12 @@ class Shift(models.Model):
             raise ValueError("Location verification failed")
         
         self.check_in_time = timezone.now()
+        if offline_replay and occurred_at:
+            self.reported_check_in_time = occurred_at
+            # A replay whose reported time is materially adrift from the
+            # server's is what a manager needs to look at.
+            if abs((self.check_in_time - occurred_at).total_seconds()) > 300:
+                self.needs_attendance_review = True
         self.check_in_location = self.build_location_record(
             latitude, longitude, accuracy=accuracy, mocked=mocked,
         )
@@ -2221,8 +2265,13 @@ class Shift(models.Model):
         self.save()
 
     def check_out(self, latitude, longitude, signature=None, photo=None,
-                  accuracy=None, mocked=None):
-        """Staff checks out from their shift with location verification"""
+                  accuracy=None, mocked=None, occurred_at=None,
+                  offline_replay=False):
+        """Staff checks out from their shift with location verification.
+
+        As `check_in`: a replay's own time is recorded beside the server's,
+        never instead of it.
+        """
         if self.status != 'in_progress':
             raise ValueError("Shift must be in progress to check out")
         
@@ -2230,6 +2279,10 @@ class Shift(models.Model):
             raise ValueError("Location verification failed")
         
         self.check_out_time = timezone.now()
+        if offline_replay and occurred_at:
+            self.reported_check_out_time = occurred_at
+            if abs((self.check_out_time - occurred_at).total_seconds()) > 300:
+                self.needs_attendance_review = True
         self.check_out_location = self.build_location_record(
             latitude, longitude, accuracy=accuracy, mocked=mocked,
         )

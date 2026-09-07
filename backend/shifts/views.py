@@ -30,6 +30,30 @@ logger = logging.getLogger(__name__)
 LATE_CHECKIN_GRACE = timedelta(minutes=30)
 
 
+def _parse_occurred_at(request):
+    """The client's own timestamp for an offline attendance event.
+
+    Returned as a datetime or None. Only ever written to a `reported_*`
+    column — the trusted `check_in_time` / `check_out_time` stay
+    server-stamped, so this cannot become a way to move pay.
+    """
+    from django.utils.dateparse import parse_datetime
+
+    raw = request.data.get('occurred_at') or request.data.get('check_in_time') \
+        or request.data.get('check_out_time')
+    if not raw:
+        return None
+    try:
+        parsed = parse_datetime(raw) if isinstance(raw, str) else raw
+    except (TypeError, ValueError):
+        return None
+    if parsed is None:
+        return None
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
 def _alert_if_not_licensed_for_shift(request, shift):
     """Record an alert when an officer starts a shift without a valid licence.
 
@@ -850,7 +874,15 @@ class ShiftViewSet(viewsets.ModelViewSet):
         # Check if already checked in
         if shift.check_in_time:
             return Response(
-                {"detail": "Shift already checked in"},
+                {
+                    "detail": "Shift already checked in",
+                    # The offline queue decides whether a replay already
+                    # succeeded. It used to substring-match this sentence,
+                    # which worked by coincidence of wording and was one copy
+                    # edit away from turning a completed action into a retry
+                    # storm and then a silently dropped item.
+                    "code": "already_checked_in",
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -1114,7 +1146,15 @@ class ShiftViewSet(viewsets.ModelViewSet):
         # Check if the shift is already checked in
         if shift.check_in_time:
             return Response(
-                {"detail": "Shift already checked in"},
+                {
+                    "detail": "Shift already checked in",
+                    # The offline queue decides whether a replay already
+                    # succeeded. It used to substring-match this sentence,
+                    # which worked by coincidence of wording and was one copy
+                    # edit away from turning a completed action into a retry
+                    # storm and then a silently dropped item.
+                    "code": "already_checked_in",
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
             
@@ -1238,6 +1278,12 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 # that distinguishes a real fix from a fabricated one.
                 accuracy=request.data.get('accuracy'),
                 mocked=request.data.get('mocked'),
+                # Offline replay: the device's own account of when this
+                # happened, recorded beside the server's stamp rather than
+                # instead of it. Only honoured when the client says this is a
+                # replay, so the online path is untouched.
+                occurred_at=_parse_occurred_at(request),
+                offline_replay=bool(request.data.get('offline_replay')),
             )
             
             serializer = self.get_serializer(shift)
@@ -1272,14 +1318,14 @@ class ShiftViewSet(viewsets.ModelViewSet):
         # Check if the shift is not checked in
         if not shift.check_in_time:
             return Response(
-                {"detail": "Shift not checked in yet"}, 
+                {"detail": "Shift not checked in yet", "code": "not_checked_in"},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
         # Check if the shift is already checked out
         if shift.check_out_time:
             return Response(
-                {"detail": "Shift already checked out"},
+                {"detail": "Shift already checked out", "code": "already_checked_out"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1329,6 +1375,12 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 # that distinguishes a real fix from a fabricated one.
                 accuracy=request.data.get('accuracy'),
                 mocked=request.data.get('mocked'),
+                # Offline replay: the device's own account of when this
+                # happened, recorded beside the server's stamp rather than
+                # instead of it. Only honoured when the client says this is a
+                # replay, so the online path is untouched.
+                occurred_at=_parse_occurred_at(request),
+                offline_replay=bool(request.data.get('offline_replay')),
             )
             
             serializer = self.get_serializer(shift)
@@ -3151,7 +3203,7 @@ class FrontendShiftViewSet(viewsets.GenericViewSet):
         # Check if the shift is already checked in
         if shift.check_in_time:
             return Response(
-                {"error": "Shift already checked in"}, 
+                {"error": "Shift already checked in", "code": "already_checked_in"},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
@@ -3180,6 +3232,12 @@ class FrontendShiftViewSet(viewsets.GenericViewSet):
                 # that distinguishes a real fix from a fabricated one.
                 accuracy=request.data.get('accuracy'),
                 mocked=request.data.get('mocked'),
+                # Offline replay: the device's own account of when this
+                # happened, recorded beside the server's stamp rather than
+                # instead of it. Only honoured when the client says this is a
+                # replay, so the online path is untouched.
+                occurred_at=_parse_occurred_at(request),
+                offline_replay=bool(request.data.get('offline_replay')),
             )
             
             serializer = self.get_serializer(shift)
@@ -3214,14 +3272,14 @@ class FrontendShiftViewSet(viewsets.GenericViewSet):
         # Check if the shift is not checked in
         if not shift.check_in_time:
             return Response(
-                {"error": "Shift not checked in yet"}, 
+                {"error": "Shift not checked in yet", "code": "not_checked_in"},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
         # Check if the shift is already checked out
         if shift.check_out_time:
             return Response(
-                {"error": "Shift already checked out"}, 
+                {"error": "Shift already checked out", "code": "already_checked_out"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -3270,6 +3328,12 @@ class FrontendShiftViewSet(viewsets.GenericViewSet):
                 # that distinguishes a real fix from a fabricated one.
                 accuracy=request.data.get('accuracy'),
                 mocked=request.data.get('mocked'),
+                # Offline replay: the device's own account of when this
+                # happened, recorded beside the server's stamp rather than
+                # instead of it. Only honoured when the client says this is a
+                # replay, so the online path is untouched.
+                occurred_at=_parse_occurred_at(request),
+                offline_replay=bool(request.data.get('offline_replay')),
             )
             
             serializer = self.get_serializer(shift)

@@ -11,17 +11,32 @@ import { apiService } from './api';
 import { logger } from '../utils/logger';
 import { API_ENDPOINTS } from '../config/api.config';
 
-// Sync action types
+// Sync action types.
+//
+// 'start_break' and 'end_break' used to be here, queueing POSTs to
+// /shifts/{id}/start_break/ and /end_break/. Neither endpoint has ever
+// existed. Nothing enqueued them — the Redux actions were imported only by an
+// unrouted screen — but had the UI been wired, every break would have 404'd,
+// burned five retries and been dropped silently while the app showed the
+// officer as on break. Breaks are not implemented end to end; see
+// `manage.py report_unrecorded_breaks` for what that currently costs.
 export type SyncActionType =
   | 'check_in'
   | 'check_out'
-  | 'start_break'
-  | 'end_break'
   | 'create_incident'
   | 'update_incident'
   | 'create_shift_check'
   | 'create_logbook_signoff'
   | 'update_shift';
+
+/** A queued action that exhausted its retries and will not be sent again. */
+export interface SyncFailure {
+  type: SyncActionType;
+  entityType: string;
+  entityId: string;
+  attempts: number;
+  message: string;
+}
 
 class SyncService {
   private isSyncing = false;
@@ -29,6 +44,7 @@ class SyncService {
   private maxRetries = 5;
   private retryDelays = [1000, 2000, 5000, 10000, 30000]; // Exponential backoff in ms
   private listeners: Set<(state: { isOnline: boolean; isSyncing: boolean; queueCount: number }) => void> = new Set();
+  private failureListeners: Array<(failure: SyncFailure) => void> = [];
   private initialized = false;
 
   constructor() {
@@ -210,17 +226,25 @@ class SyncService {
    */
   private async executeAction(type: SyncActionType, payload: any) {
     switch (type) {
+      // Everything reaching this queue was captured offline and is being
+      // replayed. Saying so lets the server keep the device's own timestamp
+      // beside its own — an 18:00 check-in that syncs at 23:00 used to be
+      // recorded as 23:00, and one syncing after midnight was rejected as
+      // "from a previous date", which is how a worked shift ended up with no
+      // attendance record at all.
       case 'check_in':
-        await apiService.post(API_ENDPOINTS.SHIFTS.CHECK_IN(payload.shift_id), payload);
+        await apiService.post(API_ENDPOINTS.SHIFTS.CHECK_IN(payload.shift_id), {
+          ...payload,
+          offline_replay: true,
+          occurred_at: payload.check_in_time,
+        });
         break;
       case 'check_out':
-        await apiService.post(API_ENDPOINTS.SHIFTS.CHECK_OUT(payload.shift_id), payload);
-        break;
-      case 'start_break':
-        await apiService.post(API_ENDPOINTS.SHIFTS.START_BREAK(payload.shift_id), payload);
-        break;
-      case 'end_break':
-        await apiService.post(API_ENDPOINTS.SHIFTS.END_BREAK(payload.shift_id), payload);
+        await apiService.post(API_ENDPOINTS.SHIFTS.CHECK_OUT(payload.shift_id), {
+          ...payload,
+          offline_replay: true,
+          occurred_at: payload.check_out_time,
+        });
         break;
       case 'create_incident':
         await apiService.post(API_ENDPOINTS.INCIDENTS.CREATE, payload);
@@ -243,13 +267,29 @@ class SyncService {
   }
 
   /**
-   * Check if an error indicates the action is already completed (stale entry)
-   * These errors mean we can safely remove the queue item instead of retrying
+   * Did the server already record this action? Then the queue item is stale
+   * and can be dropped rather than retried.
+   *
+   * This used to decide by substring-matching English error prose — 'already
+   * checked in' — which worked only by coincidence of wording. One copy edit
+   * to that message would have turned a correctly-completed action into five
+   * retries and then a silently failed item, with the officer's attendance
+   * never recorded and nobody told.
+   *
+   * The server now returns a stable `code` on these responses. Match on that.
+   * The prose check stays as a fallback so an older backend still behaves.
    */
   private isAlreadyCompletedError(error: any, actionType: SyncActionType): boolean {
-    const errorMessage = (error?.message || error?.response?.detail || '').toLowerCase();
+    const code = error?.response?.data?.code || error?.response?.code || error?.code;
+    const COMPLETED_CODES: Partial<Record<SyncActionType, string>> = {
+      check_in: 'already_checked_in',
+      check_out: 'already_checked_out',
+    };
+    if (code && COMPLETED_CODES[actionType] === code) {
+      return true;
+    }
 
-    // Check for common "already done" error patterns
+    const errorMessage = (error?.message || error?.response?.detail || '').toLowerCase();
     if (actionType === 'check_in') {
       return errorMessage.includes('already checked in') ||
              errorMessage.includes('shift already checked in');
@@ -258,14 +298,39 @@ class SyncService {
       return errorMessage.includes('already checked out') ||
              errorMessage.includes('shift already checked out');
     }
-    if (actionType === 'start_break') {
-      return errorMessage.includes('already on break');
-    }
-    if (actionType === 'end_break') {
-      return errorMessage.includes('not on break');
-    }
-
     return false;
+  }
+
+  /**
+   * Tell somebody when a queued action is given up on for good.
+   *
+   * Registered by the app shell; each listener decides how to surface it. Kept
+   * as a listener list rather than an Alert here so the service stays free of
+   * UI, and so a failure raised while the app is backgrounded can be handled
+   * differently from one raised in the foreground.
+   */
+  onPermanentFailure(listener: (failure: SyncFailure) => void): () => void {
+    this.failureListeners.push(listener);
+    return () => {
+      this.failureListeners = this.failureListeners.filter((l) => l !== listener);
+    };
+  }
+
+  private notifyPermanentFailure(queueItem: SyncQueueItem, error: any) {
+    const failure: SyncFailure = {
+      type: queueItem.type,
+      entityType: queueItem.entityType,
+      entityId: queueItem.entityId,
+      attempts: queueItem.attempts + 1,
+      message: error?.message || 'Unknown error',
+    };
+    for (const listener of this.failureListeners) {
+      try {
+        listener(failure);
+      } catch (listenerError) {
+        logger.error('[SyncService] Failure listener threw', listenerError);
+      }
+    }
   }
 
   /**
@@ -295,6 +360,12 @@ class SyncService {
       });
 
       await this.updateEntitySyncStatus(queueItem.entityType, queueItem.entityId, 'failed');
+
+      // The officer was told "saved locally; will sync when you have
+      // internet". They worked the shift. If this is where it ends, no
+      // attendance record exists and — until now — the only trace was a
+      // logger.warn nobody reads. Silent failure is the actual harm here.
+      this.notifyPermanentFailure(queueItem, error);
     } else {
       const delay = this.retryDelays[Math.min(newAttempts - 1, this.retryDelays.length - 1)];
       logger.info('[SyncService] Scheduling retry', { attempt: newAttempts, delay });

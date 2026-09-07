@@ -25,6 +25,7 @@ import { Button } from '../ui';
 import exchangeService from '../../services/exchangeService';
 import { Shift } from '../../store/slices/shiftsSlice';
 import { apiService } from '../../services/api';
+import { logger } from '../../utils/logger';
 
 interface StaffMember {
   id: number;
@@ -87,7 +88,7 @@ export const TransferShiftModal: React.FC<TransferShiftModalProps> = ({
       // Response is direct array, not paginated (no .results wrapper needed)
       setStaffMembers(Array.isArray(response) ? response : []);
     } catch (error) {
-      console.error('Error fetching staff members:', error);
+      logger.error('Error fetching staff members:', error);
       Alert.alert('Error', 'Failed to load staff members. Please try again.');
     } finally {
       setLoading(false);
@@ -128,7 +129,7 @@ export const TransferShiftModal: React.FC<TransferShiftModalProps> = ({
         ]
       );
     } catch (error: any) {
-      console.error('Error creating exchange:', error);
+      logger.error('Error creating exchange:', error);
       Alert.alert(
         'Error',
         error.message || 'Failed to create transfer request. Please try again.'

@@ -6,6 +6,7 @@ import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 import { API_ENDPOINTS, getAuthHeaders } from '../config/api.config';
 import notificationService from './notificationService';
+import { logger } from '../utils/logger';
 
 export interface LoginCredentials {
   username: string;
@@ -161,7 +162,7 @@ class AuthService {
       await notificationService.unregisterPushToken();
     } catch (error) {
       // Log but don't prevent logout
-      console.warn('[AuthService] Failed to unregister push token:', error);
+      logger.warn('[AuthService] Failed to unregister push token:', error);
     }
 
     // Tear down any in-flight OAuth WebBrowser session so the next social sign-in
@@ -219,13 +220,13 @@ class AuthService {
 
       // Defensive check - ensure result exists and has success property
       if (!result || typeof result.success === 'undefined') {
-        console.error('Biometric authentication returned invalid result:', result);
+        logger.error('Biometric authentication returned invalid result:', result);
         return false;
       }
 
       return result.success;
     } catch (error) {
-      console.error('Biometric authentication error:', error);
+      logger.error('Biometric authentication error:', error);
       return false;
     }
   }
@@ -327,16 +328,16 @@ class AuthService {
       const normalizedProfile = this.transformProfileResponse(profileData);
 
       if (normalizedProfile?.staff_profile) {
-        console.log('[AuthService] Normalized profile to app user shape');
-        console.log('[AuthService] User ID:', normalizedProfile.id);
-        console.log('[AuthService] Employment type:', normalizedProfile.staff_profile?.employment_type);
+        logger.debug('[AuthService] Normalized profile to app user shape');
+        logger.debug('[AuthService] User ID:', normalizedProfile.id);
+        logger.debug('[AuthService] Employment type:', normalizedProfile.staff_profile?.employment_type);
       } else {
-        console.log('[AuthService] Profile already in User format');
+        logger.debug('[AuthService] Profile already in User format');
       }
 
       return normalizedProfile;
     } catch (error) {
-      console.error('[AuthService] Failed to fetch user profile:', error);
+      logger.error('[AuthService] Failed to fetch user profile:', error);
       throw new Error('Failed to fetch user profile');
     }
   }
@@ -423,7 +424,7 @@ class AuthService {
    */
   async uploadProfilePhoto(token: string, photoUri: string): Promise<{ url: string }> {
     try {
-      console.log('[AuthService] Uploading profile photo:', photoUri);
+      logger.debug('[AuthService] Uploading profile photo:', photoUri);
 
       // Create form data for multipart upload
       const formData = new FormData();
@@ -457,10 +458,10 @@ class AuthService {
         }
       );
 
-      console.log('[AuthService] Profile photo uploaded:', response.data);
+      logger.debug('[AuthService] Profile photo uploaded:', response.data);
       return response.data;
     } catch (error: any) {
-      console.error('[AuthService] Failed to upload profile photo:', error);
+      logger.error('[AuthService] Failed to upload profile photo:', error);
       if (error.response?.data) {
         const errorData = error.response.data;
         const message = typeof errorData === 'string'
@@ -486,7 +487,7 @@ class AuthService {
     phone_number?: string | null;
   }): Promise<any> {
     try {
-      console.log('[AuthService] Updating profile with data:', data);
+      logger.debug('[AuthService] Updating profile with data:', data);
       
       await axios.patch(
         API_ENDPOINTS.AUTH.PROFILE,
@@ -501,7 +502,7 @@ class AuthService {
       // remains in the User + staff_profile structure used across the app.
       return await this.fetchUserProfile(token);
     } catch (error: any) {
-      console.error('[AuthService] Failed to update profile:', error);
+      logger.error('[AuthService] Failed to update profile:', error);
       if (error.response?.data) {
         // Extract error message from response
         const errorData = error.response.data;

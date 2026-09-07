@@ -174,7 +174,7 @@ export const RegisterScreen = () => {
 
         // Register push notification token (non-blocking)
         notificationService.registerPushToken().catch((error) => {
-          console.log('[RegisterScreen] Push token registration failed (non-critical):', error);
+          logger.debug('[RegisterScreen] Push token registration failed (non-critical):', error);
         });
 
         logger.logAuth('apple_signup', userProfile?.id);

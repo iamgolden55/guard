@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { logger } from '../utils/logger';
 
 interface Props {
   children: React.ReactNode;
@@ -30,8 +31,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[ErrorBoundary] Caught error:', error);
-    console.error('[ErrorBoundary] Component stack:', errorInfo.componentStack);
+    logger.error('[ErrorBoundary] Caught error:', error);
+    logger.error('[ErrorBoundary] Component stack:', errorInfo.componentStack);
     this.setState({ errorInfo });
   }
 

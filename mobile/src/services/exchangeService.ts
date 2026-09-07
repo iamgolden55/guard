@@ -4,6 +4,7 @@
  */
 
 import api from './api';
+import { logger } from '../utils/logger';
 
 // Types for exchange-related data
 export interface ShiftExchange {
@@ -145,7 +146,7 @@ class ExchangeService {
 
       return Array.isArray(response) ? response : [];
     } catch (error) {
-      console.error('getMyExchanges error:', error);
+      logger.error('getMyExchanges error:', error);
       throw error;
     }
   }
@@ -158,7 +159,7 @@ class ExchangeService {
       const response = await api.post<ShiftExchange>('/api/v1/shift-exchanges/', data);
       return response;
     } catch (error) {
-      console.error('createExchange error:', error);
+      logger.error('createExchange error:', error);
       throw error;
     }
   }
@@ -176,7 +177,7 @@ class ExchangeService {
       );
       return result;
     } catch (error) {
-      console.error('acceptExchange error:', error);
+      logger.error('acceptExchange error:', error);
       throw error;
     }
   }
@@ -191,7 +192,7 @@ class ExchangeService {
       );
       return result;
     } catch (error) {
-      console.error('cancelExchange error:', error);
+      logger.error('cancelExchange error:', error);
       throw error;
     }
   }
@@ -214,7 +215,7 @@ class ExchangeService {
 
       return Array.isArray(response) ? response : [];
     } catch (error) {
-      console.error('getMyOpenShiftRequests error:', error);
+      logger.error('getMyOpenShiftRequests error:', error);
       throw error;
     }
   }
@@ -227,7 +228,7 @@ class ExchangeService {
       const response = await api.get<OpenShiftRequest[]>('/api/v1/open-shift-requests/available/');
       return Array.isArray(response) ? response : [];
     } catch (error) {
-      console.error('getAvailableShifts error:', error);
+      logger.error('getAvailableShifts error:', error);
       throw error;
     }
   }
@@ -240,7 +241,7 @@ class ExchangeService {
       const response = await api.post<OpenShiftRequest>('/api/v1/open-shift-requests/', data);
       return response;
     } catch (error) {
-      console.error('releaseShift error:', error);
+      logger.error('releaseShift error:', error);
       throw error;
     }
   }
@@ -255,7 +256,7 @@ class ExchangeService {
       );
       return result;
     } catch (error) {
-      console.error('claimShift error:', error);
+      logger.error('claimShift error:', error);
       throw error;
     }
   }
@@ -270,7 +271,7 @@ class ExchangeService {
       );
       return result;
     } catch (error) {
-      console.error('cancelOpenShiftRequest error:', error);
+      logger.error('cancelOpenShiftRequest error:', error);
       throw error;
     }
   }
@@ -298,7 +299,7 @@ class ExchangeService {
         available_shifts: availableShifts,
       };
     } catch (error) {
-      console.error('getAllExchangeActivities error:', error);
+      logger.error('getAllExchangeActivities error:', error);
       throw error;
     }
   }
@@ -311,7 +312,7 @@ class ExchangeService {
       const exchanges = await this.getMyExchanges();
       return exchanges.filter((ex) => ex.status === 'pending');
     } catch (error) {
-      console.error('getPendingExchanges error:', error);
+      logger.error('getPendingExchanges error:', error);
       throw error;
     }
   }
@@ -324,7 +325,7 @@ class ExchangeService {
       const exchanges = await this.getMyExchanges();
       return exchanges.filter((ex) => ex.status === 'accepted_by_target');
     } catch (error) {
-      console.error('getAcceptedExchanges error:', error);
+      logger.error('getAcceptedExchanges error:', error);
       throw error;
     }
   }
@@ -342,7 +343,7 @@ class ExchangeService {
       );
       return pendingIncoming.length;
     } catch (error) {
-      console.error('getPendingIncomingExchangesCount error:', error);
+      logger.error('getPendingIncomingExchangesCount error:', error);
       return 0; // Return 0 on error to not block UI
     }
   }
@@ -356,7 +357,7 @@ class ExchangeService {
       const availableShifts = await this.getAvailableShifts();
       return availableShifts.length;
     } catch (error) {
-      console.error('getAvailableShiftsCount error:', error);
+      logger.error('getAvailableShiftsCount error:', error);
       return 0; // Return 0 on error to not block UI
     }
   }

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as Notifications from 'expo-notifications';
 import notificationService from '../services/notificationService';
 import { navigate, isNavigationReady } from '../navigation/navigationRef';
+import { logger } from '../utils/logger';
 
 /**
  * Custom hook to manage notifications
@@ -19,48 +20,48 @@ export const useNotifications = () => {
     // Initialize notifications
     const initNotifications = async () => {
       try {
-        console.log('[Notifications] 🔔 Initializing notification system...');
+        logger.debug('[Notifications] 🔔 Initializing notification system...');
 
         // Step 1: Request permissions
-        console.log('[Notifications] Step 1/4: Requesting permissions...');
+        logger.debug('[Notifications] Step 1/4: Requesting permissions...');
         const hasPermission = await notificationService.requestPermissions();
         if (!hasPermission) {
-          console.warn('[Notifications] ⚠️ Permissions not granted - notifications disabled');
+          logger.warn('[Notifications] ⚠️ Permissions not granted - notifications disabled');
           return;
         }
-        console.log('[Notifications] ✅ Permissions granted');
+        logger.debug('[Notifications] ✅ Permissions granted');
 
         // Step 2: Create notification channels (Android)
-        console.log('[Notifications] Step 2/4: Creating notification channels...');
+        logger.debug('[Notifications] Step 2/4: Creating notification channels...');
         await notificationService.createNotificationChannels();
-        console.log('[Notifications] ✅ Channels created');
+        logger.debug('[Notifications] ✅ Channels created');
 
         // Step 3: Register push token (OPTIONAL - only for remote push)
         // NOTE: Push token registration now happens after login in useAuth hook
-        console.log('[Notifications] Step 3/4: Push token will be registered after login');
+        logger.debug('[Notifications] Step 3/4: Push token will be registered after login');
         // Push token registration moved to useAuth to ensure authentication
 
         // Step 4: Setup notification listeners
-        console.log('[Notifications] Step 4/4: Setting up notification listeners...');
+        logger.debug('[Notifications] Step 4/4: Setting up notification listeners...');
         notificationService.setupNotificationListeners(
           // Handler for notifications received while app is foregrounded
           (notification) => {
-            console.log('[Notifications] 📬 Notification received in foreground:', notification);
+            logger.debug('[Notifications] 📬 Notification received in foreground:', notification);
             // You can show a custom in-app notification here if needed
           },
           // Handler for user tapping on notification
           (response) => {
-            console.log('[Notifications] 👆 Notification tapped');
+            logger.debug('[Notifications] 👆 Notification tapped');
             handleNotificationTapped(response);
           }
         );
-        console.log('[Notifications] ✅ Listeners ready');
+        logger.debug('[Notifications] ✅ Listeners ready');
 
-        console.log('[Notifications] 🎉 Notification system initialized successfully!');
-        console.log('[Notifications] ℹ️  Local shift reminders will work offline');
+        logger.debug('[Notifications] 🎉 Notification system initialized successfully!');
+        logger.debug('[Notifications] ℹ️  Local shift reminders will work offline');
         isInitialized.current = true;
       } catch (error) {
-        console.error('[Notifications] ❌ Error initializing notifications:', error);
+        logger.error('[Notifications] ❌ Error initializing notifications:', error);
       }
     };
 
@@ -78,11 +79,11 @@ export const useNotifications = () => {
   const handleNotificationTapped = (response: Notifications.NotificationResponse) => {
     try {
       const data = response.notification.request.content.data;
-      console.log('Notification tapped with data:', data);
+      logger.debug('Notification tapped with data:', data);
 
       // Check if navigation is ready
       if (!isNavigationReady()) {
-        console.warn('Navigation not ready yet, waiting...');
+        logger.warn('Navigation not ready yet, waiting...');
         // Retry after a short delay to allow navigation to initialize
         setTimeout(() => handleNotificationTapped(response), 500);
         return;
@@ -91,20 +92,20 @@ export const useNotifications = () => {
       // Navigate based on notification data
       if (data.screen === 'ShiftDetails' && data.shiftId) {
         // Deep link to shift details screen with shiftId
-        console.log('[Notifications] Navigating to ShiftDetails with ID:', data.shiftId);
+        logger.debug('[Notifications] Navigating to ShiftDetails with ID:', data.shiftId);
         navigate('Main', {
           screen: 'ShiftDetails',
           params: { shiftId: data.shiftId }  // Pass shiftId, not full shift object
         });
       } else if (data.screen === 'AvailableShifts') {
         // Deep link to available shifts
-        console.log('[Notifications] Navigating to AvailableShifts');
+        logger.debug('[Notifications] Navigating to AvailableShifts');
         navigate('Main', {
           screen: 'AvailableShifts'
         });
       } else if (data.screen === 'ShiftExchanges') {
         // Deep link to shift exchanges
-        console.log('[Notifications] Navigating to ShiftExchanges');
+        logger.debug('[Notifications] Navigating to ShiftExchanges');
         navigate('Main', {
           screen: 'ShiftExchanges'
         });
@@ -113,7 +114,7 @@ export const useNotifications = () => {
       // Clear the notification badge
       notificationService.clearBadge();
     } catch (error) {
-      console.error('Error handling notification tap:', error);
+      logger.error('Error handling notification tap:', error);
     }
   };
 

@@ -21,6 +21,7 @@ import { colors, spacing } from '../../theme';
 import { Button } from '../ui';
 import exchangeService from '../../services/exchangeService';
 import { Shift } from '../../store/slices/shiftsSlice';
+import { logger } from '../../utils/logger';
 
 interface ReleaseShiftModalProps {
   visible: boolean;
@@ -80,7 +81,7 @@ export const ReleaseShiftModal: React.FC<ReleaseShiftModalProps> = ({
         ]
       );
     } catch (error: any) {
-      console.error('Error releasing shift:', error);
+      logger.error('Error releasing shift:', error);
 
       // ApiError now contains the actual error message from Django
       const errorMessage = error.message || 'Failed to release shift. Please try again.';

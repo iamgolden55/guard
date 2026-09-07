@@ -23,6 +23,7 @@ import exchangeService from '../../../services/exchangeService';
 import type { Shift } from '../../../store/slices/shiftsSlice';
 import { useRedesignTheme } from '../../../theme/redesign';
 import { Eyebrow, GlassCard, PrimaryCTA } from '../../redesign';
+import { logger } from '../../../utils/logger';
 
 interface Props {
   visible: boolean;
@@ -92,7 +93,7 @@ export const ReleaseShiftModalV2: React.FC<Props> = ({
         ],
       );
     } catch (err: any) {
-      console.error('Error releasing shift:', err);
+      logger.error('Error releasing shift:', err);
       Alert.alert(
         'Error',
         err.message || 'Failed to release shift. Please try again.',

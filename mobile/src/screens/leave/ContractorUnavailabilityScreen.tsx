@@ -30,6 +30,7 @@ import contractorUnavailabilityService, {
   ContractorUnavailability,
   CreateUnavailabilityRequest,
 } from '../../services/contractorUnavailabilityService';
+import { logger } from '../../utils/logger';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -55,7 +56,7 @@ export const ContractorUnavailabilityScreen: React.FC = () => {
       const periods = await contractorUnavailabilityService.getUpcomingUnavailability();
       setUnavailabilityPeriods(periods);
     } catch (error) {
-      console.error('Error loading unavailability periods:', error);
+      logger.error('Error loading unavailability periods:', error);
       Alert.alert('Error', 'Failed to load unavailability periods');
     } finally {
       setLoading(false);
@@ -124,7 +125,7 @@ export const ContractorUnavailabilityScreen: React.FC = () => {
       resetForm();
       loadData();
     } catch (error: any) {
-      console.error('Error saving unavailability:', error);
+      logger.error('Error saving unavailability:', error);
       Alert.alert('Error', error.response?.data?.detail || 'Failed to save unavailability period');
     } finally {
       setSubmitting(false);
@@ -154,7 +155,7 @@ export const ContractorUnavailabilityScreen: React.FC = () => {
               Alert.alert('Success', 'Unavailability period deleted');
               loadData();
             } catch (error) {
-              console.error('Error deleting unavailability:', error);
+              logger.error('Error deleting unavailability:', error);
               Alert.alert('Error', 'Failed to delete unavailability period');
             }
           },

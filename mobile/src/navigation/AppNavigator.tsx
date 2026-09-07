@@ -25,6 +25,7 @@ import { OnboardingCarousel } from '../screens/onboarding';
 
 // Navigation Ref
 import { navigationRef } from './navigationRef';
+import { logger } from '../utils/logger';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -43,14 +44,14 @@ export const AppNavigator = () => {
 
         // Defensive check - ensure result exists and has required properties
         if (!result || typeof result.success === 'undefined') {
-          console.error('[AppNavigator] checkAuthStatus returned invalid result:', result);
+          logger.error('[AppNavigator] checkAuthStatus returned invalid result:', result);
           setAuthChecked(true);
           setIsLoading(false);
           return;
         }
 
         // Log the auth check result - safe to access properties now
-        console.log('[AppNavigator] Auth check complete:', {
+        logger.debug('[AppNavigator] Auth check complete:', {
           success: result.success,
           isAuthenticated: result.isAuthenticated
         });
@@ -62,7 +63,7 @@ export const AppNavigator = () => {
           setIsLoading(false);
         }, 0);
       } catch (error) {
-        console.error('[AppNavigator] Auth check error:', error);
+        logger.error('[AppNavigator] Auth check error:', error);
         setAuthChecked(true);
         setIsLoading(false);
       }

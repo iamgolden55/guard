@@ -30,6 +30,7 @@ import type { MainStackParamList } from '../../../types/navigation';
 import { uberColors, uberRadius, uberShadows, uberSpacing, uberShiftStatus } from '../../../theme/uberTheme';
 import exchangeService, { OpenShiftRequest } from '../../../services/exchangeService';
 import { UberEmptyState } from './components';
+import { logger } from '../../../utils/logger';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -141,7 +142,7 @@ export const UberAvailableShiftsScreen: React.FC = () => {
       const shifts = await exchangeService.getAvailableShifts();
       setAvailableShifts(shifts);
     } catch (error) {
-      console.error('Error fetching available shifts:', error);
+      logger.error('Error fetching available shifts:', error);
       Alert.alert('Error', 'Failed to load available shifts.');
     } finally {
       setLoading(false);

@@ -9,6 +9,7 @@ import type {
   CreateExchangeRequest,
   CreateOpenShiftRequest,
 } from './exchangeService';
+import { logger } from '../utils/logger';
 
 // Storage keys
 const QUEUE_STORAGE_KEY = '@shift_exchange_queue';
@@ -83,7 +84,7 @@ class QueueService {
 
       this.notifyListeners();
     } catch (error) {
-      console.error('Error loading queue:', error);
+      logger.error('Error loading queue:', error);
     }
   }
 
@@ -97,7 +98,7 @@ class QueueService {
         AsyncStorage.setItem(QUEUE_METADATA_KEY, JSON.stringify(this.metadata)),
       ]);
     } catch (error) {
-      console.error('Error saving queue:', error);
+      logger.error('Error saving queue:', error);
     }
   }
 
@@ -164,7 +165,7 @@ class QueueService {
    */
   async syncQueue(): Promise<{ success: number; failed: number }> {
     if (this.isSyncing) {
-      console.log('Sync already in progress');
+      logger.debug('Sync already in progress');
       return { success: 0, failed: 0 };
     }
 
@@ -191,7 +192,7 @@ class QueueService {
         this.metadata.totalSynced++;
         this.metadata.lastSuccessfulSync = Date.now();
       } catch (error: any) {
-        console.error(`Failed to sync action ${action.id}:`, error);
+        logger.error(`Failed to sync action ${action.id}:`, error);
 
         // Increment retry count
         action.retryCount++;

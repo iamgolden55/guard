@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { API_CONFIG, NOTIFICATION_CONFIG } from '../utils/constants';
 import api from './api';
+import { logger } from '../utils/logger';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -58,7 +59,7 @@ class NotificationService {
     try {
       // Check if we're on a physical device
       if (!Device.isDevice) {
-        console.warn('Push notifications only work on physical devices');
+        logger.warn('Push notifications only work on physical devices');
         return false;
       }
 
@@ -81,12 +82,12 @@ class NotificationService {
       );
 
       if (!granted) {
-        console.warn('Notification permissions not granted');
+        logger.warn('Notification permissions not granted');
       }
 
       return granted;
     } catch (error) {
-      console.error('Error requesting notification permissions:', error);
+      logger.error('Error requesting notification permissions:', error);
       return false;
     }
   }
@@ -99,7 +100,7 @@ class NotificationService {
       const { status } = await Notifications.getPermissionsAsync();
       return status === 'granted';
     } catch (error) {
-      console.error('Error checking notification permissions:', error);
+      logger.error('Error checking notification permissions:', error);
       return false;
     }
   }
@@ -149,9 +150,9 @@ class NotificationService {
           }
         );
 
-        console.log('Notification channels created successfully');
+        logger.debug('Notification channels created successfully');
       } catch (error) {
-        console.error('Error creating notification channels:', error);
+        logger.error('Error creating notification channels:', error);
       }
     }
   }
@@ -165,39 +166,39 @@ class NotificationService {
    */
   async registerPushToken(): Promise<string | null> {
     try {
-      console.log('[Notifications] 🔄 Starting push token registration...');
-      console.log('[Notifications] Environment:', Constants.executionEnvironment);
-      console.log('[Notifications] Platform:', Platform.OS);
-      console.log('[Notifications] Project ID:', API_CONFIG.EXPO_PROJECT_ID);
-      console.log('[Notifications] Is Device:', Device.isDevice);
+      logger.debug('[Notifications] 🔄 Starting push token registration...');
+      logger.debug('[Notifications] Environment:', Constants.executionEnvironment);
+      logger.debug('[Notifications] Platform:', Platform.OS);
+      logger.debug('[Notifications] Project ID:', API_CONFIG.EXPO_PROJECT_ID);
+      logger.debug('[Notifications] Is Device:', Device.isDevice);
 
       // Skip push token registration if no valid project ID configured
       if (!API_CONFIG.EXPO_PROJECT_ID || API_CONFIG.EXPO_PROJECT_ID === 'your-expo-project-id') {
-        console.log('[Notifications] ⏭️ Skipping push token registration (no project ID configured)');
-        console.log('[Notifications] ✅ Local notifications will still work!');
+        logger.debug('[Notifications] ⏭️ Skipping push token registration (no project ID configured)');
+        logger.debug('[Notifications] ✅ Local notifications will still work!');
         return null;
       }
 
       if (!Device.isDevice) {
-        console.log('[Notifications] ⏭️ Push tokens only work on physical devices (simulator detected)');
+        logger.debug('[Notifications] ⏭️ Push tokens only work on physical devices (simulator detected)');
         return null;
       }
 
       // Check permissions first
       const hasPermission = await this.hasPermissions();
-      console.log('[Notifications] Has permission:', hasPermission);
+      logger.debug('[Notifications] Has permission:', hasPermission);
       if (!hasPermission) {
-        console.warn('[Notifications] ⏭️ Cannot register push token without permissions');
+        logger.warn('[Notifications] ⏭️ Cannot register push token without permissions');
         return null;
       }
 
       // Get Expo push token
-      console.log('[Notifications] 🔑 Requesting Expo push token...');
+      logger.debug('[Notifications] 🔑 Requesting Expo push token...');
       const tokenData = await Notifications.getExpoPushTokenAsync({
         projectId: API_CONFIG.EXPO_PROJECT_ID,
       });
       const token = tokenData.data;
-      console.log('[Notifications] 🔑 Got token:', token);
+      logger.debug('[Notifications] 🔑 Got token:', token);
 
       this.pushToken = token;
 
@@ -205,14 +206,14 @@ class NotificationService {
       await AsyncStorage.setItem(STORAGE_KEY.PUSH_TOKEN, token);
 
       // Register token with backend
-      console.log('[Notifications] 📤 Registering token with backend...');
+      logger.debug('[Notifications] 📤 Registering token with backend...');
       await this.registerTokenWithBackend(token);
 
-      console.log('[Notifications] ✅ Push token registered successfully!');
+      logger.debug('[Notifications] ✅ Push token registered successfully!');
       return token;
     } catch (error: any) {
-      console.error('[Notifications] ❌ Push token registration failed:', error?.message || error);
-      console.log('[Notifications] ✅ Local notifications will still work!');
+      logger.error('[Notifications] ❌ Push token registration failed:', error?.message || error);
+      logger.debug('[Notifications] ✅ Local notifications will still work!');
       return null;
     }
   }
@@ -227,17 +228,17 @@ class NotificationService {
         platform: Platform.OS,
         device_id: Device.osInternalBuildId || 'unknown',
       };
-      console.log('[Notifications] 📤 Sending to backend:', JSON.stringify(payload));
+      logger.debug('[Notifications] 📤 Sending to backend:', JSON.stringify(payload));
 
       const response = await api.post('/api/v1/notifications/devices/', payload);
-      console.log('[Notifications] ✅ Backend registration successful:', response);
+      logger.debug('[Notifications] ✅ Backend registration successful:', response);
     } catch (error: any) {
       // Handle duplicate token gracefully (HTTP 400)
       if (error?.statusCode === 400) {
-        console.log('[Notifications] ℹ️ Push token already registered (skipping)');
+        logger.debug('[Notifications] ℹ️ Push token already registered (skipping)');
       } else {
-        console.error('[Notifications] ❌ Backend registration failed:', error?.message || error);
-        console.error('[Notifications] Error details:', JSON.stringify(error));
+        logger.error('[Notifications] ❌ Backend registration failed:', error?.message || error);
+        logger.error('[Notifications] Error details:', JSON.stringify(error));
       }
       // Don't throw - local notifications will still work
     }
@@ -253,11 +254,11 @@ class NotificationService {
       const token = await AsyncStorage.getItem(STORAGE_KEY.PUSH_TOKEN);
 
       if (!token) {
-        console.log('[Notifications] No push token to unregister');
+        logger.debug('[Notifications] No push token to unregister');
         return;
       }
 
-      console.log('[Notifications] 🔄 Unregistering push token on logout...');
+      logger.debug('[Notifications] 🔄 Unregistering push token on logout...');
 
       // Call backend to deactivate the token with retry logic
       // IMPORTANT: Pass retryOnAuth=false to prevent infinite recursion:
@@ -275,7 +276,7 @@ class NotificationService {
             30000, // timeout
             false // retryOnAuth - CRITICAL: must be false to prevent infinite loop
           );
-          console.log('[Notifications] ✅ Push token deactivated on backend');
+          logger.debug('[Notifications] ✅ Push token deactivated on backend');
           deactivationSucceeded = true;
           lastError = null;
           break;
@@ -283,13 +284,13 @@ class NotificationService {
           lastError = error;
           // Don't retry on 401 - the user is logging out anyway
           if (error?.statusCode === 401) {
-            console.log('[Notifications] ⚠️ Token expired during logout, skipping deactivation');
+            logger.debug('[Notifications] ⚠️ Token expired during logout, skipping deactivation');
             // Mark as "succeeded" for cleanup purposes - the token will be
             // reassigned when another user logs in on this device
             deactivationSucceeded = true;
             break;
           }
-          console.warn(
+          logger.warn(
             `[Notifications] ⚠️ Failed to deactivate token (attempt ${attempt}/${maxRetries}):`,
             error?.message || error
           );
@@ -306,17 +307,17 @@ class NotificationService {
         // Clear local storage only on success to prevent stale token issues
         await AsyncStorage.removeItem(STORAGE_KEY.PUSH_TOKEN);
         this.pushToken = null;
-        console.log('[Notifications] ✅ Push token unregistered successfully');
+        logger.debug('[Notifications] ✅ Push token unregistered successfully');
       } else {
         // Backend deactivation failed - store pending deactivation for next login
-        console.warn('[Notifications] ⚠️ All retry attempts failed, storing for later cleanup');
+        logger.warn('[Notifications] ⚠️ All retry attempts failed, storing for later cleanup');
         await AsyncStorage.setItem(
           '@pending_token_deactivation',
           JSON.stringify({ token, timestamp: Date.now() })
         );
       }
     } catch (error: any) {
-      console.error('[Notifications] ❌ Error unregistering push token:', error?.message || error);
+      logger.error('[Notifications] ❌ Error unregistering push token:', error?.message || error);
       // Don't throw - logout should still proceed
     }
   }
@@ -339,7 +340,7 @@ class NotificationService {
         return;
       }
 
-      console.log('[Notifications] 🔄 Processing pending token deactivation...');
+      logger.debug('[Notifications] 🔄 Processing pending token deactivation...');
 
       try {
         await api.post(
@@ -348,21 +349,21 @@ class NotificationService {
           30000,
           false // Don't retry on 401
         );
-        console.log('[Notifications] ✅ Pending token deactivation completed');
+        logger.debug('[Notifications] ✅ Pending token deactivation completed');
       } catch (error: any) {
         // 404 means token doesn't exist - already deactivated or reassigned to another user
         if (error?.statusCode === 404) {
-          console.log('[Notifications] ℹ️ Token already deactivated or reassigned (404)');
+          logger.debug('[Notifications] ℹ️ Token already deactivated or reassigned (404)');
         } else {
           // Other errors - keep the pending record to retry on next login
-          console.warn('[Notifications] ⚠️ Pending deactivation failed:', error?.message);
+          logger.warn('[Notifications] ⚠️ Pending deactivation failed:', error?.message);
           return;
         }
       }
 
       await AsyncStorage.removeItem('@pending_token_deactivation');
     } catch (error) {
-      console.error('[Notifications] ❌ Error processing pending deactivation:', error);
+      logger.error('[Notifications] ❌ Error processing pending deactivation:', error);
     }
   }
 
@@ -394,13 +395,13 @@ class NotificationService {
         const isStillValid = this.validateExistingNotifications(existingNotifications, shift);
 
         if (isStillValid) {
-          console.log(
+          logger.debug(
             `[Notifications] ⏭️  Notifications already scheduled for shift ${shift.id}, skipping (${existingNotifications.length} existing)`
           );
           return existingNotifications.map(n => n.notificationId);
         } else {
           // Shift time changed, cancel old notifications and schedule new ones
-          console.log(
+          logger.debug(
             `[Notifications] 🔄 Shift ${shift.id} time changed, rescheduling notifications`
           );
           await this.cancelShiftReminders(shift.id);
@@ -533,12 +534,12 @@ class NotificationService {
         await this.storeScheduledNotifications(scheduledNotifications);
       }
 
-      console.log(
+      logger.debug(
         `[Notifications] ✅ Scheduled ${notificationIds.length} NEW notifications for shift ${shift.id} (${shift.venue.name})`
       );
       return notificationIds;
     } catch (error) {
-      console.error('Error scheduling shift reminder:', error);
+      logger.error('Error scheduling shift reminder:', error);
       return [];
     }
   }
@@ -615,9 +616,9 @@ class NotificationService {
       const remaining = scheduledNotifications.filter(n => n.shiftId !== shiftId);
       await AsyncStorage.setItem(STORAGE_KEY.SCHEDULED_NOTIFICATIONS, JSON.stringify(remaining));
 
-      console.log(`Cancelled ${notificationsForShift.length} notifications for shift ${shiftId}`);
+      logger.debug(`Cancelled ${notificationsForShift.length} notifications for shift ${shiftId}`);
     } catch (error) {
-      console.error('Error cancelling shift reminders:', error);
+      logger.error('Error cancelling shift reminders:', error);
     }
   }
 
@@ -753,15 +754,15 @@ class NotificationService {
           JSON.stringify([...existing, ...scheduled]),
         );
       } catch (storageError) {
-        console.error('[Notifications] Error storing capacity reminders:', storageError);
+        logger.error('[Notifications] Error storing capacity reminders:', storageError);
       }
 
-      console.log(
+      logger.debug(
         `[Notifications] Scheduled ${ids.length} capacity reminders for shift ${shiftId}`,
       );
       return ids;
     } catch (error) {
-      console.error('[Notifications] Error scheduling capacity reminders:', error);
+      logger.error('[Notifications] Error scheduling capacity reminders:', error);
       return [];
     }
   }
@@ -785,7 +786,7 @@ class NotificationService {
           await Notifications.cancelScheduledNotificationAsync(n.notificationId);
         } catch (cancelError) {
           // Notification may have already fired — non-fatal.
-          console.debug(
+          logger.debug(
             `[Notifications] Could not cancel ${n.notificationId}:`,
             cancelError,
           );
@@ -803,7 +804,7 @@ class NotificationService {
         JSON.stringify(remaining),
       );
     } catch (error) {
-      console.error('[Notifications] Error cancelling capacity reminders:', error);
+      logger.error('[Notifications] Error cancelling capacity reminders:', error);
     }
   }
 
@@ -814,9 +815,9 @@ class NotificationService {
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
       await AsyncStorage.removeItem(STORAGE_KEY.SCHEDULED_NOTIFICATIONS);
-      console.log('All notifications cancelled');
+      logger.debug('All notifications cancelled');
     } catch (error) {
-      console.error('Error cancelling all notifications:', error);
+      logger.error('Error cancelling all notifications:', error);
     }
   }
 
@@ -841,11 +842,11 @@ class NotificationService {
       const updated = [...filtered, ...notifications];
 
       await AsyncStorage.setItem(STORAGE_KEY.SCHEDULED_NOTIFICATIONS, JSON.stringify(updated));
-      console.log(
+      logger.debug(
         `[Notifications] 💾 Stored ${notifications.length} new notifications (removed ${existing.length - filtered.length} duplicates)`
       );
     } catch (error) {
-      console.error('Error storing scheduled notifications:', error);
+      logger.error('Error storing scheduled notifications:', error);
     }
   }
 
@@ -857,7 +858,7 @@ class NotificationService {
       const stored = await AsyncStorage.getItem(STORAGE_KEY.SCHEDULED_NOTIFICATIONS);
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
-      console.error('Error getting scheduled notifications:', error);
+      logger.error('Error getting scheduled notifications:', error);
       return [];
     }
   }
@@ -872,7 +873,7 @@ class NotificationService {
   ): void {
     // Listener for notifications received while app is foregrounded
     this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
-      console.log('Notification received:', notification);
+      logger.debug('Notification received:', notification);
       if (onNotificationReceived) {
         onNotificationReceived(notification);
       }
@@ -880,7 +881,7 @@ class NotificationService {
 
     // Listener for user tapping on notifications
     this.responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('Notification tapped:', response);
+      logger.debug('Notification tapped:', response);
       if (onNotificationTapped) {
         onNotificationTapped(response);
       }
@@ -915,7 +916,7 @@ class NotificationService {
         trigger: null, // Immediate notification
       });
     } catch (error) {
-      console.error('Error sending test notification:', error);
+      logger.error('Error sending test notification:', error);
     }
   }
 
@@ -938,9 +939,9 @@ class NotificationService {
         },
         trigger: null, // Immediate notification
       });
-      console.log('Test shift reminder sent');
+      logger.debug('Test shift reminder sent');
     } catch (error) {
-      console.error('Error sending test shift reminder:', error);
+      logger.error('Error sending test shift reminder:', error);
     }
   }
 
@@ -964,10 +965,10 @@ class NotificationService {
           repeats: false,
         },
       });
-      console.log(`Test notification scheduled for ${delaySeconds} seconds from now`);
+      logger.debug(`Test notification scheduled for ${delaySeconds} seconds from now`);
       return notificationId;
     } catch (error) {
-      console.error('Error scheduling test notification:', error);
+      logger.error('Error scheduling test notification:', error);
       throw error;
     }
   }
@@ -979,7 +980,7 @@ class NotificationService {
     try {
       return await Notifications.getBadgeCountAsync();
     } catch (error) {
-      console.error('Error getting badge count:', error);
+      logger.error('Error getting badge count:', error);
       return 0;
     }
   }
@@ -991,7 +992,7 @@ class NotificationService {
     try {
       await Notifications.setBadgeCountAsync(count);
     } catch (error) {
-      console.error('Error setting badge count:', error);
+      logger.error('Error setting badge count:', error);
     }
   }
 
@@ -1002,7 +1003,7 @@ class NotificationService {
     try {
       await Notifications.setBadgeCountAsync(0);
     } catch (error) {
-      console.error('Error clearing badge:', error);
+      logger.error('Error clearing badge:', error);
     }
   }
 
@@ -1013,7 +1014,7 @@ class NotificationService {
     try {
       return await AsyncStorage.getItem(STORAGE_KEY.PUSH_TOKEN);
     } catch (error) {
-      console.error('Error getting stored push token:', error);
+      logger.error('Error getting stored push token:', error);
       return null;
     }
   }
@@ -1101,7 +1102,7 @@ class NotificationService {
     if (!this.isExchangeNotification(notification)) return;
 
     const data = notification.request.content.data;
-    console.log('[Notifications] 🔄 Exchange notification received:', data?.type);
+    logger.debug('[Notifications] 🔄 Exchange notification received:', data?.type);
 
     // Trigger refresh callback if provided
     if (onRefreshNeeded) {

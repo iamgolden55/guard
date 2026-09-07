@@ -5,6 +5,7 @@
 
 import { createNavigationContainerRef } from '@react-navigation/native';
 import type { RootStackParamList } from '../types/navigation';
+import { logger } from '../utils/logger';
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
@@ -15,7 +16,7 @@ export function navigate(name: string, params?: any) {
   if (navigationRef.isReady()) {
     navigationRef.navigate(name as any, params);
   } else {
-    console.warn('[Navigation] Navigation not ready yet');
+    logger.warn('[Navigation] Navigation not ready yet');
   }
 }
 

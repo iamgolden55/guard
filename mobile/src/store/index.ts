@@ -24,6 +24,7 @@ import onboardingReducer from './slices/onboardingSlice';
 
 // Import API
 import { api } from './api/baseApi';
+import { logger } from '../utils/logger';
 
 // Persist configuration
 const persistConfig = {
@@ -35,7 +36,7 @@ const persistConfig = {
     // Migration from version 1 to version 2
     // Fix: Clear corrupted auth data where user.id was set to StaffProfile ID instead of User ID
     if (state && state._persist && state._persist.version === 1) {
-      console.log('[Redux Persist] Migrating from version 1 to 2 - clearing corrupted auth data');
+      logger.debug('[Redux Persist] Migrating from version 1 to 2 - clearing corrupted auth data');
 
       return Promise.resolve({
         ...state,

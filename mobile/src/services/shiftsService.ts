@@ -6,6 +6,7 @@
 import { apiService } from './api';
 import { Shift } from '../store/slices/shiftsSlice';
 import notificationService from './notificationService';
+import { logger } from '../utils/logger';
 
 /**
  * Paginated response from the backend
@@ -92,7 +93,7 @@ class ShiftsService {
 
       // Check if response is valid
       if (!response || !response.results) {
-        console.error('[ShiftsService] Invalid response format:', response);
+        logger.error('[ShiftsService] Invalid response format:', response);
         return {
           count: 0,
           next: null,
@@ -116,7 +117,7 @@ class ShiftsService {
         results: shifts,
       };
     } catch (error) {
-      console.error('[ShiftsService] Error fetching shifts:', error);
+      logger.error('[ShiftsService] Error fetching shifts:', error);
       throw error;
     }
   }
@@ -130,7 +131,7 @@ class ShiftsService {
       // Check if we have notification permissions
       const hasPermission = await notificationService.hasPermissions();
       if (!hasPermission) {
-        console.log('[ShiftsService] Skipping notification scheduling - no permissions');
+        logger.debug('[ShiftsService] Skipping notification scheduling - no permissions');
         return;
       }
 
@@ -141,9 +142,9 @@ class ShiftsService {
         }
       }
 
-      console.log(`[ShiftsService] Scheduled notifications for ${shifts.filter(s => s.status === 'scheduled').length} shifts`);
+      logger.debug(`[ShiftsService] Scheduled notifications for ${shifts.filter(s => s.status === 'scheduled').length} shifts`);
     } catch (error) {
-      console.error('[ShiftsService] Error scheduling notifications:', error);
+      logger.error('[ShiftsService] Error scheduling notifications:', error);
       // Don't throw - notification scheduling shouldn't break shift fetching
     }
   }
@@ -184,7 +185,7 @@ class ShiftsService {
       }
 
       if (!response || !Array.isArray(response.results)) {
-        console.error('[ShiftsService] Invalid manager/all response:', response);
+        logger.error('[ShiftsService] Invalid manager/all response:', response);
         return { count: 0, next: null, previous: null, results: [] };
       }
 
@@ -201,7 +202,7 @@ class ShiftsService {
         results: response.results.map((shift: any) => this.transformShift(shift)),
       };
     } catch (error) {
-      console.error('[ShiftsService] Error fetching company shifts:', error);
+      logger.error('[ShiftsService] Error fetching company shifts:', error);
       throw error;
     }
   }
@@ -226,7 +227,7 @@ class ShiftsService {
       const response = await apiService.post<any>('/api/v1/shifts/', payload);
       return this.transformShift(response);
     } catch (error) {
-      console.error('[ShiftsService] Error creating shift:', error);
+      logger.error('[ShiftsService] Error creating shift:', error);
       throw error;
     }
   }
@@ -248,62 +249,17 @@ class ShiftsService {
       const response = await apiService.get<any>(`/api/v1/shifts/${shiftId}/`);
       return this.transformShift(response);
     } catch (error) {
-      console.error('[ShiftsService] Error fetching shift:', error);
+      logger.error('[ShiftsService] Error fetching shift:', error);
       throw error;
     }
   }
 
-  /**
-   * Check in to a shift
-   */
-  async checkIn(shiftId: number, data: {
-    check_in_time: string;
-    latitude: number;
-    longitude: number;
-    photo?: string;
-    signature?: string;
-  }): Promise<Shift> {
-    try {
-      const response = await apiService.post<Shift>(
-        `/api/v1/shifts/${shiftId}/check-in/`,
-        data
-      );
-
-      // Cancel notifications since shift has started
-      await notificationService.cancelShiftReminders(shiftId);
-
-      return response;
-    } catch (error) {
-      console.error('[ShiftsService] Error checking in:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Check out from a shift
-   */
-  async checkOut(shiftId: number, data: {
-    check_out_time: string;
-    latitude: number;
-    longitude: number;
-    photo?: string;
-    signature?: string;
-  }): Promise<Shift> {
-    try {
-      const response = await apiService.post<Shift>(
-        `/api/v1/shifts/${shiftId}/check-out/`,
-        data
-      );
-
-      // Cancel notifications since shift has ended
-      await notificationService.cancelShiftReminders(shiftId);
-
-      return response;
-    } catch (error) {
-      console.error('[ShiftsService] Error checking out:', error);
-      throw error;
-    }
-  }
+  // checkIn / checkOut lived here, POSTing to /shifts/{id}/check-in/ and
+  // /check-out/ with hyphens. DRF derives an @action's path from the method
+  // name, so the real routes are check_in/ and check_out/ with underscores —
+  // these would have 404'd on the first call. They had zero callers; every
+  // live path goes through API_ENDPOINTS.SHIFTS.CHECK_IN, which is correct.
+  // Removed rather than left as a loaded 404 for whoever wires them up next.
 
   /**
    * Create multiple shifts sharing one venue/time with different staff (admin/manager).
@@ -335,7 +291,7 @@ class ShiftsService {
         shift_group: response?.shift_group ?? '',
       };
     } catch (error) {
-      console.error('[ShiftsService] Error creating multi-staff shifts:', error);
+      logger.error('[ShiftsService] Error creating multi-staff shifts:', error);
       throw error;
     }
   }
@@ -356,7 +312,7 @@ class ShiftsService {
       );
       return this.transformShift(response);
     } catch (error) {
-      console.error('[ShiftsService] Error approving shift:', error);
+      logger.error('[ShiftsService] Error approving shift:', error);
       throw error;
     }
   }
@@ -379,7 +335,7 @@ class ShiftsService {
       const response = await apiService.patch<any>(`/api/v1/shifts/${shiftId}/`, patch);
       return this.transformShift(response);
     } catch (error) {
-      console.error('[ShiftsService] Error updating shift:', error);
+      logger.error('[ShiftsService] Error updating shift:', error);
       throw error;
     }
   }
@@ -398,7 +354,7 @@ class ShiftsService {
 
       return this.transformShift(response);
     } catch (error) {
-      console.error('[ShiftsService] Error canceling shift:', error);
+      logger.error('[ShiftsService] Error canceling shift:', error);
       throw error;
     }
   }

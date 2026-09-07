@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '../index';
 import { shiftsService, PaginationParams } from '../../services/shiftsService';
 import { database } from '../../services/database';
+import { logger } from '../../utils/logger';
 
 /**
  * Co-worker interface for multi-staff shifts
@@ -183,7 +184,7 @@ export const fetchShifts = createAsyncThunk(
           };
         }
       } catch (dbError) {
-        console.error('[ShiftsSlice] Error loading from local DB:', dbError);
+        logger.error('[ShiftsSlice] Error loading from local DB:', dbError);
       }
 
       return rejectWithValue(error.message || 'Failed to fetch shifts');
@@ -315,32 +316,10 @@ const shiftsSlice = createSlice({
         state.activeShift = null;
       }
     },
-    startBreak: (
-      state,
-      action: PayloadAction<{
-        shiftId: number;
-        syncStatus?: 'synced' | 'pending' | 'failed';
-      }>
-    ) => {
-      const { shiftId, syncStatus } = action.payload;
-      if (state.activeShift?.id === shiftId) {
-        state.activeShift.break_start_time = new Date().toISOString();
-        state.activeShift.sync_status = syncStatus || 'pending';
-      }
-    },
-    endBreak: (
-      state,
-      action: PayloadAction<{
-        shiftId: number;
-        syncStatus?: 'synced' | 'pending' | 'failed';
-      }>
-    ) => {
-      const { shiftId, syncStatus } = action.payload;
-      if (state.activeShift?.id === shiftId) {
-        state.activeShift.break_end_time = new Date().toISOString();
-        state.activeShift.sync_status = syncStatus || 'pending';
-      }
-    },
+    // startBreak / endBreak lived here. They were imported by exactly one
+    // screen, which no navigator routed, and they queued sync actions against
+    // endpoints that do not exist. Break capture is not implemented end to
+    // end; leaving the reducers in place made it look as though it were.
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.isLoading = action.payload;
     },
@@ -491,8 +470,6 @@ export const {
   updateShift,
   checkInShift,
   checkOutShift,
-  startBreak,
-  endBreak,
   setLoading,
   setError,
   setLastFetch,

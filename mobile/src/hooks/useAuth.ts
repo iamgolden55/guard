@@ -13,6 +13,7 @@ import {
 import authService, { LoginCredentials } from '../services/authService';
 import notificationService from '../services/notificationService';
 import type { User } from '../store/slices/authSlice';
+import { logger } from '../utils/logger';
 
 export const useAuth = () => {
   const dispatch = useAppDispatch();
@@ -45,12 +46,12 @@ export const useAuth = () => {
 
         // Process any pending token deactivations from failed logouts (non-blocking)
         notificationService.processPendingDeactivation().catch((error) => {
-          console.log('[useAuth] Pending deactivation processing failed (non-critical):', error);
+          logger.debug('[useAuth] Pending deactivation processing failed (non-critical):', error);
         });
 
         // Register push notification token (non-blocking)
         notificationService.registerPushToken().catch((error) => {
-          console.log('[useAuth] Push token registration failed (non-critical):', error);
+          logger.debug('[useAuth] Push token registration failed (non-critical):', error);
         });
 
         dispatch(setLoading(false));
@@ -92,12 +93,12 @@ export const useAuth = () => {
 
       // Process any pending token deactivations from failed logouts (non-blocking)
       notificationService.processPendingDeactivation().catch((error) => {
-        console.log('[useAuth] Pending deactivation processing failed (non-critical):', error);
+        logger.debug('[useAuth] Pending deactivation processing failed (non-critical):', error);
       });
 
       // Register push notification token (non-blocking)
       notificationService.registerPushToken().catch((error) => {
-        console.log('[useAuth] Push token registration failed (non-critical):', error);
+        logger.debug('[useAuth] Push token registration failed (non-critical):', error);
       });
 
       dispatch(setLoading(false));
@@ -178,28 +179,28 @@ export const useAuth = () => {
 
       // If no tokens, logout immediately
       if (!accessToken || !refreshToken) {
-        console.log('[useAuth] No tokens found, logging out');
+        logger.debug('[useAuth] No tokens found, logging out');
         dispatch(logoutAction());
         return { success: false, isAuthenticated: false, user: null };
       }
 
       // If access token is expired, try to refresh it first
       if (authService.isTokenExpired(accessToken)) {
-        console.log('[useAuth] Access token expired, attempting refresh...');
+        logger.debug('[useAuth] Access token expired, attempting refresh...');
         const newAccessToken = await authService.refreshAccessToken();
 
         if (newAccessToken) {
-          console.log('[useAuth] Token refreshed successfully');
+          logger.debug('[useAuth] Token refreshed successfully');
           accessToken = newAccessToken;
         } else {
-          console.log('[useAuth] Token refresh failed, logging out');
+          logger.debug('[useAuth] Token refresh failed, logging out');
           dispatch(logoutAction());
           return { success: false, isAuthenticated: false, user: null };
         }
       }
 
       // Token exists and is valid - fetch user profile
-      console.log('[useAuth] Fetching user profile with valid token');
+      logger.debug('[useAuth] Fetching user profile with valid token');
       const userProfile = await authService.fetchUserProfile(accessToken);
 
       // Use setCredentials to properly set authentication state
@@ -211,17 +212,17 @@ export const useAuth = () => {
 
       // Process any pending token deactivations from failed logouts (non-blocking)
       notificationService.processPendingDeactivation().catch((error) => {
-        console.log('[useAuth] Pending deactivation processing failed (non-critical):', error);
+        logger.debug('[useAuth] Pending deactivation processing failed (non-critical):', error);
       });
 
       // Register push notification token (non-blocking)
       notificationService.registerPushToken().catch((error) => {
-        console.log('[useAuth] Push token registration failed (non-critical):', error);
+        logger.debug('[useAuth] Push token registration failed (non-critical):', error);
       });
 
       return { success: true, isAuthenticated: true, user: userProfile };
     } catch (error) {
-      console.error('[useAuth] checkAuthStatus error:', error);
+      logger.error('[useAuth] checkAuthStatus error:', error);
       // Authentication check failed - clear Redux state
       dispatch(logoutAction());
       return { success: false, isAuthenticated: false, user: null };

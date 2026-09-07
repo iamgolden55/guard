@@ -128,8 +128,9 @@ export const API_ENDPOINTS = {
     // Use underscore format to match DRF's default action URL naming
     CHECK_IN: (id: number) => `${API_PREFIX}/shifts/${id}/check_in/`,
     CHECK_OUT: (id: number) => `${API_PREFIX}/shifts/${id}/check_out/`,
-    START_BREAK: (id: number) => `${API_PREFIX}/shifts/${id}/start_break/`,
-    END_BREAK: (id: number) => `${API_PREFIX}/shifts/${id}/end_break/`,
+    // START_BREAK / END_BREAK lived here and pointed at routes that have
+    // never existed in any ViewSet. Removed rather than left as a loaded 404
+    // for whoever wires up the break UI next.
     UPCOMING: `${API_PREFIX}/shifts/upcoming/`,
     ACTIVE: `${API_PREFIX}/shifts/active/`,
     COMPLETED: `${API_PREFIX}/shifts/completed/`,

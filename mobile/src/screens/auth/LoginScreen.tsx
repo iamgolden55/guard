@@ -98,7 +98,7 @@ export const LoginScreen = () => {
         const biometricSupported = await checkBiometricSupport();
         setShowBiometric(biometricSupported && biometricEnabled);
       } catch (error) {
-        console.warn('[LoginScreen] Biometric check failed:', error);
+        logger.warn('[LoginScreen] Biometric check failed:', error);
         setShowBiometric(false);
       }
 
@@ -106,7 +106,7 @@ export const LoginScreen = () => {
         const appleAvailable = await socialAuthService.isAppleSignInAvailable();
         setIsAppleAvailable(appleAvailable);
       } catch (error) {
-        console.warn('[LoginScreen] Apple Sign-In availability check failed:', error);
+        logger.warn('[LoginScreen] Apple Sign-In availability check failed:', error);
         setIsAppleAvailable(false);
       }
     };
@@ -140,7 +140,7 @@ export const LoginScreen = () => {
 
               // Register push notification token (non-blocking)
               notificationService.registerPushToken().catch((error) => {
-                console.log('[LoginScreen] Push token registration failed (non-critical):', error);
+                logger.debug('[LoginScreen] Push token registration failed (non-critical):', error);
               });
 
               logger.logAuth('google', userProfile?.id);
@@ -262,7 +262,7 @@ export const LoginScreen = () => {
 
         // Register push notification token (non-blocking)
         notificationService.registerPushToken().catch((error) => {
-          console.log('[LoginScreen] Push token registration failed (non-critical):', error);
+          logger.debug('[LoginScreen] Push token registration failed (non-critical):', error);
         });
 
         logger.logAuth('apple', userProfile?.id);

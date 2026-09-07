@@ -10,6 +10,7 @@ import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 import axios from 'axios';
 import { API_ENDPOINTS, API_BASE_URL } from '../config/api.config';
+import { logger } from '../utils/logger';
 
 // Required for Google auth session to complete
 WebBrowser.maybeCompleteAuthSession();
@@ -63,7 +64,7 @@ class SocialAuthService {
     try {
       return await AppleAuthentication.isAvailableAsync();
     } catch (error) {
-      console.warn('[SocialAuth] Apple Sign-In availability check failed:', error);
+      logger.warn('[SocialAuth] Apple Sign-In availability check failed:', error);
       return false;
     }
   }
@@ -124,7 +125,7 @@ class SocialAuthService {
           error: 'Sign in was cancelled',
         };
       }
-      console.error('[SocialAuth] Apple Sign-In error:', error);
+      logger.error('[SocialAuth] Apple Sign-In error:', error);
       return {
         success: false,
         error: error.message || 'Apple Sign-In failed',
@@ -165,7 +166,7 @@ class SocialAuthService {
         user: response.data.user,
       };
     } catch (error: any) {
-      console.error('[SocialAuth] Apple token exchange error:', error);
+      logger.error('[SocialAuth] Apple token exchange error:', error);
       const errorMessage =
         error.response?.data?.detail ||
         error.response?.data?.error ||
@@ -219,7 +220,7 @@ class SocialAuthService {
         user: response.data.user,
       };
     } catch (error: any) {
-      console.error('[SocialAuth] Google token exchange error:', error);
+      logger.error('[SocialAuth] Google token exchange error:', error);
       const errorMessage =
         error.response?.data?.detail ||
         error.response?.data?.error ||

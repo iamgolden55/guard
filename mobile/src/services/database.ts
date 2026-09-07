@@ -6,6 +6,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Shift } from '../store/slices/shiftsSlice';
 import type { Incident } from '../types/incident';
+import { logger } from '../utils/logger';
+import type { SyncActionType } from './syncService';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -17,7 +19,13 @@ const STORAGE_KEYS = {
 
 export interface SyncQueueItem {
   id: string;
-  type: 'check_in' | 'check_out' | 'start_break' | 'end_break' | 'incident' | 'shift_check' | 'create';
+  /**
+   * The same union `syncService` dispatches on. These were two divergent
+   * lists — this one had 'incident' and 'create' where the service has
+   * 'create_incident' and 'update_shift' — so every enqueue and dequeue
+   * crossed a type error that had been living in the build for some time.
+   */
+  type: SyncActionType;
   entityType: string;
   entityId: string;
   payload: any;
@@ -36,7 +44,7 @@ class DatabaseService {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SHIFTS);
       return data ? JSON.parse(data) : [];
     } catch (error) {
-      console.error('[Database] Error getting shifts:', error);
+      logger.error('[Database] Error getting shifts:', error);
       return [];
     }
   }
@@ -46,7 +54,7 @@ class DatabaseService {
       const shifts = await this.getShifts();
       return shifts.find((s) => s.id === id) || null;
     } catch (error) {
-      console.error('[Database] Error getting shift:', error);
+      logger.error('[Database] Error getting shift:', error);
       return null;
     }
   }
@@ -55,7 +63,7 @@ class DatabaseService {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.SHIFTS, JSON.stringify(shifts));
     } catch (error) {
-      console.error('[Database] Error saving shifts:', error);
+      logger.error('[Database] Error saving shifts:', error);
       throw error;
     }
   }
@@ -66,7 +74,7 @@ class DatabaseService {
       const index = shifts.findIndex((s) => s.id === id);
 
       if (index === -1) {
-        console.error('[Database] Shift not found:', id);
+        logger.error('[Database] Shift not found:', id);
         return null;
       }
 
@@ -76,7 +84,7 @@ class DatabaseService {
       await this.saveShifts(shifts);
       return updatedShift;
     } catch (error) {
-      console.error('[Database] Error updating shift:', error);
+      logger.error('[Database] Error updating shift:', error);
       throw error;
     }
   }
@@ -87,7 +95,7 @@ class DatabaseService {
       const filtered = shifts.filter((s) => s.id !== id);
       await this.saveShifts(filtered);
     } catch (error) {
-      console.error('[Database] Error deleting shift:', error);
+      logger.error('[Database] Error deleting shift:', error);
       throw error;
     }
   }
@@ -113,7 +121,7 @@ class DatabaseService {
         return true;
       });
     } catch (error) {
-      console.error('[Database] Error getting incidents:', error);
+      logger.error('[Database] Error getting incidents:', error);
       return [];
     }
   }
@@ -133,7 +141,7 @@ class DatabaseService {
 
       return incidentWithId;
     } catch (error) {
-      console.error('[Database] Error saving incident:', error);
+      logger.error('[Database] Error saving incident:', error);
       throw error;
     }
   }
@@ -146,14 +154,14 @@ class DatabaseService {
       if (index === -1) {
         // Can legitimately happen when a sync-queue retry outlives its
         // local record (e.g. storage cleared, duplicate submit replaced it).
-        console.warn('[Database] Incident not found when updating, skipping:', id);
+        logger.warn('[Database] Incident not found when updating, skipping:', id);
         return;
       }
 
       incidents[index] = { ...incidents[index], ...updates };
       await AsyncStorage.setItem(STORAGE_KEYS.INCIDENTS, JSON.stringify(incidents));
     } catch (error) {
-      console.error('[Database] Error updating incident:', error);
+      logger.error('[Database] Error updating incident:', error);
       throw error;
     }
   }
@@ -165,7 +173,7 @@ class DatabaseService {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SYNC_QUEUE);
       return data ? JSON.parse(data) : [];
     } catch (error) {
-      console.error('[Database] Error getting sync queue:', error);
+      logger.error('[Database] Error getting sync queue:', error);
       return [];
     }
   }
@@ -188,7 +196,7 @@ class DatabaseService {
 
       await AsyncStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(queue));
     } catch (error) {
-      console.error('[Database] Error adding to sync queue:', error);
+      logger.error('[Database] Error adding to sync queue:', error);
       throw error;
     }
   }
@@ -199,14 +207,14 @@ class DatabaseService {
       const index = queue.findIndex((item) => item.id === id);
 
       if (index === -1) {
-        console.error('[Database] Sync queue item not found:', id);
+        logger.error('[Database] Sync queue item not found:', id);
         return;
       }
 
       queue[index] = { ...queue[index], ...updates };
       await AsyncStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(queue));
     } catch (error) {
-      console.error('[Database] Error updating sync queue item:', error);
+      logger.error('[Database] Error updating sync queue item:', error);
       throw error;
     }
   }
@@ -217,7 +225,7 @@ class DatabaseService {
       const filtered = queue.filter((item) => item.id !== id);
       await AsyncStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(filtered));
     } catch (error) {
-      console.error('[Database] Error removing sync queue item:', error);
+      logger.error('[Database] Error removing sync queue item:', error);
       throw error;
     }
   }
@@ -226,7 +234,7 @@ class DatabaseService {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify([]));
     } catch (error) {
-      console.error('[Database] Error clearing sync queue:', error);
+      logger.error('[Database] Error clearing sync queue:', error);
       throw error;
     }
   }
@@ -237,7 +245,7 @@ class DatabaseService {
    */
   async removeSyncQueueItemsForShift(
     shiftId: number,
-    types: Array<'check_in' | 'check_out' | 'start_break' | 'end_break'>
+    types: Array<SyncActionType>
   ): Promise<number> {
     try {
       const queue = await this.getSyncQueue();
@@ -254,12 +262,12 @@ class DatabaseService {
 
       if (removedCount > 0) {
         await AsyncStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(filtered));
-        console.log(`[Database] Removed ${removedCount} stale sync queue items for shift ${shiftId}`);
+        logger.debug(`[Database] Removed ${removedCount} stale sync queue items for shift ${shiftId}`);
       }
 
       return removedCount;
     } catch (error) {
-      console.error('[Database] Error removing sync queue items for shift:', error);
+      logger.error('[Database] Error removing sync queue items for shift:', error);
       return 0;
     }
   }
@@ -271,7 +279,7 @@ class DatabaseService {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.LAST_SYNC);
       return data ? new Date(data) : null;
     } catch (error) {
-      console.error('[Database] Error getting last sync:', error);
+      logger.error('[Database] Error getting last sync:', error);
       return null;
     }
   }
@@ -280,7 +288,7 @@ class DatabaseService {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.LAST_SYNC, date.toISOString());
     } catch (error) {
-      console.error('[Database] Error setting last sync:', error);
+      logger.error('[Database] Error setting last sync:', error);
       throw error;
     }
   }
@@ -296,7 +304,7 @@ class DatabaseService {
         STORAGE_KEYS.LAST_SYNC,
       ]);
     } catch (error) {
-      console.error('[Database] Error clearing all data:', error);
+      logger.error('[Database] Error clearing all data:', error);
       throw error;
     }
   }
@@ -315,7 +323,7 @@ class DatabaseService {
         queue: queue.length,
       };
     } catch (error) {
-      console.error('[Database] Error getting storage info:', error);
+      logger.error('[Database] Error getting storage info:', error);
       return { shifts: 0, incidents: 0, queue: 0 };
     }
   }
