@@ -17,6 +17,17 @@ export interface Coworker {
   status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'pending_approval' | 'approved' | 'no_show';
 }
 
+/** A recorded attendance fix, with what the device said about its own quality. */
+export interface AttendanceLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  /** Server-derived: accuracy worse than the venue-scale threshold. */
+  low_accuracy?: boolean;
+  /** Android's mock-location flag, recorded for review — never a hard block. */
+  mocked?: boolean;
+}
+
 export interface Shift {
   id: number;
   venue: {
@@ -25,6 +36,9 @@ export interface Shift {
     address: string;
     latitude: number;
     longitude: number;
+    /** The venue's geofence radius in metres. The server measures against
+     *  this; the app must not substitute a constant of its own. */
+    check_radius?: number;
     venue_terms?: string;
     requires_fire_exit_check?: boolean;
     requires_capacity_check?: boolean;
@@ -46,14 +60,8 @@ export interface Shift {
   check_in_longitude?: number;
   check_out_latitude?: number;
   check_out_longitude?: number;
-  check_in_location?: {
-    latitude: number;
-    longitude: number;
-  };
-  check_out_location?: {
-    latitude: number;
-    longitude: number;
-  };
+  check_in_location?: AttendanceLocation;
+  check_out_location?: AttendanceLocation;
   check_in_photo?: string;
   check_out_photo?: string;
   check_in_signature?: string;

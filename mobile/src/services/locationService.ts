@@ -6,9 +6,23 @@
 import * as Location from 'expo-location';
 import { logger } from '../utils/logger';
 
+/**
+ * How long to wait for a GPS fix before giving the officer an actionable
+ * error. `getCurrentPositionAsync` has no timeout of its own.
+ */
+const LOCATION_TIMEOUT_MS = 15000;
+
 export interface LocationCoordinates {
   latitude: number;
   longitude: number;
+  /** Radius of uncertainty in metres, as reported by the device. */
+  accuracy?: number;
+  /**
+   * Android's mock-location flag. Never a reason to block on its own — the
+   * flag is set by developer-options tooling as well as by spoofing apps —
+   * but it belongs in the attendance record so an anomaly is visible.
+   */
+  mocked?: boolean;
 }
 
 export interface LocationVerificationResult {
@@ -51,20 +65,40 @@ class LocationService {
 
       logger.info('[LocationService] Getting current location...');
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-        timeInterval: 5000,
-        distanceInterval: 10,
-      });
+      // `timeInterval` and `distanceInterval` are watchPositionAsync options
+      // and were inert here. What this call did lack was a deadline: a device
+      // that cannot get a fix left the check-in flow hanging indefinitely,
+      // with the officer standing at the door watching a spinner.
+      const location = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(
+            () => reject(new Error('LOCATION_TIMEOUT')),
+            LOCATION_TIMEOUT_MS,
+          ),
+        ),
+      ]);
 
       const coords: LocationCoordinates = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
+        // Both were previously dropped here. They are the only signals that
+        // separate a real fix from a fabricated one, and the server now
+        // records and flags them.
+        accuracy: location.coords.accuracy ?? undefined,
+        mocked: (location as { mocked?: boolean }).mocked ?? undefined,
       };
 
       logger.debug('[LocationService] Current location:', coords);
       return coords;
     } catch (error) {
+      if (error instanceof Error && error.message === 'LOCATION_TIMEOUT') {
+        logger.error('[LocationService] Timed out waiting for a GPS fix');
+        throw new Error(
+          "Couldn't get your location. Move somewhere with a clearer view of " +
+          'the sky and try again, or ask your manager to record your attendance.',
+        );
+      }
       logger.error('[LocationService] Get location error:', error);
       return null;
     }

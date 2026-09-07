@@ -2181,6 +2181,57 @@ def _resolve_request_company(request):
 class CompanyScopedCheckMixin:
     """Mixin to add company scoping to venue check viewsets."""
 
+    def _validated_check_shift(self, serializer):
+        """The shift a statutory check may be filed against, or 403.
+
+        `perform_create` used to call `serializer.save()` with no check on the
+        `shift` field, which accepts any primary key on the platform — so a
+        capacity, fire-exit or toilet record could be injected into another
+        company's logbook. `CapacityLogbookSignoffViewSet.perform_create`
+        already got this right; this is the same rule.
+
+        The officer on the shift may file against it. So may a manager or
+        admin of the company that owns its venue — they cover for officers and
+        correct records after the fact.
+        """
+        from rest_framework.exceptions import PermissionDenied
+
+        shift = serializer.validated_data.get('shift')
+        if shift is None:
+            raise PermissionDenied("A check must name the shift it belongs to.")
+
+        user = self.request.user
+        if shift.staff_user_id == user.id:
+            return shift
+
+        # Anyone else on the same multi-staff shift group is on the same door.
+        group = shift.shift_group
+        if group and Shift.objects.filter(
+            shift_group=group, staff_user=user
+        ).exists():
+            return shift
+
+        if getattr(user, 'role', None) in ('owner', 'admin', 'manager'):
+            company = resolve_request_company(self.request)
+            venue_company_id = (
+                shift.venue.company_id if shift.venue else None
+            )
+            if company and venue_company_id == company.id:
+                return shift
+
+        raise PermissionDenied(
+            "You can only record checks against a shift you are working, or "
+            "one at a venue you manage."
+        )
+
+    def _server_side_check_fields(self, shift):
+        """Values the server owns on every statutory check."""
+        return {
+            'shift': shift,
+            'timestamp': timezone.now(),
+            'performed_by': self.request.user,
+        }
+
     def _get_company_scoped_queryset(self, base_queryset):
         """Apply company scoping then shift/shift_group filtering."""
         # SECURITY: Scope to company first
@@ -2215,6 +2266,10 @@ class FireExitCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         return self._get_company_scoped_queryset(FireExitCheck.objects.all())
 
+    def perform_create(self, serializer):
+        shift = self._validated_check_shift(serializer)
+        serializer.save(**self._server_side_check_fields(shift))
+
 
 class CapacityCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -2227,9 +2282,15 @@ class CapacityCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         from datetime import timedelta
         from .consumers import broadcast_capacity_event
-        check = serializer.save()
-        shift = check.shift
+
+        shift = self._validated_check_shift(serializer)
         venue = shift.venue if shift else None
+        check = serializer.save(
+            **self._server_side_check_fields(shift),
+            # The denominator of `is_at_capacity`, read from the venue rather
+            # than asserted by the client.
+            venue_capacity=(venue.capacity if venue else 0),
+        )
 
         # If at/over capacity, alert managers in the venue's company.
         if check.is_at_capacity and venue and venue.company:
@@ -2639,6 +2700,10 @@ class ToiletCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         return self._get_company_scoped_queryset(ToiletCheck.objects.all())
+
+    def perform_create(self, serializer):
+        shift = self._validated_check_shift(serializer)
+        serializer.save(**self._server_side_check_fields(shift))
 
 class ShiftExchangeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]

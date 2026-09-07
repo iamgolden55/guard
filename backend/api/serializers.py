@@ -417,7 +417,11 @@ class FireExitCheckSerializer(serializers.ModelSerializer):
     class Meta:
         model = FireExitCheck
         fields = '__all__'
-        read_only_fields = ('created_at', 'shift_group', 'performed_by')
+        # Server-set timestamp, as on CapacityCheck — these share a base class
+        # and shared the same back-dating gap.
+        read_only_fields = (
+            'created_at', 'shift_group', 'performed_by', 'timestamp',
+        )
 
     def get_performed_by_details(self, obj):
         """Return details of the staff member who performed this check"""
@@ -447,7 +451,15 @@ class CapacityCheckSerializer(serializers.ModelSerializer):
     class Meta:
         model = CapacityCheck
         fields = '__all__'
-        read_only_fields = ('created_at', 'shift_group', 'performed_by')
+        # `timestamp` server-set: a client-set one lets a missed 30-minute
+        # slot be back-filled after the fact, and a logbook you can
+        # reconstruct afterwards evidences nothing. `venue_capacity` read from
+        # the venue: it is the denominator of `is_at_capacity`, so accepting
+        # it from the client made the only field that matters an assertion.
+        read_only_fields = (
+            'created_at', 'shift_group', 'performed_by',
+            'timestamp', 'venue_capacity', 'is_at_capacity',
+        )
 
     def get_performed_by_details(self, obj):
         """Return details of the staff member who performed this check"""
@@ -563,7 +575,11 @@ class ToiletCheckSerializer(serializers.ModelSerializer):
     class Meta:
         model = ToiletCheck
         fields = '__all__'
-        read_only_fields = ('created_at', 'shift_group', 'performed_by')
+        # Server-set timestamp, as on CapacityCheck — these share a base class
+        # and shared the same back-dating gap.
+        read_only_fields = (
+            'created_at', 'shift_group', 'performed_by', 'timestamp',
+        )
 
     def get_performed_by_details(self, obj):
         """Return details of the staff member who performed this check"""

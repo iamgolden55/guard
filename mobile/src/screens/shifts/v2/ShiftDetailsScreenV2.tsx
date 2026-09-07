@@ -208,14 +208,23 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
     return shift.status === 'scheduled' && !hasShiftStarted();
   };
 
+  // Kept in step with the server, which is authoritative: it allows check-in
+  // from 15 minutes before the start until LATE_CHECKIN_GRACE past the end
+  // (backend/shifts/views.py). This screen used to cut off at end_time exactly
+  // while the server had no upper bound at all — so the button was the only
+  // thing stopping a check-in hours after a shift finished, and a genuinely
+  // late arrival was refused here for no reason.
+  const EARLY_CHECKIN_WINDOW_MS = 15 * 60 * 1000;
+  const LATE_CHECKIN_GRACE_MS = 30 * 60 * 1000;
+
   const canCheckIn = () => {
     if (!shift) return false;
     const now = new Date();
     const start = new Date(shift.start_time);
     const end = new Date(shift.end_time);
-    if (end < now) return false;
-    const fifteen = new Date(start.getTime() - 15 * 60 * 1000);
-    return now >= fifteen && now <= end;
+    const earliest = new Date(start.getTime() - EARLY_CHECKIN_WINDOW_MS);
+    const latest = new Date(end.getTime() + LATE_CHECKIN_GRACE_MS);
+    return now >= earliest && now <= latest;
   };
 
   const getStaticMapUrl = () => {
@@ -248,10 +257,15 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
 
   // ─── Check-in flow ──────────────────────────────────────────
   const handleCheckIn = () => {
-    if (distanceToVenue && distanceToVenue > 100) {
+    // The venue's own radius, not a hardcoded 100 m. The server measures
+    // against `venue.check_radius`, so anything else here either blocks
+    // officers the server would accept or accepts ones it will refuse — and
+    // the refusal lands after the photo and the signature.
+    const radius = shift?.venue?.check_radius ?? 100;
+    if (distanceToVenue && distanceToVenue > radius) {
       Alert.alert(
         'Too far from venue',
-        `You are ${distanceToVenue}m away from the venue. You must be within 100m to check in.`,
+        `You are ${distanceToVenue}m away from the venue. You must be within ${radius}m to check in.`,
       );
       return;
     }
@@ -316,6 +330,11 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
         const checkInPayload = {
           latitude: currentLocation.latitude,
           longitude: currentLocation.longitude,
+          // Previously collected and dropped. The server records both and
+          // flags a low-accuracy or mock-provider fix for manager review
+          // rather than blocking on it.
+          accuracy: currentLocation.accuracy,
+          mocked: currentLocation.mocked,
           photo: venuePhoto || null,
           signature: signature || null,
         };

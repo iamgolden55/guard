@@ -48,8 +48,11 @@ export const AUTH_CONFIG = {
 
 // Location Configuration
 export const LOCATION_CONFIG = {
-  // Maximum distance from venue for check-in (meters)
-  MAX_CHECK_IN_DISTANCE: 50,
+  // MAX_CHECK_IN_DISTANCE used to sit here at 50 m. It was referenced nowhere
+  // and disagreed with both the 100 m hardcoded in the check-in flow and the
+  // venue's own `check_radius`, which is what the server actually measures
+  // against. Read `shift.venue.check_radius` — three different answers to one
+  // question is worse than none.
 
   // GPS Accuracy Level
   ACCURACY: {

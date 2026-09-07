@@ -23,6 +23,68 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+#: How late an officer may still start a shift themselves. Past this the shift
+#: is over and attendance is a manager's record, not a self-service action.
+#: The mobile client refuses check-in at `end_time` exactly; this leaves room
+#: for a genuinely late arrival without leaving the window open all night.
+LATE_CHECKIN_GRACE = timedelta(minutes=30)
+
+
+def _alert_if_not_licensed_for_shift(request, shift):
+    """Record an alert when an officer starts a shift without a valid licence.
+
+    Deliberately non-blocking (see the call site). The point is that somebody
+    finds out: an unlicensed officer on a client's door is the company's
+    exposure under the Private Security Industry Act, and until now nothing
+    anywhere noticed.
+    """
+    from api.models import AuditLog
+
+    try:
+        profile = getattr(shift.staff_user, 'profile', None)
+        if profile is None:
+            return
+
+        shift_date = shift.start_time.date() if shift.start_time else None
+        if shift_date is None:
+            return
+
+        has_valid_licence = profile.sia_licenses.filter(
+            status='valid', expiry_date__gte=shift_date,
+        ).exists()
+        if has_valid_licence:
+            return
+
+        latest = profile.sia_licenses.order_by('-expiry_date').first()
+        company = shift.venue.company if shift.venue else None
+        AuditLog.log(
+            user=shift.staff_user,
+            company=company,
+            action='compliance_alert',
+            resource_type='Shift',
+            resource_id=str(shift.id),
+            details={
+                'reason': 'no_valid_sia_licence_on_shift_date',
+                'shift_date': str(shift_date),
+                'venue': shift.venue.name if shift.venue else None,
+                'latest_licence_expiry': (
+                    str(latest.expiry_date) if latest else None
+                ),
+                'latest_licence_status': latest.status if latest else None,
+            },
+            request=request,
+        )
+        logger.warning(
+            "Unlicensed check-in: shift %s, officer %s, shift date %s",
+            shift.id, shift.staff_user_id, shift_date,
+        )
+    except Exception:
+        # An alert must never be the reason an officer cannot start work.
+        logger.exception(
+            "Could not evaluate SIA eligibility for shift %s", shift.pk
+        )
+
+
 class ShiftViewSet(viewsets.ModelViewSet):
     """
     ViewSet for viewing and editing Shifts with snake_case fields.
@@ -1114,7 +1176,43 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 {"detail": f"Cannot check in {wait_time} early. Check-in becomes available at {available_time} (15 minutes before shift start)."}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
+        # Restriction 3: cannot check in once the shift is over.
+        #
+        # There was no upper bound here at all — only the *date* comparison
+        # above and the 15-minute early limit. For a 09:00-17:00 shift, an
+        # officer who never turned up could check in at 23:50 the same day and
+        # be accepted; with auto-approval on check-out and a pay basis of
+        # scheduled hours, that is eight hours' pay for a shift nobody worked.
+        # The only thing preventing it was the mobile UI declining to send the
+        # request, which is not a control.
+        #
+        # The grace period is for a genuinely late arrival. Anything past it
+        # belongs in the manager `record_attendance` path, which is role-gated
+        # and writes a TimeAdjustment.
+        latest_checkin_time = shift.end_time + LATE_CHECKIN_GRACE
+        if now > latest_checkin_time:
+            return Response(
+                {
+                    "detail": (
+                        f"This shift ended at "
+                        f"{shift.end_time.strftime('%I:%M %p on %d %b %Y')}. "
+                        "Ask your manager to record your attendance instead."
+                    ),
+                    "code": "shift_already_ended",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Compliance: eligibility is checked when an officer *claims* an open
+        # shift and was never checked when they *start* one, so an officer
+        # assigned in March with a licence expiring in April could work an
+        # unlicensed shift in May with nothing firing. This alerts rather than
+        # blocks — a hard block strands a real officer on a real site over a
+        # data-entry error, and that is not reversible. Validity is measured on
+        # the shift date, not today.
+        _alert_if_not_licensed_for_shift(request, shift)
+
         # Get location, signature, and photo from request
         latitude = request.data.get('latitude')
         longitude = request.data.get('longitude')
@@ -1134,7 +1232,12 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 latitude=float(latitude),
                 longitude=float(longitude),
                 signature=signature,
-                photo=photo
+                photo=photo,
+                # Collected by both clients and previously discarded. Neither
+                # is trustworthy alone, but together they are the only thing
+                # that distinguishes a real fix from a fabricated one.
+                accuracy=request.data.get('accuracy'),
+                mocked=request.data.get('mocked'),
             )
             
             serializer = self.get_serializer(shift)
@@ -1220,7 +1323,12 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 latitude=float(latitude),
                 longitude=float(longitude),
                 signature=signature,
-                photo=photo
+                photo=photo,
+                # Collected by both clients and previously discarded. Neither
+                # is trustworthy alone, but together they are the only thing
+                # that distinguishes a real fix from a fabricated one.
+                accuracy=request.data.get('accuracy'),
+                mocked=request.data.get('mocked'),
             )
             
             serializer = self.get_serializer(shift)
@@ -3066,7 +3174,12 @@ class FrontendShiftViewSet(viewsets.GenericViewSet):
                 latitude=float(latitude),
                 longitude=float(longitude),
                 signature=signature,
-                photo=photo
+                photo=photo,
+                # Collected by both clients and previously discarded. Neither
+                # is trustworthy alone, but together they are the only thing
+                # that distinguishes a real fix from a fabricated one.
+                accuracy=request.data.get('accuracy'),
+                mocked=request.data.get('mocked'),
             )
             
             serializer = self.get_serializer(shift)
@@ -3151,7 +3264,12 @@ class FrontendShiftViewSet(viewsets.GenericViewSet):
                 latitude=float(latitude),
                 longitude=float(longitude),
                 signature=signature,
-                photo=photo
+                photo=photo,
+                # Collected by both clients and previously discarded. Neither
+                # is trustworthy alone, but together they are the only thing
+                # that distinguishes a real fix from a fabricated one.
+                accuracy=request.data.get('accuracy'),
+                mocked=request.data.get('mocked'),
             )
             
             serializer = self.get_serializer(shift)

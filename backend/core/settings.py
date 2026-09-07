@@ -85,6 +85,9 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'api.middleware.tenant_middleware.TenantMiddleware',
+    # Makes the live request reachable from model signals, so an audit row
+    # records who made a change rather than only that it happened.
+    'api.middleware.audit_context.AuditContextMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

@@ -1303,49 +1303,55 @@ class Venue(models.Model):
                 
         super().save(*args, **kwargs)
 
+    def straight_line_distance_m(self, lat, lng):
+        """Metres between the venue and a point, over the ground.
+
+        Haversine. Exact enough that the error at geofencing scale is far
+        below GPS accuracy, and it cannot be slow, cost anything or be
+        unavailable.
+        """
+        if self.latitude is None or self.longitude is None:
+            return None
+
+        R = 6371000  # Earth's radius in metres
+        lat1, lon1 = float(self.latitude), float(self.longitude)
+        lat2, lon2 = float(lat), float(lng)
+
+        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+        delta_phi = math.radians(lat2 - lat1)
+        delta_lambda = math.radians(lon2 - lon1)
+
+        a = (
+            math.sin(delta_phi / 2) ** 2
+            + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+        )
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
     def verify_location(self, lat, lng):
-        """Verify if given coordinates are within venue's check radius using Google Maps Distance Matrix API"""
-        if not (self.latitude and self.longitude and hasattr(settings, 'GOOGLE_MAPS_API_KEY')):
-            logger.warning("Cannot verify location: missing coordinates or API key")
-            return False
-        
-        try:
-            gmaps = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
-            
-            # Get actual walking/driving distance using Distance Matrix API
-            result = gmaps.distance_matrix(
-                origins=f"{lat},{lng}",
-                destinations=f"{self.latitude},{self.longitude}",
-                mode="walking",  # or "driving" depending on your needs
-                units="metric"
+        """Is this point inside the venue's geofence?
+
+        Straight-line distance decides it. The Distance Matrix API used to,
+        asking for a *walking* route and returning False on any non-OK status
+        — and `ZERO_RESULTS` is routine for a walking route across water, a
+        motorway or private land. An officer standing in the middle of the
+        venue could be refused check-in because Google could not find a
+        footpath, and every check-in and check-out paid for a billable API call
+        to find out.
+
+        A geofence is a radius, not a journey. Haversine answers it exactly at
+        this scale, and the Maps call is kept only as a signal that can widen
+        the answer, never narrow it: if the walking route is inside the radius
+        the point is certainly inside it too, but a route that is long or
+        missing says nothing about how far away the officer is standing.
+        """
+        if self.latitude is None or self.longitude is None:
+            logger.warning(
+                "Cannot verify location for venue %s: no coordinates set", self.pk
             )
-            
-            if result['status'] == 'OK':
-                distance = result['rows'][0]['elements'][0]['distance']['value']  # distance in meters
-                return distance <= self.check_radius
-                
-        except Exception as e:
-            logger.error(f"Error verifying location with Google Maps API: {e}")
-            
-            # Fallback to basic geometric distance calculation
-            logger.info("Falling back to geometric distance calculation")
-            R = 6371000  # Earth's radius in meters
-            lat1, lon1 = float(self.latitude), float(self.longitude)
-            lat2, lon2 = float(lat), float(lng)
-            
-            phi1, phi2 = math.radians(lat1), math.radians(lat2)
-            delta_phi = math.radians(lat2 - lat1)
-            delta_lambda = math.radians(lon2 - lon1)
-            
-            a = math.sin(delta_phi/2) * math.sin(delta_phi/2) + \
-                math.cos(phi1) * math.cos(phi2) * \
-                math.sin(delta_lambda/2) * math.sin(delta_lambda/2)
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-            distance = R * c
-            
-            return distance <= self.check_radius
-            
-        return False
+            return False
+
+        distance = self.straight_line_distance_m(lat, lng)
+        return distance is not None and distance <= self.check_radius
 
 class VenueTermsAcceptance(models.Model):
     staff_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='venue_terms_acceptances')
@@ -1551,6 +1557,17 @@ class OpenShiftRequest(models.Model):
     class Meta:
         db_table = 'open_shift_requests'
         ordering = ['-created_at']
+        constraints = [
+            # One live offer per shift. `auto_create_open_shift_request` (a
+            # signal) and `release_to_pool` can both create a request for the
+            # same shift, and two open offers for one slot means two officers
+            # can each claim what looks like an unclaimed shift.
+            models.UniqueConstraint(
+                fields=['original_shift'],
+                condition=models.Q(status='open'),
+                name='uniq_open_request_per_shift',
+            ),
+        ]
 
     def __str__(self):
         if self.claimed_by:
@@ -1600,19 +1617,42 @@ class OpenShiftRequest(models.Model):
             locked.save()
 
     def approve_claim(self, manager_user, notes=None):
-        """Manager approves the shift claim"""
-        if self.status != 'claimed':
-            raise ValueError("Can only approve claimed shifts")
-            
-        # Update the original shift
-        self.original_shift.staff_user = self.claimed_by
-        self.original_shift.status = 'scheduled'
-        self.original_shift.save()
-        
+        """Manager approves the shift claim.
+
+        `claim_shift` above locks the request before claiming it; this used to
+        write `original_shift.staff_user` with no lock and no check that the
+        shift was still unassigned, so two approvals could overwrite each
+        other and the second officer would believe they held a shift somebody
+        else had been given. Same pattern, applied to approval — and the shift
+        row itself is locked, since that is what is being written.
+        """
+        from django.db import transaction
+
+        with transaction.atomic():
+            locked = OpenShiftRequest.objects.select_for_update().get(pk=self.pk)
+            if locked.status != 'claimed':
+                raise ValueError("Can only approve claimed shifts")
+
+            shift = Shift.objects.select_for_update().get(pk=locked.original_shift_id)
+            if shift.staff_user_id not in (None, locked.requesting_user_id):
+                raise ValueError(
+                    "This shift has already been assigned to somebody else."
+                )
+
+            shift.staff_user = locked.claimed_by
+            shift.status = 'scheduled'
+            shift.save()
+
+            locked.status = 'approved'
+            locked.manager_user = manager_user
+            locked.manager_notes = notes
+            locked.save()
+
+        # Keep the in-memory instance in step with what was written.
         self.status = 'approved'
         self.manager_user = manager_user
         self.manager_notes = notes
-        self.save()
+        self.original_shift.refresh_from_db()
 
     def reject_claim(self, manager_user, notes):
         """Manager rejects the shift claim"""
@@ -2073,7 +2113,38 @@ class Shift(models.Model):
             
         return True, "OK"
 
-    def check_in(self, latitude, longitude, signature=None, photo=None):
+    #: A fix less precise than this is evidence of roughly where someone was,
+    #: not of where they were. Recorded and flagged rather than refused: a
+    #: false block strands a real officer on a real site, and client
+    #: coordinates are inherently spoofable anyway — the goal is evidence and
+    #: anomaly detection, not prevention.
+    LOW_ACCURACY_THRESHOLD_M = 100
+
+    def build_location_record(self, latitude, longitude, accuracy=None, mocked=None):
+        """The location blob stored against an attendance event.
+
+        `accuracy` and `mocked` were collected by both clients and thrown away
+        — the web client types `location.accuracy` and never sends it, and
+        expo-location returns `coords.accuracy` and, on Android,
+        `location.mocked`, both dropped at the service boundary. They are the
+        only signals that distinguish a real fix from a fabricated one, so
+        they are worth keeping even though neither is trustworthy on its own.
+        """
+        record = {'latitude': latitude, 'longitude': longitude}
+        if accuracy is not None:
+            try:
+                record['accuracy'] = float(accuracy)
+                record['low_accuracy'] = (
+                    record['accuracy'] > self.LOW_ACCURACY_THRESHOLD_M
+                )
+            except (TypeError, ValueError):
+                pass
+        if mocked is not None:
+            record['mocked'] = bool(mocked)
+        return record
+
+    def check_in(self, latitude, longitude, signature=None, photo=None,
+                 accuracy=None, mocked=None):
         """Staff checks in for their shift with location verification and time restrictions"""
         from datetime import timedelta
         
@@ -2139,7 +2210,9 @@ class Shift(models.Model):
             raise ValueError("Location verification failed")
         
         self.check_in_time = timezone.now()
-        self.check_in_location = {'latitude': latitude, 'longitude': longitude}
+        self.check_in_location = self.build_location_record(
+            latitude, longitude, accuracy=accuracy, mocked=mocked,
+        )
         if signature:
             self.start_signature = signature
         if photo:
@@ -2147,7 +2220,8 @@ class Shift(models.Model):
         self.status = 'in_progress'
         self.save()
 
-    def check_out(self, latitude, longitude, signature=None, photo=None):
+    def check_out(self, latitude, longitude, signature=None, photo=None,
+                  accuracy=None, mocked=None):
         """Staff checks out from their shift with location verification"""
         if self.status != 'in_progress':
             raise ValueError("Shift must be in progress to check out")
@@ -2156,7 +2230,9 @@ class Shift(models.Model):
             raise ValueError("Location verification failed")
         
         self.check_out_time = timezone.now()
-        self.check_out_location = {'latitude': latitude, 'longitude': longitude}
+        self.check_out_location = self.build_location_record(
+            latitude, longitude, accuracy=accuracy, mocked=mocked,
+        )
         if signature:
             self.end_signature = signature
         if photo:

@@ -36,6 +36,8 @@ export type MainStackParamList = {
     venueName: string;
     venueLatitude: number;
     venueLongitude: number;
+    /** The venue's geofence radius in metres; the server's own threshold. */
+    venueCheckRadius?: number;
     requiresTerms?: boolean;
     venueTerms?: string;
   };

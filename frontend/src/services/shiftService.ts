@@ -472,6 +472,11 @@ class ShiftService {
     return response.data;
   }
 
+  // `accuracy` was typed here and then never sent, so the server stored a
+  // coordinate pair with no indication of how much to trust it. It is now
+  // persisted alongside the fix and flagged when it exceeds the venue-scale
+  // threshold, so a manager reviewing attendance can see the difference
+  // between a five-metre fix and a five-hundred-metre one.
   async checkInShift(shiftId: number, data: {
     location: { latitude: number; longitude: number; accuracy: number };
     photo: string;
@@ -480,6 +485,7 @@ class ShiftService {
     const response = await shiftApi.post(`/api/v1/shifts/frontend/${shiftId}/checkIn/`, {
       latitude: data.location.latitude,
       longitude: data.location.longitude,
+      accuracy: data.location.accuracy,
       photo: data.photo,
       signature: data.signature
     });
@@ -494,6 +500,7 @@ class ShiftService {
     const response = await shiftApi.post(`/api/v1/shifts/frontend/${shiftId}/checkOut/`, {
       latitude: data.location.latitude,
       longitude: data.location.longitude,
+      accuracy: data.location.accuracy,
       photo: data.photo,
       signature: data.signature
     });

@@ -74,6 +74,12 @@ class SimpleVenueSerializer(serializers.ModelSerializer):
         model = Venue
         fields = [
             'id', 'name', 'address', 'latitude', 'longitude',
+            # The venue's real geofence radius. The apps used to hardcode
+            # 100 m and carry a dead 50 m constant besides, so a venue set to
+            # 500 m had officers blocked by their own app, and one set to 25 m
+            # had them accepted right up until the server refused — after the
+            # photo and the signature, which is the worst possible moment.
+            'check_radius',
             'requires_fire_safety_checks', 'requires_capacity_monitoring', 
             'requires_toilet_checks', 'capacity'
         ]

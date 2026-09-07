@@ -3,7 +3,7 @@ Django signals for the API app.
 Handles automatic setup and lifecycle events for models.
 """
 
-from django.db.models.signals import post_save, pre_save, pre_delete
+from django.db.models.signals import post_save, pre_save, pre_delete, post_delete
 from django.dispatch import receiver
 from django.db import transaction
 from datetime import timedelta
@@ -1093,3 +1093,163 @@ def broadcast_notification_over_ws(sender, instance, created, **kwargs):
         )
     except Exception as e:
         logger.warning(f"Failed to broadcast notification over WS: {e}")
+
+
+# =============================================================================
+# Shift lifecycle audit trail (P2-7)
+# =============================================================================
+#
+# Thirty AuditLog write sites existed before this, and between them they covered
+# user creation, role change, invoice status change and batch shift creation.
+# Not covered: a shift being edited, cancelled or deleted; an officer being
+# assigned to one or taken off it; check-in; check-out; attendance being
+# corrected; a pay rate being changed. Those are the events a licensing
+# officer, a payroll dispute or an incident investigation actually asks about.
+#
+# Signals rather than per-view calls because there is no single write path: the
+# admin UI, the mobile app, auto-checkout, bulk create and Celery all move
+# shifts. `api.middleware.audit_context` supplies the actor.
+#
+# Never logged: signatures, photos, tokens or bank details.
+
+#: Field changes worth a row of their own, mapped to what they mean.
+_AUDITED_SHIFT_FIELDS = {
+    'staff_user_id': 'assignment',
+    'status': 'status',
+    'start_time': 'schedule',
+    'end_time': 'schedule',
+    'hourly_rate': 'pay_rate',
+    'bill_rate': 'pay_rate',
+    'check_in_time': 'attendance',
+    'check_out_time': 'attendance',
+    'actual_hours_worked': 'attendance',
+    'is_published': 'publication',
+}
+
+
+def _audit_value(value):
+    """JSON-safe rendering of a field value for the audit details blob."""
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    return str(value)
+
+
+@receiver(pre_save, sender='api.Shift')
+def capture_shift_audit_baseline(sender, instance, **kwargs):
+    """Snapshot the stored row so post_save can diff against it."""
+    if not instance.pk:
+        instance._audit_baseline = None
+        return
+    try:
+        from .models import Shift
+        previous = Shift.objects.filter(pk=instance.pk).values(
+            *_AUDITED_SHIFT_FIELDS
+        ).first()
+        instance._audit_baseline = previous
+    except Exception:
+        instance._audit_baseline = None
+
+
+@receiver(post_save, sender='api.Shift')
+def audit_shift_changes(sender, instance, created, **kwargs):
+    """Record what changed on a shift, and who changed it."""
+    from .middleware.audit_context import get_current_actor, get_current_request
+
+    try:
+        baseline = getattr(instance, '_audit_baseline', None)
+        company = instance.venue.company if instance.venue else None
+        actor = get_current_actor()
+        request = get_current_request()
+
+        if created:
+            # `bulk_create` writes its own batch-level row; a per-shift row for
+            # every slot in a fifty-shift batch is noise, not a trail.
+            if getattr(instance, '_skip_per_shift_notifications', False):
+                return
+            AuditLog.log(
+                user=actor,
+                company=company,
+                action='create',
+                resource_type='Shift',
+                resource_id=str(instance.pk),
+                details={
+                    'venue': instance.venue.name if instance.venue else None,
+                    'staff_user_id': instance.staff_user_id,
+                    'start_time': _audit_value(instance.start_time),
+                    'end_time': _audit_value(instance.end_time),
+                    'status': instance.status,
+                },
+                request=request,
+            )
+            return
+
+        if not baseline:
+            return
+
+        changes = {}
+        categories = set()
+        for field, category in _AUDITED_SHIFT_FIELDS.items():
+            before = baseline.get(field)
+            after = getattr(instance, field, None)
+            if before != after:
+                changes[field] = {
+                    'old': _audit_value(before),
+                    'new': _audit_value(after),
+                }
+                categories.add(category)
+
+        if not changes:
+            return
+
+        # Cancellation is the one worth naming in the action itself — it is
+        # what gets searched for after an incident.
+        if instance.status == 'cancelled' and baseline.get('status') != 'cancelled':
+            action = 'delete'
+        elif categories == {'status'}:
+            action = 'status_change'
+        else:
+            action = 'update'
+
+        AuditLog.log(
+            user=actor,
+            company=company,
+            action=action,
+            resource_type='Shift',
+            resource_id=str(instance.pk),
+            details={
+                'categories': sorted(categories),
+                'changes': changes,
+                'venue': instance.venue.name if instance.venue else None,
+                'staff_user_id': instance.staff_user_id,
+            },
+            request=request,
+        )
+    except Exception as e:
+        # An audit failure must never block the operation it is recording.
+        logger.warning(f"Failed to audit shift {instance.pk}: {e}")
+
+
+@receiver(post_delete, sender='api.Shift')
+def audit_shift_deletion(sender, instance, **kwargs):
+    """A deleted shift leaves no row to inspect; record it before it is gone."""
+    from .middleware.audit_context import get_current_actor, get_current_request
+
+    try:
+        AuditLog.log(
+            user=get_current_actor(),
+            company=instance.venue.company if instance.venue else None,
+            action='delete',
+            resource_type='Shift',
+            resource_id=str(instance.pk),
+            details={
+                'venue': instance.venue.name if instance.venue else None,
+                'staff_user_id': instance.staff_user_id,
+                'start_time': _audit_value(instance.start_time),
+                'end_time': _audit_value(instance.end_time),
+                'status': instance.status,
+                'had_attendance': bool(instance.check_in_time),
+            },
+            request=get_current_request(),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to audit deletion of shift {instance.pk}: {e}")

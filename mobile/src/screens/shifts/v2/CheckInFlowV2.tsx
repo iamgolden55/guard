@@ -73,6 +73,7 @@ interface CheckInFlowScreenProps {
       venueName: string;
       venueLatitude: number;
       venueLongitude: number;
+      venueCheckRadius?: number;
       requiresTerms?: boolean;
       venueTerms?: string;
       shiftRole?: string;
@@ -91,6 +92,7 @@ export const CheckInFlowV2: React.FC<CheckInFlowScreenProps> = ({ route }) => {
     venueName,
     venueLatitude,
     venueLongitude,
+    venueCheckRadius,
     requiresTerms,
     venueTerms,
     shiftRole = 'Door supervisor',
@@ -113,9 +115,12 @@ export const CheckInFlowV2: React.FC<CheckInFlowScreenProps> = ({ route }) => {
   const handleLocationCheck = async () => {
     setIsVerifying(true);
     try {
+      // The venue's own radius, not a hardcoded 100 m — the server measures
+      // against `venue.check_radius`, and disagreeing with it either blocks
+      // officers it would accept or accepts ones it will refuse.
       const result = await locationService.verifyLocation(
         { latitude: venueLatitude, longitude: venueLongitude },
-        100,
+        venueCheckRadius ?? 100,
       );
 
       if (!result || typeof result.success === 'undefined') {
@@ -245,6 +250,10 @@ export const CheckInFlowV2: React.FC<CheckInFlowScreenProps> = ({ route }) => {
           check_in_time: new Date().toISOString(),
           latitude: location.latitude,
           longitude: location.longitude,
+          // Recorded server-side and flagged for review when the fix is poor
+          // or mock-provided; never a block on its own.
+          accuracy: location.accuracy,
+          mocked: location.mocked,
           photo: optimizedPhotoUri,
           signature: signatureData,
         },
