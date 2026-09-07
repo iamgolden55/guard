@@ -250,11 +250,26 @@ class DashboardOnDutyTests(TestCase):
         """
         Coverage counted every shift row in the Mon-Sun week and called the
         total "officers deployed" — so finished and not-yet-started shifts
-        propped up the number, and two rows for one officer counted twice.
+        propped up the number.
+
+        The duplicate-row half of that bug is now unreachable: two overlapping
+        live rows for one officer violate
+        `shift_no_overlapping_assignment`, so the state the de-duplication was
+        defending against cannot be stored. That is asserted separately below;
+        the de-duplication itself stays as defence in depth.
         """
         self._live_shift(self.officer)
-        # Same officer, second live row at the same venue: one officer deployed.
-        self._live_shift(self.officer, checked_in=False, started_hours_ago=0)
+        # A second seat at the venue that nobody has been assigned to: it
+        # counts towards `required` but not `staffed`, which is the case the
+        # coverage maths exists for. This used to be a second row for the
+        # *same* officer — a state the overlap constraint now refuses, and
+        # rightly, since it described one person in two places at once.
+        now = timezone.now()
+        Shift.objects.create(
+            venue=self.venue, staff_user=None,
+            start_time=now, end_time=now + timedelta(hours=4),
+            status='open', required_security_role='sg', is_published=True,
+        )
         # A shift that finished earlier today must not prop the number up.
         finished = timezone.now() - timedelta(hours=8)
         Shift.objects.create(
@@ -269,6 +284,19 @@ class DashboardOnDutyTests(TestCase):
         self.assertEqual(row['staffed'], 1)
         self.assertEqual(row['required'], 2)
         self.assertEqual(row['coverage'], 50)
+
+    def test_one_officer_cannot_hold_two_live_rows_at_all(self):
+        """The double-count this dashboard used to defend against is now
+        impossible to persist, not merely filtered out at render time."""
+        from django.db import IntegrityError, transaction
+
+        self._live_shift(self.officer)
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                self._live_shift(
+                    self.officer, checked_in=False, started_hours_ago=0,
+                )
 
     def test_venue_with_nothing_scheduled_reports_no_coverage(self):
         """0/0 used to render as 100% — a reassuring lie about an idle venue."""

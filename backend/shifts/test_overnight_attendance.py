@@ -419,3 +419,169 @@ class StrandedShiftAuditTests(APITestCase):
         shift.save(update_fields=["check_in_time", "check_out_time"])
 
         self.assertIn("(none)", self._run())
+
+
+class TwoStepAttendanceTests(APITestCase):
+    """P1-2 — recording check-in and check-out in two calls loses the hours.
+
+    `record_attendance` builds `update_fields` from whatever the caller
+    supplied. `Shift.save()` recomputes `actual_hours_worked` from the two
+    timestamps, but `save(update_fields=[...])` writes only the listed columns,
+    so the recomputed value was never persisted.
+
+    The natural admin flow triggers it: record the check-in now, record the
+    check-out later. The second call carries only `adjusted_check_out_time`, so
+    `_handle_attendance_write` never derives `hours` (that derivation needs
+    both timestamps in one request), and `actual_hours_worked` stays NULL.
+
+    `Invoice.generate_for_staff_period` filters `actual_hours_worked__isnull=
+    False`. The shift is silently excluded from payroll — the officer worked
+    and is not paid, and nothing surfaces an error.
+    """
+
+    def setUp(self):
+        self.company = SecurityCompany.objects.create(
+            name="Two Step Co", registration_number="STEP001",
+        )
+        self.admin = User.objects.create_user(
+            username="step_admin", email="admin@step.test",
+            password="testpass123", role="admin",
+        )
+        self.staff = User.objects.create_user(
+            username="step_staff", email="officer@step.test",
+            password="testpass123", role="staff",
+        )
+        for user in (self.admin, self.staff):
+            UserCompanyMembership.objects.create(
+                user=user, company=self.company, is_active=True,
+            )
+        self.venue = Venue.objects.create(
+            company=self.company, name="Step Venue", address="1 Step St",
+            city="Bristol", postal_code="BS1 1AA", country="UK", capacity=100,
+            contact_name="Contact", contact_phone="07700900000",
+            contact_email="venue@step.test", terms_and_conditions="Terms",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def _shift(self):
+        now = timezone.now()
+        start = (now - timedelta(hours=10)).replace(minute=0, second=0, microsecond=0)
+        return Shift.objects.create(
+            venue=self.venue, staff_user=self.staff,
+            start_time=start, end_time=start + timedelta(hours=8),
+            status="scheduled", required_security_role="sg",
+            is_published=True, hourly_rate=Decimal("15.00"),
+        )
+
+    def _record(self, shift, **payload):
+        payload.setdefault("manager_signature", "manager")
+        return self.client.post(
+            f"/api/v1/shifts/{shift.id}/record_attendance/", payload, format="json",
+        )
+
+    def test_hours_persist_when_check_in_and_out_arrive_separately(self):
+        shift = self._shift()
+
+        first = self._record(
+            shift, adjusted_check_in_time=shift.start_time.isoformat(),
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED, first.data)
+
+        second = self._record(
+            shift,
+            adjusted_check_out_time=shift.end_time.isoformat(),
+            reason="Officer forgot to check out; closed at scheduled end.",
+        )
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED, second.data)
+
+        shift.refresh_from_db()
+        self.assertIsNotNone(
+            shift.actual_hours_worked,
+            "check-out recorded but actual_hours_worked left NULL — this shift "
+            "is invisible to payroll",
+        )
+        self.assertEqual(shift.actual_hours_worked, Decimal("8.00"))
+
+    def test_a_two_step_shift_reaches_the_invoice(self):
+        """The consequence that matters: the officer actually gets paid."""
+        from api.models import Invoice
+
+        shift = self._shift()
+        self._record(shift, adjusted_check_in_time=shift.start_time.isoformat())
+        self._record(
+            shift,
+            adjusted_check_out_time=shift.end_time.isoformat(),
+            reason="Closed at scheduled end.",
+        )
+        shift.refresh_from_db()
+        shift.status = "approved"
+        shift.save()
+
+        invoice = Invoice.generate_for_staff_period(
+            staff_user=self.staff,
+            start_date=shift.start_time.date() - timedelta(days=1),
+            end_date=shift.end_time.date() + timedelta(days=1),
+        )
+
+        self.assertIsNotNone(invoice, "no invoice generated for a worked shift")
+        self.assertTrue(
+            invoice.items.filter(shift=shift).exists(),
+            "worked shift missing from the invoice it should be paid on",
+        )
+
+    def test_an_explicit_hours_override_survives_the_save(self):
+        """An operator's stated hours must win over the derived duration.
+
+        With both timestamps present `Shift.save()` recomputes the value and
+        overwrote whatever the operator entered. Pay still came out right —
+        `get_effective_actual_hours()` reads `TimeAdjustment` first — but the
+        column left behind was wrong, and that column is what the weekly
+        overtime accumulator reads.
+        """
+        shift = self._shift()
+        self._record(shift, adjusted_check_in_time=shift.start_time.isoformat())
+
+        response = self._record(
+            shift,
+            adjusted_check_out_time=shift.end_time.isoformat(),
+            adjusted_actual_hours="6.50",
+            reason="Officer took an unrecorded two-hour break.",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        shift.refresh_from_db()
+        self.assertEqual(shift.actual_hours_worked, Decimal("6.50"))
+
+    def test_an_approved_shift_cannot_be_left_without_hours(self):
+        """The fingerprint of this bug should be impossible to persist.
+
+        With both timestamps present the derivation fills the column, so the
+        combination cannot arise that way. It arises when a check-out lands
+        without a check-in: nothing to subtract from, hours stay NULL, and
+        `generate_for_staff_period` filters the shift straight out of payroll.
+        """
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        shift = self._shift()
+        shift.check_out_time = shift.end_time
+        shift.actual_hours_worked = None
+        shift.status = "approved"
+
+        with self.assertRaises(DjangoValidationError):
+            shift.save(update_fields=["check_out_time", "status"])
+
+        shift.refresh_from_db()
+        self.assertNotEqual(shift.status, "approved")
+
+    def test_the_guard_does_not_block_an_ordinary_approval(self):
+        """Regression guard — a normal closed shift still approves."""
+        shift = self._shift()
+        shift.check_in_time = shift.start_time
+        shift.check_out_time = shift.end_time
+        shift.status = "approved"
+        shift.save()
+
+        shift.refresh_from_db()
+        self.assertEqual(shift.status, "approved")
+        self.assertEqual(shift.actual_hours_worked, Decimal("8.00"))

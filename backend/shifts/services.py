@@ -67,6 +67,23 @@ def record_attendance(
     if hours is not None:
         shift.actual_hours_worked = hours
         update_fields.append('actual_hours_worked')
+        # Precedence, stated rather than left to chance: an operator who typed
+        # a figure means it. `Shift.save()` re-derives hours from the two
+        # timestamps, and without this flag it silently overwrote the entered
+        # value — leaving `actual_hours_worked` disagreeing with the
+        # `TimeAdjustment` row that `get_effective_actual_hours()` pays from.
+        shift._explicit_hours = True
+
+    # `Shift.save()` recomputes `actual_hours_worked` whenever both timestamps
+    # are present, but `save(update_fields=[...])` writes only the listed
+    # columns — so a recomputation triggered by writing a timestamp had no
+    # column to land in. Today it survives anyway, because a correction also
+    # creates a TimeAdjustment whose sync signal happens to list this column.
+    # Depending on that is depending on a coincidence in another module: list
+    # it here, where the timestamp is written.
+    if ('check_in_time' in update_fields or 'check_out_time' in update_fields) \
+            and 'actual_hours_worked' not in update_fields:
+        update_fields.append('actual_hours_worked')
 
     # Keep `status` in step with the attendance values being written. Shift.save's
     # in-memory status mutation (scheduled→active→in_progress→pending_approval)

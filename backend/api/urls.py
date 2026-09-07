@@ -15,7 +15,7 @@ from .views import (
     DeputyConfigViewSet, DeputyEmployeeViewSet, DeputyTimesheetViewSet,
     ShiftTemplateViewSet, DeputyConfigView, SystemSettingsView,
     my_profile, update_my_user, change_password, request_account_deletion,
-    FileUploadView, ProfilePhotoUploadView, payroll_preview, payroll_generate,
+    FileUploadView, SIALicenseDocumentView, ProfilePhotoUploadView, payroll_preview, payroll_generate,
     EmploymentTypeViewSet, RecruitmentApplicationViewSet, RecruitmentApplicationPublicViewSet,
     # Compliance system views
     WorkingHoursRegulationViewSet, ComplianceProfileViewSet, ComplianceViolationViewSet,
@@ -135,6 +135,13 @@ urlpatterns = [
     path('accounts/change-password/', change_password, name='change-password'),
     path('accounts/delete-account/', request_account_deletion, name='delete-account'),
     path('upload/', FileUploadView.as_view(), name='file-upload'),
+    # SIA licence scans are identity documents and are served through an
+    # authenticated, ownership-checked view — never a bare MEDIA_URL.
+    path(
+        'sia-license-documents/<path:path>',
+        SIALicenseDocumentView.as_view(),
+        name='sia-license-document',
+    ),
     path('staff/profile/upload-photo/', ProfilePhotoUploadView.as_view(), name='profile-photo-upload'),
     path('admin/payroll/preview/', payroll_preview, name='payroll-preview'),
     path('admin/payroll/generate/', payroll_generate, name='payroll-generate'),

@@ -1,5 +1,8 @@
-from django.db import models, transaction
+from django.db import models, transaction, IntegrityError
+from django.db.models import Func, Value
 from django.contrib.auth.models import AbstractUser
+from django.contrib.postgres.constraints import ExclusionConstraint
+from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
 from django.core.validators import RegexValidator, MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from datetime import datetime, timedelta
@@ -1714,6 +1717,48 @@ class Shift(models.Model):
         ]
         # Note: Unique constraint for shift groups is handled in serializer validation
         # to allow NULL values for single shifts
+        indexes = [
+            # `ordering = ['-start_time']` sorts every unindexed query in the
+            # app, and the dashboard filters on exactly these columns. Migration
+            # 0006 added a unique constraint, 0007 replaced it, 0008 removed it
+            # — since then the table has carried nothing but the FK indexes
+            # Django creates automatically.
+            models.Index(fields=['start_time'], name='shift_start_time_idx'),
+            models.Index(fields=['staff_user', 'start_time'], name='shift_staff_start_idx'),
+            models.Index(fields=['status', 'is_published'], name='shift_status_pub_idx'),
+            models.Index(fields=['venue', 'start_time'], name='shift_venue_start_idx'),
+        ]
+        constraints = [
+            # An officer cannot be in two places at once. `bulk_create` runs
+            # `validate_shift_warnings` *outside* its `atomic()` block and
+            # re-checks nothing inside, so two managers scheduling concurrently
+            # could double-book the same person — a textbook TOCTOU that no
+            # amount of checking in Python closes. This is the database's own
+            # expression of the rule, and it holds regardless of which code
+            # path does the insert.
+            #
+            # Cancelled and rejected shifts are excluded: they are history, not
+            # commitments, and an officer released from one shift must be free
+            # to take another in the same window.
+            ExclusionConstraint(
+                name='shift_no_overlapping_assignment',
+                expressions=[
+                    ('staff_user', RangeOperators.EQUAL),
+                    (
+                        Func(
+                            'start_time', 'end_time', Value('[)'),
+                            function='tstzrange',
+                            output_field=DateTimeRangeField(),
+                        ),
+                        RangeOperators.OVERLAPS,
+                    ),
+                ],
+                condition=models.Q(
+                    staff_user__isnull=False,
+                    end_time__isnull=False,
+                ) & ~models.Q(status__in=['cancelled', 'rejected']),
+            ),
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1819,9 +1864,13 @@ class Shift(models.Model):
     def save(self, *args, **kwargs):
         # Validate before saving
         self.clean()
-        
-        # Calculate actual hours worked
-        if self.check_in_time and self.check_out_time:
+
+        # Calculate actual hours worked. An operator who supplied an explicit
+        # figure wins: `shifts.services.record_attendance` sets
+        # `_explicit_hours` when someone typed a number, and re-deriving over
+        # it left this column disagreeing with the TimeAdjustment row that
+        # `get_effective_actual_hours()` actually pays from.
+        if self.check_in_time and self.check_out_time and not getattr(self, '_explicit_hours', False):
             duration = self.check_out_time - self.check_in_time
             hours_worked = duration.total_seconds() / 3600
             break_hours = self.break_duration / 60
@@ -1853,6 +1902,21 @@ class Shift(models.Model):
             ):
                 self.status = 'approved'
                 self.manager_approved = True
+
+        # A closed, approved shift with no hours on it is invisible to
+        # `Invoice.generate_for_staff_period`, which filters
+        # `actual_hours_worked__isnull=False`. The officer worked and would
+        # not be paid, and nothing would surface an error. That combination is
+        # the fingerprint of a persistence bug, so make it impossible to store
+        # rather than something to discover in a payroll query later.
+        if (self.status == 'approved' and self.check_out_time is not None
+                and self.actual_hours_worked is None):
+            from django.core.exceptions import ValidationError
+            raise ValidationError(
+                "Cannot approve a shift with a check-out but no recorded "
+                "hours — it would be excluded from payroll. Record the hours "
+                "first."
+            )
 
         super().save(*args, **kwargs)
 
@@ -3119,6 +3183,41 @@ class Invoice(models.Model):
     class Meta:
         db_table = 'invoices'
         ordering = ['-created_at']
+        constraints = [
+            # One live invoice per officer per period. `generate_for_staff_period`
+            # did check-then-create with no lock, so two managers clicking
+            # "Generate payroll" at once — or a bulk approval firing
+            # `auto_generate_invoice()` twice — both passed the existence check
+            # and both inserted. That is double payment, and no amount of
+            # widening the check fixes a race; only the database can.
+            #
+            # Partial on `superseded_by IS NULL` so the credit-note / reissue
+            # path still works: a resolved invoice steps out of the way of its
+            # own replacement.
+            models.UniqueConstraint(
+                fields=['staff_user', 'start_date', 'end_date'],
+                condition=models.Q(superseded_by__isnull=True),
+                name='uniq_live_invoice_per_staff_period',
+            ),
+        ]
+
+    #: Statuses past which an invoice's figures are settled. `approved` means
+    #: "exportable to Xero" per PayrollRun's own docstring, so a correction
+    #: after that point restates the local invoice while Xero keeps the
+    #: original — reconciliation drift nobody is alerted to.
+    LOCKED_STATUSES = ('approved', 'paid')
+
+    def is_locked(self):
+        """True when this invoice's figures must not change in place.
+
+        Locked by its own status, or by the payroll run it was exported in.
+        Corrections to a locked invoice belong in a credit note or reissue —
+        the `superseded_by` mechanism already exists for exactly that.
+        """
+        if self.status in self.LOCKED_STATUSES:
+            return True
+        run = self.payroll_run
+        return bool(run and run.export_status == 'completed')
 
     def __str__(self):
         return f"Invoice for {self.staff_user.username} ({self.start_date} to {self.end_date})"
@@ -3153,7 +3252,11 @@ class Invoice(models.Model):
         """
         from decimal import Decimal
 
-        # Check if an invoice already exists for this staff member and period
+        # Check if an invoice already exists for this staff member and period.
+        # This is the fast path, not the safety mechanism — the constraint
+        # `uniq_live_invoice_per_staff_period` is what makes the race safe, and
+        # the IntegrityError handler around the insert below turns a lost race
+        # into a no-op rather than a 500 for whoever clicked second.
         existing_invoice = cls.objects.filter(
             staff_user=staff_user,
             start_date=start_date,
@@ -3265,18 +3368,37 @@ class Invoice(models.Model):
         # Calculate average hourly rate for the invoice (for display purposes)
         average_rate = total_amount / total_hours if total_hours > 0 else Decimal('0.00')
 
-        # Create the invoice
-        invoice = cls.objects.create(
-            staff_user=staff_user,
-            start_date=start_date,
-            end_date=end_date,
-            total_hours=total_hours,
-            hourly_rate=average_rate,  # This is now an average of all shift rates
-            total_amount=total_amount,
-            status=default_status,
-            source=source,
-            created_by=created_by
-        )
+        # Create the invoice. If a concurrent caller inserted first, the
+        # partial unique constraint rejects this one — return the winner rather
+        # than raising, so a race is a no-op for the loser instead of an error
+        # the operator has to interpret.
+        try:
+            with transaction.atomic():
+                invoice = cls.objects.create(
+                    staff_user=staff_user,
+                    start_date=start_date,
+                    end_date=end_date,
+                    total_hours=total_hours,
+                    hourly_rate=average_rate,  # This is now an average of all shift rates
+                    total_amount=total_amount,
+                    status=default_status,
+                    source=source,
+                    created_by=created_by
+                )
+        except IntegrityError:
+            winner = cls.objects.filter(
+                staff_user=staff_user,
+                start_date=start_date,
+                end_date=end_date,
+                superseded_by__isnull=True,
+            ).first()
+            if winner is None:
+                raise
+            logger.info(
+                f"Concurrent invoice generation for {staff_user.username} "
+                f"{start_date}..{end_date}; returning existing invoice {winner.id}"
+            )
+            return winner
 
         # Hybrid invoice flow (P1.1): when an official period invoice is created
         # (default_status != 'draft'), supersede any preliminary draft invoices

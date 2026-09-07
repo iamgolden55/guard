@@ -66,5 +66,12 @@ if settings.DEBUG:
     ]
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
-# Serve media files in all environments (needed for SIA license docs, profile images, etc.)
+# Local development only. `django.conf.urls.static.static()` returns [] when
+# DEBUG is False, so despite what this line used to claim it has never served
+# anything in production — where media is either an ephemeral container
+# filesystem or S3, depending on whether AWS_STORAGE_BUCKET_NAME is set.
+#
+# SIA licence documents do not rely on this in any environment: they are served
+# by the authenticated `sia-license-documents/` view, which checks that the
+# requester owns the document or manages the officer it belongs to.
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

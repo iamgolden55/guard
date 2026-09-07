@@ -276,12 +276,16 @@ class ManualCheckoutOverrideTimeTests(APITestCase):
 
     def test_manual_checkout_requires_prior_checkin(self):
         """Manual checkout fails if shift was never checked in."""
-        # Create a shift that was never checked in
+        # Create a shift that was never checked in. It has to sit outside the
+        # window of `self.shift`, which the same officer is already on:
+        # `shift_no_overlapping_assignment` refuses two overlapping
+        # assignments for one person.
+        unchecked_start = timezone.now() + timedelta(days=1)
         unchecked_shift = Shift.objects.create(
             staff_user=self.staff,
             venue=self.venue,
-            start_time=timezone.now() - timedelta(hours=4),
-            end_time=timezone.now() + timedelta(hours=4),
+            start_time=unchecked_start,
+            end_time=unchecked_start + timedelta(hours=8),
             status="scheduled",
             required_security_role="sg",
         )

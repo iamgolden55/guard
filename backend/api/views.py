@@ -9,7 +9,8 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.db.models import Q, Count, Avg, Sum, Max, Min
 from django.core.cache import cache
-from django.http import HttpResponse
+from django.http import HttpResponse, FileResponse, Http404
+import mimetypes
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
@@ -29,7 +30,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
-from django.db import models, IntegrityError
+from django.db import models, transaction, IntegrityError
 import os
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -1454,31 +1455,43 @@ def payroll_generate(request):
         total_amount = Decimal('0.00')
         
         for staff_user in staff_with_shifts:
-            # Check if invoice already exists for this period
-            existing_invoice = Invoice.objects.filter(
-                staff_user=staff_user,
-                start_date=start_date,
-                end_date=end_date
-            ).first()
-            
-            if existing_invoice:
-                invoices_existing += 1
-                total_amount += existing_invoice.total_amount
-                continue
-            
-            # Generate new invoice for this staff member for the date range
-            # Mark as admin-generated since this is initiated from admin bulk payroll
-            invoice = Invoice.generate_for_staff_period(
-                staff_user=staff_user,
-                start_date=start_date,
-                end_date=end_date,
-                source='admin',
-                created_by=request.user
-            )
-            
-            if invoice:
-                invoices_created += 1
-                total_amount += invoice.total_amount
+            # One officer at a time, inside a transaction, with the staff row
+            # locked. Two managers clicking "Generate payroll" concurrently
+            # both used to pass the existence check below and both insert.
+            # The unique constraint on Invoice is the real backstop; the lock
+            # keeps the common case from ever reaching it, so the operator sees
+            # an accurate created/existing count rather than one call silently
+            # reporting work the other did.
+            #
+            # Per-officer rather than around the whole loop: a long payroll run
+            # should not hold a lock over every member of staff.
+            with transaction.atomic():
+                User.objects.select_for_update().get(pk=staff_user.pk)
+
+                existing_invoice = Invoice.objects.filter(
+                    staff_user=staff_user,
+                    start_date=start_date,
+                    end_date=end_date
+                ).first()
+
+                if existing_invoice:
+                    invoices_existing += 1
+                    total_amount += existing_invoice.total_amount
+                    continue
+
+                # Generate new invoice for this staff member for the date range
+                # Mark as admin-generated since this is initiated from admin bulk payroll
+                invoice = Invoice.generate_for_staff_period(
+                    staff_user=staff_user,
+                    start_date=start_date,
+                    end_date=end_date,
+                    source='admin',
+                    created_by=request.user
+                )
+
+                if invoice:
+                    invoices_created += 1
+                    total_amount += invoice.total_amount
         
         # Create informative message
         if invoices_created > 0 and invoices_existing > 0:
@@ -4318,21 +4331,107 @@ class FileUploadView(APIView):
                 'error': 'Invalid file type. Only JPEG, PNG, and PDF files are allowed.'
             }, status=400)
 
-        # Sanitize filename to remove spaces and special characters
-        sanitized_filename = self.sanitize_filename(file_obj.name)
-        # Save the file to MEDIA_ROOT/sia_licenses/
-        upload_dir = 'sia_licenses/'
-        file_path = os.path.join(upload_dir, sanitized_filename)
+        # Store under an unguessable name, in a per-owner directory.
+        #
+        # Files used to land in a shared `sia_licenses/` prefix under the
+        # sanitised *original* filename — `John_Smith_SIA_Licence.pdf` — and
+        # the endpoint returned a bare media URL with no access control on it.
+        # Anyone with the link, or willing to guess a colleague's name, could
+        # read an officer's identity document.
+        #
+        # The owner id in the path is what `SIALicenseDocumentView` authorises
+        # against, so it has to be here and not merely in a database row: a
+        # document is uploaded before the licence record that references it
+        # exists.
+        original_name = self.sanitize_filename(file_obj.name)
+        extension = os.path.splitext(original_name)[1].lower()
+        stored_name = f"{uuid.uuid4().hex}{extension}"
+        file_path = os.path.join('sia_licenses', str(request.user.id), stored_name)
         path = default_storage.save(file_path, ContentFile(file_obj.read()))
-        # Build absolute URL with proper URL encoding for the path
-        encoded_path = quote(path, safe='/')
-        if settings.MEDIA_URL.startswith('http'):
-            file_url = settings.MEDIA_URL + encoded_path
-        else:
-            scheme = request.scheme
-            host = request.get_host()
-            file_url = f"{scheme}://{host}{settings.MEDIA_URL}{encoded_path}"
-        return Response({'url': file_url}, status=201)
+
+        # Point at the authenticated view rather than at MEDIA_URL. A bare
+        # media URL is a bearer token that never expires and is checked by
+        # nobody.
+        relative = quote(path.split('sia_licenses/', 1)[-1], safe='/')
+        file_url = request.build_absolute_uri(
+            f'/api/v1/sia-license-documents/{relative}'
+        )
+        return Response(
+            {'url': file_url, 'filename': original_name}, status=201
+        )
+
+
+class SIALicenseDocumentView(APIView):
+    """Serve an SIA licence document to someone entitled to see it.
+
+    An SIA licence scan is an identity document. Before this view, uploads
+    returned a bare `MEDIA_URL` link with no authentication and no ownership
+    check on it — a permanent bearer token for a photo of someone's licence,
+    under a filename derived from their name.
+
+    Entitlement is: the officer the document belongs to, or a manager/admin of
+    a company that officer is an active member of. Nobody else, including
+    other officers in the same company.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _owner_id_from_path(self, relative_path):
+        """The per-owner directory, for documents stored after this change."""
+        head = relative_path.split('/', 1)[0]
+        return int(head) if head.isdigit() else None
+
+    def _owner_id_from_licence(self, relative_path):
+        """Fall back to the licence row, for documents stored before it."""
+        licence = SIALicense.objects.filter(
+            document_url__endswith=relative_path
+        ).select_related('staff_profile').first()
+        return licence.staff_profile.user_id if licence else None
+
+    def _may_read(self, user, owner_id):
+        if owner_id is None:
+            # Nothing establishes who this belongs to, so nobody is entitled
+            # to it. Fail closed.
+            return False
+        if user.id == owner_id:
+            return True
+        if getattr(user, 'role', None) not in ('admin', 'manager'):
+            return False
+        # Manager or admin, but only over their own company's people.
+        return UserCompanyMembership.objects.filter(
+            user_id=owner_id,
+            is_active=True,
+            company__memberships__user=user,
+            company__memberships__is_active=True,
+        ).exists()
+
+    def get(self, request, path):
+        # `path` comes from the URL. Refuse anything that could climb out of
+        # the licence directory before it reaches storage.
+        if '..' in path or path.startswith('/'):
+            raise Http404
+
+        owner_id = self._owner_id_from_path(path)
+        if owner_id is None:
+            owner_id = self._owner_id_from_licence(path)
+
+        if not self._may_read(request.user, owner_id):
+            return Response(
+                {'detail': 'You do not have permission to view this document.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        storage_path = os.path.join('sia_licenses', path)
+        if not default_storage.exists(storage_path):
+            raise Http404
+
+        content_type, _ = mimetypes.guess_type(storage_path)
+        response = FileResponse(
+            default_storage.open(storage_path, 'rb'),
+            content_type=content_type or 'application/octet-stream',
+        )
+        # Never let a shared cache hold an identity document.
+        response['Cache-Control'] = 'private, no-store'
+        return response
 
 
 class ProfilePhotoUploadView(APIView):

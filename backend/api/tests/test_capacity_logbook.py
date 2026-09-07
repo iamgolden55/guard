@@ -630,9 +630,13 @@ class ActiveShiftsEndpointTests(TestCase):
             performed_by=self.staff,
         )
 
-        # Active *unmonitored* shift — should not appear.
+        # Active *unmonitored* shift — should not appear. A second officer
+        # rather than `self.staff`: one person cannot be on duty at two venues
+        # at once, and `shift_no_overlapping_assignment` now enforces that.
+        self.other_staff = _make_user("as_staff_2")
+        _make_membership(self.other_staff, self.company)
         _make_active_shift(
-            staff=self.staff, venue=self.unmonitored, shift_group="as-noflag",
+            staff=self.other_staff, venue=self.unmonitored, shift_group="as-noflag",
             started_minutes_ago=60,
         )
 

@@ -16,6 +16,7 @@ from .serializers import (
 from api.permissions import IsManagerOrAdmin
 from .filters import ShiftFilter
 from django.db.models import Q
+from django.db import IntegrityError
 from datetime import datetime, timedelta
 import logging
 
@@ -1471,6 +1472,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
         from datetime import datetime
         from django.utils.dateparse import parse_datetime
         from api.models import InvoiceItem
+        from api.signals import LockedInvoiceError
         from .services import record_attendance
 
         if request.user.role not in ['manager', 'admin']:
@@ -1552,6 +1554,15 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 actor=request.user,
                 source=source,
                 reason=reason,
+            )
+        except LockedInvoiceError as e:
+            # The correction was refused because the invoice behind this shift
+            # is already approved or exported. Say so plainly — the previous
+            # behaviour was to skip the recalculation and return 201, so the
+            # operator believed a correction had applied that had not.
+            return Response(
+                {'detail': str(e), 'code': 'invoice_locked'},
+                status=status.HTTP_409_CONFLICT,
             )
         except ValueError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -2678,7 +2689,31 @@ class ShiftViewSet(viewsets.ModelViewSet):
                     # produce 50 separate pings.
                     if is_published and staff_user_id:
                         shift._skip_per_shift_notifications = True
-                    shift.save()
+
+                    # Conflict detection ran before this `atomic()` block opened
+                    # and re-checked nothing inside it, so two managers
+                    # scheduling concurrently could double-book one officer.
+                    # `shift_no_overlapping_assignment` now closes that at the
+                    # database. Catch it per slot: a clash downgrades that one
+                    # assignment to `conflict` and leaves the slot open, rather
+                    # than 500-ing a fifty-shift batch over a single overlap.
+                    try:
+                        with transaction.atomic():
+                            shift.save()
+                    except IntegrityError as exc:
+                        if 'shift_no_overlapping_assignment' not in str(exc):
+                            raise
+                        logger.info(
+                            "bulk_create: staff %s already has a shift overlapping "
+                            "%s–%s; leaving the slot unassigned",
+                            staff_user_id, sp['start'], sp['end'],
+                        )
+                        skipped_assignments += 1
+                        shift.pk = None
+                        shift.staff_user_id = None
+                        shift.status = 'open'
+                        shift.save()
+
                     created.append(shift)
 
             AuditLog.objects.create(

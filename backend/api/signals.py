@@ -542,6 +542,14 @@ def notify_shift_deletion(sender, instance, **kwargs):
 # Time Adjustment & Invoice Auto-Update
 # =============================================================================
 
+
+class LockedInvoiceError(Exception):
+    """Raised when a correction would restate an invoice that is already settled.
+
+    Distinct from a generic failure so the attendance endpoints can turn it
+    into an actionable 409 rather than swallowing it as an unexpected error.
+    """
+
 @receiver(post_save, sender='api.TimeAdjustment')
 def sync_shift_and_recalc_invoice_on_time_adjustment(sender, instance, created, **kwargs):
     """
@@ -615,14 +623,24 @@ def sync_shift_and_recalc_invoice_on_time_adjustment(sender, instance, created, 
 
         invoice = invoice_item.invoice
 
-        # Skip paid invoices — those are locked. Allow pending/rejected/draft so
-        # the reject → adjust → re-issue cycle can update line items in place.
-        if invoice.status == 'paid':
+        # Locked invoices are settled figures. This used to skip only `paid`,
+        # but `approved` means "exportable to Xero" — so a correction after
+        # export silently restated the local invoice while Xero kept the
+        # original, and nothing surfaced the divergence. Skipping quietly is
+        # its own failure: the operator believes the correction landed.
+        # Corrections to a locked invoice go through credit note / reissue,
+        # which `superseded_by` already models.
+        if invoice.is_locked():
             logger.warning(
-                f"Skipping invoice update for shift {shift.id} - "
-                f"invoice {invoice.id} is already paid"
+                f"Refusing in-place update of locked invoice {invoice.id} "
+                f"(status={invoice.status}) after a time adjustment on shift "
+                f"{shift.id}. Reissue the invoice instead."
             )
-            return
+            raise LockedInvoiceError(
+                f"Invoice {invoice.invoice_number or invoice.id} is "
+                f"{invoice.status} and cannot be changed in place. Reissue it "
+                f"to apply this correction."
+            )
 
         invoice.recalculate_from_shifts()
 
@@ -657,7 +675,7 @@ def sync_shift_and_recalc_invoice_on_time_adjustment(sender, instance, created, 
             )
             for sibling_id in sibling_invoice_ids:
                 sibling = _Invoice.objects.filter(pk=sibling_id).first()
-                if not sibling or sibling.status == 'paid':
+                if not sibling or sibling.is_locked():
                     continue
                 sibling.recalculate_from_shifts()
                 logger.info(
@@ -665,6 +683,10 @@ def sync_shift_and_recalc_invoice_on_time_adjustment(sender, instance, created, 
                     f"for staff {shift.staff_user_id} week {week_start}"
                 )
 
+    except LockedInvoiceError:
+        # Deliberate refusal, not a failure to handle — let it reach the
+        # operator so they know the correction did not apply.
+        raise
     except Exception as e:
         logger.error(
             f"Error auto-updating invoice after time adjustment for shift {shift.id}: {str(e)}",
