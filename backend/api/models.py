@@ -1697,6 +1697,15 @@ class Shift(models.Model):
     manager_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_shifts')
     terms_accepted = models.BooleanField(default=False, help_text="whether venue terms were accepted for this shift")
     actual_hours_worked = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    payable_hours = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text=(
+            "Hours this shift is actually paid for: scheduled minus break, or "
+            "an admin's TimeAdjustment, or capped actual hours on auto-checkout. "
+            "Persisted so the weekly overtime accumulator and the invoice header "
+            "can read the same quantity the payment does — see OT_BASIS_ALIGNED."
+        ),
+    )
     break_duration = models.IntegerField(default=0, help_text="Break duration in minutes")
     hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Hourly pay rate for this shift")
     is_special_event = models.BooleanField(default=False, help_text="Whether this shift is for a special event")
@@ -1875,6 +1884,22 @@ class Shift(models.Model):
             hours_worked = duration.total_seconds() / 3600
             break_hours = self.break_duration / 60
             self.actual_hours_worked = round(hours_worked - break_hours, 2)
+
+        # Keep the payable figure alongside the actual one. It is what the
+        # payment is computed from, so storing it makes the invoice header
+        # reconcilable against its own line items and gives the weekly
+        # overtime accumulator something to sum that matches what it pays.
+        # Nothing reads it while OT_BASIS_ALIGNED is off.
+        try:
+            from decimal import Decimal as _Decimal
+            payable = self.compute_payable_hours()
+            if payable is not None:
+                self.payable_hours = payable.quantize(_Decimal('0.01'))
+        except Exception:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "Could not compute payable_hours for shift %s", self.pk, exc_info=True
+            )
 
         # Track if this is a new unassigned shift
         is_new_unassigned = not self.pk and not self.staff_user
@@ -2290,31 +2315,9 @@ class Shift(models.Model):
         if not effective_rate:
             return None
 
-        # Scheduled paid hours = scheduled duration minus the (unpaid) break.
-        scheduled_duration = self.end_time - self.start_time
-        scheduled_hours = Decimal(str(scheduled_duration.total_seconds() / 3600))
-        break_hours = Decimal(str(self.break_duration / 60))
-        max_payable_hours = scheduled_hours - break_hours
-
-        # Pay policy: scheduled hours by default. Two officers on the same
-        # shift always get the same base pay, regardless of small variances
-        # in their actual check-in/out timestamps (e.g. one checked out
-        # 2 minutes early, the other 18 minutes early). Variance handling
-        # is a manager decision via TimeAdjustment, not an automatic dock.
-        #
-        # Override paths:
-        #   - TimeAdjustment: admin-recorded override wins (genuine early
-        #     departure, no-show, manager-approved overtime).
-        #   - auto_checkout: the system already stepped in for an abnormal
-        #     case (forgot to check out, etc.); fall back to actual hours
-        #     still capped at scheduled.
-        adjustment = self.get_latest_time_adjustment()
-        if adjustment and adjustment.adjusted_actual_hours:
-            hours = Decimal(str(adjustment.adjusted_actual_hours))
-        elif self.auto_checkout:
-            hours = min(Decimal(str(effective_hours)), max_payable_hours)
-        else:
-            hours = max_payable_hours
+        hours = self.compute_payable_hours(effective_hours=effective_hours)
+        if hours is None:
+            return None
 
         rate = Decimal(str(effective_rate))
 
@@ -2365,6 +2368,20 @@ class Shift(models.Model):
                         # threshold-overflow gets booked once per shift in the
                         # week (3 shifts in a 48h week with 40h threshold would
                         # each book 8h of OT, totalling 24h instead of 8h).
+                        #
+                        # P1-3: `prior_hours` and `current_hours` have to be the
+                        # same quantity. Summing `actual_hours_worked` measures
+                        # raw clock time against a threshold that pays
+                        # scheduled-minus-break, so an officer who habitually
+                        # arrives early and leaves late crosses it sooner than
+                        # their paid hours justify. `payable_hours` is what the
+                        # payment is computed from. Gated because switching the
+                        # basis moves real pay — see OT_BASIS_ALIGNED.
+                        accumulator_field = (
+                            'payable_hours'
+                            if getattr(settings, 'OT_BASIS_ALIGNED', False)
+                            else 'actual_hours_worked'
+                        )
                         other_hours = (
                             Shift.objects.filter(
                                 staff_user=self.staff_user,
@@ -2374,7 +2391,7 @@ class Shift(models.Model):
                                 status__in=['completed', 'approved', 'in_progress'],
                             )
                             .exclude(pk=self.pk)
-                            .aggregate(total=_Sum('actual_hours_worked'))['total']
+                            .aggregate(total=_Sum(accumulator_field))['total']
                         ) or Decimal('0')
 
                         prior_hours = Decimal(str(other_hours))
@@ -2442,6 +2459,50 @@ class Shift(models.Model):
             'ot2_amount': ot2_amount,
             'ot2_multiplier': multiplier_2,
         }
+
+    def compute_payable_hours(self, effective_hours=None):
+        """The hours this shift is actually paid for.
+
+        One definition, three readers: the payment calculation, the
+        `payable_hours` column, and — once `OT_BASIS_ALIGNED` is on — the
+        weekly overtime accumulator. Before it was extracted, only the first
+        of those existed, and the accumulator summed `actual_hours_worked`
+        instead: raw clock time against a payable-hours threshold.
+
+        Pay policy is scheduled hours by default. Two officers on the same
+        shift get the same base pay regardless of small variances in their
+        check-in/out timestamps; variance is a manager decision via
+        TimeAdjustment, not an automatic dock.
+
+        Override paths:
+          - TimeAdjustment: an admin-recorded override wins (genuine early
+            departure, no-show, manager-approved overtime).
+          - auto_checkout: the system already stepped in for an abnormal case,
+            so fall back to actual hours, still capped at scheduled.
+        """
+        from decimal import Decimal
+
+        if not self.start_time or not self.end_time:
+            return None
+
+        scheduled_duration = self.end_time - self.start_time
+        scheduled_hours = Decimal(str(scheduled_duration.total_seconds() / 3600))
+        break_hours = Decimal(str((self.break_duration or 0) / 60))
+        max_payable_hours = scheduled_hours - break_hours
+
+        # Only after the row exists — a reverse FK lookup on an unsaved
+        # instance raises, and this runs from `save()` on first insert.
+        adjustment = self.get_latest_time_adjustment() if self.pk else None
+        if adjustment and adjustment.adjusted_actual_hours:
+            return Decimal(str(adjustment.adjusted_actual_hours))
+
+        if self.auto_checkout:
+            if effective_hours is None:
+                effective_hours = self.get_effective_actual_hours()
+            if effective_hours:
+                return min(Decimal(str(effective_hours)), max_payable_hours)
+
+        return max_payable_hours
 
     def calculate_payment(self):
         """Calculate the payment for this shift.
@@ -3346,13 +3407,23 @@ class Invoice(models.Model):
         regular_hours = Decimal('0.00')
         special_event_hours = Decimal('0.00')
 
+        # P3-3: the header used `actual_hours_worked` while the line items
+        # below are emitted from the payable figure, so `total_hours` never
+        # reconciled against its own items — and `hourly_rate` below, computed
+        # as total_amount / total_hours, was a meaningless number printed on a
+        # document sent to contractors. Gated with the OT basis, since the two
+        # are the same decision.
+        aligned = getattr(settings, 'OT_BASIS_ALIGNED', False)
         for shift in shifts:
-            if shift.actual_hours_worked:
-                total_hours += shift.actual_hours_worked
+            shift_hours = (
+                (shift.payable_hours if aligned else None) or shift.actual_hours_worked
+            )
+            if shift_hours:
+                total_hours += shift_hours
                 if shift.is_special_event:
-                    special_event_hours += shift.actual_hours_worked
+                    special_event_hours += shift_hours
                 else:
-                    regular_hours += shift.actual_hours_worked
+                    regular_hours += shift_hours
 
                 # Use shift-specific payment calculation
                 shift_payment = shift.calculate_payment()

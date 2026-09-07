@@ -510,6 +510,27 @@ CELERY_TASK_IGNORE_RESULT = False
 # Celery Beat Schedule (periodic tasks)
 from celery.schedules import crontab  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Overtime basis alignment (P1-3 / P3-3)
+# ---------------------------------------------------------------------------
+# The weekly overtime accumulator sums `Shift.actual_hours_worked` — raw clock
+# time — while the hours it pays are `scheduled - break`. An officer who checks
+# in fifteen minutes early and out fifteen minutes late accrues half an hour of
+# phantom hours per shift, crossing the 48h threshold sooner than their paid
+# hours justify and inflating OT at 1.5x / 2x. Invoice headers report actual
+# hours while their line items report scheduled, so the two never reconcile.
+#
+# Turning this on makes both read `Shift.payable_hours` — the same quantity
+# that is actually paid. It is off by default because switching it moves real
+# money for real officers, in both directions, and that is a decision to take
+# with the numbers in hand:
+#
+#     docker compose exec api python manage.py report_ot_basis_delta --weeks 12
+#
+# With the flag off, behaviour is identical to before: `payable_hours` is
+# populated and reconcilable, and nothing reads it.
+OT_BASIS_ALIGNED = os.getenv('OT_BASIS_ALIGNED', 'False') == 'True'
+
 CELERY_BEAT_SCHEDULE = {
     'update-expired-sia-licenses': {
         'task': 'api.tasks.update_expired_sia_licenses',
