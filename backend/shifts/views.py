@@ -8,10 +8,12 @@ from api.models import Shift  # Import from api.models instead
 from .serializers import (
     ShiftSerializer,
     ShiftDetailSerializer,
+    StaffShiftSerializer,
     FrontendShiftSerializer,
     FrontendShiftDetailSerializer,
     MultiStaffShiftSerializer
 )
+from api.permissions import IsManagerOrAdmin
 from .filters import ShiftFilter
 from django.db.models import Q
 from datetime import datetime, timedelta
@@ -68,12 +70,31 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 is_published=True,
             ).order_by('-start_time')
 
+    def get_permissions(self):
+        """Shift CRUD is a manager operation; attendance is a staff one.
+
+        Authorisation here used to be per-action — `perform_update` blocked
+        non-admins only on an `in_progress` shift — which left create, the
+        ordinary update, and destroy open to any authenticated account. Staff
+        keep read plus the attendance and release/exchange actions; the write
+        verbs that mint or reprice a shift are manager/admin only.
+        """
+        if self.action in IsManagerOrAdmin.WRITE_ACTIONS:
+            return [permissions.IsAuthenticated(), IsManagerOrAdmin()]
+        return super().get_permissions()
+
     def get_serializer_class(self):
         # Use the camelCase serializer for the frontend
         if self.request.query_params.get('format') == 'camel':
             return FrontendShiftSerializer
         if self.action == 'retrieve':
             return ShiftDetailSerializer
+        # Staff read the same shape but cannot write pay, approval or
+        # attendance columns. The role gate above already blocks the CRUD
+        # verbs; this is the second layer, so a future action that saves
+        # through the serialiser starts safe.
+        if getattr(self.request.user, 'role', 'staff') not in ('manager', 'admin'):
+            return StaffShiftSerializer
         return ShiftSerializer
 
     def perform_create(self, serializer):
@@ -2937,10 +2958,16 @@ class ShiftViewSet(viewsets.ModelViewSet):
         })
 
 
-class FrontendShiftViewSet(viewsets.ModelViewSet):
+class FrontendShiftViewSet(viewsets.GenericViewSet):
     """
-    ViewSet for viewing and editing Shifts with camelCase fields
-    for frontend compatibility.
+    camelCase attendance endpoints for the React client.
+
+    Deliberately a `GenericViewSet`, not a `ModelViewSet`: this shim exists only
+    to expose `checkIn` and `checkOut` under the field names the web app speaks.
+    It used to be a full `ModelViewSet` over an unscoped `Shift.objects.all()`,
+    which handed every authenticated account read/write/delete over every
+    company's shifts. Keeping it generic means no default CRUD can be re-routed
+    onto it by accident. Shift CRUD belongs on `ShiftViewSet`.
     """
     queryset = Shift.objects.all().order_by('-start_time')
     serializer_class = FrontendShiftSerializer
@@ -2950,16 +2977,38 @@ class FrontendShiftViewSet(viewsets.ModelViewSet):
     ordering_fields = ['start_time', 'end_time', 'venue__name', 'status']
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_serializer_class(self):
-        if self.action == 'retrieve':
-            return FrontendShiftDetailSerializer
-        return FrontendShiftSerializer
+    def get_queryset(self):
+        """Company-scoped, mirroring ShiftViewSet.
 
-    def perform_create(self, serializer):
-        # Check if this is a copy operation that should allow past dates
-        allow_past_dates = self.request.data.get('allow_past_dates', False)
-        serializer.context['allow_past_dates'] = allow_past_dates
-        serializer.save()
+        Defence in depth: both surviving actions already check
+        `shift.staff_user != request.user`, but scoping the queryset makes
+        `get_object()` tenant-safe by construction, so a future action added
+        here starts safe instead of starting open.
+        """
+        user_role = getattr(self.request.user, 'role', 'staff')
+
+        if user_role in ['manager', 'admin']:
+            company = getattr(self.request, 'current_company', None)
+            if not company:
+                from api.models import UserCompanyMembership
+                membership = UserCompanyMembership.objects.filter(
+                    user=self.request.user,
+                    is_active=True,
+                    company__is_active=True
+                ).select_related('company').order_by('-joined_at').first()
+                company = membership.company if membership else None
+
+            if company:
+                return Shift.objects.filter(venue__company=company).order_by('-start_time')
+            return Shift.objects.filter(staff_user=self.request.user).order_by('-start_time')
+
+        return Shift.objects.filter(
+            staff_user=self.request.user,
+            is_published=True,
+        ).order_by('-start_time')
+
+    def get_serializer_class(self):
+        return FrontendShiftSerializer
 
     @action(detail=True, methods=['post'])
     def checkIn(self, request, pk=None):
@@ -2972,7 +3021,16 @@ class FrontendShiftViewSet(viewsets.ModelViewSet):
                 {"error": "You are not assigned to this shift"}, 
                 status=status.HTTP_403_FORBIDDEN
             )
-            
+
+        # Draft shifts must be published before anyone can check in. The
+        # snake_case path has enforced this since drafts were introduced; this
+        # one never did, so the web client was a way around it.
+        if not shift.is_published:
+            return Response(
+                {"error": "This shift hasn't been published yet. Ask your manager to publish it before checking in."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Check if the shift is already checked in
         if shift.check_in_time:
             return Response(
@@ -3044,7 +3102,27 @@ class FrontendShiftViewSet(viewsets.ModelViewSet):
                 {"error": "Shift already checked out"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
+        # Monitored venues: require a logbook signoff before checkout, exactly
+        # as the snake_case path does. Without it this endpoint closed a shift
+        # at a licensed venue with no capacity record behind it.
+        if shift.venue and shift.venue.requires_capacity_monitoring:
+            from api.models import CapacityLogbookSignoff
+            shift_group = shift.shift_group or f'shift_{shift.id}'
+            if not CapacityLogbookSignoff.objects.filter(shift_group=shift_group).exists():
+                return Response(
+                    {
+                        "error": (
+                            "Capacity logbook must be signed off before checkout. "
+                            "Open the Capacity Logbook screen and submit a signoff "
+                            "(or an override reason if the venue admin is unavailable)."
+                        ),
+                        "code": "logbook_signoff_required",
+                        "shift_group": shift_group,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         # Get location, signature, and photo from request
         latitude = request.data.get('latitude')
         longitude = request.data.get('longitude')
@@ -3084,13 +3162,10 @@ class FrontendShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    @action(detail=True, methods=['post'])
-    def cancel(self, request, pk=None):
-        shift = self.get_object()
-        shift.status = 'cancelled'
-        shift.save()
-        
-        serializer = self.get_serializer(shift)
-        return Response(serializer.data)
+    # `cancel` used to live here. It called `self.get_object()` against an
+    # unscoped queryset and then cancelled the shift with no ownership, role or
+    # company check of any kind — any authenticated account could cancel any
+    # shift on the platform. Nothing in the web or mobile client called it.
+    # Cancellation belongs on the role-gated snake_case `ShiftViewSet`.
 
  

@@ -74,8 +74,33 @@ class SIALicenseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SIALicense
-        fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at')
+        # Explicit, not `__all__`. `status` is server-derived — an officer who
+        # could POST `status='valid'` self-certified past
+        # `is_eligible_for_shifts()` and onto a client site with no licence.
+        fields = (
+            'id', 'staff_profile', 'license_number', 'license_type', 'level',
+            'issue_date', 'expiry_date', 'status', 'document_url',
+            'additional_certifications', 'verified_by', 'verified_at',
+            'created_at', 'updated_at',
+            'licenseNumber', 'licenseType', 'issueDate', 'expiryDate',
+            'documentUrl',
+        )
+        read_only_fields = (
+            'created_at', 'updated_at', 'status', 'verified_by', 'verified_at',
+        )
+
+    def validate_license_number(self, value):
+        """SIA licence numbers are 16 digits.
+
+        Front-of-house data entry is the weak point here: a typo produces a
+        record that looks verified and matches nothing on the SIA register.
+        """
+        digits = (value or '').strip()
+        if not digits.isdigit() or len(digits) != 16:
+            raise serializers.ValidationError(
+                "An SIA licence number is exactly 16 digits."
+            )
+        return digits
 
     def to_representation(self, instance):
         """Add camelCase versions of all fields"""
@@ -116,6 +141,26 @@ class UserSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'password': {'write_only': True}
         }
+
+    def __init__(self, *args, **kwargs):
+        """`security_roles` is an authorisation field, not a profile field.
+
+        `User.has_security_role()` gates shift claiming against
+        `Shift.required_security_role`, so a self-service PATCH of
+        `{"security_roles": ["ds","cctv","cp","k9"]}` made an officer qualified
+        for everything. `role` and `is_active` were already frozen here; this
+        one was missed.
+
+        Fails closed: writable only when the serialiser can see a request whose
+        user is a manager or admin. Used without a request in context — an
+        internal call, a nested serialiser — it stays read-only.
+        """
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        actor = getattr(request, 'user', None) if request else None
+        actor_role = getattr(actor, 'role', None) if actor else None
+        if actor_role not in ('admin', 'manager'):
+            self.fields['security_roles'].read_only = True
 
     def validate_email(self, value):
         # Check for uniqueness, excluding self during updates
@@ -897,8 +942,27 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Invoice
-        fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at', 'payment_breakdown', 'source', 'created_by')
+        # Explicit, not `__all__`. Money is only ever written by
+        # `generate_for_staff_period`, `recalculate_from_shifts` and
+        # `update_status`; leaving the columns writable here meant a single
+        # PATCH could restate an invoice with nothing recording why, and put
+        # the header out of step with its own line items.
+        fields = (
+            'id', 'staff_user', 'staff_user_details', 'invoice_number',
+            'start_date', 'end_date', 'total_hours', 'hourly_rate',
+            'total_amount', 'status', 'issued_date', 'due_date', 'paid_date',
+            'reject_reason', 'notes', 'payroll_run', 'superseded_by',
+            'pdf_url', 'source', 'created_by', 'created_by_details',
+            'version', 'last_recalculated_at', 'created_at', 'updated_at',
+            'items', 'payment_breakdown',
+        )
+        read_only_fields = (
+            'created_at', 'updated_at', 'payment_breakdown', 'source',
+            'created_by', 'staff_user', 'invoice_number',
+            'total_hours', 'hourly_rate', 'total_amount', 'status',
+            'paid_date', 'issued_date', 'payroll_run', 'superseded_by',
+            'version', 'last_recalculated_at', 'pdf_url',
+        )
 
     def validate(self, data):
         # Validate date range

@@ -85,6 +85,27 @@ class SimpleUserSerializer(serializers.ModelSerializer):
 
 User = get_user_model()
 
+
+def resolve_request_company(request):
+    """Resolve the acting user's company.
+
+    Prefers the middleware value and falls back to the user's active
+    membership, the same two-step every ViewSet in `api/views.py` uses.
+    `TenantMiddleware` runs before DRF authenticates, so on a JWT request the
+    middleware value is almost always `None` and the fallback is what actually
+    answers — see P1-6.
+    """
+    company = getattr(request, 'current_company', None)
+    if company:
+        return company
+
+    from api.models import UserCompanyMembership
+    membership = UserCompanyMembership.objects.filter(
+        user=request.user, is_active=True, company__is_active=True
+    ).select_related('company').order_by('-joined_at').first()
+    return membership.company if membership else None
+
+
 class ShiftSerializer(serializers.ModelSerializer):
     venue_details = SimpleVenueSerializer(source='venue', read_only=True)
     staff_details = SimpleUserSerializer(source='staff_user', read_only=True)
@@ -224,6 +245,20 @@ class ShiftSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     f"{staff_name} is already assigned to this shift group"
                 )
+
+        # Tenant guard on the venue. `bulk_create` has always checked this
+        # (shifts/views.py, "Venue does not belong to the current company");
+        # the single-shift path did not, so a manager could schedule into
+        # another company's venue one shift at a time.
+        venue = data.get('venue') or (self.instance.venue if self.instance else None)
+        if venue is not None:
+            request = self.context.get('request')
+            if request is not None and getattr(request, 'user', None) and request.user.is_authenticated:
+                company = resolve_request_company(request)
+                if company and venue.company_id != company.id:
+                    raise serializers.ValidationError(
+                        {'venue': 'Venue does not belong to the current company'}
+                    )
 
         return data
 
@@ -477,6 +512,36 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
         if 'isSpecialEvent' in data:
             data['is_special_event'] = data.pop('isSpecialEvent')
         return super().to_internal_value(data)
+
+class StaffShiftSerializer(ShiftSerializer):
+    """The officer-facing view of a shift: everything payroll is read-only.
+
+    `ShiftSerializer` was written for the manager scheduling UI and reused
+    verbatim for the staff app, so one serialiser served two audiences with
+    opposite trust levels. An officer holding a JWT could PATCH their own
+    `hourly_rate`, set `actual_hours_worked`, flip `manager_approved` and move
+    `status` to `approved` — and approval calls `auto_generate_invoice()`, so
+    the fraud completed before the response returned.
+
+    Staff keep read access to all of these fields; they simply cannot write
+    them. Attendance timestamps are server-stamped by `Shift.check_in()` /
+    `check_out()`, and the mobile client has never sent them (its check-in
+    payload is `{latitude, longitude, photo, signature}`), so freezing them
+    here changes nothing for the app.
+    """
+
+    class Meta(ShiftSerializer.Meta):
+        read_only_fields = (
+            'venue', 'staff_user', 'start_time', 'end_time',
+            'status', 'required_security_role',
+            'hourly_rate', 'bill_rate', 'actual_hours_worked',
+            'manager_approved', 'is_published', 'is_special_event',
+            'check_in_time', 'check_out_time',
+            'check_in_location', 'check_out_location',
+            'check_in_photo', 'check_out_photo',
+            'break_duration', 'shift_group',
+        )
+
 
 class ShiftDetailSerializer(ShiftSerializer):
     venue = SimpleVenueSerializer(read_only=True)

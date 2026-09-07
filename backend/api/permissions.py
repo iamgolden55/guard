@@ -257,3 +257,53 @@ class FeatureAccessMixin:
                 permissions.append(permission_class())
 
         return permissions
+
+
+class IsManagerOrAdmin(BasePermission):
+    """Write access for managers and admins only.
+
+    The recurring shape of the P0 findings was authorisation implemented
+    per-action rather than per-verb: a custom action like
+    `InvoiceViewSet.update_status` checked the role, while the default `PATCH`
+    sitting beside it on the same ViewSet did not. Attach this to the write
+    verbs in `get_permissions()` so the framework's own write path is gated
+    too, rather than only the action that looks like the write path.
+
+    Django superusers are treated as admins so `manage.py` and the Django admin
+    keep working.
+    """
+
+    message = "Only managers and admins can perform this action."
+
+    #: The verbs this class is normally attached to, for callers building a
+    #: `get_permissions()` override.
+    WRITE_ACTIONS = ('create', 'update', 'partial_update', 'destroy')
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if getattr(user, 'is_superuser', False):
+            return True
+        return getattr(user, 'role', None) in ('admin', 'manager')
+
+
+class IsAdminRole(BasePermission):
+    """Write access for admins only.
+
+    Distinct from DRF's `IsAdminUser`, which checks `is_staff` — a Django-admin
+    flag most application admins here do not carry. This checks the
+    application's own `User.role`.
+    """
+
+    message = "Only admin users can perform this action."
+
+    WRITE_ACTIONS = ('create', 'update', 'partial_update', 'destroy')
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if getattr(user, 'is_superuser', False):
+            return True
+        return getattr(user, 'role', None) == 'admin'

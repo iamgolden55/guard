@@ -1127,6 +1127,17 @@ class SIALicense(models.Model):
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='valid')
     document_url = models.URLField(max_length=500, blank=True, default='')
     additional_certifications = models.JSONField(default=list, help_text="Additional certifications related to this license")
+    # Who checked this licence against the SIA register, and when. `status` is
+    # server-derived from these plus `expiry_date`; it is never client-set,
+    # because a self-certified 'valid' is what
+    # `StaffProfile.is_eligible_for_shifts()` reads before an officer is
+    # deployed to a client site.
+    verified_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='verified_sia_licenses',
+        help_text="Approver who moved this licence to valid",
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -6747,7 +6758,9 @@ class AuditLog(models.Model):
         ('logout', 'Logout'),
         ('login_failed', 'Login Failed'),
         ('role_change', 'Role Change'),
+        ('security_roles_change', 'Security Roles Change'),
         ('status_change', 'Status Change'),
+        ('geofence_change', 'Geofence Change'),
         ('export', 'Data Export'),
         ('approve', 'Approve'),
         ('reject', 'Reject'),

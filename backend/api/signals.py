@@ -890,6 +890,51 @@ def audit_user_role_change(sender, instance, **kwargs):
         logger.warning(f"Failed to create audit log for role change: {e}")
 
 
+@receiver(pre_save, sender='api.User')
+def audit_security_roles_change(sender, instance, **kwargs):
+    """Log security-role grants to the audit trail.
+
+    `security_roles` decides which shifts an officer may claim, so a change to
+    it is an authorisation change and belongs beside `role_change` in the
+    audit trail rather than passing as an ordinary profile edit.
+    """
+    if not instance.pk:
+        return
+    try:
+        from .models import User
+        old_user = User.objects.get(pk=instance.pk)
+        old_roles = list(old_user.security_roles or [])
+        new_roles = list(instance.security_roles or [])
+        if old_roles == new_roles:
+            return
+
+        company = None
+        membership = instance.company_memberships.filter(
+            is_active=True
+        ).select_related('company').first()
+        if membership:
+            company = membership.company
+
+        AuditLog.objects.create(
+            user=instance,
+            company=company,
+            action='security_roles_change',
+            resource_type='User',
+            resource_id=str(instance.id),
+            details={
+                'old_security_roles': old_roles,
+                'new_security_roles': new_roles,
+                'added': sorted(set(new_roles) - set(old_roles)),
+                'removed': sorted(set(old_roles) - set(new_roles)),
+                'username': instance.username,
+            },
+        )
+    except sender.DoesNotExist:
+        pass
+    except Exception as e:
+        logger.warning(f"Failed to create audit log for security_roles change: {e}")
+
+
 @receiver(pre_save, sender='api.Invoice')
 def audit_invoice_status_change(sender, instance, **kwargs):
     """Log invoice status changes to the audit trail."""

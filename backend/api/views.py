@@ -21,6 +21,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import AuthenticationFailed, ValidationError, PermissionDenied
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
+from api.permissions import IsManagerOrAdmin, IsAdminRole
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -1668,6 +1669,92 @@ class SIALicenseViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['staff_profile']
 
+    def get_permissions(self):
+        """Staff submit; approvers verify.
+
+        `create` stays open to any authenticated user so the officer's own
+        onboarding journey keeps working — they enter their details and upload
+        a document, and `perform_create` lands the record `pending`. Editing or
+        deleting an existing licence is an approver action: extending an expiry
+        date is exactly the change an officer with a lapsed licence wants to
+        make, and it is the one that puts an unlicensed guard on a client site.
+        """
+        if self.action in ('update', 'partial_update', 'destroy'):
+            return [IsAuthenticated(), IsManagerOrAdmin()]
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        """Force the owner and the status; never take either on trust.
+
+        Staff may only submit against their own profile. Managers may submit on
+        behalf of anyone in their company. Either way the record lands
+        `pending` and confers no eligibility until an approver signs it off —
+        `status` is read-only on the serialiser, so this is the only writer.
+        """
+        from rest_framework.exceptions import PermissionDenied
+
+        profile = serializer.validated_data.get('staff_profile')
+        user = self.request.user
+
+        if getattr(user, 'role', 'staff') in ('admin', 'manager'):
+            company = self._get_user_company()
+            if not company:
+                raise PermissionDenied("No company context available")
+            if not profile or not company.memberships.filter(
+                user_id=profile.user_id, is_active=True
+            ).exists():
+                raise PermissionDenied(
+                    "Staff member does not belong to the current company"
+                )
+        else:
+            own_profile = StaffProfile.objects.filter(user=user).first()
+            if not own_profile or not profile or profile.pk != own_profile.pk:
+                raise PermissionDenied(
+                    "You can only submit a licence against your own profile"
+                )
+
+        serializer.save(staff_profile=profile, status='pending')
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """Approver signs off a submitted licence.
+
+        Mirrors `StaffProfileViewSet.approve`. Derives `status` rather than
+        accepting it: a licence whose expiry date has already passed is marked
+        `expired`, not `valid`, so approving stale paperwork cannot confer
+        eligibility.
+        """
+        if getattr(request.user, 'role', None) not in ('admin', 'manager'):
+            return Response(
+                {'error': 'Only admin or manager users can approve a licence'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        licence = self.get_object()
+        licence.status = (
+            'valid' if licence.expiry_date >= timezone.now().date() else 'expired'
+        )
+        licence.verified_by = request.user
+        licence.verified_at = timezone.now()
+        licence.save(update_fields=['status', 'verified_by', 'verified_at', 'updated_at'])
+
+        AuditLog.log(
+            user=request.user,
+            company=self._get_user_company(),
+            action='approve',
+            resource_type='SIALicense',
+            resource_id=str(licence.id),
+            details={
+                'license_number': licence.license_number,
+                'resulting_status': licence.status,
+                'expiry_date': str(licence.expiry_date),
+                'staff_user_id': licence.staff_profile.user_id,
+            },
+            request=request,
+        )
+
+        return Response(self.get_serializer(licence).data)
+
     def get_queryset(self):
         user = self.request.user
         if user.role in ['admin', 'manager']:
@@ -1715,15 +1802,23 @@ class VenueViewSet(viewsets.ModelViewSet):
     serializer_class = VenueSerializer
     
     def get_permissions(self):
+        """Only admins may create, update or delete a venue.
+
+        This method used to say exactly that in its docstring over an
+        `if`/`else` whose branches were identical — both `[IsAuthenticated]` —
+        so it enforced nothing. The rule was in fact being applied, but by
+        hand, inside each of `create`, `update` and `destroy` below. Those
+        checks stay (they carry their own error bodies, which the admin UI
+        reads); this makes the rule declarative as well, so a verb added to
+        this ViewSet later starts gated instead of starting open.
+
+        It matters more here than the docstring suggests: `latitude`,
+        `longitude` and `check_radius` are the geofence every attendance check
+        is measured against.
         """
-        Ensure only admin users can create, update or delete venues.
-        Other authenticated users can only view venues.
-        """
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            permission_classes = [IsAuthenticated]
-        else:
-            permission_classes = [IsAuthenticated]
-        return [permission() for permission in permission_classes]
+        if self.action in IsAdminRole.WRITE_ACTIONS:
+            return [IsAuthenticated(), IsAdminRole()]
+        return [IsAuthenticated()]
     
     def get_user_company(self, request):
         """Get the user's current company context.
@@ -1861,11 +1956,42 @@ class VenueViewSet(viewsets.ModelViewSet):
                 'error': 'company_immutable'
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        # Snapshot the geofence before the write. Moving a venue or widening
+        # its radius silently changes attendance validity for every future
+        # shift there, and nothing recorded that it had happened.
+        geofence_before = {
+            'latitude': str(instance.latitude) if instance.latitude is not None else None,
+            'longitude': str(instance.longitude) if instance.longitude is not None else None,
+            'check_radius': instance.check_radius,
+        }
+
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
 
         if serializer.is_valid():
             venue = serializer.save()
             logger.info(f"Venue '{venue.name}' updated successfully by {request.user.username}")
+
+            geofence_after = {
+                'latitude': str(venue.latitude) if venue.latitude is not None else None,
+                'longitude': str(venue.longitude) if venue.longitude is not None else None,
+                'check_radius': venue.check_radius,
+            }
+            changes = {
+                field: {'old': geofence_before[field], 'new': geofence_after[field]}
+                for field in geofence_before
+                if geofence_before[field] != geofence_after[field]
+            }
+            if changes:
+                AuditLog.log(
+                    user=request.user,
+                    company=company,
+                    action='geofence_change',
+                    resource_type='Venue',
+                    resource_id=str(venue.id),
+                    details={'venue_name': venue.name, 'changes': changes},
+                    request=request,
+                )
+
             return Response({
                 'message': 'Venue updated successfully',
                 'venue': serializer.data
@@ -2938,6 +3064,48 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = Invoice.objects.all()
     serializer_class = InvoiceSerializer
+
+    def get_permissions(self):
+        """Gate the write verbs, not just the action that looks like one.
+
+        `update_status` below has always checked the role. The default POST,
+        PATCH and DELETE beside it did not, so an officer could restate and
+        approve their own invoice through the framework's own write path.
+        """
+        if self.action in IsManagerOrAdmin.WRITE_ACTIONS:
+            return [IsAuthenticated(), IsManagerOrAdmin()]
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        """Record who raised the invoice; never take `staff_user` on trust.
+
+        `staff_user` is read-only on the serialiser, so it has to be supplied
+        here. A manager raising a manual invoice names the officer in the
+        payload; the officer must be a member of the manager's own company.
+        """
+        from rest_framework.exceptions import PermissionDenied, ValidationError
+
+        company = self.get_user_company(self.request)
+        if not company:
+            raise PermissionDenied("No company context available")
+
+        staff_user_id = self.request.data.get('staff_user')
+        if not staff_user_id:
+            raise ValidationError({'staff_user': 'This field is required.'})
+
+        staff_user = User.objects.filter(
+            id=staff_user_id,
+            company_memberships__company=company,
+            company_memberships__is_active=True,
+        ).first()
+        if not staff_user:
+            raise PermissionDenied("Staff member does not belong to the current company")
+
+        serializer.save(
+            staff_user=staff_user,
+            created_by=self.request.user,
+            source='manual',
+        )
 
     def get_user_company(self, request):
         """Get the user's current company context.
