@@ -53,8 +53,12 @@ export const CapacityCheckScreen = () => {
   const venueCapacity = activeShift?.venue.capacity ?? 0;
   const warningThresholdPct = activeShift?.venue.capacity_warning_threshold_pct ?? 80;
 
-  // Form state
-  const [currentCount, setCurrentCount] = useState('');
+  // Form state — the officer types what the door clicker reads, not an
+  // occupancy. Occupancy is derived (and re-derived server-side, which is
+  // authoritative); this preview exists so they can see the consequence of
+  // their reading before committing it.
+  const [countIn, setCountIn] = useState('');
+  const [countOut, setCountOut] = useState('');
   const [actionTaken, setActionTaken] = useState('');
   const [notes, setNotes] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -65,7 +69,8 @@ export const CapacityCheckScreen = () => {
   const [lastCheck, setLastCheck] = useState<CapacityCheckRecord | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const countInputRef = useRef<TextInput>(null);
+  const countInRef = useRef<TextInput>(null);
+  const countOutRef = useRef<TextInput>(null);
 
   useEffect(() => {
     logger.info('[CapacityCheck] Screen loaded', { shiftId });
@@ -124,10 +129,39 @@ export const CapacityCheckScreen = () => {
     setPhotoBase64(null);
   };
 
-  const parsedCount = useMemo(() => {
-    const n = parseInt(currentCount, 10);
+  const parsedIn = useMemo(() => {
+    const n = parseInt(countIn, 10);
     return isNaN(n) ? null : n;
-  }, [currentCount]);
+  }, [countIn]);
+
+  const parsedOut = useMemo(() => {
+    const n = parseInt(countOut, 10);
+    return isNaN(n) ? null : n;
+  }, [countOut]);
+
+  // A reading lower than the last one means the clicker was reset. Never a
+  // reason to block: an officer on a door at 2am must always be able to record
+  // what the device says. The occupancy from before the reset is banked and
+  // the fresh clicker counts onward from it.
+  const isReset = useMemo(() => {
+    if (!lastCheck || lastCheck.count_in == null || lastCheck.count_out == null) return false;
+    if (parsedIn === null || parsedOut === null) return false;
+    return parsedIn < lastCheck.count_in || parsedOut < lastCheck.count_out;
+  }, [lastCheck, parsedIn, parsedOut]);
+
+  // Mirrors CapacityCheck.derive_occupancy on the server. The server recomputes
+  // and wins; this is so the number is not a surprise after submitting.
+  const baselineOccupancy = useMemo(() => {
+    if (!lastCheck) return 0;
+    if (lastCheck.count_in == null) return lastCheck.current_count ?? 0;
+    if (isReset) return lastCheck.current_count ?? 0;
+    return lastCheck.baseline_occupancy ?? 0;
+  }, [lastCheck, isReset]);
+
+  const parsedCount = useMemo(() => {
+    if (parsedIn === null || parsedOut === null) return null;
+    return Math.max(baselineOccupancy + parsedIn - parsedOut, 0);
+  }, [baselineOccupancy, parsedIn, parsedOut]);
 
   const isAtCapacity = parsedCount !== null && parsedCount >= venueCapacity;
 
@@ -152,17 +186,24 @@ export const CapacityCheckScreen = () => {
     const who = performer
       ? `${performer.first_name} ${performer.last_name?.charAt(0) || ''}.`.trim()
       : 'a teammate';
-    if (minutesAgo === 0) return `Just logged · ${lastCheck.current_count} by ${who}`;
-    return `${minutesAgo} min ago · ${lastCheck.current_count} by ${who}`;
+    const reading =
+      lastCheck.count_in != null && lastCheck.count_out != null
+        ? `in ${lastCheck.count_in} / out ${lastCheck.count_out}`
+        : `${lastCheck.current_count} inside`;
+    if (minutesAgo === 0) return `Just logged · ${reading} by ${who}`;
+    return `${minutesAgo} min ago · ${reading} by ${who}`;
   }, [lastCheck]);
 
   const validateForm = (): boolean => {
-    if (!currentCount.trim()) {
-      Alert.alert('Required Field', 'Please enter the current capacity count');
+    if (!countIn.trim() || !countOut.trim()) {
+      Alert.alert(
+        'Required Field',
+        "Enter both readings from the clicker — the in count and the out count.",
+      );
       return false;
     }
-    if (parsedCount === null || parsedCount < 0) {
-      Alert.alert('Invalid Input', 'Please enter a valid number');
+    if (parsedIn === null || parsedOut === null || parsedIn < 0 || parsedOut < 0) {
+      Alert.alert('Invalid Input', 'Please enter valid numbers');
       return false;
     }
     if (isAtCapacity && !actionTaken.trim()) {
@@ -186,15 +227,19 @@ export const CapacityCheckScreen = () => {
       setSubmitting(true);
       logger.info('[CapacityCheck] Submitting check', {
         shiftId,
-        currentCount: parsedCount,
+        countIn: parsedIn,
+        countOut: parsedOut,
+        projectedOccupancy: parsedCount,
+        isReset,
         isAtCapacity,
       });
 
       await shiftChecksService.submitCapacityCheck({
         shift: shiftId,
-        current_count: parsedCount,
-        venue_capacity: venueCapacity,
-        is_at_capacity: isAtCapacity,
+        // The readings, as the clicker showed them. Occupancy, capacity and
+        // the at-capacity flag are all derived server-side.
+        count_in: parsedIn!,
+        count_out: parsedOut!,
         action_taken: actionTaken.trim() || undefined,
         photo_evidence: photoBase64 || undefined,
         location: location!,
@@ -265,8 +310,9 @@ export const CapacityCheckScreen = () => {
             ) : null}
           </View>
 
-          {/* Hero count input */}
-          <Pressable onPress={() => countInputRef.current?.focus()}>
+          {/* Hero: the derived occupancy. Not typed — worked out from the two
+              clicker readings below, and recomputed server-side on submit. */}
+          <Pressable onPress={() => countInRef.current?.focus()}>
             <GlassCard style={{ marginTop: 22, padding: 22 }}>
               <View style={styles.countRow}>
                 <Text
@@ -328,19 +374,87 @@ export const CapacityCheckScreen = () => {
                 />
               </View>
 
-              {/* Hidden TextInput acts as the keypad — large hit area via Pressable above.
-                  No returnKeyType / inputAccessoryViewID: number-pad has no return key,
-                  and setting one makes iOS float a "Done" accessory pill above the field. */}
-              <TextInput
-                ref={countInputRef}
-                value={currentCount}
-                onChangeText={(t) => setCurrentCount(t.replace(/[^0-9]/g, ''))}
-                keyboardType="number-pad"
-                placeholder=""
-                accessibilityLabel="Current capacity count"
-                style={styles.hiddenInput}
-                maxLength={6}
-              />
+              {/* The two clicker readings. These are what the officer actually
+                  types; the number above is the consequence.
+                  No returnKeyType / inputAccessoryViewID: number-pad has no
+                  return key, and setting one makes iOS float a "Done" pill. */}
+              <View style={styles.clickerRow}>
+                <View style={styles.clickerField}>
+                  <Text
+                    allowFontScaling={false}
+                    style={[styles.clickerLabel, { color: theme.colors.text.secondary }]}
+                  >
+                    Clicker in
+                  </Text>
+                  <TextInput
+                    ref={countInRef}
+                    value={countIn}
+                    onChangeText={(t) => setCountIn(t.replace(/[^0-9]/g, ''))}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.text.quaternary}
+                    accessibilityLabel="Clicker in reading"
+                    style={[
+                      styles.clickerInput,
+                      {
+                        color: theme.colors.text.primary,
+                        backgroundColor: theme.colors.surface.chip,
+                        borderColor: theme.colors.surface.hairline,
+                        fontFamily: theme.fonts.mono,
+                      },
+                    ]}
+                    maxLength={6}
+                  />
+                </View>
+
+                <View style={styles.clickerField}>
+                  <Text
+                    allowFontScaling={false}
+                    style={[styles.clickerLabel, { color: theme.colors.text.secondary }]}
+                  >
+                    Clicker out
+                  </Text>
+                  <TextInput
+                    ref={countOutRef}
+                    value={countOut}
+                    onChangeText={(t) => setCountOut(t.replace(/[^0-9]/g, ''))}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.text.quaternary}
+                    accessibilityLabel="Clicker out reading"
+                    style={[
+                      styles.clickerInput,
+                      {
+                        color: theme.colors.text.primary,
+                        backgroundColor: theme.colors.surface.chip,
+                        borderColor: theme.colors.surface.hairline,
+                        fontFamily: theme.fonts.mono,
+                      },
+                    ]}
+                    maxLength={6}
+                  />
+                </View>
+              </View>
+
+              {/* A reset is normal. Say what the numbers now mean, so nobody
+                  wonders why the occupancy did not drop with the reading. */}
+              {isReset ? (
+                <Text
+                  allowFontScaling={false}
+                  style={{
+                    marginTop: 12,
+                    fontFamily: theme.fonts.mono,
+                    fontSize: 11,
+                    lineHeight: 16,
+                    letterSpacing: 0.4,
+                    color: theme.colors.text.secondary,
+                  }}
+                >
+                  {`Lower than the last reading, so the clicker was reset. `}
+                  {`The ${baselineOccupancy} already inside are carried forward `}
+                  {`and this clicker counts on from there.`}
+                </Text>
+              ) : null}
             </GlassCard>
           </Pressable>
 
@@ -630,6 +744,28 @@ const styles = StyleSheet.create({
     letterSpacing: -0.8,
     lineHeight: 34,
   },
+  clickerRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 18,
+  },
+  clickerField: {
+    flex: 1,
+  },
+  clickerLabel: {
+    fontSize: 11,
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  clickerInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 22,
+    letterSpacing: -0.4,
+  },
   countRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -640,12 +776,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1,
     overflow: 'hidden',
-  },
-  hiddenInput: {
-    position: 'absolute',
-    opacity: 0,
-    height: 1,
-    width: 1,
   },
   input: {
     borderWidth: 1,

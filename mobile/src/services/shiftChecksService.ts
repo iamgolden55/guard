@@ -41,6 +41,14 @@ export interface FireExitCheck extends BaseCheck {
 }
 
 export interface CapacityCheck extends BaseCheck {
+  /** Clicker readings, as the officer read them. Running totals for the night. */
+  count_in?: number | null;
+  count_out?: number | null;
+  /** Set when this reading was lower than the last, i.e. the clicker was reset. */
+  counter_reset?: boolean;
+  /** Occupancy banked from before the current clicker segment. */
+  baseline_occupancy?: number;
+  /** Occupancy: `baseline_occupancy + count_in - count_out`. Server-derived. */
   current_count: number;
   venue_capacity: number;
   is_at_capacity: boolean;
@@ -179,9 +187,13 @@ class ShiftChecksService {
    */
   async submitCapacityCheck(data: {
     shift: number;
-    current_count: number;
-    venue_capacity: number;
-    is_at_capacity: boolean;
+    /**
+     * The two clicker readings. Occupancy, venue capacity, the at-capacity
+     * flag and the timestamp are all derived or set by the server — sending
+     * them from here is how a logbook stops being evidence.
+     */
+    count_in: number;
+    count_out: number;
     action_taken?: string;
     photo_evidence?: string;
     location?: {
@@ -193,10 +205,8 @@ class ShiftChecksService {
     try {
       const payload: any = {
         shift: data.shift,
-        current_count: data.current_count,
-        venue_capacity: data.venue_capacity,
-        is_at_capacity: data.is_at_capacity,
-        timestamp: new Date().toISOString(),
+        count_in: data.count_in,
+        count_out: data.count_out,
       };
 
       // Only add optional fields if they exist

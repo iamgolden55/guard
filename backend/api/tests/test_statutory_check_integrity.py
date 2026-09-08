@@ -223,3 +223,201 @@ class StatutoryCheckIntegrityTests(APITestCase):
         }, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+
+class CapacityInOutTests(APITestCase):
+    """Door-clicker readings, and what they mean across a reset.
+
+    Officers read a physical clicker every 30 minutes and type what it says.
+    The readings are running totals for the night, so they normally only climb
+    — until somebody decides the clicker has drifted, zeroes it, and carries
+    on. The next reading is then a small number after a large one.
+
+    That must never be refused. An officer on a door at 2am cannot be blocked
+    from recording a count because the software finds it implausible; a
+    logbook that rejects readings is worse than one that records an odd one.
+    A drop is read as a reset: the occupancy at that moment is banked, and the
+    fresh clicker counts onward from it. The people already inside are still
+    inside.
+    """
+
+    def setUp(self):
+        self.company = SecurityCompany.objects.create(
+            name="Door Co", registration_number="DOOR01",
+        )
+        self.staff = User.objects.create_user(
+            username="door_staff", email="door@test.test",
+            password="testpass123", role="staff",
+        )
+        UserCompanyMembership.objects.create(
+            user=self.staff, company=self.company, is_active=True,
+        )
+        self.venue = Venue.objects.create(
+            company=self.company, name="Door Venue", address="1 St",
+            city="Bristol", postal_code="BS1 1AA", country="UK", capacity=200,
+            contact_name="C", contact_phone="07700900000",
+            contact_email="door@venue.test", terms_and_conditions="Terms",
+            requires_capacity_monitoring=True,
+        )
+        start = timezone.now() - timedelta(hours=4)
+        self.shift = Shift.objects.create(
+            venue=self.venue, staff_user=self.staff, start_time=start,
+            end_time=start + timedelta(hours=8), status="scheduled",
+            required_security_role="sg", is_published=True,
+        )
+        self.shift.check_in_time = start
+        self.shift.status = "in_progress"
+        self.shift.save(update_fields=["check_in_time", "status"])
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.staff)
+
+    def _log(self, count_in, count_out, **extra):
+        payload = {"shift": self.shift.id, "count_in": count_in, "count_out": count_out}
+        payload.update(extra)
+        return self.client.post("/api/v1/capacity-checks/", payload, format="json")
+
+    def _occupancy(self, response):
+        return CapacityCheck.objects.get(id=response.data["id"]).current_count
+
+    # ── the ordinary night ──────────────────────────────────────────────────
+
+    def test_occupancy_is_derived_from_the_two_readings(self):
+        response = self._log(40, 0)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(self._occupancy(response), 40)
+
+    def test_running_totals_recompute_occupancy_each_time(self):
+        """Readings climb through the night; occupancy is in minus out."""
+        self.assertEqual(self._occupancy(self._log(40, 0)), 40)
+        self.assertEqual(self._occupancy(self._log(65, 5)), 60)
+        self.assertEqual(self._occupancy(self._log(75, 23)), 52)
+
+    def test_the_readings_are_stored_exactly_as_entered(self):
+        """The logbook shows what the clicker said, not what we made of it."""
+        response = self._log(75, 23)
+
+        check = CapacityCheck.objects.get(id=response.data["id"])
+        self.assertEqual(check.count_in, 75)
+        self.assertEqual(check.count_out, 23)
+
+    # ── the reset ───────────────────────────────────────────────────────────
+
+    def test_a_reset_clicker_is_not_refused(self):
+        """The whole point: a lower reading must still be recordable."""
+        self._log(180, 30)
+
+        response = self._log(50, 10)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_a_reset_banks_the_previous_occupancy_and_counts_onward(self):
+        """180/30 then a reset to 50/10 is 190 inside, not 40."""
+        self._log(180, 30)
+
+        response = self._log(50, 10)
+
+        check = CapacityCheck.objects.get(id=response.data["id"])
+        self.assertTrue(check.counter_reset)
+        self.assertEqual(check.baseline_occupancy, 150)
+        self.assertEqual(check.current_count, 190)
+
+    def test_counting_continues_normally_after_a_reset(self):
+        self._log(180, 30)
+        self._log(50, 10)
+
+        response = self._log(70, 25)
+
+        check = CapacityCheck.objects.get(id=response.data["id"])
+        self.assertFalse(check.counter_reset)
+        self.assertEqual(check.baseline_occupancy, 150)
+        self.assertEqual(check.current_count, 195)
+
+    def test_a_drop_on_either_counter_is_treated_as_a_reset(self):
+        """Detection triggers on either reading falling, not just the in one.
+
+        Note what this cannot resolve: if only the out counter was zeroed, the
+        in counter is still a running total for the night, so adding it to the
+        banked occupancy over-counts. A single-counter drop is more often a
+        typo than a partial reset, and the system does not pretend to know
+        which. It records the reading, flags the reset, and shows the officer
+        the resulting occupancy before they submit — over-capacity then demands
+        a written action, so an inflated figure surfaces rather than passing
+        quietly.
+        """
+        self._log(100, 30)
+
+        response = self._log(105, 2)
+
+        check = CapacityCheck.objects.get(id=response.data["id"])
+        self.assertTrue(check.counter_reset)
+        self.assertEqual(check.baseline_occupancy, 70)
+
+    def test_an_ordinary_reading_is_not_mistaken_for_a_reset(self):
+        self._log(40, 0)
+
+        response = self._log(65, 5)
+
+        self.assertFalse(
+            CapacityCheck.objects.get(id=response.data["id"]).counter_reset
+        )
+
+    # ── edges ───────────────────────────────────────────────────────────────
+
+    def test_occupancy_never_goes_negative(self):
+        """More out than in means bad data, not a negative headcount."""
+        response = self._log(10, 40)
+
+        self.assertEqual(self._occupancy(response), 0)
+
+    def test_switching_over_mid_shift_does_not_lose_the_people_inside(self):
+        """A check logged the old way, then the first in/out reading."""
+        CapacityCheck.objects.create(
+            shift=self.shift, current_count=120, venue_capacity=200,
+            shift_group=f"shift_{self.shift.id}", performed_by=self.staff,
+            timestamp=timezone.now() - timedelta(minutes=30),
+        )
+
+        response = self._log(20, 5)
+
+        check = CapacityCheck.objects.get(id=response.data["id"])
+        self.assertEqual(check.baseline_occupancy, 120)
+        self.assertEqual(check.current_count, 135)
+
+    def test_both_readings_are_required_together(self):
+        response = self.client.post(
+            "/api/v1/capacity-checks/",
+            {"shift": self.shift.id, "count_in": 40}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_a_client_cannot_assert_the_occupancy_itself(self):
+        response = self._log(40, 0, current_count=9999)
+
+        self.assertEqual(self._occupancy(response), 40)
+
+    # ── capacity still governs ──────────────────────────────────────────────
+
+    def test_at_capacity_is_judged_on_the_derived_occupancy(self):
+        response = self._log(250, 20, action_taken="Holding the queue.")
+
+        check = CapacityCheck.objects.get(id=response.data["id"])
+        self.assertEqual(check.current_count, 230)
+        self.assertTrue(check.is_at_capacity)
+
+    def test_going_over_capacity_still_demands_an_action(self):
+        response = self._log(250, 20)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("action_taken", response.data)
+
+    def test_a_reset_that_pushes_the_venue_over_capacity_demands_an_action(self):
+        """The action requirement has to see the banked occupancy too."""
+        self._log(190, 10, action_taken="Monitoring.")
+
+        response = self._log(30, 5)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("action_taken", response.data)

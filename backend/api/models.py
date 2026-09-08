@@ -3059,6 +3059,50 @@ class FireExitCheck(ShiftCheck):
         return f"{self.exit_name} - {status} at {self.timestamp}"
 
 class CapacityCheck(ShiftCheck):
+    """A half-hourly occupancy reading for a licensed venue.
+
+    Officers read a physical door clicker every 30 minutes and type what it
+    says. Those readings are *running totals for the night*, not movements
+    since the last check — so they normally only go up.
+
+    Except when the clicker is reset mid-shift, which happens: the officer
+    decides it has drifted, zeroes it and carries on. The next reading is then
+    a small number after a large one. That must never be rejected — an officer
+    standing on a door at 2am cannot be blocked from recording a count because
+    the software finds it implausible. A drop is read as a reset: the occupancy
+    at that moment is banked into `baseline_occupancy` and the fresh clicker
+    counts onward from it. The people already inside are still inside.
+
+    `current_count` stays the venue's occupancy and stays the field everything
+    else reads — `is_at_capacity`, the manager alert, the logbook, the admin
+    dashboard. It is now derived rather than typed.
+    """
+
+    #: Running clicker totals, exactly as the officer read them. Recorded
+    #: verbatim so the logbook shows what the device said, not what the
+    #: system made of it.
+    count_in = models.IntegerField(
+        null=True, blank=True, validators=[MinValueValidator(0)],
+        help_text="Clicker's running 'in' total at the time of this check.",
+    )
+    count_out = models.IntegerField(
+        null=True, blank=True, validators=[MinValueValidator(0)],
+        help_text="Clicker's running 'out' total at the time of this check.",
+    )
+    counter_reset = models.BooleanField(
+        default=False,
+        help_text="This reading is lower than the previous one, so the clicker "
+                  "was reset. Occupancy carries forward from before the reset.",
+    )
+    baseline_occupancy = models.IntegerField(
+        default=0,
+        help_text="Occupancy banked from before the current clicker segment. "
+                  "Stored per row so the logbook reconstructs without replaying "
+                  "every earlier check.",
+    )
+
+    #: Derived: `baseline_occupancy + count_in - count_out`. Still the number
+    #: every other part of the system means by "how many people are inside".
     current_count = models.IntegerField(validators=[MinValueValidator(0)])
     venue_capacity = models.IntegerField()
     is_at_capacity = models.BooleanField(default=False)
@@ -3067,7 +3111,70 @@ class CapacityCheck(ShiftCheck):
     class Meta:
         db_table = 'capacity_checks'
 
+    def previous_check(self):
+        """The last reading on this door, whoever logged it.
+
+        Keyed on `shift_group` so a multi-staff door is one continuous count
+        rather than one per officer.
+        """
+        if not self.shift_group:
+            return None
+        return (
+            CapacityCheck.objects
+            .filter(shift_group=self.shift_group)
+            .exclude(pk=self.pk)
+            .order_by('-timestamp', '-id')
+            .first()
+        )
+
+    def derive_occupancy(self):
+        """Work out occupancy, banking the previous segment across a reset.
+
+        Sets `counter_reset`, `baseline_occupancy` and `current_count`. Safe to
+        call before the row is saved.
+        """
+        if self.count_in is None and self.count_out is None:
+            # A client that has not been updated yet, or a historical row:
+            # `current_count` was typed directly. Leave it alone.
+            return
+
+        # `ShiftCheck.save()` fills `shift_group` in, but it runs after this
+        # does — so without resolving it here the lookup below finds nothing
+        # and every reading looks like the first of the night.
+        if not self.shift_group and self.shift:
+            self.shift_group = self.shift.shift_group or f'shift_{self.shift.id}'
+
+        count_in = self.count_in or 0
+        count_out = self.count_out or 0
+        previous = self.previous_check()
+
+        if previous is None or previous.count_in is None:
+            # First reading of this segment, or the first since in/out
+            # recording began. Anything already recorded as inside stays
+            # inside, so a mid-shift switchover does not lose people.
+            self.counter_reset = False
+            self.baseline_occupancy = (
+                previous.current_count if previous is not None else 0
+            )
+        elif count_in < previous.count_in or count_out < previous.count_out:
+            # The clicker went backwards, so it was reset. Bank what was
+            # inside and start counting again from there.
+            self.counter_reset = True
+            self.baseline_occupancy = previous.current_count
+        else:
+            # Same clicker segment: carry the same baseline.
+            self.counter_reset = False
+            self.baseline_occupancy = previous.baseline_occupancy
+
+        # Occupancy cannot be negative. If the readings say otherwise the
+        # clicker or the typing is wrong, and the honest record is zero people
+        # inside plus a flag on the row, not a negative headcount.
+        self.current_count = max(
+            self.baseline_occupancy + count_in - count_out, 0
+        )
+
     def save(self, *args, **kwargs):
+        self.derive_occupancy()
         self.is_at_capacity = self.current_count >= self.venue_capacity
         super().save(*args, **kwargs)
 

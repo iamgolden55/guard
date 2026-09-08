@@ -23,6 +23,7 @@ motorway or private land — so an officer standing at the venue could be
 refused. Haversine is exact for geofencing at this scale, costs nothing and
 cannot be unavailable, so it is the primary test.
 """
+from contextlib import contextmanager
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
@@ -41,6 +42,24 @@ User = get_user_model()
 
 VENUE_LAT = Decimal("51.454500")
 VENUE_LNG = Decimal("-2.587900")
+
+
+@contextmanager
+def clock_at(moment):
+    """Run a request with the server's clock pinned.
+
+    These tests describe positions in a shift — "just before the end", "ten
+    minutes past it" — and the check-in window also compares *dates*. Built
+    from the real `now`, a shift "eight hours ago" lands on yesterday when the
+    suite runs after midnight, and the previous-date rule rejects it before
+    the rule under test is reached. That is a test that passes by time of day,
+    which is worse than no test.
+
+    Patching `django.utils.timezone.now` covers both the view and the model,
+    since both look the attribute up at call time.
+    """
+    with patch("django.utils.timezone.now", return_value=moment):
+        yield
 
 
 class CheckInWindowTests(APITestCase):
@@ -66,11 +85,16 @@ class CheckInWindowTests(APITestCase):
             staff_user=self.staff, venue=self.venue,
             terms_version=self.venue.terms_version or "1",
         )
+        # Mid-afternoon, so every offset below stays inside one calendar day
+        # whatever time the suite actually runs.
+        self.now = timezone.now().replace(
+            hour=14, minute=0, second=0, microsecond=0
+        )
         self.client = APIClient()
         self.client.force_authenticate(user=self.staff)
 
     def _shift(self, *, started_hours_ago=2, length=8):
-        start = timezone.now() - timedelta(hours=started_hours_ago)
+        start = self.now - timedelta(hours=started_hours_ago)
         return Shift.objects.create(
             venue=self.venue, staff_user=self.staff, start_time=start,
             end_time=start + timedelta(hours=length), status="scheduled",
@@ -79,11 +103,12 @@ class CheckInWindowTests(APITestCase):
         )
 
     def _check_in(self, shift):
-        return self.client.post(
-            f"/api/v1/shifts/{shift.id}/check_in/",
-            {"latitude": float(VENUE_LAT), "longitude": float(VENUE_LNG)},
-            format="json",
-        )
+        with clock_at(self.now):
+            return self.client.post(
+                f"/api/v1/shifts/{shift.id}/check_in/",
+                {"latitude": float(VENUE_LAT), "longitude": float(VENUE_LNG)},
+                format="json",
+            )
 
     # ── P2-8 ────────────────────────────────────────────────────────────────
 
@@ -109,7 +134,7 @@ class CheckInWindowTests(APITestCase):
     def test_a_genuinely_late_arrival_inside_the_grace_period_is_accepted(self):
         """A guard arriving minutes after the scheduled end is still a guard."""
         shift = self._shift(started_hours_ago=8, length=8)
-        shift.end_time = timezone.now() - timedelta(minutes=10)
+        shift.end_time = self.now - timedelta(minutes=10)
         shift.save(update_fields=["end_time"])
 
         response = self._check_in(shift)
@@ -118,8 +143,7 @@ class CheckInWindowTests(APITestCase):
 
     def test_an_overnight_shift_still_checks_in_after_midnight(self):
         """Regression guard against test_overnight_attendance.py."""
-        now = timezone.now()
-        start = now - timedelta(hours=3)
+        start = self.now - timedelta(hours=3)
         shift = Shift.objects.create(
             venue=self.venue, staff_user=self.staff,
             start_time=start, end_time=start + timedelta(hours=9),
@@ -137,7 +161,7 @@ class CheckInWindowTests(APITestCase):
         """D3: alert, do not block. A stranded officer is not reversible."""
         StaffProfile.objects.create(
             user=self.staff, phone_number="07700900000",
-            date_of_birth=timezone.now().date() - timedelta(days=10000),
+            date_of_birth=self.now.date() - timedelta(days=10000),
             street="1 St", city="Bristol", postal_code="BS1 1AA", country="UK",
             is_approved=True,
         )
@@ -154,7 +178,7 @@ class CheckInWindowTests(APITestCase):
 
         StaffProfile.objects.create(
             user=self.staff, phone_number="07700900000",
-            date_of_birth=timezone.now().date() - timedelta(days=10000),
+            date_of_birth=self.now.date() - timedelta(days=10000),
             street="1 St", city="Bristol", postal_code="BS1 1AA", country="UK",
             is_approved=True,
         )
@@ -178,14 +202,14 @@ class CheckInWindowTests(APITestCase):
 
         profile = StaffProfile.objects.create(
             user=self.staff, phone_number="07700900000",
-            date_of_birth=timezone.now().date() - timedelta(days=10000),
+            date_of_birth=self.now.date() - timedelta(days=10000),
             street="1 St", city="Bristol", postal_code="BS1 1AA", country="UK",
             is_approved=True,
         )
         SIALicense.objects.create(
             staff_profile=profile, license_number="1234567890123456",
-            license_type="ds", issue_date=date.today() - timedelta(days=30),
-            expiry_date=date.today() + timedelta(days=365), status="valid",
+            license_type="ds", issue_date=self.now.date() - timedelta(days=30),
+            expiry_date=self.now.date() + timedelta(days=365), status="valid",
         )
         shift = self._shift()
 
@@ -204,16 +228,20 @@ class CheckInWindowTests(APITestCase):
 
         profile = StaffProfile.objects.create(
             user=self.staff, phone_number="07700900000",
-            date_of_birth=timezone.now().date() - timedelta(days=10000),
+            date_of_birth=self.now.date() - timedelta(days=10000),
             street="1 St", city="Bristol", postal_code="BS1 1AA", country="UK",
             is_approved=True,
         )
+        # Expired the day *before this shift*, which is the comparison that
+        # matters — not the day before today.
+        shift = self._shift()
         SIALicense.objects.create(
             staff_profile=profile, license_number="1234567890123456",
-            license_type="ds", issue_date=date.today() - timedelta(days=400),
-            expiry_date=date.today() - timedelta(days=1), status="valid",
+            license_type="ds",
+            issue_date=shift.start_time.date() - timedelta(days=400),
+            expiry_date=shift.start_time.date() - timedelta(days=1),
+            status="valid",
         )
-        shift = self._shift()
 
         self._check_in(shift)
 

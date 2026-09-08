@@ -445,6 +445,10 @@ class CapacityCheckSerializer(serializers.ModelSerializer):
     # Add camelCase fields for frontend compatibility
     count = serializers.IntegerField(source='current_count', read_only=True)
     comments = serializers.CharField(source='notes', read_only=True)
+    # Optional, because it is derived from the clicker readings whenever those
+    # are present. The model column is NOT NULL, so without this DRF would
+    # make it required and reject every payload from the new in/out screen.
+    current_count = serializers.IntegerField(required=False, min_value=0)
     # Multi-staff shift: performed_by details
     performed_by_details = serializers.SerializerMethodField()
 
@@ -456,9 +460,21 @@ class CapacityCheckSerializer(serializers.ModelSerializer):
         # reconstruct afterwards evidences nothing. `venue_capacity` read from
         # the venue: it is the denominator of `is_at_capacity`, so accepting
         # it from the client made the only field that matters an assertion.
+        # `current_count` joins them: it is the venue's occupancy, and it is
+        # now derived from the clicker readings rather than typed. Officers
+        # send `count_in` / `count_out`; the server works out what that means,
+        # including across a clicker reset. `counter_reset` and
+        # `baseline_occupancy` are the server's own workings, shown to the
+        # client but never accepted from it.
+        # `current_count` stays writable on purpose: a mobile build that has
+        # not shipped the in/out screen yet still posts a typed occupancy, and
+        # refusing it would stop those officers logging at all. When readings
+        # *are* present the model derives over the top, so a client cannot
+        # assert an occupancy that contradicts its own clicker.
         read_only_fields = (
             'created_at', 'shift_group', 'performed_by',
             'timestamp', 'venue_capacity', 'is_at_capacity',
+            'counter_reset', 'baseline_occupancy',
         )
 
     def get_performed_by_details(self, obj):
@@ -471,27 +487,66 @@ class CapacityCheckSerializer(serializers.ModelSerializer):
             }
         return None
 
-    def validate_current_count(self, value):
-        # Ensure count is not negative
-        if value < 0:
-            raise serializers.ValidationError("Capacity count cannot be negative")
-        return value
+    def _projected_occupancy(self, attrs, shift):
+        """Occupancy this check would record, before it is saved.
+
+        Needed because `action_taken` is required at capacity, and the count
+        that decides it no longer arrives in the payload. Mirrors
+        `CapacityCheck.derive_occupancy` against an unsaved instance rather
+        than duplicating the reset arithmetic.
+        """
+        count_in = attrs.get('count_in')
+        count_out = attrs.get('count_out')
+        if count_in is None and count_out is None:
+            # Legacy client still sending a typed occupancy.
+            return attrs.get(
+                'current_count', getattr(self.instance, 'current_count', None)
+            )
+
+        probe = CapacityCheck(
+            shift=shift,
+            shift_group=(
+                shift.shift_group or f'shift_{shift.id}' if shift else None
+            ),
+            count_in=count_in,
+            count_out=count_out,
+            venue_capacity=shift.venue.capacity if shift and shift.venue else 0,
+        )
+        probe.derive_occupancy()
+        return probe.current_count
 
     def validate(self, attrs):
-        # Require action_taken text whenever the venue is at or over capacity.
-        # The shift links to the venue and supplies the capacity at save-time;
-        # we read venue.capacity directly so this stays consistent even if the
-        # client omits venue_capacity from the payload.
+        """Readings are recorded as given; only the consequences are checked.
+
+        Deliberately no monotonic check on `count_in` / `count_out`. A reading
+        lower than the last one means the clicker was reset, which is a normal
+        thing to do on a door at 2am, and refusing it would stop an officer
+        recording a count at all — the opposite of what a logbook is for.
+        """
         attrs = super().validate(attrs)
         shift = attrs.get('shift') or getattr(self.instance, 'shift', None)
+
+        count_in = attrs.get('count_in')
+        count_out = attrs.get('count_out')
+        if (count_in is None) != (count_out is None):
+            raise serializers.ValidationError({
+                'count_out': 'Record both the in and out readings from the clicker.'
+            })
+
+        # One or the other has to arrive, or there is no count to record.
+        if self.instance is None and count_in is None and attrs.get('current_count') is None:
+            raise serializers.ValidationError({
+                'count_in': 'Record the in and out readings from the clicker.'
+            })
+
         if shift is not None:
             venue_capacity = shift.venue.capacity if shift.venue else attrs.get('venue_capacity')
-            current_count = attrs.get('current_count', getattr(self.instance, 'current_count', None))
+            current_count = self._projected_occupancy(attrs, shift)
             action_taken = (attrs.get('action_taken') or getattr(self.instance, 'action_taken', '') or '').strip()
             if current_count is not None and venue_capacity is not None:
                 if current_count >= venue_capacity and not action_taken:
                     raise serializers.ValidationError({
-                        'action_taken': "action_taken is required when current_count is at or over venue capacity."
+                        'action_taken': "action_taken is required when the venue is at or over capacity."
                     })
         return attrs
 

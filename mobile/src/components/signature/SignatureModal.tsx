@@ -151,12 +151,22 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
     }
   };
 
-  // Signature canvas HTML/CSS style - use light background for visibility in both modes
+  // The signing surface stays white with dark ink in both themes, and the
+  // comment above this block always said so — the code did the opposite.
+  //
+  // A signature is evidence. It is rendered into PDF invoices, attendance
+  // reports and the admin dashboard, all of which are light. In dark mode this
+  // drew white ink and exported it on a fully transparent background, so the
+  // officer watched their signature appear, confirmed it, and it was invisible
+  // to everyone who looked at it afterwards.
+  //
+  // Dark mode gets a dark frame around a white page, which is what signing on
+  // paper looks like anyway.
   const signatureStyle = `
     .signature-pad {
       width: 100%;
       height: 100%;
-      background-color: ${isDark ? '#1f2937' : 'white'};
+      background-color: #FFFFFF;
     }
     .signature-pad-body {
       border: 2px solid ${themeColors.border.light};
@@ -191,7 +201,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
           </View>
 
           {/* Signature Canvas */}
-          <View style={[styles.canvasContainer, { backgroundColor: isDark ? '#1f2937' : colors.white, borderColor: themeColors.border.light }]}>
+          <View style={[styles.canvasContainer, { backgroundColor: colors.white, borderColor: themeColors.border.light }]}>
             <SignatureCanvas
               ref={signatureRef}
               onOK={handleOK}
@@ -202,8 +212,12 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
               confirmText="Done"
               webStyle={signatureStyle}
               autoClear={false}
-              backgroundColor="rgba(255,255,255,0)"
-              penColor={isDark ? '#ffffff' : colors.text.primary}
+              // Opaque white, not transparent: a transparent PNG takes the
+              // colour of whatever it is dropped onto, which is how a
+              // signature ends up invisible on a dark card or a white PDF
+              // depending on which way the ink went.
+              backgroundColor="#FFFFFF"
+              penColor="#000000"
               minWidth={2}
               maxWidth={4}
             />
