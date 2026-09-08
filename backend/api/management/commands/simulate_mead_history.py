@@ -147,9 +147,12 @@ class Command(BaseCommand):
 
     def _phase_0_inspect(self, company, memberships, venues, start_date, end_date):
         self.stdout.write(self.style.HTTP_INFO('\n[Phase 0] Pre-flight inspection'))
-        eligible = [m for m in memberships if m.user.profile and m.user.profile.is_eligible_for_shifts()]
-        weekly = sum(1 for m in memberships if m.user.profile and m.user.profile.pay_frequency == 'weekly')
-        monthly = sum(1 for m in memberships if m.user.profile and m.user.profile.pay_frequency == 'monthly')
+        eligible = [m for m in memberships
+                    if _profile(m.user) and _profile(m.user).is_eligible_for_shifts()]
+        weekly = sum(1 for m in memberships
+                     if _profile(m.user) and _profile(m.user).pay_frequency == 'weekly')
+        monthly = sum(1 for m in memberships
+                      if _profile(m.user) and _profile(m.user).pay_frequency == 'monthly')
         no_bank = sum(1 for m in memberships if not _has_bank(m.user))
 
         self.stdout.write(f'  Active staff: {len(memberships)} (eligible for shifts: {len(eligible)})')
@@ -196,7 +199,7 @@ class Command(BaseCommand):
 
     def _phase_1b_rebalance_pay_frequency(self, memberships, backup):
         self.stdout.write(self.style.HTTP_INFO('\n[Phase 1b] Rebalancing pay_frequency to 60/40 weekly/monthly'))
-        profiles = [m.user.profile for m in memberships if m.user.profile]
+        profiles = [_profile(m.user) for m in memberships if _profile(m.user)]
         profiles.sort(key=lambda p: p.user_id)
 
         backup['pay_frequency_before'] = {p.user_id: p.pay_frequency for p in profiles}
@@ -218,7 +221,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.HTTP_INFO('\n[Phase 2] Generating shifts'))
         eligible_staff = [
             m.user for m in memberships
-            if m.user.profile and m.user.profile.is_eligible_for_shifts()
+            if _profile(m.user) and _profile(m.user).is_eligible_for_shifts()
         ]
         if not eligible_staff:
             raise CommandError('No eligible staff (need is_approved=True + valid SIA license).')
@@ -389,7 +392,7 @@ class Command(BaseCommand):
         monthly_invoices = 0
 
         for m in memberships:
-            profile = m.user.profile
+            profile = _profile(m.user)
             if not profile:
                 continue
 
@@ -517,6 +520,17 @@ class Command(BaseCommand):
 
 
 # ---- helpers ----
+
+def _profile(user):
+    """StaffProfile for `user`, or None.
+
+    `user.profile` is a reverse OneToOne: it raises RelatedObjectDoesNotExist
+    rather than returning None, so a truthiness check on it is not safe. Any
+    company member without a StaffProfile — an owner or admin who isn't also
+    an officer — used to crash Phase 0 here.
+    """
+    return getattr(user, 'profile', None)
+
 
 def _has_bank(user) -> bool:
     profile = getattr(user, 'profile', None)

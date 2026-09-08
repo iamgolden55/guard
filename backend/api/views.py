@@ -9904,6 +9904,11 @@ class AdminDashboardOverviewView(APIView):
     @staticmethod
     def _relative_time(now, then):
         secs = (now - then).total_seconds()
+        # A timestamp ahead of the server clock — device clock skew on a
+        # check-in, or an auto-checkout stamped to the shift's scheduled end —
+        # fell into the `< 60` branch and rendered as e.g. '-44047s'.
+        if secs < 0:
+            return 'just now'
         if secs < 60:
             return f'{int(secs)}s'
         if secs < 3600:
