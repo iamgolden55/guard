@@ -4,8 +4,19 @@
  */
 
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import {
+  render as rtlRender,
+  fireEvent,
+  type RenderOptions,
+} from '@testing-library/react-native';
 import { Button } from '../Button';
+import { ThemeProvider } from '../../../contexts/ThemeContext';
+
+// Button reads useTheme(), which throws outside a provider. Every case in
+// this file rendered bare and so failed on `useTheme must be used within a
+// ThemeProvider` rather than on anything it was asserting.
+const render = (ui: React.ReactElement, options?: RenderOptions) =>
+  rtlRender(ui, { wrapper: ThemeProvider, ...options });
 
 describe('Button', () => {
   it('should render with default props', () => {

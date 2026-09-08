@@ -293,9 +293,8 @@ export const SignatureCanvas: React.FC<SignatureCanvasProps> = ({
           onPress={handleConfirm}
           disabled={!hasDrawn}
           style={styles.confirmButton}
-        >
-          Confirm Signature
-        </Button>
+          title="Confirm Signature"
+        />
       </View>
 
       {/* Stroke Counter (for debugging) */}

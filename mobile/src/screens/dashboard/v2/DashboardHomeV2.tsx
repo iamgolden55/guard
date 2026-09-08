@@ -23,6 +23,7 @@ import {
   Pressable,
   Dimensions,
   StatusBar,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -37,6 +38,7 @@ import {
   selectActiveShift,
   selectUpcomingShifts,
   selectPastScheduledShifts,
+  selectCompletedShifts,
   fetchShifts,
   type Shift,
 } from '../../../store/slices/shiftsSlice';
@@ -97,6 +99,20 @@ function formatTimeRange(start?: string | null, end?: string | null): string {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
+/** Monday 00:00 of the week containing `d`, in local time. */
+function startOfWeek(d: Date): Date {
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  out.setDate(out.getDate() - ((out.getDay() + 6) % 7));
+  return out;
+}
+
+function hoursBetween(startIso?: string | null, endIso?: string | null): number {
+  if (!startIso || !endIso) return 0;
+  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+  return ms > 0 ? ms / (1000 * 60 * 60) : 0;
+}
+
 function dayTag(iso?: string | null): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -134,6 +150,7 @@ export const DashboardHomeV2: React.FC = () => {
   const activeShift = useAppSelector(selectActiveShift);
   const upcomingShifts = useAppSelector(selectUpcomingShifts);
   const pastScheduledShifts = useAppSelector(selectPastScheduledShifts);
+  const completedShifts = useAppSelector(selectCompletedShifts);
   const staffProfile = user?.staff_profile;
   const employmentCategory = staffProfile?.employment_type?.employment_category;
   const isContractor =
@@ -145,6 +162,7 @@ export const DashboardHomeV2: React.FC = () => {
     toiletChecks: any[];
   } | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [now, setNow] = useState(Date.now());
 
@@ -191,6 +209,17 @@ export const DashboardHomeV2: React.FC = () => {
 
   useShiftRealtimeRefresh(refreshShifts);
 
+  // The dashboard only refreshed on focus and over the websocket — there was
+  // no way for an officer to force a reload when they suspected it was stale.
+  const onPullToRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshShifts();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshShifts]);
+
   const handleInvoicePaid = useCallback(() => {
     setShowConfetti(true);
   }, []);
@@ -230,19 +259,42 @@ export const DashboardHomeV2: React.FC = () => {
     (shiftChecks?.capacityChecks?.length ?? 0) +
     (shiftChecks?.toiletChecks?.length ?? 0);
 
-  const hoursThisWeek = useMemo(() => {
-    const collect: number[] = [];
-    const allShifts: Shift[] = [
+  // "This week" means the Mon–Sun week we're in, across every bucket the
+  // slice splits shifts into. This used to sum the active shift plus *all*
+  // loaded upcoming shifts, so a shift three weeks out inflated the figure
+  // and everything already worked this week was missing from it.
+  const thisWeek = useMemo(() => {
+    const weekStart = startOfWeek(new Date()).getTime();
+    const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
+    const all: Shift[] = [
       ...(activeShift ? [activeShift] : []),
       ...upcomingShifts,
+      ...pastScheduledShifts,
+      ...completedShifts,
     ];
-    for (const s of allShifts) {
-      const ms = new Date(s.end_time).getTime() - new Date(s.start_time).getTime();
-      if (ms > 0) collect.push(ms / (1000 * 60 * 60));
+    const seen = new Set<number>();
+    let hours = 0;
+    let count = 0;
+    for (const s of all) {
+      if (seen.has(s.id)) continue;
+      const start = new Date(s.start_time).getTime();
+      if (Number.isNaN(start) || start < weekStart || start >= weekEnd) continue;
+      seen.add(s.id);
+      hours += hoursBetween(s.start_time, s.end_time);
+      count += 1;
     }
-    const total = collect.reduce((a, b) => a + b, 0);
-    return Math.round(total * 10) / 10;
-  }, [activeShift, upcomingShifts]);
+    return { hours: Math.round(hours * 10) / 10, count };
+  }, [activeShift, upcomingShifts, pastScheduledShifts, completedShifts]);
+
+  // The "Shifts · Upcoming" tile is captioned "Next 7 days", so count that
+  // window rather than every future shift in the page of results.
+  const upcomingNext7Days = useMemo(() => {
+    const cutoff = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    return upcomingShifts.filter((s) => {
+      const t = new Date(s.start_time).getTime();
+      return !Number.isNaN(t) && t <= cutoff;
+    }).length;
+  }, [upcomingShifts]);
 
   // ── Live timer numbers ──
   const liveTimer = useMemo(() => {
@@ -359,6 +411,14 @@ export const DashboardHomeV2: React.FC = () => {
         style={styles.scroll}
         contentContainerStyle={{ paddingBottom: 140 + insets.bottom }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onPullToRefresh}
+            tintColor={theme.colors.text.secondary}
+            colors={[theme.colors.accent]}
+          />
+        }
       >
         {/* Header */}
         <View style={styles.header}>
@@ -423,12 +483,12 @@ export const DashboardHomeV2: React.FC = () => {
         <View style={styles.statsGrid}>
           <StatCard
             eyebrow="Hours · This week"
-            value={hoursThisWeek ? String(hoursThisWeek) : '0'}
-            support={`${(activeShift ? 1 : 0) + upcomingShifts.length} shifts booked`}
+            value={String(thisWeek.hours)}
+            support={`${thisWeek.count} shift${thisWeek.count === 1 ? '' : 's'} booked`}
           />
           <StatCard
             eyebrow={activeShift ? 'Checks · Today' : 'Shifts · Upcoming'}
-            value={activeShift ? String(checksCompleted) : String(upcomingShifts.length)}
+            value={activeShift ? String(checksCompleted) : String(upcomingNext7Days)}
             support={activeShift ? 'Since clock on' : 'Next 7 days'}
           />
         </View>

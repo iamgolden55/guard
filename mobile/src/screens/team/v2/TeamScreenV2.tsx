@@ -26,9 +26,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import type { MainStackParamList } from '../../../types/navigation';
-import { useAppSelector } from '../../../hooks/useRedux';
-import { useSubscription } from '../../../contexts/SubscriptionContext';
-import { API_ENDPOINTS, getAuthHeaders } from '../../../config/api.config';
+import { API_ENDPOINTS } from '../../../config/api.config';
 import { logger } from '../../../utils/logger';
 import { useRedesignTheme } from '../../../theme/redesign';
 import { Eyebrow, GlassCard } from '../../../components/redesign';
@@ -276,8 +274,6 @@ export const TeamScreenV2: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets();
   const theme = useRedesignTheme();
-  const { subscription } = useSubscription();
-  const accessToken = useAppSelector((state) => state.auth.accessToken);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -286,10 +282,13 @@ export const TeamScreenV2: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const fetchTeamMembers = useCallback(async () => {
-    if (!accessToken) return;
+    // No `if (!accessToken) return` guard here. That returned before the
+    // try/finally, so a session whose token lives in SecureStore but hasn't
+    // rehydrated into Redux left this tab on an spinner that never resolved,
+    // with no error and no way to retry. The axios request interceptor reads
+    // the token from SecureStore anyway, so the screen doesn't need one.
     try {
       const response = await axios.get<TeamMemberAPI[]>(API_ENDPOINTS.TEAM.MEMBERS, {
-        headers: getAuthHeaders(accessToken),
         timeout: 15000,
       });
       setRawMembers(response.data);
@@ -323,7 +322,7 @@ export const TeamScreenV2: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, refreshing]);
+  }, [refreshing]);
 
   useFocusEffect(
     useCallback(() => {
@@ -438,9 +437,12 @@ export const TeamScreenV2: React.FC = () => {
             >
               Team
             </Text>
+            {/* This read subscription.companyName, which SubscriptionContext
+                hardcodes to 'Mead Security Services' — a fixture, and the
+                wrong company for every other tenant on the platform. There is
+                no company name on the mobile session, so don't invent one. */}
             <Eyebrow style={{ marginTop: 6 }}>
-              {subscription?.companyName || 'Your company'} · {rawMembers.length} member
-              {rawMembers.length === 1 ? '' : 's'}
+              {rawMembers.length} member{rawMembers.length === 1 ? '' : 's'}
             </Eyebrow>
           </View>
           <Pressable

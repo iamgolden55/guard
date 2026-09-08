@@ -74,6 +74,10 @@ export const CapacityLogbookScreen = () => {
   const [signoff, setSignoff] = useState<CapacityLogbookSignoff | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Without this the catch below swallowed the failure and the list fell
+  // through to "No checks yet", which reads as "this venue recorded nothing"
+  // rather than "we couldn't load the record".
+  const [loadError, setLoadError] = useState(false);
   const [signoffModalVisible, setSignoffModalVisible] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -86,8 +90,10 @@ export const CapacityLogbookScreen = () => {
       setChecks(checksList);
       setMisses(missesList);
       setSignoff(existingSignoff);
+      setLoadError(false);
     } catch (error) {
       logger.error('[CapacityLogbook] Failed to load logbook:', error);
+      setLoadError(true);
     }
   }, [shiftGroup]);
 
@@ -329,7 +335,62 @@ export const CapacityLogbookScreen = () => {
           </View>
         }
         ListEmptyComponent={
-          !loading ? (
+          loading ? null : loadError ? (
+            <GlassCard style={{ alignItems: 'center', paddingVertical: 32, marginTop: 20 }}>
+              <Text
+                allowFontScaling={false}
+                style={{
+                  fontFamily: theme.fonts.sans,
+                  color: theme.colors.text.primary,
+                  fontSize: 16,
+                  fontWeight: '500',
+                  marginBottom: 4,
+                }}
+              >
+                Couldn't load the logbook
+              </Text>
+              <Text
+                allowFontScaling={false}
+                style={{
+                  fontFamily: theme.fonts.sans,
+                  color: theme.colors.text.secondary,
+                  fontSize: 13,
+                  textAlign: 'center',
+                  paddingHorizontal: 28,
+                  marginBottom: 16,
+                }}
+              >
+                This isn't an empty logbook — the record just didn't come back.
+                Pull down or tap retry.
+              </Text>
+              <Pressable
+                onPress={() => {
+                  setLoading(true);
+                  loadData().finally(() => setLoading(false));
+                }}
+                style={({ pressed }) => ({
+                  paddingHorizontal: 18,
+                  paddingVertical: 9,
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: theme.colors.surface.hairlineStrong,
+                  opacity: pressed ? 0.7 : 1,
+                })}
+              >
+                <Text
+                  allowFontScaling={false}
+                  style={{
+                    fontFamily: theme.fonts.sans,
+                    color: theme.colors.text.primary,
+                    fontSize: 13,
+                    fontWeight: '500',
+                  }}
+                >
+                  Retry
+                </Text>
+              </Pressable>
+            </GlassCard>
+          ) : (
             <GlassCard style={{ alignItems: 'center', paddingVertical: 32, marginTop: 20 }}>
               <View
                 style={{
@@ -379,7 +440,7 @@ export const CapacityLogbookScreen = () => {
                 The first count is due {intervalMin} min after shift start.
               </Text>
             </GlassCard>
-          ) : null
+          )
         }
       />
 

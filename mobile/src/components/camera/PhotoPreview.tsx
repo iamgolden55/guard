@@ -50,18 +50,16 @@ export const PhotoPreview: React.FC<PhotoPreviewProps> = ({
           onPress={onRetake}
           style={styles.retakeButton}
           icon={<Ionicons name="camera-outline" size={20} color={colors.white} />}
-        >
-          Retake
-        </Button>
+          title="Retake"
+        />
 
         <Button
           variant="primary"
           onPress={onConfirm}
           style={styles.confirmButton}
           icon={<Ionicons name="checkmark" size={20} color={colors.white} />}
-        >
-          Use Photo
-        </Button>
+          title="Use Photo"
+        />
       </View>
     </View>
   );

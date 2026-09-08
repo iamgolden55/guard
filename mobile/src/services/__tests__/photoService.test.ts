@@ -8,11 +8,18 @@ import { photoService } from '../photoService';
 import { File, Directory } from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 
-// Mock expo modules
-jest.mock('expo-file-system');
-jest.mock('expo-image-manipulator');
-
-// Mock File and Directory classes
+// Mock expo modules.
+//
+// The previous version did `jest.mock('expo-file-system')` (automock, so
+// `Paths` came back undefined and photoService blew up building
+// `new Directory(Paths.document, 'photos')` at import time), then tried to
+// reassign the `File` / `Directory` module bindings — which are read-only.
+// The whole suite failed to load; none of the assertions below ever ran.
+//
+// Everything now lives in the factory. `mock`-prefixed names are the only
+// ones babel-plugin-jest-hoist lets a factory close over, and File/Directory
+// are jest.fn constructors (not arrow factories) so `item instanceof File`
+// in getStorageUsed still works.
 const mockFileInfo = jest.fn();
 const mockFileCopy = jest.fn();
 const mockFileDelete = jest.fn();
@@ -23,21 +30,41 @@ const mockDirectoryCreate = jest.fn();
 const mockDirectoryList = jest.fn();
 const mockDirectoryDelete = jest.fn();
 
-(File as jest.MockedClass<typeof File>) = jest.fn().mockImplementation((path: string) => ({
-  info: mockFileInfo,
-  copy: mockFileCopy,
-  delete: mockFileDelete,
-  text: mockFileText,
-  path,
-})) as any;
+jest.mock('expo-file-system', () => {
+  const join = (parts: unknown[]) =>
+    parts
+      .map((p) => (p && typeof p === 'object' && 'path' in p ? (p as any).path : p))
+      .join('');
 
-(Directory as jest.MockedClass<typeof Directory>) = jest.fn().mockImplementation((path: string) => ({
-  info: mockDirectoryInfo,
-  create: mockDirectoryCreate,
-  list: mockDirectoryList,
-  delete: mockDirectoryDelete,
-  path,
-})) as any;
+  // The methods delegate through arrows rather than binding the mock
+  // functions directly: photoService constructs its two Directory
+  // singletons at import time, which is before the `const mock*` bindings
+  // above have been assigned.
+  const File = jest.fn(function (this: any, ...args: unknown[]) {
+    this.path = join(args);
+    this.uri = this.path;
+    this.info = (...a: unknown[]) => mockFileInfo(...a);
+    this.copy = (...a: unknown[]) => mockFileCopy(...a);
+    this.delete = (...a: unknown[]) => mockFileDelete(...a);
+    this.text = (...a: unknown[]) => mockFileText(...a);
+  });
+
+  const Directory = jest.fn(function (this: any, ...args: unknown[]) {
+    this.path = `${join(args)}/`;
+    this.uri = this.path;
+    this.info = (...a: unknown[]) => mockDirectoryInfo(...a);
+    this.create = (...a: unknown[]) => mockDirectoryCreate(...a);
+    this.list = (...a: unknown[]) => mockDirectoryList(...a);
+    this.delete = (...a: unknown[]) => mockDirectoryDelete(...a);
+  });
+
+  return {
+    Paths: { document: '/mock/document/', cache: '/mock/cache/' },
+    File,
+    Directory,
+  };
+});
+jest.mock('expo-image-manipulator');
 
 describe('PhotoService', () => {
   beforeEach(() => {
@@ -58,10 +85,9 @@ describe('PhotoService', () => {
 
       await photoService.initialize();
 
-      // Should create 2 directories (photos and thumbnails)
-      expect(Directory).toHaveBeenCalledTimes(2);
-      expect(Directory).toHaveBeenCalledWith(expect.stringContaining('photos/'));
-      expect(Directory).toHaveBeenCalledWith(expect.stringContaining('thumbnails/'));
+      // photosDir/thumbnailsDir are constructed once, when the module is
+      // first imported — so assert on the create() calls, not on how many
+      // times the Directory constructor ran during this test.
       expect(mockDirectoryCreate).toHaveBeenCalledTimes(2);
       expect(mockDirectoryCreate).toHaveBeenCalledWith({ intermediates: true });
     });
@@ -218,7 +244,10 @@ describe('PhotoService', () => {
 
       // Should create File instances for both photo and thumbnail
       expect(File).toHaveBeenCalledWith(mockPhotoUri);
-      expect(File).toHaveBeenCalledWith(expect.stringContaining('12345_thumb.jpg'));
+      expect(File).toHaveBeenCalledWith(
+        expect.objectContaining({ path: expect.stringContaining('thumbnails/') }),
+        '12345_thumb.jpg',
+      );
       expect(mockFileDelete).toHaveBeenCalledTimes(2);
     });
 

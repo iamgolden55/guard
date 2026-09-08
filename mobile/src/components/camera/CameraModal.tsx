@@ -136,9 +136,12 @@ export const CameraModal: React.FC<CameraModalProps> = ({
             <BodySmall color={colors.text.secondary} style={styles.permissionText}>
               We need access to your camera to take venue photos for check-in verification.
             </BodySmall>
-            <Button variant="primary" size="large" onPress={requestPermission}>
-              Grant Permission
-            </Button>
+            <Button
+              variant="primary"
+              size="large"
+              onPress={requestPermission}
+              title="Grant Permission"
+            />
           </View>
         </View>
       </Modal>
