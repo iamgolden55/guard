@@ -164,8 +164,14 @@ function OfficerRow({
   runCode,
 }: OfficerRowProps) {
   const { palette } = useAccent();
-  const meta = STATUS_META[o.status];
-  const expMeta = o.exportStatus ? EXPORT_META[o.exportStatus] : null;
+  // Fall back rather than throw if the API ever grows a status the UI
+  // hasn't been taught yet.
+  const meta = STATUS_META[o.status] ?? {
+    tone: "neutral" as const,
+    label: o.status,
+    dot: tokens.color.ink500,
+  };
+  const expMeta = o.exportStatus ? (EXPORT_META[o.exportStatus] ?? null) : null;
   const rowPad =
     density === "compact" ? "10px 16px" : density === "spacious" ? "18px 16px" : "14px 16px";
   // Real-API path: fetch line items + adjustments for this officer's invoice

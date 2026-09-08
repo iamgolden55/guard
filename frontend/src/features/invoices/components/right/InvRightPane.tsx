@@ -383,8 +383,11 @@ function ActionGroup({
   } else if (
     inv.status === "pending" ||
     inv.status === "sent" ||
+    inv.status === "approved" ||
     inv.status === "overdue"
   ) {
+    // 'approved' matched no branch, so a manager-signed-off invoice showed an
+    // empty action panel — no Mark paid, no PDF, nothing.
     buttons.push({ id: "paid", label: "Mark paid", icon: "check", primary: true });
     buttons.push({ id: "email", label: "Email payslip to officer", icon: "mail" });
     buttons.push({ id: "remind", label: "Send reminder", icon: "bell" });
@@ -398,6 +401,11 @@ function ActionGroup({
   } else if (inv.status === "rejected") {
     buttons.push({ id: "resolve", label: "Resolve & re-issue", icon: "edit", primary: true });
     buttons.push({ id: "void", label: "Void", icon: "x" });
+    buttons.push({ id: "duplicate", label: "Duplicate", icon: "copy" });
+  } else if (inv.status === "resolved") {
+    // Rejected-then-superseded. Read-only, but the document itself is still
+    // worth being able to open.
+    buttons.push({ id: "download", label: "Download PDF", icon: "download", primary: true });
     buttons.push({ id: "duplicate", label: "Duplicate", icon: "copy" });
   }
 

@@ -1,6 +1,6 @@
 // Topbar — ported 1:1 from project/dashboard.jsx:306-359.
-// Time-based greeting + page eyebrow, search placeholder, notifications,
-// primary CTA. Includes the mobile-drawer hamburger trigger.
+// Time-based greeting + page eyebrow, global search, primary CTA.
+// Includes the mobile-drawer hamburger trigger.
 import { useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { useAccent } from "../../contexts/AccentContext";
@@ -120,23 +120,6 @@ export function Topbar({ onMenuClick, onPrimaryAction }: TopbarProps) {
 
       {/* Search */}
       <SearchPalette />
-
-      {/* Notifications */}
-      <button type="button" aria-label="Notifications" style={iconButtonStyle}>
-        <Icon name="bell" size={18} />
-        <span
-          style={{
-            position: "absolute",
-            top: 6,
-            right: 7,
-            width: 7,
-            height: 7,
-            borderRadius: 4,
-            background: palette.primary,
-            border: "2px solid white",
-          }}
-        />
-      </button>
 
       {/* Primary CTA */}
       <button

@@ -1,5 +1,5 @@
 // RecruitmentHeader — exact AttendanceHeader shape:
-// row 1 = breadcrumb + title + status chip (when pending > 0) + bell + Export + Copy apply link
+// row 1 = breadcrumb + title + status chip (when pending > 0) + Export + Copy apply link
 // row 2 = tab strip (icon + label + count badge per tab) + search input on the right
 import { Link } from "react-router-dom";
 import { useAccent } from "../../../contexts/AccentContext";
@@ -155,38 +155,6 @@ export function RecruitmentHeader({
             </span>
           </div>
         )}
-
-        <button
-          type="button"
-          aria-label="Notifications"
-          style={{
-            position: "relative",
-            width: 38,
-            height: 38,
-            borderRadius: 8,
-            background: tokens.color.ink100,
-            border: "none",
-            color: tokens.color.ink800,
-            display: "grid",
-            placeItems: "center",
-            cursor: "pointer",
-            flexShrink: 0,
-          }}
-        >
-          <Icon name="bell" size={18} />
-          <span
-            style={{
-              position: "absolute",
-              top: 6,
-              right: 7,
-              width: 7,
-              height: 7,
-              borderRadius: 4,
-              background: palette.primary,
-              border: "2px solid white",
-            }}
-          />
-        </button>
 
         <Button
           variant="secondary"

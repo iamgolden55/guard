@@ -1,6 +1,5 @@
 // LiveLeftRail — KPI gauge + on-duty roster with progress bars.
 // Ported 1:1 from project/attendance-live.jsx:46-154.
-import { useAccent } from "../../../../contexts/AccentContext";
 import { Avatar } from "../../../../design-system/primitives/Avatar";
 import { Icon } from "../../../../design-system/Icon";
 import { tokens } from "../../../../design-system/tokens";
@@ -12,7 +11,6 @@ export interface LiveLeftRailProps {
 }
 
 export function LiveLeftRail({ onSelect }: LiveLeftRailProps) {
-  const { palette } = useAccent();
   const { stats, liveShifts, matchesSearch } = useAttendance();
   const filteredLive = liveShifts.filter(matchesSearch);
   const showed = stats.showed_up;
@@ -138,20 +136,6 @@ export function LiveLeftRail({ onSelect }: LiveLeftRailProps) {
           >
             On duty now · {filteredLive.length}
           </div>
-          <button
-            type="button"
-            style={{
-              background: "none",
-              border: "none",
-              color: palette.primary,
-              fontSize: 11.5,
-              fontWeight: 600,
-              cursor: "pointer",
-              padding: 0,
-            }}
-          >
-            View all
-          </button>
         </div>
         {filteredLive.map((s) => (
           <RosterRow key={s.id} s={s} onSelect={() => onSelect(s)} />

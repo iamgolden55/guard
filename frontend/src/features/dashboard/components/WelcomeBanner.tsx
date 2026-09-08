@@ -4,7 +4,7 @@ import { useAccent } from "../../../contexts/AccentContext";
 import { useAuth } from "../../../contexts/AuthContext";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
-import { BannerVisual } from "./BannerVisual";
+import { BannerVisual, type BannerVisualProps } from "./BannerVisual";
 
 function greeting(now = new Date()): string {
   const h = now.getHours();
@@ -13,7 +13,7 @@ function greeting(now = new Date()): string {
   return "Good evening";
 }
 
-export interface WelcomeBannerProps {
+export interface WelcomeBannerProps extends BannerVisualProps {
   onSchedule?: () => void;
   onManage?: () => void;
   approvalsCount?: number;
@@ -25,6 +25,7 @@ export function WelcomeBanner({
   onManage,
   approvalsCount = 0,
   expiringLicensesCount = 0,
+  ...visual
 }: WelcomeBannerProps) {
   const { palette } = useAccent();
   const { authState } = useAuth();
@@ -189,7 +190,7 @@ export function WelcomeBanner({
       </div>
 
       <div style={{ position: "relative", height: 170 }}>
-        <BannerVisual />
+        <BannerVisual {...visual} />
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
 import {
   type LeaveRequest,
+  LEAVE_STATUS_LABEL,
   LeaveRequestStatus,
 } from "../../../types/leave";
 
@@ -32,6 +33,7 @@ const CELL_STYLE: CSSProperties = {
 };
 
 const STATUS_TONE: Record<LeaveRequestStatus, PillTone> = {
+  [LeaveRequestStatus.DRAFT]: "neutral",
   [LeaveRequestStatus.PENDING]: "warning",
   [LeaveRequestStatus.APPROVED]: "positive",
   [LeaveRequestStatus.REJECTED]: "danger",
@@ -131,7 +133,7 @@ export function MyRequestsTable({
                   </td>
                   <td style={CELL_STYLE}>
                     <Pill tone={tone} dot>
-                      {status}
+                      {LEAVE_STATUS_LABEL[status] ?? status}
                     </Pill>
                   </td>
                   <td style={{ ...CELL_STYLE, color: tokens.color.ink600 }}>

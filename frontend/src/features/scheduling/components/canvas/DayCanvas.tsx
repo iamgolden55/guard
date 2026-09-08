@@ -10,7 +10,6 @@ import {
   fmtHrs,
   HOURS_END,
   HOURS_START,
-  UNAVAIL,
   type Shift,
 } from "../../data/mocks";
 import { officerWeeklyHrs, shiftsForDay, useScheduling } from "../../state/SchedulingState";
@@ -34,7 +33,7 @@ export function DayCanvas({
   onOpenShift,
 }: DayCanvasProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const { shifts, officers, venues, week } = useScheduling();
+  const { shifts, officers, venues, week, unavailabilityOn } = useScheduling();
   const day = week.days[currentDay];
   const dayShifts = shiftsForDay(shifts, currentDay);
 
@@ -59,6 +58,13 @@ export function DayCanvas({
 
   if (!day) return null;
 
+  // day.date is yyyy-mm-dd; parse as local so the label can't slip a day.
+  const [dy, dm, dd] = day.date.split("-").map(Number);
+  const dayLabel = new Date(dy ?? 1970, (dm ?? 1) - 1, dd ?? 1).toLocaleDateString(
+    "en-GB",
+    { weekday: "short", day: "2-digit", month: "short", year: "numeric" },
+  );
+
   const rows =
     canvasAxis === "venue"
       ? venues.map((v) => ({
@@ -68,7 +74,7 @@ export function DayCanvas({
           shifts: packLanes(dayShifts.filter((s) => s.venueId === v.id)),
         }))
       : officers.map((o) => {
-          const unavail = UNAVAIL.find((u) => u.officerId === o.id && u.day === currentDay);
+          const unavail = unavailabilityOn(o.id, currentDay);
           return {
             key: o.id,
             unavail: unavail
@@ -118,7 +124,10 @@ export function DayCanvas({
               letterSpacing: "-0.015em",
             }}
           >
-            {day.day} {day.dd} Apr 2026
+            {/* Was `{day.day} {day.dd} Apr 2026` — the month and year were
+                prototype literals, so this header read "Apr 2026" on every
+                day of every week. */}
+            {dayLabel}
             {day.today && (
               <span
                 style={{

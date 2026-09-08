@@ -1,6 +1,7 @@
 // ExportStrip — payment + export status row.
 // Ported 1:1 from project/payroll-hero.jsx:114-160.
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { Button } from "../../../design-system/primitives/Button";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
@@ -22,10 +23,11 @@ export function ExportStrip({ onOpenExport, processDate }: ExportStripProps) {
     enabled: !USE_MOCKS,
     staleTime: 5 * 60_000,
   });
-  const providers = USE_MOCKS || !providersQuery.data?.length
-    ? PROVIDERS
-    : providersQuery.data;
-  const defaultProvider = providers.find((p) => p.default) ?? providers[0]!;
+  // Falling back to the PROVIDERS fixture whenever the real list came back
+  // empty meant a company with no accounting integration still saw
+  // "Xero · 2 connectors connected" on its payroll screen.
+  const providers = USE_MOCKS ? PROVIDERS : (providersQuery.data ?? []);
+  const defaultProvider = providers.find((p) => p.default) ?? providers[0];
   const connected = providers.filter((p) => p.connected);
   const processed = processDate
     ? new Date(processDate).toLocaleDateString("en-GB", {
@@ -98,8 +100,10 @@ export function ExportStrip({ onOpenExport, processDate }: ExportStripProps) {
             height: 40,
             borderRadius: 10,
             flexShrink: 0,
-            background: defaultProvider.color + "22",
-            color: defaultProvider.color,
+            background: defaultProvider
+              ? `${defaultProvider.color}22`
+              : tokens.color.ink100,
+            color: defaultProvider ? defaultProvider.color : tokens.color.ink600,
             display: "grid",
             placeItems: "center",
             fontFamily: tokens.font.display,
@@ -107,7 +111,7 @@ export function ExportStrip({ onOpenExport, processDate }: ExportStripProps) {
             fontSize: 13,
           }}
         >
-          {defaultProvider.name[0]}
+          {defaultProvider ? defaultProvider.name[0] : <Icon name="plug" size={16} />}
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div
@@ -120,13 +124,27 @@ export function ExportStrip({ onOpenExport, processDate }: ExportStripProps) {
               marginBottom: 2,
             }}
           >
-            Export to {defaultProvider.name}
+            {defaultProvider
+              ? `Export to ${defaultProvider.name}`
+              : "Accounting export"}
           </div>
           <div style={{ fontSize: 13.5, color: tokens.color.ink900, lineHeight: 1.35 }}>
-            Not yet exported ·{" "}
-            <span style={{ color: tokens.color.ink600 }}>
-              {connected.length} connector{connected.length === 1 ? "" : "s"} connected
-            </span>
+            {defaultProvider ? (
+              <>
+                Not yet exported ·{" "}
+                <span style={{ color: tokens.color.ink600 }}>
+                  {connected.length} connector
+                  {connected.length === 1 ? "" : "s"} connected
+                </span>
+              </>
+            ) : (
+              <span style={{ color: tokens.color.ink600 }}>
+                No accounting provider connected —{" "}
+                <Link to="/integrations" style={{ color: "inherit", fontWeight: 600 }}>
+                  set one up in Integrations
+                </Link>
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -136,6 +154,12 @@ export function ExportStrip({ onOpenExport, processDate }: ExportStripProps) {
         size="md"
         leading={<Icon name="external" size={13} />}
         onClick={onOpenExport}
+        disabled={!defaultProvider}
+        title={
+          defaultProvider
+            ? undefined
+            : "Connect an accounting provider before exporting"
+        }
       >
         Export options
       </Button>

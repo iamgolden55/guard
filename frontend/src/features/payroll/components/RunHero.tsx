@@ -7,7 +7,6 @@ import { Button } from "../../../design-system/primitives/Button";
 import { Pill } from "../../../design-system/primitives/Pill";
 import { tokens } from "../../../design-system/tokens";
 import {
-  OFFICERS,
   type Officer,
   type PayrollRun,
   fmtGBPbig,
@@ -61,7 +60,7 @@ export function RunHero({
 }: RunHeroProps) {
   const { palette } = useAccent();
   const narrow = useNarrow();
-  const list = officers ?? OFFICERS;
+  const list = officers ?? [];
   const paidCount = list.filter((o) => o.status === "paid").length;
   const rejectedCount = list.filter((o) => o.status === "rejected").length;
   const pendingCount = list.filter((o) => o.status === "pending").length;
@@ -203,8 +202,10 @@ export function RunHero({
               lineHeight: 1.5,
             }}
           >
-            {invoices} invoices · {lineItems} line items ·{" "}
-            {hoursBilled.toLocaleString()} hrs · processed every Monday
+            {invoices} {invoices === 1 ? "invoice" : "invoices"} · {lineItems}{" "}
+            {lineItems === 1 ? "line item" : "line items"} ·{" "}
+            {hoursBilled.toLocaleString("en-GB")} hrs · processed{" "}
+            {run.cycle === "monthly" ? "monthly" : "every Monday"}
           </div>
 
           <div style={{ marginTop: 18 }}>

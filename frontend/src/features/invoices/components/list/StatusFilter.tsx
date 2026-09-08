@@ -8,6 +8,7 @@ export type StatusFilterValue =
   | "all"
   | "draft"
   | "sent"
+  | "approved"
   | "overdue"
   | "paid"
   | "rejected"
@@ -17,6 +18,7 @@ const OPTS: [StatusFilterValue, string, string][] = [
   ["all", "All", "#605e5c"],
   ["draft", "Drafts", "#605e5c"],
   ["sent", "Sent", "#0b5c9b"],
+  ["approved", "Approved", "#1d5e37"],
   ["overdue", "Overdue", "#8a1820"],
   ["paid", "Paid", "#0f5132"],
   ["rejected", "Rejected", "#8a4b0a"],

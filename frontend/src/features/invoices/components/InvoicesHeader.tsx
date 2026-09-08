@@ -1,5 +1,5 @@
 // InvoicesHeader — breadcrumb + title + overdue pill + ledger toggle +
-// notifications + actions, plus tab strip with counts.
+// actions, plus tab strip with counts.
 // Ported 1:1 from project/invoice-shell.jsx ITopbar (lines 131-251).
 import { Link } from "react-router-dom";
 import { useAccent } from "../../../contexts/AccentContext";
@@ -8,7 +8,7 @@ import { Icon, type IconName } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
 import {
   moneyShort,
-  TODAY_STR,
+  todayLabel,
   type InvoiceKind,
   type InvoiceStats,
 } from "../data/mocks";
@@ -25,6 +25,9 @@ export interface InvoicesHeaderProps {
    * invoices auto-generate from approved shifts via the payroll cron). */
   onNew?: () => void;
   onStatement: () => void;
+  /** "My invoices" only — downloads the listed payslips as CSV. */
+  onExport?: () => void;
+  exportDisabled?: boolean;
   /** Outbox-only: toggle visibility of the left list pane and right details pane. */
   leftPaneOpen?: boolean;
   rightPaneOpen?: boolean;
@@ -50,6 +53,8 @@ export function InvoicesHeader({
   onToggleLeftPane,
   onToggleRightPane,
   onStatement,
+  onExport,
+  exportDisabled,
 }: InvoicesHeaderProps) {
   const { palette } = useAccent();
 
@@ -116,7 +121,7 @@ export function InvoicesHeader({
             >
               Invoices
             </h1>
-            <span style={{ fontSize: 13, color: tokens.color.ink600 }}>{TODAY_STR}</span>
+            <span style={{ fontSize: 13, color: tokens.color.ink600 }}>{todayLabel()}</span>
             {stats.counts.overdue > 0 && tab === "outbox" && (
               <span
                 style={{
@@ -201,25 +206,6 @@ export function InvoicesHeader({
           />
         )}
 
-        <button
-          type="button"
-          aria-label="Notifications"
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 8,
-            background: tokens.color.ink100,
-            border: "none",
-            color: tokens.color.ink800,
-            display: "grid",
-            placeItems: "center",
-            cursor: "pointer",
-            flexShrink: 0,
-          }}
-        >
-          <Icon name="bell" size={18} />
-        </button>
-
         {tab === "outbox" && (
           <>
             <Button
@@ -242,8 +228,18 @@ export function InvoicesHeader({
           </>
         )}
         {tab === "my" && (
-          <Button variant="secondary" leading={<Icon name="download" size={14} />}>
-            Download all
+          <Button
+            variant="secondary"
+            leading={<Icon name="download" size={14} />}
+            onClick={onExport}
+            disabled={!onExport || exportDisabled}
+            title={
+              exportDisabled
+                ? "Nothing to export yet"
+                : "Download your payslip history as CSV"
+            }
+          >
+            Export CSV
           </Button>
         )}
       </div>

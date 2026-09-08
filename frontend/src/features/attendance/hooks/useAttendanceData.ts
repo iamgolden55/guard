@@ -201,6 +201,7 @@ export function useAttendanceData(opts: UseAttendanceDataOptions = {}) {
     timesheetOfficers,
     isLoadingTimesheets: timesheetsQuery.isLoading,
     timesheetsError: timesheetsQuery.error as Error | null,
+    refetchTimesheets: timesheetsQuery.refetch,
     // Drawer
     adjustments: adjustmentsQuery.data ?? [],
     isLoadingAdjustments: adjustmentsQuery.isLoading,

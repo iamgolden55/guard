@@ -26,7 +26,6 @@ export interface DashboardStaff {
   license: string;
   expiresIn: number;
   hours: number;
-  rating: number;
   avatarHue: number;
 }
 

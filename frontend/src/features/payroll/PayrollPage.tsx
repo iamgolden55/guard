@@ -2,7 +2,10 @@ import { useQueryClient } from "@tanstack/react-query";
 // PayrollPage — composes hero + export strip + filter bar + table + right rail.
 // Ported from project/payroll-app.jsx:50-133.
 import { useMemo, useState } from "react";
+import { Spinner } from "../../components/Spinner";
 import { Icon } from "../../design-system/Icon";
+import { Button } from "../../design-system/primitives/Button";
+import { extractApiError } from "../../lib/apiError";
 import { Card } from "../../design-system/primitives/Card";
 import { tokens } from "../../design-system/tokens";
 import billingService from "../../services/billingService";
@@ -55,7 +58,11 @@ export default function PayrollPage() {
     setCycle(next);
   };
   const officersQuery = useRunOfficers(runQuery.data?.id ?? null);
-  const run = USE_MOCKS ? CURRENT_RUN : (runQuery.data ?? CURRENT_RUN);
+  // The live branch used to fall back to CURRENT_RUN — the prototype fixture
+  // for "Week 17 · w/c Mon 20 Apr 2026", 48 invoices, 4,218 hours. While the
+  // query was loading, or after it failed, those numbers rendered as though
+  // they were this company's payroll. Guarded below instead.
+  const run = USE_MOCKS ? CURRENT_RUN : runQuery.data;
   const officers = USE_MOCKS ? OFFICERS : (officersQuery.data ?? []);
 
   const filteredOfficers = useMemo(() => {
@@ -111,7 +118,7 @@ export default function PayrollPage() {
   );
 
   const fireExportToast = () => {
-    setExportToast("Export modal — Phase 6.5");
+    setExportToast("Exports are disabled while VITE_USE_MOCKS is on.");
     window.setTimeout(() => setExportToast(null), 2200);
   };
 
@@ -191,6 +198,7 @@ export default function PayrollPage() {
   const [isMarkingPaid, setIsMarkingPaid] = useState(false);
 
   const handleApproveAllPending = async () => {
+    if (!run) return;
     if (USE_MOCKS) {
       fireExportToast();
       return;
@@ -238,6 +246,7 @@ export default function PayrollPage() {
   };
 
   const handleMarkPaidAllApproved = async () => {
+    if (!run) return;
     if (USE_MOCKS) {
       fireExportToast();
       return;
@@ -282,6 +291,7 @@ export default function PayrollPage() {
   };
 
   const handleRegenerate = async () => {
+    if (!run) return;
     if (USE_MOCKS) {
       fireExportToast();
       return;
@@ -305,6 +315,72 @@ export default function PayrollPage() {
       window.setTimeout(() => setExportToast(null), 3000);
     }
   };
+
+  if (!run) {
+    return (
+      <main
+        style={{
+          flex: 1,
+          display: "grid",
+          placeItems: "center",
+          background: tokens.color.ink50,
+          padding: 28,
+        }}
+      >
+        <div style={{ textAlign: "center", fontFamily: tokens.font.body }}>
+          {runQuery.isLoading ? (
+            <>
+              <Spinner />
+              <div
+                style={{
+                  marginTop: 12,
+                  fontSize: 13,
+                  color: tokens.color.ink600,
+                }}
+              >
+                Loading the {cycle} payroll run…
+              </div>
+            </>
+          ) : (
+            <>
+              <div
+                style={{
+                  fontFamily: tokens.font.display,
+                  fontSize: 17,
+                  fontWeight: 700,
+                  color: tokens.color.ink900,
+                }}
+              >
+                No {cycle} payroll run to show
+              </div>
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 13,
+                  color: tokens.color.ink600,
+                  maxWidth: 420,
+                  lineHeight: 1.5,
+                }}
+              >
+                {runQuery.error
+                  ? `The run couldn't be loaded. ${extractApiError(runQuery.error, "Please try again.")}`
+                  : "Runs are created by the payroll cron once approved shifts exist for the period."}
+              </div>
+              <div style={{ marginTop: 16 }}>
+                <Button
+                  variant="secondary"
+                  leading={<Icon name="refresh" size={14} />}
+                  onClick={() => void runQuery.refetch()}
+                >
+                  Try again
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </main>
+    );
+  }
 
   return (
     <>

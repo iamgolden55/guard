@@ -8,7 +8,19 @@
  *   paid     → payment confirmed (manually or via Xero webhook)
  *   rejected → manager refused approval; reissue required
  */
-export type PayrollStatus = "pending" | "approved" | "paid" | "rejected";
+// Must cover every value api.models.Invoice.STATUS_CHOICES can hold, because
+// /payroll/runs/{code}/officers/ returns `invoice.status` untouched for every
+// non-superseded invoice attached to the run. Auto-generated invoices are
+// created as 'draft' (models.py, default_status='draft'), and 'draft'/'sent'
+// were both missing here — STATUS_META[o.status] came back undefined and the
+// officers table threw on `meta.tone`.
+export type PayrollStatus =
+  | "draft"
+  | "pending"
+  | "sent"
+  | "approved"
+  | "paid"
+  | "rejected";
 export type ExportStatus =
   | "pending"
   | "processing"
@@ -736,7 +748,9 @@ export const STATUS_META: Record<
   PayrollStatus,
   { tone: PillTone; label: string; dot: string }
 > = {
+  draft: { tone: "neutral", label: "Draft", dot: "#8a8886" },
   pending: { tone: "warning", label: "Pending", dot: "#d97706" },
+  sent: { tone: "info", label: "Sent", dot: "#0b5c9b" },
   approved: { tone: "info", label: "Approved", dot: "#2563eb" },
   paid: { tone: "positive", label: "Paid", dot: "#0f9d58" },
   rejected: { tone: "danger", label: "Rejected", dot: "#cb2431" },

@@ -15,6 +15,55 @@ import { IncidentDrawer } from "./components/IncidentDrawer";
 import { ResolveIncidentModal } from "./components/ResolveIncidentModal";
 import type { IncidentReport } from "../../services/incidentService";
 
+function csvCell(value: string | number | boolean | null | undefined): string {
+  const v = value == null ? "" : String(value);
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+function incidentsToCsv(rows: IncidentReport[]): string {
+  const header = [
+    "ID",
+    "Reported at",
+    "Venue",
+    "Reported by",
+    "Severity",
+    "Description",
+    "Actions taken",
+    "Requires follow-up",
+    "Follow-up notes",
+    "Resolved",
+    "Resolved at",
+    "Resolved by",
+  ];
+  const body = rows.map((i) => [
+    i.id,
+    i.incident_time,
+    i.venue_name ?? "",
+    i.reported_by_name ?? "",
+    i.severity,
+    i.description,
+    i.actions_taken,
+    i.requires_followup ? "yes" : "no",
+    i.followup_notes,
+    i.resolved ? "yes" : "no",
+    i.resolved_at ?? "",
+    i.resolved_by_name ?? "",
+  ]);
+  return [header, ...body].map((r) => r.map(csvCell).join(",")).join("\n");
+}
+
+function downloadFile(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: `${mimeType};charset=utf-8;` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function isManager(role?: string, membershipRole?: string): boolean {
   const r = (role ?? "").toLowerCase();
   const m = (membershipRole ?? "").toLowerCase();
@@ -137,6 +186,22 @@ export default function IncidentsPage() {
         stats={data.stats}
         search={search}
         onSearchChange={setSearch}
+        exportDisabled={visible.length === 0}
+        onExport={() => {
+          if (visible.length === 0) {
+            setToast("Nothing to export — no incidents match.");
+            return;
+          }
+          const date = new Date().toISOString().slice(0, 10);
+          downloadFile(
+            `incidents-${view}-${date}.csv`,
+            incidentsToCsv(visible),
+            "text/csv",
+          );
+          setToast(
+            `Exported ${visible.length} incident${visible.length === 1 ? "" : "s"}.`,
+          );
+        }}
       />
 
       <IncidentsView

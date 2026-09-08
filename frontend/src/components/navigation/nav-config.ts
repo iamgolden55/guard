@@ -12,11 +12,8 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-// Mirrors NAV in project/dashboard.jsx:143-164. Paths added to map onto
-// the Router. Some items (Staff, Recruitment, Venues, Compliance,
-// Incidents, Integrations) point at routes that don't exist yet — they
-// land in Phase 8 + post-parity. They render in the sidebar and route
-// to a Coming Soon placeholder until then.
+// Sidebar navigation. Every path here resolves to a route in Router.tsx —
+// keep the two in step when adding a screen.
 export const NAV: NavGroup[] = [
   {
     group: "Overview",

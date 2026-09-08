@@ -8,6 +8,7 @@ import { Avatar } from "../../../design-system/primitives/Avatar";
 import { Button } from "../../../design-system/primitives/Button";
 import { Pill } from "../../../design-system/primitives/Pill";
 import { tokens } from "../../../design-system/tokens";
+import { extractApiError } from "../../../lib/apiError";
 import billingService from "../../../services/billingService";
 import {
   EXPORT_META,
@@ -43,6 +44,18 @@ export function OfficerDrawer({
   runCode,
 }: OfficerDrawerProps) {
   const { palette } = useAccent();
+  // Payslip PDF / Export invoice used to fire their promises and drop them:
+  // no spinner, no confirmation, and a rejected request surfaced only as an
+  // unhandled rejection in the console.
+  const [docAction, setDocAction] = useState<
+    { kind: "pdf" | "xero"; state: "busy" | "done" | "error"; message: string } | null
+  >(null);
+
+  useEffect(() => {
+    if (!docAction || docAction.state === "busy") return;
+    const t = window.setTimeout(() => setDocAction(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [docAction]);
 
   useEffect(() => {
     if (!officer) return;
@@ -66,8 +79,14 @@ export function OfficerDrawer({
   const bundle = USE_MOCKS
     ? (ITEMS_BY_OFFICER[o.id] ?? { items: [], adjustments: [] })
     : (bundleQuery.data ?? { items: [], adjustments: [] });
-  const meta = STATUS_META[o.status];
-  const expMeta = o.exportStatus ? EXPORT_META[o.exportStatus] : null;
+  // Fall back rather than throw if the API ever grows a status the UI
+  // hasn't been taught yet.
+  const meta = STATUS_META[o.status] ?? {
+    tone: "neutral" as const,
+    label: o.status,
+    dot: tokens.color.ink500,
+  };
+  const expMeta = o.exportStatus ? (EXPORT_META[o.exportStatus] ?? null) : null;
   const siaWarn = siaTone(o.sia);
 
   const breakdown: BreakdownRow[] = [
@@ -594,30 +613,87 @@ export function OfficerDrawer({
             </Button>
           )}
           <div style={{ flex: 1 }} />
-          {/* P6 (M1 partial): wire Payslip PDF + Export invoice. Disabled when
-              we don't have a real invoiceId to act on. */}
+          {docAction && (
+            <output
+              aria-live="polite"
+              style={{
+                display: "block",
+                fontFamily: tokens.font.body,
+                fontSize: 12,
+                fontWeight: 600,
+                color:
+                  docAction.state === "error"
+                    ? tokens.color.dangerInk
+                    : tokens.color.ink600,
+                maxWidth: 260,
+                textAlign: "right",
+              }}
+            >
+              {docAction.message}
+            </output>
+          )}
           <Button
             variant="secondary"
             size="md"
             leading={<Icon name="file" size={14} />}
-            onClick={() => {
-              if (o.invoiceId) billingService.downloadPdf(o.invoiceId);
+            onClick={async () => {
+              if (!o.invoiceId) return;
+              setDocAction({ kind: "pdf", state: "busy", message: "Preparing payslip…" });
+              try {
+                const filename = await billingService.downloadPdf(o.invoiceId);
+                setDocAction({ kind: "pdf", state: "done", message: `Downloaded ${filename}` });
+              } catch (err) {
+                setDocAction({
+                  kind: "pdf",
+                  state: "error",
+                  message: extractApiError(err, "Couldn't download the payslip."),
+                });
+              }
             }}
-            disabled={USE_MOCKS || !o.invoiceId}
+            disabled={USE_MOCKS || !o.invoiceId || docAction?.state === "busy"}
+            title={
+              o.invoiceId
+                ? undefined
+                : "No invoice generated for this officer yet"
+            }
           >
-            Payslip PDF
+            {docAction?.kind === "pdf" && docAction.state === "busy"
+              ? "Preparing…"
+              : "Payslip PDF"}
           </Button>
           <Button
             variant="primary"
             accent={palette}
             size="md"
             leading={<Icon name="external" size={14} />}
-            onClick={() => {
-              if (o.invoiceId) billingService.exportToXero(o.invoiceId);
+            onClick={async () => {
+              if (!o.invoiceId) return;
+              setDocAction({ kind: "xero", state: "busy", message: "Queuing export…" });
+              try {
+                await billingService.exportToXero(o.invoiceId);
+                setDocAction({
+                  kind: "xero",
+                  state: "done",
+                  message: "Queued for Xero — the pill updates when the sync completes.",
+                });
+              } catch (err) {
+                setDocAction({
+                  kind: "xero",
+                  state: "error",
+                  message: extractApiError(err, "Couldn't queue the export."),
+                });
+              }
             }}
-            disabled={USE_MOCKS || !o.invoiceId}
+            disabled={USE_MOCKS || !o.invoiceId || docAction?.state === "busy"}
+            title={
+              o.invoiceId
+                ? undefined
+                : "No invoice generated for this officer yet"
+            }
           >
-            Export invoice
+            {docAction?.kind === "xero" && docAction.state === "busy"
+              ? "Queuing…"
+              : "Export invoice"}
           </Button>
         </div>
       </div>

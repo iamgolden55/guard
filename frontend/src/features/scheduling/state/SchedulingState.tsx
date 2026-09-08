@@ -27,8 +27,10 @@ import type {
   SchedulingVenue,
   SchedulingWeek,
   Shift,
+  Unavailability,
   Violation,
 } from "../data/mocks";
+import { unavailabilityFor } from "../data/unavailability";
 
 // ============================================================
 // Reducer (local optimistic state)
@@ -133,9 +135,16 @@ interface SchedulingContextValue {
   shifts: Shift[];
   officers: SchedulingOfficer[];
   venues: SchedulingVenue[];
+  /** Approved leave + contractor unavailability overlapping the visible range. */
+  unavailability: Unavailability[];
   week: SchedulingWeek;
   monthGrid: MonthGrid;
   officerById: (id: string | null) => SchedulingOfficer | undefined;
+  /** Unavailability for one officer on one day column, if any. */
+  unavailabilityOn: (
+    officerId: string,
+    day: number,
+  ) => Unavailability | undefined;
   venueById: (id: string) => SchedulingVenue | undefined;
   assignOfficer: (shiftId: string, officerId: string) => void;
   unassign: (shiftId: string) => void;
@@ -162,6 +171,7 @@ interface SchedulingProviderProps {
   initialShifts: Shift[];
   officers: SchedulingOfficer[];
   venues: SchedulingVenue[];
+  unavailability: Unavailability[];
   week: SchedulingWeek;
   monthGrid: MonthGrid;
   /** Range used as anchor when converting (day, decimal-hour) → ISO datetimes. */
@@ -250,6 +260,7 @@ export function SchedulingProvider({
   initialShifts,
   officers,
   venues,
+  unavailability,
   week,
   monthGrid,
   rangeAnchorIso,
@@ -712,15 +723,23 @@ export function SchedulingProvider({
     [venues],
   );
 
+  const unavailabilityOn = useCallback(
+    (officerId: string, day: number) =>
+      unavailabilityFor(unavailability, officerId, day),
+    [unavailability],
+  );
+
   const value = useMemo<SchedulingContextValue>(
     () => ({
       shifts,
       officers,
       venues,
+      unavailability,
       week,
       monthGrid,
       officerById,
       venueById,
+      unavailabilityOn,
       assignOfficer,
       unassign,
       moveShift,
@@ -740,10 +759,12 @@ export function SchedulingProvider({
       shifts,
       officers,
       venues,
+      unavailability,
       week,
       monthGrid,
       officerById,
       venueById,
+      unavailabilityOn,
       assignOfficer,
       unassign,
       moveShift,

@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { Card } from "../../design-system/primitives/Card";
+import { Toast } from "../../design-system/primitives/Toast";
+import { extractApiError } from "../../lib/apiError";
 import { tokens } from "../../design-system/tokens";
 import { InviteStaffModal } from "./components/InviteStaffModal";
 import { PendingApprovalBanner } from "./components/PendingApprovalBanner";
@@ -227,9 +229,44 @@ export default function StaffPage() {
     setSearchParams(next, { replace: true });
   }, [focusId, activeRows, pendingRows, searchParams, setSearchParams]);
 
+  // Every mutation on this page was `await …mutateAsync(...)` with no catch:
+  // the optimistic row change rolled back in onError and the operator saw
+  // nothing at all — not on success, not on failure, and a rejected promise
+  // escaped as an unhandled rejection. One toast covers both directions.
+  const [toast, setToast] = useState<{
+    text: string;
+    tone: "neutral" | "danger";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [toast]);
+
+  /** Runs a mutation, reporting the outcome either way. */
+  const withFeedback = async (
+    run: () => Promise<unknown>,
+    success: string,
+    failure: string,
+  ): Promise<boolean> => {
+    try {
+      await run();
+      setToast({ text: success, tone: "neutral" });
+      return true;
+    } catch (err) {
+      setToast({ text: extractApiError(err, failure), tone: "danger" });
+      return false;
+    }
+  };
+
   const handleApprove = async (row: StaffRow) => {
-    await data.approveStaff.mutateAsync(row.id);
-    if (selectedRow?.id === row.id) setSelectedRow(null);
+    const ok = await withFeedback(
+      () => data.approveStaff.mutateAsync(row.id),
+      `${row.fullName} approved.`,
+      `Couldn't approve ${row.fullName}.`,
+    );
+    if (ok && selectedRow?.id === row.id) setSelectedRow(null);
   };
 
   const handleResendInvite = async (row: StaffRow) => {
@@ -252,10 +289,16 @@ export default function StaffPage() {
   };
 
   const handleDelete = async (row: StaffRow) => {
-    await data.deleteStaff.mutateAsync(row.id);
-    if (selectedRow?.id === row.id) setSelectedRow(null);
+    const ok = await withFeedback(
+      () => data.deleteStaff.mutateAsync(row.id),
+      `${row.fullName} removed from the team.`,
+      `Couldn't remove ${row.fullName}.`,
+    );
+    if (ok && selectedRow?.id === row.id) setSelectedRow(null);
   };
 
+  // ProfileTab renders its own inline notice from this result, so it stays
+  // pass-through rather than routing through the page toast.
   const handleUnlockAccount = async (row: StaffRow) => {
     return data.unlockAccount.mutateAsync(row.id);
   };
@@ -265,18 +308,28 @@ export default function StaffPage() {
     staffProfileId: number | null,
     employmentType: string | null,
   ) => {
-    await data.updateEmploymentType.mutateAsync({
-      userId,
-      staffProfileId,
-      employmentType,
-    });
+    await withFeedback(
+      () =>
+        data.updateEmploymentType.mutateAsync({
+          userId,
+          staffProfileId,
+          employmentType,
+        }),
+      "Employment type updated.",
+      "Couldn't update the employment type.",
+    );
   };
 
   const handleUpdatePayFrequency = async (
     staffProfileId: number,
     payFrequency: "weekly" | "monthly",
   ) => {
-    await data.updatePayFrequency.mutateAsync({ staffProfileId, payFrequency });
+    await withFeedback(
+      () =>
+        data.updatePayFrequency.mutateAsync({ staffProfileId, payFrequency }),
+      `Pay frequency set to ${payFrequency}.`,
+      "Couldn't update the pay frequency.",
+    );
   };
 
   const handleReviewPending = (profile: PendingStaffProfile) => {
@@ -303,10 +356,15 @@ export default function StaffPage() {
       country: string;
     }>,
   ) => {
-    await data.updateStaffAddress.mutateAsync({
-      staffProfileId,
-      data: addressPatch,
-    });
+    await withFeedback(
+      () =>
+        data.updateStaffAddress.mutateAsync({
+          staffProfileId,
+          data: addressPatch,
+        }),
+      "Address saved.",
+      "Couldn't save the address.",
+    );
   };
 
   const handleAddLicense = async (
@@ -318,7 +376,11 @@ export default function StaffPage() {
       expiryDate: string;
     },
   ) => {
-    await data.addStaffLicense.mutateAsync({ staffProfileId, data: payload });
+    await withFeedback(
+      () => data.addStaffLicense.mutateAsync({ staffProfileId, data: payload }),
+      "SIA licence added.",
+      "Couldn't add the SIA licence.",
+    );
   };
 
   const handleUpdateLicense = async (
@@ -326,18 +388,27 @@ export default function StaffPage() {
     staffProfileId: number,
     payload: { issue_date: string; expiry_date: string; license_type: string },
   ) => {
-    await data.updateStaffLicense.mutateAsync({
-      licenseId,
-      staffProfileId,
-      data: payload,
-    });
+    await withFeedback(
+      () =>
+        data.updateStaffLicense.mutateAsync({
+          licenseId,
+          staffProfileId,
+          data: payload,
+        }),
+      "SIA licence updated.",
+      "Couldn't update the SIA licence.",
+    );
   };
 
   const handleDeleteLicense = async (
     licenseId: number,
     staffProfileId: number,
   ) => {
-    await data.deleteStaffLicense.mutateAsync({ licenseId, staffProfileId });
+    await withFeedback(
+      () => data.deleteStaffLicense.mutateAsync({ licenseId, staffProfileId }),
+      "SIA licence deleted.",
+      "Couldn't delete the SIA licence.",
+    );
   };
 
   // ── Permission gate (admin-only for v1) ───────────────────────────────────
@@ -536,10 +607,18 @@ export default function StaffPage() {
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         onSubmit={(payload) =>
-          data.inviteStaff.mutateAsync(payload).then(() => undefined)
+          data.inviteStaff.mutateAsync(payload).then((created) => {
+            setToast({
+              text: `Invitation sent to ${payload.email}.`,
+              tone: "neutral",
+            });
+            return created;
+          }).then(() => undefined)
         }
         isSubmitting={data.inviteStaff.isPending}
       />
+
+      {toast && <Toast message={toast.text} tone={toast.tone} />}
     </>
   );
 }
