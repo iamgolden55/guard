@@ -59,6 +59,17 @@ services:
         sync: false
       - key: FINANCE_ENCRYPTION_KEY
         sync: false
+      # Private Cloudflare R2 bucket for SIA licence scans. Set all four or
+      # none: partly set fails the build, and on Render with none set uploads
+      # are refused, because this service has no persistent disk.
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_ENDPOINT_URL
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
 
   # Celery worker for background tasks
   - type: worker
@@ -96,6 +107,16 @@ services:
       - key: BANK_ENCRYPTION_KEY
         sync: false
       - key: FINANCE_ENCRYPTION_KEY
+        sync: false
+      # Same R2 bucket as the web service: the worker deletes licence scans
+      # when an account is erased. Set all four or none.
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_ENDPOINT_URL
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
         sync: false
 
   # Celery beat for scheduled tasks

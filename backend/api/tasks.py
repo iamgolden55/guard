@@ -17,7 +17,6 @@ from celery import shared_task, current_task
 from celery.exceptions import Retry
 from django.conf import settings
 from django.core.mail import send_mail
-from django.core.files.storage import default_storage
 from django.utils import timezone
 from django.db import transaction
 from django.template.loader import render_to_string
@@ -432,9 +431,12 @@ def cleanup_old_report_files() -> Dict[str, int]:
 
     for job in old_jobs:
         try:
-            # Delete file from storage
-            if job.file_path and default_storage.exists(job.file_path):
-                default_storage.delete(job.file_path)
+            # Report files are written with open() to this machine's disk and
+            # `file_path` is absolute, so remove them the same way. Going
+            # through default_storage stopped working once that became an R2
+            # bucket: it would look for an object keyed on a local path.
+            if job.file_path and os.path.exists(job.file_path):
+                os.remove(job.file_path)
                 deleted_files += 1
 
             # Clear file path from job record (keep job for history)

@@ -68,10 +68,12 @@ if settings.DEBUG:
 
 # Local development only. `django.conf.urls.static.static()` returns [] when
 # DEBUG is False, so despite what this line used to claim it has never served
-# anything in production — where media is either an ephemeral container
-# filesystem or S3, depending on whether AWS_STORAGE_BUCKET_NAME is set.
+# anything in production — where media is a private Cloudflare R2 bucket when
+# the R2_* variables are set (see STORAGES in core/settings.py), and otherwise
+# a container filesystem that is wiped on every deploy.
 #
 # SIA licence documents do not rely on this in any environment: they are served
-# by the authenticated `sia-license-documents/` view, which checks that the
-# requester owns the document or manages the officer it belongs to.
+# by `sia-licenses/<id>/document/` and the older `sia-license-documents/` view,
+# both of which check that the requester owns the document or manages the
+# officer it belongs to.
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
