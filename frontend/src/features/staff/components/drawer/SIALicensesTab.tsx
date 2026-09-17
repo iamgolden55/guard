@@ -1,11 +1,21 @@
-import { useEffect, useState } from "react";
+import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { Button } from "../../../../design-system/primitives/Button";
 import { Input } from "../../../../design-system/primitives/Input";
 import { Modal } from "../../../../design-system/primitives/Modal";
-import { Pill, type PillTone } from "../../../../design-system/primitives/Pill";
+import { Pill } from "../../../../design-system/primitives/Pill";
 import { Icon } from "../../../../design-system/Icon";
 import { tokens } from "../../../../design-system/tokens";
+import { extractApiError } from "../../../../lib/apiError";
+import {
+  CARD_ACCEPT,
+  formatBytes,
+  isValidLicenceNumber,
+  normaliseLicenceNumber,
+  siaStatusFor,
+  validateCardFile,
+} from "../../data/siaLicences";
 import type { SIALicenseRecord } from "../../hooks/useStaffData";
+import { SIALicenceDocumentModal } from "./SIALicenceDocumentModal";
 
 const LICENSE_TYPE_LABELS: Record<string, string> = {
   ds: "Door Supervision",
@@ -24,6 +34,8 @@ interface FormState {
   licenseType: string;
   issueDate: string;
   expiryDate: string;
+  /** Photo or PDF of the card. Add only — a card is replaced from its row. */
+  file: File | null;
 }
 
 const EMPTY_FORM: FormState = {
@@ -31,6 +43,7 @@ const EMPTY_FORM: FormState = {
   licenseType: "",
   issueDate: "",
   expiryDate: "",
+  file: null,
 };
 
 function formatDate(dateString: string) {
@@ -43,17 +56,6 @@ function formatDate(dateString: string) {
   });
 }
 
-function statusFor(expiry: string): { tone: PillTone; label: string } {
-  const now = new Date();
-  const exp = new Date(expiry);
-  const ninety = new Date();
-  ninety.setDate(now.getDate() + 90);
-  if (Number.isNaN(exp.getTime())) return { tone: "neutral", label: "Unknown" };
-  if (exp < now) return { tone: "danger", label: "Expired" };
-  if (exp < ninety) return { tone: "warning", label: "Expiring soon" };
-  return { tone: "positive", label: "Valid" };
-}
-
 const labelStyle = {
   fontFamily: tokens.font.body,
   fontWeight: 600,
@@ -63,14 +65,23 @@ const labelStyle = {
   display: "block",
 };
 
+// Mirrors SIALicenseSerializer, so the operator hears about a mistake before
+// the round-trip rather than after it.
 function validate(form: FormState, isEdit: boolean): string | null {
-  if (!isEdit && !form.licenseNumber.trim()) return "Licence number is required.";
+  if (!isEdit) {
+    if (!form.licenseNumber.trim()) return "Licence number is required.";
+    if (!isValidLicenceNumber(form.licenseNumber)) {
+      return "An SIA licence number is 16 digits. Spaces are fine.";
+    }
+  }
   if (!form.licenseType) return "Licence type is required.";
   if (!form.issueDate) return "Issue date is required.";
   if (!form.expiryDate) return "Expiry date is required.";
-  if (new Date(form.expiryDate) < new Date(form.issueDate)) {
-    return "Expiry date must be on or after the issue date.";
+  // Both are YYYY-MM-DD from <input type="date">, so they compare as strings.
+  if (form.expiryDate <= form.issueDate) {
+    return "Expiry date must be after the issue date.";
   }
+  if (!isEdit && form.file) return validateCardFile(form.file);
   return null;
 }
 
@@ -89,6 +100,13 @@ export interface SIALicensesTabProps {
     data: { issue_date: string; expiry_date: string; license_type: string },
   ) => Promise<void>;
   onDelete?: (licenseId: number, staffProfileId: number) => Promise<void>;
+  onUploadDocument?: (
+    licenseId: number,
+    staffProfileId: number,
+    file: File,
+  ) => Promise<boolean>;
+  onVerify?: (licenseId: number, staffProfileId: number) => Promise<void>;
+  onFetchDocument?: (licenseId: number) => Promise<Blob>;
   isMutating: boolean;
 }
 
@@ -100,12 +118,26 @@ export function SIALicensesTab({
   onAdd,
   onUpdate,
   onDelete,
+  onUploadDocument,
+  onVerify,
+  onFetchDocument,
   isMutating,
 }: SIALicensesTabProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<SIALicenseRecord | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<SIALicenseRecord | null>(null);
+  const [rowError, setRowError] = useState<{ id: number; message: string } | null>(
+    null,
+  );
+  const [uploadTargetId, setUploadTargetId] = useState<number | null>(null);
+  const [busyRow, setBusyRow] = useState<{
+    id: number;
+    action: "upload" | "verify";
+  } | null>(null);
+  const formFileRef = useRef<HTMLInputElement>(null);
+  const rowFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (modalOpen) {
@@ -116,6 +148,7 @@ export function SIALicensesTab({
               licenseType: editing.license_type,
               issueDate: editing.issue_date?.slice(0, 10) ?? "",
               expiryDate: editing.expiry_date?.slice(0, 10) ?? "",
+              file: null,
             }
           : EMPTY_FORM,
       );
@@ -145,11 +178,69 @@ export function SIALicensesTab({
         });
       } else {
         if (!onAdd) return;
-        await onAdd(staffProfileId, form);
+        await onAdd(staffProfileId, {
+          ...form,
+          licenseNumber: normaliseLicenceNumber(form.licenseNumber),
+        });
       }
       closeModal();
-    } catch {
-      setError("Couldn't save licence. Try again.");
+    } catch (err) {
+      // The modal stays open with everything the operator typed.
+      setError(extractApiError(err, "Couldn't save licence. Try again."));
+    }
+  };
+
+  const handleFormFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = "";
+    if (!file) return;
+    const problem = validateCardFile(file);
+    setError(problem);
+    if (!problem) setForm((p) => ({ ...p, file }));
+  };
+
+  // One hidden input serves every row; the target is remembered on click.
+  const startRowUpload = (licenseId: number) => {
+    setRowError(null);
+    setUploadTargetId(licenseId);
+    rowFileRef.current?.click();
+  };
+
+  const handleRowFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    // Cleared so picking the same file again still fires onChange.
+    e.target.value = "";
+    const targetId = uploadTargetId;
+    setUploadTargetId(null);
+    if (!file || targetId == null || !onUploadDocument || !staffProfileId) return;
+    const problem = validateCardFile(file);
+    if (problem) {
+      setRowError({ id: targetId, message: problem });
+      return;
+    }
+    setBusyRow({ id: targetId, action: "upload" });
+    try {
+      await onUploadDocument(targetId, staffProfileId, file);
+    } finally {
+      setBusyRow(null);
+    }
+  };
+
+  const handleVerify = async (license: SIALicenseRecord) => {
+    if (!onVerify || !staffProfileId) return;
+    if (
+      !license.has_document &&
+      !window.confirm(
+        `No card is on file for licence ${license.license_number}. Verify it against the SIA register anyway?`,
+      )
+    ) {
+      return;
+    }
+    setBusyRow({ id: license.id, action: "verify" });
+    try {
+      await onVerify(license.id, staffProfileId);
+    } finally {
+      setBusyRow(null);
     }
   };
 
@@ -182,6 +273,8 @@ export function SIALicensesTab({
   }
 
   const canEdit = !!onAdd && !!onUpdate && !!onDelete && staffProfileId != null;
+  const canUpload = !!onUploadDocument && staffProfileId != null;
+  const canVerify = !!onVerify && staffProfileId != null;
 
   return (
     <>
@@ -233,7 +326,8 @@ export function SIALicensesTab({
           </div>
         ) : (
           licenses.map((lic) => {
-            const status = statusFor(lic.expiry_date);
+            const status = siaStatusFor(lic);
+            const busy = busyRow?.id === lic.id ? busyRow.action : null;
             const typeLabel =
               LICENSE_TYPE_LABELS[lic.license_type] ?? lic.license_type;
             return (
@@ -269,6 +363,17 @@ export function SIALicensesTab({
                     <Pill tone={status.tone} dot>
                       {status.label}
                     </Pill>
+                    {lic.status === "valid" && lic.verified_at && (
+                      <span
+                        style={{
+                          fontFamily: tokens.font.body,
+                          fontSize: 11.5,
+                          color: tokens.color.ink500,
+                        }}
+                      >
+                        Verified {formatDate(lic.verified_at)}
+                      </span>
+                    )}
                   </div>
                   {canEdit && (
                     <div style={{ display: "flex", gap: 6 }}>
@@ -352,11 +457,124 @@ export function SIALicensesTab({
                     </div>
                   </div>
                 </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    marginTop: 12,
+                    paddingTop: 10,
+                    borderTop: `1px solid ${tokens.color.ink200}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: 6,
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontFamily: tokens.font.body,
+                        fontSize: 12,
+                        color: lic.has_document
+                          ? tokens.color.ink700
+                          : tokens.color.ink500,
+                        marginRight: 4,
+                      }}
+                    >
+                      <Icon name="file" size={14} />
+                      {lic.has_document ? "Card on file" : "No card on file"}
+                    </span>
+                    {lic.has_document && onFetchDocument && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        leading={<Icon name="eye" size={14} />}
+                        onClick={() => setViewing(lic)}
+                      >
+                        View card
+                      </Button>
+                    )}
+                    {canUpload && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => startRowUpload(lic.id)}
+                        disabled={isMutating}
+                      >
+                        {busy === "upload"
+                          ? "Uploading…"
+                          : lic.has_document
+                            ? "Replace card"
+                            : "Upload card"}
+                      </Button>
+                    )}
+                  </div>
+                  {canVerify && status.canVerify && (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      leading={<Icon name="check" size={14} />}
+                      onClick={() => void handleVerify(lic)}
+                      disabled={isMutating}
+                    >
+                      {busy === "verify" ? "Verifying…" : "Verify"}
+                    </Button>
+                  )}
+                </div>
+
+                {rowError?.id === lic.id && (
+                  <div
+                    role="alert"
+                    style={{
+                      marginTop: 8,
+                      fontFamily: tokens.font.body,
+                      fontSize: 12,
+                      color: tokens.color.dangerInk,
+                    }}
+                  >
+                    {rowError.message}
+                  </div>
+                )}
               </div>
             );
           })
         )}
       </div>
+
+      <input
+        ref={rowFileRef}
+        type="file"
+        accept={CARD_ACCEPT}
+        style={{ display: "none" }}
+        onChange={(e) => void handleRowFile(e)}
+      />
+
+      {onFetchDocument && (
+        <SIALicenceDocumentModal
+          licence={viewing}
+          staffName={staffName}
+          onClose={() => setViewing(null)}
+          onFetch={onFetchDocument}
+          onUpload={
+            canUpload
+              ? (licence) => {
+                  setViewing(null);
+                  startRowUpload(licence.id);
+                }
+              : undefined
+          }
+        />
+      )}
 
       <Modal
         open={modalOpen}
@@ -388,6 +606,8 @@ export function SIALicensesTab({
             <span style={labelStyle}>Licence number</span>
             <Input
               type="text"
+              inputMode="numeric"
+              placeholder="1234 5678 9012 3456"
               value={form.licenseNumber}
               onChange={(e) =>
                 setForm((p) => ({ ...p, licenseNumber: e.target.value }))
@@ -459,8 +679,71 @@ export function SIALicensesTab({
             </div>
           </div>
 
+          {!editing && (
+            <div>
+              <span style={labelStyle}>
+                Licence card{" "}
+                <span style={{ fontWeight: 400, color: tokens.color.ink500 }}>
+                  (optional)
+                </span>
+              </span>
+              <input
+                ref={formFileRef}
+                type="file"
+                accept={CARD_ACCEPT}
+                style={{ display: "none" }}
+                onChange={handleFormFile}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  minWidth: 0,
+                }}
+              >
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  leading={<Icon name="file" size={14} />}
+                  onClick={() => formFileRef.current?.click()}
+                  disabled={isMutating}
+                >
+                  {form.file ? "Change file" : "Choose file"}
+                </Button>
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontFamily: tokens.font.body,
+                    fontSize: 12.5,
+                    color: form.file ? tokens.color.ink800 : tokens.color.ink500,
+                  }}
+                >
+                  {form.file
+                    ? `${form.file.name} · ${formatBytes(form.file.size)}`
+                    : "Photo or PDF of the card, up to 10 MB"}
+                </span>
+                {form.file && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setForm((p) => ({ ...p, file: null }))}
+                    disabled={isMutating}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
           {error && (
             <div
+              role="alert"
               style={{
                 fontSize: 12,
                 color: tokens.color.dangerInk,

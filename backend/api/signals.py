@@ -8,7 +8,7 @@ from django.dispatch import receiver
 from django.db import transaction
 from datetime import timedelta
 from django.utils import timezone
-from .models import SecurityCompany, Shift, OpenShiftRequest, ShiftExchange, AuditLog, ShiftStatusHistory, Notification
+from .models import SecurityCompany, Shift, OpenShiftRequest, ShiftExchange, AuditLog, ShiftStatusHistory, Notification, SIALicense
 from .services import push_notification_service
 from .services.shift_notifications import notify_shift_assigned
 import logging
@@ -1253,3 +1253,20 @@ def audit_shift_deletion(sender, instance, **kwargs):
         )
     except Exception as e:
         logger.warning(f"Failed to audit deletion of shift {instance.pk}: {e}")
+
+
+@receiver(pre_delete, sender=SIALicense)
+def delete_sia_licence_document(sender, instance, **kwargs):
+    """Remove a licence's card from storage when the licence goes.
+
+    One receiver covers every way a licence is deleted: the API, the Django
+    admin, and the cascade from a StaffProfile when an account is erased
+    (`hard_delete_expired_accounts`, on the worker). It runs pre-delete because
+    the key is only trusted once checked against the officer, who is still
+    reachable here; the file itself goes only once the delete commits.
+    """
+    from .utils import sia_documents
+
+    key = sia_documents.key_for_licence(instance)
+    if key:
+        transaction.on_commit(lambda: sia_documents.delete_quietly(key))

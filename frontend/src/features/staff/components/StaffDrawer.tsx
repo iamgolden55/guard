@@ -22,6 +22,7 @@ interface SIAFormPayload {
   licenseType: string;
   issueDate: string;
   expiryDate: string;
+  file: File | null;
 }
 
 export type DrawerTab = "profile" | "sia" | "address" | "activity";
@@ -67,6 +68,13 @@ export interface StaffDrawerProps {
     data: { issue_date: string; expiry_date: string; license_type: string },
   ) => Promise<void>;
   onDeleteLicense?: (licenseId: number, staffProfileId: number) => Promise<void>;
+  onUploadLicenseDocument?: (
+    licenseId: number,
+    staffProfileId: number,
+    file: File,
+  ) => Promise<boolean>;
+  onVerifyLicense?: (licenseId: number, staffProfileId: number) => Promise<void>;
+  onFetchLicenseDocument?: (licenseId: number) => Promise<Blob>;
   isMutatingLicense: boolean;
   onApprove?: (row: StaffRow) => Promise<void>;
   onDelete?: (row: StaffRow) => Promise<void>;
@@ -94,6 +102,9 @@ export function StaffDrawer({
   onAddLicense,
   onUpdateLicense,
   onDeleteLicense,
+  onUploadLicenseDocument,
+  onVerifyLicense,
+  onFetchLicenseDocument,
   isMutatingLicense,
   onApprove,
   onDelete,
@@ -293,6 +304,9 @@ export function StaffDrawer({
               onAdd={onAddLicense}
               onUpdate={onUpdateLicense}
               onDelete={onDeleteLicense}
+              onUploadDocument={onUploadLicenseDocument}
+              onVerify={onVerifyLicense}
+              onFetchDocument={onFetchLicenseDocument}
               isMutating={isMutatingLicense}
             />
           )}

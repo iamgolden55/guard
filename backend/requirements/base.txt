@@ -27,6 +27,13 @@ django-environ==0.12.0
 django-model-utils==5.0.0
 django-redis==5.4.0
 
+# Document storage — private Cloudflare R2 bucket (S3 API) when R2_* is set
+django-storages[s3]==1.14.6
+boto3==1.43.96
+botocore==1.43.96
+s3transfer==0.19.2
+jmespath==1.1.0
+
 # Celery for async tasks
 celery==5.4.0
 django-celery-beat==2.8.1

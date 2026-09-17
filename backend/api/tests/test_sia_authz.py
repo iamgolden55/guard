@@ -155,6 +155,53 @@ class SIALicenceAuthzTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("license_number", response.data)
 
+    def test_a_licence_number_typed_as_printed_on_the_card_is_accepted(self):
+        self.client.force_authenticate(user=self.manager)
+
+        for typed in ("1234 5678 9012 3456", "1234-5678-9012-3456"):
+            SIALicense.objects.all().delete()
+            response = self.client.post("/api/v1/sia-licenses/", {
+                "staff_profile": self.profile.id,
+                "license_number": typed,
+                "license_type": "ds",
+                "issue_date": str(date.today()),
+                "expiry_date": str(date.today() + timedelta(days=365)),
+            }, format="json")
+
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+            self.assertEqual(
+                SIALicense.objects.get(id=response.data["id"]).license_number,
+                VALID_SIA_NUMBER,
+            )
+
+    def test_a_duplicate_number_in_a_different_format_is_a_400_not_a_500(self):
+        self._licence()
+        self.client.force_authenticate(user=self.manager)
+
+        response = self.client.post("/api/v1/sia-licenses/", {
+            "staff_profile": self.profile.id,
+            "license_number": "1234 5678 9012 3456",
+            "license_type": "ds",
+            "issue_date": str(date.today()),
+            "expiry_date": str(date.today() + timedelta(days=365)),
+        }, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("license_number", response.data)
+
+    def test_a_licence_cannot_be_moved_to_another_staff_member(self):
+        licence = self._licence()
+        other = self._profile(self._user("sia_other_staff", "staff"))
+        self.client.force_authenticate(user=self.manager)
+
+        response = self.client.patch(f"/api/v1/sia-licenses/{licence.id}/", {
+            "staff_profile": other.id,
+        }, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        licence.refresh_from_db()
+        self.assertEqual(licence.staff_profile_id, self.profile.id)
+
     def test_approval_flips_eligibility(self):
         """Regression guard — the approver path must still work end to end."""
         self.client.force_authenticate(user=self.staff)

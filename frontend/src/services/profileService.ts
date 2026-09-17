@@ -2,6 +2,19 @@ import api from './api';
 import type { ProfileUpdateRequest, SIALicenseUpdateRequest, StaffProfile, SIALicense } from '../types';
 import { logger } from '../lib/logger';
 
+/** A licence card can be up to 10 MB; the default 15s timeout is too short on a slow connection. */
+const DOCUMENT_TIMEOUT_MS = 60_000;
+
+export interface NewSIALicense {
+  licenseNumber: string;
+  licenseType: string;
+  issueDate: string; // YYYY-MM-DD
+  expiryDate: string; // YYYY-MM-DD
+  level?: string;
+  /** JPEG, PNG or PDF of the physical card. */
+  file?: File | null;
+}
+
 class ProfileService {
   /**
    * Get the current user's profile
@@ -61,21 +74,97 @@ class ProfileService {
   }
 
   /**
-   * Add a new SIA license
+   * Add a new SIA licence, optionally with a photo or PDF of the card.
+   *
+   * With a card this is one multipart request, so the licence and its document
+   * are saved together or not at all — a separate upload that failed after the
+   * licence was created left a record the operator could not re-submit without
+   * tripping the duplicate-number check. `status` and `document_url` are not
+   * sent: the server sets both.
    */
-  async addSIALicense(staffProfileId: number, licenseData: any) {
-    // Prepare payload with correct snake_case field names
-    const payload = {
-      staff_profile: staffProfileId,
+  async addSIALicense(staffProfileId: number, licenseData: NewSIALicense): Promise<unknown> {
+    const fields = {
+      staff_profile: String(staffProfileId),
       license_number: licenseData.licenseNumber,
       license_type: licenseData.licenseType,
       issue_date: licenseData.issueDate,
       expiry_date: licenseData.expiryDate,
-      status: licenseData.status || 'pending',
-      document_url: licenseData.document_url,
       level: licenseData.level || 'qualified',
     };
-    return api.post('/api/v1/sia-licenses/', payload);
+
+    if (licenseData.file) {
+      const formData = new FormData();
+      for (const [key, value] of Object.entries(fields)) {
+        formData.append(key, value);
+      }
+      formData.append('file', licenseData.file);
+      const response = await api.post('/api/v1/sia-licenses/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: DOCUMENT_TIMEOUT_MS,
+      });
+      return response.data;
+    }
+
+    const response = await api.post('/api/v1/sia-licenses/', {
+      ...fields,
+      staff_profile: staffProfileId,
+    });
+    return response.data;
+  }
+
+  /**
+   * Attach or replace the card on an existing licence.
+   */
+  async uploadSIALicenseDocument(licenseId: number, file: File): Promise<unknown> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post(
+      `/api/v1/sia-licenses/${licenseId}/document/`,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: DOCUMENT_TIMEOUT_MS,
+      },
+    );
+    return response.data;
+  }
+
+  /**
+   * Fetch a licence card as a blob.
+   *
+   * An identity document behind authentication: a plain `<img src>` or link
+   * would carry no Bearer header, and Safari drops the cross-site refresh
+   * cookie, so it has to come through this client.
+   */
+  async fetchSIALicenseDocument(licenseId: number): Promise<Blob> {
+    try {
+      const response = await api.get<Blob>(
+        `/api/v1/sia-licenses/${licenseId}/document/`,
+        { responseType: 'blob', timeout: DOCUMENT_TIMEOUT_MS },
+      );
+      return response.data;
+    } catch (err) {
+      // With responseType 'blob' the error body is a Blob as well, which would
+      // hide the server's {detail, code} from extractApiError.
+      const response = (err as { response?: { data?: unknown } }).response;
+      if (response?.data instanceof Blob && response.data.type.includes('json')) {
+        try {
+          response.data = JSON.parse(await response.data.text());
+        } catch {
+          // Not JSON after all; callers fall back to their own message.
+        }
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Verify a licence. The server derives the resulting status: a licence whose
+   * expiry date has passed comes back `expired`, not `valid`.
+   */
+  async approveSIALicense(licenseId: number): Promise<unknown> {
+    const response = await api.post(`/api/v1/sia-licenses/${licenseId}/approve/`);
+    return response.data;
   }
 
   /**

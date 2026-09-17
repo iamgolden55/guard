@@ -216,9 +216,58 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# WhiteNoise configuration for serving static files in production
-# This enables compression and caching for better performance
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+# Uploaded files.
+#
+# Render gives this service no persistent disk: anything written under
+# MEDIA_ROOT there is gone at the next deploy or restart. That is how SIA
+# licence scans were being lost. With the four R2_* variables set, uploads go to
+# a private Cloudflare R2 bucket instead (S3 API). Nothing in it is public —
+# identity documents are only ever served back through authenticated views.
+#
+# Unset, local disk is used, which is right for Docker dev and tests. Partly
+# set is a misconfiguration, so it fails the build rather than quietly falling
+# back to a disk that forgets.
+_R2 = {
+    name: os.getenv(name, '')
+    for name in ('R2_BUCKET_NAME', 'R2_ENDPOINT_URL', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY')
+}
+USE_R2_STORAGE = all(_R2.values())
+if any(_R2.values()) and not USE_R2_STORAGE:
+    raise ValueError(
+        'R2 storage is partly configured; also set: '
+        + ', '.join(name for name, value in _R2.items() if not value)
+    )
+
+STORAGES = {
+    'default': {
+        'BACKEND': 'storages.backends.s3.S3Storage',
+        'OPTIONS': {
+            'bucket_name': _R2['R2_BUCKET_NAME'],
+            'endpoint_url': _R2['R2_ENDPOINT_URL'],
+            'access_key': _R2['R2_ACCESS_KEY_ID'],
+            'secret_key': _R2['R2_SECRET_ACCESS_KEY'],
+            'region_name': 'auto',
+            'signature_version': 's3v4',
+            'default_acl': None,
+            'file_overwrite': False,
+            'location': os.getenv('R2_LOCATION', ''),
+        },
+    } if USE_R2_STORAGE else {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    # A `STATICFILES_STORAGE = 'whitenoise...CompressedManifestStaticFilesStorage'`
+    # line used to sit here. Django 5.1 removed that setting, so it had been
+    # silently ignored and plain storage is what production actually runs.
+    # Declared explicitly because defining STORAGES replaces Django's default.
+    'staticfiles': {
+        'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+    },
+}
+
+# Render sets RENDER=true. There, local disk is not somewhere a document can be
+# kept, so uploads are refused outright instead of accepted and later lost.
+ON_RENDER = os.getenv('RENDER', '').lower() == 'true'
+MEDIA_STORAGE_IS_DURABLE = USE_R2_STORAGE or not ON_RENDER
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
