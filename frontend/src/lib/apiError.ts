@@ -13,29 +13,66 @@
 type ApiErrorShape = {
   response?: {
     status?: number;
-    data?: {
-      message?: string;
-      detail?: string;
-      error?: string;
-      code?: string;
-    };
+    data?: unknown;
   };
 };
 
+function plainObject(data: unknown): Record<string, unknown> | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  if (typeof Blob !== "undefined" && data instanceof Blob) return null;
+  return data as Record<string, unknown>;
+}
+
+function humaniseField(key: string): string {
+  const words = key.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * The first message out of a DRF validation body.
+ *
+ * A serializer rejection is `{license_number: ["…"]}`, not `{detail}`, so
+ * without this every field error read as the caller's generic fallback — the
+ * operator was told the save failed but never why.
+ */
+function firstFieldError(data: unknown): string | undefined {
+  if (Array.isArray(data)) {
+    return typeof data[0] === "string" ? data[0] : undefined;
+  }
+  const body = plainObject(data);
+  if (!body) return undefined;
+  for (const [key, value] of Object.entries(body)) {
+    if (key === "code" || !Array.isArray(value)) continue;
+    const first = value.find((v): v is string => typeof v === "string");
+    if (!first) continue;
+    // DRF's stock messages ("This field is required.") don't name the field.
+    if (/^This field\b/.test(first) && key !== "non_field_errors") {
+      return `${humaniseField(key)}: ${first}`;
+    }
+    return first;
+  }
+  return undefined;
+}
+
 /** The server's own message, or `fallback` if it did not give one. */
 export function extractApiError(err: unknown, fallback: string): string {
-  const e = err as ApiErrorShape | undefined;
-  return (
-    e?.response?.data?.message ??
-    e?.response?.data?.detail ??
-    e?.response?.data?.error ??
-    fallback
-  );
+  const data = (err as ApiErrorShape | undefined)?.response?.data;
+  const body = plainObject(data);
+  if (body) {
+    for (const key of ["message", "detail", "error"]) {
+      const value = body[key];
+      if (typeof value === "string" && value) return value;
+    }
+  }
+  return firstFieldError(data) ?? fallback;
 }
 
 /** The machine-readable reason, where the endpoint provides one. */
 export function apiErrorCode(err: unknown): string | undefined {
-  return (err as ApiErrorShape | undefined)?.response?.data?.code;
+  const code = plainObject(
+    (err as ApiErrorShape | undefined)?.response?.data,
+  )?.code;
+  return typeof code === "string" ? code : undefined;
 }
 
 /**

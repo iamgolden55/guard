@@ -7,6 +7,7 @@ import { Avatar } from "../../../design-system/primitives/Avatar";
 import { Pill, type PillTone } from "../../../design-system/primitives/Pill";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
+import { siaStatusFor } from "../data/siaLicences";
 import type { SIALicenseRecord } from "../hooks/useStaffData";
 
 export interface StaffRow {
@@ -66,25 +67,21 @@ function formatDate(dateString: string | null) {
   });
 }
 
+// The officer's best licence decides the pill, as it decides
+// `is_eligible_for_shifts`: one verified, in-date licence makes them bookable
+// whatever else is on file. An old expired licence used to turn the row
+// "Expired" next to a perfectly good one.
 function siaPillFor(licenses: SIALicenseRecord[] | undefined): {
   tone: PillTone;
   label: string;
 } {
   if (!licenses || licenses.length === 0) return { tone: "neutral", label: "None" };
-  const now = new Date();
-  const ninety = new Date();
-  ninety.setDate(now.getDate() + 90);
-  let hasExpired = false;
-  let hasExpiringSoon = false;
-  for (const lic of licenses) {
-    const exp = new Date(lic.expiry_date);
-    if (Number.isNaN(exp.getTime())) continue;
-    if (exp < now) hasExpired = true;
-    else if (exp < ninety) hasExpiringSoon = true;
-  }
-  if (hasExpired) return { tone: "danger", label: "Expired" };
-  if (hasExpiringSoon) return { tone: "warning", label: "Expiring" };
-  return { tone: "positive", label: "Valid" };
+  const kinds = new Set(licenses.map((lic) => siaStatusFor(lic).kind));
+  if (kinds.has("verified")) return { tone: "positive", label: "Valid" };
+  if (kinds.has("expiring")) return { tone: "warning", label: "Expiring" };
+  if (kinds.has("pending")) return { tone: "info", label: "Pending" };
+  if (kinds.has("expired")) return { tone: "danger", label: "Expired" };
+  return { tone: "neutral", label: "None" };
 }
 
 export function StaffTable({

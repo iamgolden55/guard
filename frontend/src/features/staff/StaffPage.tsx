@@ -8,6 +8,7 @@ import { Card } from "../../design-system/primitives/Card";
 import { Toast } from "../../design-system/primitives/Toast";
 import { extractApiError } from "../../lib/apiError";
 import { tokens } from "../../design-system/tokens";
+import profileService from "../../services/profileService";
 import { InviteStaffModal } from "./components/InviteStaffModal";
 import { PendingApprovalBanner } from "./components/PendingApprovalBanner";
 import {
@@ -57,6 +58,10 @@ function employmentTypeName(et: unknown): string | null {
   }
   return null;
 }
+
+// Module scope so the card viewer's fetch effect sees a stable reference.
+const fetchLicenseDocument = (licenseId: number) =>
+  profileService.fetchSIALicenseDocument(licenseId);
 
 function fullNameFromPending(p: PendingStaffProfile): string {
   if (p.full_name) return p.full_name;
@@ -367,6 +372,10 @@ export default function StaffPage() {
     );
   };
 
+  // The licence modal shows its own failure inline and keeps what the operator
+  // typed, so these two let the error reach it. Through withFeedback the
+  // rejection was swallowed, the modal closed as if it had saved, and the
+  // details were gone.
   const handleAddLicense = async (
     staffProfileId: number,
     payload: {
@@ -374,13 +383,21 @@ export default function StaffPage() {
       licenseType: string;
       issueDate: string;
       expiryDate: string;
+      file: File | null;
     },
   ) => {
-    await withFeedback(
-      () => data.addStaffLicense.mutateAsync({ staffProfileId, data: payload }),
-      "SIA licence added.",
-      "Couldn't add the SIA licence.",
-    );
+    const created = await data.addStaffLicense.mutateAsync({
+      staffProfileId,
+      data: payload,
+    });
+    if (payload.file && !created?.has_document) {
+      setToast({
+        text: "Licence added, but the card didn't attach. Use Upload card to try again.",
+        tone: "danger",
+      });
+      return;
+    }
+    setToast({ text: "SIA licence added.", tone: "neutral" });
   };
 
   const handleUpdateLicense = async (
@@ -388,16 +405,54 @@ export default function StaffPage() {
     staffProfileId: number,
     payload: { issue_date: string; expiry_date: string; license_type: string },
   ) => {
-    await withFeedback(
+    await data.updateStaffLicense.mutateAsync({
+      licenseId,
+      staffProfileId,
+      data: payload,
+    });
+    setToast({ text: "SIA licence updated.", tone: "neutral" });
+  };
+
+  const handleUploadLicenseDocument = (
+    licenseId: number,
+    staffProfileId: number,
+    file: File,
+  ) =>
+    withFeedback(
       () =>
-        data.updateStaffLicense.mutateAsync({
+        data.uploadLicenseDocument.mutateAsync({
           licenseId,
           staffProfileId,
-          data: payload,
+          file,
         }),
-      "SIA licence updated.",
-      "Couldn't update the SIA licence.",
+      "Card uploaded.",
+      "Couldn't upload the card.",
     );
+
+  // The server derives the outcome, so "verified" is only said when it was.
+  const handleVerifyLicense = async (
+    licenseId: number,
+    staffProfileId: number,
+  ) => {
+    try {
+      const updated = await data.verifyLicense.mutateAsync({
+        licenseId,
+        staffProfileId,
+      });
+      setToast(
+        updated?.status === "expired"
+          ? {
+              text: "Its expiry date has passed, so it was marked expired rather than verified.",
+              tone: "danger",
+            }
+          : { text: "Licence verified.", tone: "neutral" },
+      );
+    } catch (err) {
+      setToast({
+        text: extractApiError(err, "Couldn't verify the licence."),
+        tone: "danger",
+      });
+    }
   };
 
   const handleDeleteLicense = async (
@@ -591,10 +646,15 @@ export default function StaffPage() {
         onAddLicense={handleAddLicense}
         onUpdateLicense={handleUpdateLicense}
         onDeleteLicense={handleDeleteLicense}
+        onUploadLicenseDocument={handleUploadLicenseDocument}
+        onVerifyLicense={handleVerifyLicense}
+        onFetchLicenseDocument={fetchLicenseDocument}
         isMutatingLicense={
           data.addStaffLicense.isPending ||
           data.updateStaffLicense.isPending ||
-          data.deleteStaffLicense.isPending
+          data.deleteStaffLicense.isPending ||
+          data.uploadLicenseDocument.isPending ||
+          data.verifyLicense.isPending
         }
         onApprove={handleApprove}
         onDelete={handleDelete}
