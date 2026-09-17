@@ -18,6 +18,7 @@ import io
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
@@ -28,6 +29,12 @@ User = get_user_model()
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 
 
+# In-memory, so these never write to local disk or, with R2_* set in a
+# developer's backend/.env, to a real bucket.
+@override_settings(STORAGES={
+    'default': {'BACKEND': 'django.core.files.storage.InMemoryStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+})
 class SIALicenceDocumentAccessTests(APITestCase):
     def setUp(self):
         self.company = SecurityCompany.objects.create(

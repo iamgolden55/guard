@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .utils.shift_validators import check_shift_overlap
@@ -71,6 +73,7 @@ class SIALicenseSerializer(serializers.ModelSerializer):
     issueDate = serializers.DateField(source='issue_date', read_only=True)
     expiryDate = serializers.DateField(source='expiry_date', read_only=True)
     documentUrl = serializers.URLField(source='document_url', read_only=True)
+    has_document = serializers.SerializerMethodField()
 
     class Meta:
         model = SIALicense
@@ -80,25 +83,46 @@ class SIALicenseSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'staff_profile', 'license_number', 'license_type', 'level',
             'issue_date', 'expiry_date', 'status', 'document_url',
+            'has_document',
             'additional_certifications', 'verified_by', 'verified_at',
             'created_at', 'updated_at',
             'licenseNumber', 'licenseType', 'issueDate', 'expiryDate',
             'documentUrl',
         )
+        # `document_url` is set by the server when a card is uploaded. Left
+        # writable, a client could point a licence at another officer's file.
         read_only_fields = (
             'created_at', 'updated_at', 'status', 'verified_by', 'verified_at',
+            'document_url',
         )
+        # Uniqueness is checked in `validate_license_number`, on the normalised
+        # value. DRF's automatic UniqueValidator runs on the raw input first, so
+        # "1234 5678 9012 3456" would pass it and then hit the database
+        # constraint as a 500.
+        extra_kwargs = {'license_number': {'validators': []}}
+
+    def get_has_document(self, obj):
+        return bool(obj.document_url)
 
     def validate_license_number(self, value):
         """SIA licence numbers are 16 digits.
 
         Front-of-house data entry is the weak point here: a typo produces a
         record that looks verified and matches nothing on the SIA register.
+        Spaces and hyphens are dropped first, because the card prints the
+        number in groups of four and that's how people type it.
         """
-        digits = (value or '').strip()
-        if not digits.isdigit() or len(digits) != 16:
+        digits = re.sub(r'[\s-]', '', value or '')
+        if not re.fullmatch(r'\d{16}', digits, flags=re.ASCII):
             raise serializers.ValidationError(
                 "An SIA licence number is exactly 16 digits."
+            )
+        clash = SIALicense.objects.filter(license_number=digits)
+        if self.instance is not None:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError(
+                "A licence with this number is already on file."
             )
         return digits
 
