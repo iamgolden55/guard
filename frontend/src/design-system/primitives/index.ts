@@ -6,3 +6,4 @@ export { Modal, type ModalProps, type ModalSize, type ModalTone } from "./Modal"
 export { Pill, type PillProps, type PillTone } from "./Pill";
 export { SectionHeader, type SectionHeaderProps } from "./SectionHeader";
 export { textStyles, type TextStyleName } from "./Text";
+export { Toast, type ToastProps, type ToastTone } from "./Toast";

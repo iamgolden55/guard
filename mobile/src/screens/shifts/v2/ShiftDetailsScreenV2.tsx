@@ -131,6 +131,7 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
   const [checkOutPhoto, setCheckOutPhoto] = useState<string | null>(null);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
+  const [isPreparingCheckOut, setIsPreparingCheckOut] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
 
@@ -451,6 +452,10 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
   };
 
   const handleCheckOut = async () => {
+    // The logbook lookup below is a round-trip with no UI, so without this
+    // guard a second tap during it started a second checkout flow.
+    if (isPreparingCheckOut) return;
+    setIsPreparingCheckOut(true);
     // Soft block: monitored venues need the logbook signed before checkout.
     // If no signoff exists yet, prompt the user to capture the venue admin's
     // signature (or override). Failures fall through to checkout — we never
@@ -465,12 +470,14 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
           ]);
           setLogbookCounts({ checks: checks.length, missed: misses.length });
           setShowLogbookSignoff(true);
+          setIsPreparingCheckOut(false);
           return; // Wait for the modal to resolve.
         }
       } catch (e) {
         logger.warn('[ShiftDetailsV2] Logbook signoff lookup failed; allowing checkout to proceed:', e);
       }
     }
+    setIsPreparingCheckOut(false);
     proceedToCheckOut();
   };
 
@@ -1200,7 +1207,13 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
         {shift.status === 'scheduled' && canCheckIn() ? (
           <PrimaryCTA label="Check in · Start shift" onPress={handleCheckIn} />
         ) : shift.status === 'in_progress' ? (
-          <PrimaryCTA label="End shift · Check out" onPress={handleCheckOut} />
+          <PrimaryCTA
+            label={
+              isPreparingCheckOut ? 'Checking…' : 'End shift · Check out'
+            }
+            onPress={handleCheckOut}
+            disabled={isPreparingCheckOut}
+          />
         ) : isDone ? (
           <Pressable
             onPress={() => navigation.goBack()}

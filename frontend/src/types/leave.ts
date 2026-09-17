@@ -104,13 +104,29 @@ export interface LeaveEntitlement {
 }
 
 // Leave Request Status Enum
+// Values must match leave_management.models.LeaveRequest.STATUS_CHOICES,
+// which are lowercase. They were uppercase here, so every
+// `req.status === LeaveRequestStatus.PENDING` comparison in the Leave feature
+// was permanently false: the Cancel button never rendered, the pending count
+// was always 0, and the upcoming-leave card was always empty.
 export enum LeaveRequestStatus {
-  PENDING = 'PENDING',
-  APPROVED = 'APPROVED',
-  REJECTED = 'REJECTED',
-  CANCELLED = 'CANCELLED',
-  WITHDRAWN = 'WITHDRAWN'
+  DRAFT = 'draft',
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  CANCELLED = 'cancelled',
+  WITHDRAWN = 'withdrawn'
 }
+
+/** Sentence-case label for display — the wire values are lowercase. */
+export const LEAVE_STATUS_LABEL: Record<LeaveRequestStatus, string> = {
+  [LeaveRequestStatus.DRAFT]: 'Draft',
+  [LeaveRequestStatus.PENDING]: 'Pending',
+  [LeaveRequestStatus.APPROVED]: 'Approved',
+  [LeaveRequestStatus.REJECTED]: 'Rejected',
+  [LeaveRequestStatus.CANCELLED]: 'Cancelled',
+  [LeaveRequestStatus.WITHDRAWN]: 'Withdrawn'
+};
 
 // Leave Request Interface (extending from backend model)
 export interface LeaveRequest {

@@ -6,15 +6,15 @@
 // In Phase 7.6 these checks become a TanStack mutation pre-flight that
 // also calls complianceService.getStaffCompliance(staffId) for the
 // authoritative WorkingHoursRegulation values.
-import {
-  officerWeeklyHrs,
-  type SchedulingDay,
-  type SchedulingOfficer,
-  type SchedulingWeek,
-  type Shift,
-  type Violation,
-  UNAVAIL,
+import type {
+  SchedulingDay,
+  SchedulingOfficer,
+  SchedulingWeek,
+  Shift,
+  Unavailability,
+  Violation,
 } from "../data/mocks";
+import { unavailabilityFor } from "../data/unavailability";
 
 export interface AssignmentCheck {
   ok: boolean;
@@ -36,6 +36,7 @@ export function checkAssignment(
   shift: Shift,
   allShifts: Shift[],
   week?: SchedulingWeek,
+  unavailability: Unavailability[] = [],
 ): AssignmentCheck {
   const hard: Violation[] = [];
   const soft: Violation[] = [];
@@ -49,9 +50,7 @@ export function checkAssignment(
     });
   }
 
-  const unavail = UNAVAIL.find(
-    (u) => u.officerId === officer.id && u.day === shift.day,
-  );
+  const unavail = unavailabilityFor(unavailability, officer.id, shift.day);
   if (unavail) {
     hard.push({
       tier: "hard",
@@ -174,6 +173,3 @@ export function projectedWeeklyHrs(
     others.reduce((sum, s) => sum + (s.end - s.start), 0) + (shift.end - shift.start)
   );
 }
-
-// Re-export for convenience — keeps callers from importing both.
-export { officerWeeklyHrs };

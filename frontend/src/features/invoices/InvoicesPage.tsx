@@ -23,6 +23,7 @@ import { InvLeftPane } from "./components/list/InvLeftPane";
 import { InvRightPane, type InvoiceActionId } from "./components/right/InvRightPane";
 import { InvoiceDocument, type InvoiceTemplate } from "./components/document/InvoiceDocument";
 import { useAuth } from "../../contexts/AuthContext";
+import { extractApiError } from "../../lib/apiError";
 import { RejectInvoiceModal } from "./components/RejectInvoiceModal";
 import { EditInvoiceModal } from "./components/EditInvoiceModal";
 import { NewClientInvoiceModal } from "./components/NewClientInvoiceModal";
@@ -64,6 +65,44 @@ function readBool(key: string, fallback: boolean): boolean {
     // ignore
   }
   return fallback;
+}
+
+function csvCell(value: string | number | null | undefined): string {
+  const v = value == null ? "" : String(value);
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+/** "My invoices" has no bulk-PDF endpoint, so the header action exports the
+ *  listed payslips as a spreadsheet rather than promising N downloads the
+ *  browser would block anyway. */
+function invoicesToCsv(rows: InvoiceRecord[]): string {
+  const header = [
+    "Invoice",
+    "Status",
+    "Period start",
+    "Period end",
+    "Issued",
+    "Due",
+    "Paid",
+    "Hours",
+    "Subtotal",
+    "VAT",
+    "Total",
+  ];
+  const body = rows.map((i) => [
+    i.id,
+    i.status,
+    i.periodStart,
+    i.periodEnd,
+    i.issueDate ?? "",
+    i.dueDate ?? "",
+    i.paidDate ?? "",
+    i.totalHours,
+    i.subtotal.toFixed(2),
+    i.vat.toFixed(2),
+    i.total.toFixed(2),
+  ]);
+  return [header, ...body].map((r) => r.map(csvCell).join(",")).join("\n");
 }
 
 export default function InvoicesPage() {
@@ -108,7 +147,10 @@ export default function InvoicesPage() {
 
   // Per-tab filtering — Outbox is open work, Archive is settled, My is mine.
   const ACTIVE_STATUSES = useMemo(
-    () => new Set(["draft", "pending", "sent", "overdue"]),
+    // 'approved' belongs here: the manager has signed the hours off but the
+    // money hasn't moved, so it's still open work. Leaving it out of both
+    // sets made approved invoices disappear from Outbox *and* Archive.
+    () => new Set(["draft", "pending", "sent", "approved", "overdue"]),
     [],
   );
   const ARCHIVED_STATUSES = useMemo(
@@ -360,6 +402,26 @@ export default function InvoicesPage() {
         stats={stats}
         onNew={ledger === "client" ? () => setNewClientInvoiceOpen(true) : undefined}
         onStatement={handleStatement}
+        exportDisabled={displayedInvoices.length === 0}
+        onExport={() => {
+          const rows = displayedInvoices;
+          if (rows.length === 0) return;
+          const blob = new Blob([invoicesToCsv(rows)], {
+            type: "text/csv;charset=utf-8;",
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `my-invoices-${new Date().toISOString().slice(0, 10)}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          setActionToast(
+            `Exported ${rows.length} invoice${rows.length === 1 ? "" : "s"}.`,
+          );
+          window.setTimeout(() => setActionToast(null), 2200);
+        }}
         leftPaneOpen={leftPaneOpen}
         rightPaneOpen={rightPaneOpen}
         onToggleLeftPane={() => setLeftPaneOpen((v) => !v)}
@@ -426,13 +488,20 @@ export default function InvoicesPage() {
                 lineHeight: 1.55,
               }}
             >
-              {tab === "my"
-                ? ledger !== "staff"
-                  ? "Switch to the Staff ledger to see your own payslips."
-                  : "You don't have any payslips yet. They'll appear here once shifts you've worked are approved and the payroll cron runs."
-                : tab === "archive"
-                  ? "No settled invoices yet. Paid, rejected, or resolved invoices land here."
-                  : "No invoices match the current filter."}
+              {/* useInvoicesData exposes isLoading/error and nothing consumed
+                  them, so a request still in flight — or one that failed —
+                  rendered as "no invoices", which is a very different claim. */}
+              {billing.isLoading
+                ? "Loading invoices…"
+                : billing.error
+                  ? `Couldn't load invoices. ${extractApiError(billing.error, "Please try again.")}`
+                  : tab === "my"
+                    ? ledger !== "staff"
+                      ? "Switch to the Staff ledger to see your own payslips."
+                      : "You don't have any payslips yet. They'll appear here once shifts you've worked are approved and the payroll cron runs."
+                    : tab === "archive"
+                      ? "No settled invoices yet. Paid, rejected, or resolved invoices land here."
+                      : "No invoices match the current filter."}
             </div>
           )}
         </main>

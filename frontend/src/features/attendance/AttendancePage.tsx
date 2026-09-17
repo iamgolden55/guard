@@ -1,6 +1,8 @@
 // AttendancePage — composes header, view-switcher, and drawer.
 // Phase 4.5: real-API wiring via useAttendanceData + AttendanceContext.
 import { useEffect, useState } from "react";
+import { Spinner } from "../../components/Spinner";
+import { tokens } from "../../design-system/tokens";
 import { AttendanceProvider } from "./AttendanceContext";
 import { AttendanceDrawer } from "./components/AttendanceDrawer";
 import { AttendanceHeader } from "./components/AttendanceHeader";
@@ -105,6 +107,11 @@ export default function AttendancePage() {
     }
   };
 
+  const activeError =
+    view === "timesheets" ? data.timesheetsError : data.liveError;
+  const activeLoading =
+    view === "timesheets" ? data.isLoadingTimesheets : data.isLoadingLive;
+
   return (
     <AttendanceProvider
       data={data}
@@ -165,16 +172,85 @@ export default function AttendancePage() {
           </button>
         </div>
       )}
-      {view === "live" && (
-        <LiveView
-          onSelect={handleSelectShift}
-          leftRailOpen={leftRailOpen}
-          venueGridOpen={venueGridOpen}
-        />
+      {activeError && (
+        // Every tile on this page falls back to an empty array, so a failed
+        // fetch renders as "nobody is on duty" — the single most dangerous
+        // thing this screen can say to a duty manager. Say it failed instead.
+        <div
+          role="alert"
+          style={{
+            margin: "12px 16px 0",
+            padding: "12px 14px",
+            borderRadius: 8,
+            border: `1px solid ${tokens.color.danger}55`,
+            background: tokens.color.dangerSoft,
+            color: tokens.color.dangerInk,
+            fontFamily: tokens.font.body,
+            fontSize: 13,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            Couldn't load {view === "timesheets" ? "timesheets" : "attendance"}.
+            The figures below are not live. {activeError.message}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (view === "timesheets") void data.refetchTimesheets();
+              else void data.refetchLive();
+            }}
+            style={{
+              background: "transparent",
+              border: 0,
+              color: tokens.color.dangerInk,
+              cursor: "pointer",
+              fontWeight: 700,
+            }}
+          >
+            Retry
+          </button>
+        </div>
       )}
-      {view === "exceptions" && <ExceptionsView onSelect={handleSelectShift} />}
-      {view === "timesheets" && (
-        <TimesheetsView onSelect={handleSelectTimesheet} />
+      {activeLoading ? (
+        <div
+          style={{
+            flex: 1,
+            display: "grid",
+            placeItems: "center",
+            gap: 12,
+            padding: "80px 0",
+          }}
+        >
+          <Spinner />
+          <div
+            style={{
+              fontFamily: tokens.font.body,
+              fontSize: 13,
+              color: tokens.color.ink600,
+            }}
+          >
+            Loading attendance…
+          </div>
+        </div>
+      ) : (
+        <>
+          {view === "live" && (
+            <LiveView
+              onSelect={handleSelectShift}
+              leftRailOpen={leftRailOpen}
+              venueGridOpen={venueGridOpen}
+            />
+          )}
+          {view === "exceptions" && (
+            <ExceptionsView onSelect={handleSelectShift} />
+          )}
+          {view === "timesheets" && (
+            <TimesheetsView onSelect={handleSelectTimesheet} />
+          )}
+        </>
       )}
       <AttendanceDrawer
         open={drawerOpen}

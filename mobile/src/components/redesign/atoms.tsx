@@ -277,8 +277,14 @@ export const PrimaryCTA: React.FC<PrimaryCTAProps> = ({
   ...pressableProps
 }) => {
   const theme = useRedesignTheme();
+  // `disabled` came through from PressableProps but was never reflected
+  // visually, so a blocked CTA looked identical to a live one.
+  const isDisabled = !!pressableProps.disabled;
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: isDisabled }}
       {...pressableProps}
       style={({ pressed }) => [
         styles.primaryCTA,
@@ -289,7 +295,7 @@ export const PrimaryCTA: React.FC<PrimaryCTAProps> = ({
           shadowOpacity: pressed ? 0.25 : 0.45,
           shadowRadius: 22,
           elevation: 10,
-          opacity: pressed ? 0.92 : 1,
+          opacity: isDisabled ? 0.45 : pressed ? 0.92 : 1,
         },
         style,
       ]}

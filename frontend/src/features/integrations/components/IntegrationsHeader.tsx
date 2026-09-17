@@ -1,5 +1,5 @@
 // IntegrationsHeader — sticky 2-row header matching RecruitmentHeader.
-// Row 1 = breadcrumb + title + connected chip + bell + Browse marketplace
+// Row 1 = breadcrumb + title + connected chip + Browse marketplace
 // Row 2 = three tabs (Catalog / Connected / Activity) + search input
 import { Link } from "react-router-dom";
 import { useAccent } from "../../../contexts/AccentContext";
@@ -148,26 +148,6 @@ export function IntegrationsHeader({
             </span>
           </div>
         )}
-
-        <button
-          type="button"
-          aria-label="Notifications"
-          style={{
-            position: "relative",
-            width: 38,
-            height: 38,
-            borderRadius: 8,
-            background: tokens.color.ink100,
-            border: "none",
-            color: tokens.color.ink800,
-            display: "grid",
-            placeItems: "center",
-            cursor: "pointer",
-            flexShrink: 0,
-          }}
-        >
-          <Icon name="bell" size={18} />
-        </button>
 
         <Button variant="secondary" leading={<Icon name="external" size={14} />}>
           Browse marketplace

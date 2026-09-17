@@ -19,6 +19,9 @@ export interface ApprovalsListProps {
   onResolve: (id: string, action: "approve" | "deny") => void;
   /** Click handler for the Inbox button. */
   onInbox?: () => void;
+  /** Disables both row actions while a resolve round-trip is in flight, so a
+   * second click can't fire a second mutation against the same row. */
+  isResolving?: boolean;
 }
 
 export function ApprovalsList({
@@ -26,6 +29,7 @@ export function ApprovalsList({
   totalCount,
   onResolve,
   onInbox,
+  isResolving = false,
 }: ApprovalsListProps) {
   const { palette } = useAccent();
   const headlineCount = totalCount ?? items.length;
@@ -162,7 +166,15 @@ export function ApprovalsList({
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <button
                 type="button"
-                onClick={() => onResolve(a.id, "deny")}
+                disabled={isResolving}
+                onClick={() => {
+                  // Declining tells a real person no. One mis-click on a
+                  // 30px target shouldn't be enough.
+                  const ok = window.confirm(
+                    `Decline this ${a.type.toLowerCase()} for ${a.who}? They'll be notified.`,
+                  );
+                  if (ok) onResolve(a.id, "deny");
+                }}
                 title="Decline"
                 aria-label={`Decline ${a.type}`}
                 style={{
@@ -172,7 +184,8 @@ export function ApprovalsList({
                   border: `1px solid ${tokens.color.ink200}`,
                   background: "white",
                   color: tokens.color.ink600,
-                  cursor: "pointer",
+                  cursor: isResolving ? "not-allowed" : "pointer",
+                  opacity: isResolving ? 0.5 : 1,
                   display: "grid",
                   placeItems: "center",
                 }}
@@ -181,6 +194,7 @@ export function ApprovalsList({
               </button>
               <button
                 type="button"
+                disabled={isResolving}
                 onClick={() => onResolve(a.id, "approve")}
                 title="Approve"
                 aria-label={`Approve ${a.type}`}
@@ -191,7 +205,8 @@ export function ApprovalsList({
                   border: "none",
                   background: palette.primary,
                   color: "white",
-                  cursor: "pointer",
+                  cursor: isResolving ? "not-allowed" : "pointer",
+                  opacity: isResolving ? 0.5 : 1,
                   display: "grid",
                   placeItems: "center",
                 }}

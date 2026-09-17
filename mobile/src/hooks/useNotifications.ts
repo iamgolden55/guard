@@ -109,6 +109,27 @@ export const useNotifications = () => {
         navigate('Main', {
           screen: 'ShiftExchanges'
         });
+      } else if (data.screen === 'Shifts') {
+        // shift_removed / shift_reassigned. The backend names this 'Shifts';
+        // the tab is registered as 'Calendar', so this branch used to fall
+        // through and the tap did nothing at all.
+        logger.debug('[Notifications] Navigating to the shifts tab');
+        navigate('Main', {
+          screen: 'Tabs',
+          params: { screen: 'Calendar' },
+        });
+      } else if (data.screen === 'ShiftScheduling') {
+        // shift_cancelled, sent to a manager — the Manage tab is the nearest
+        // thing this app has to a scheduling surface.
+        logger.debug('[Notifications] Navigating to the manage tab');
+        navigate('Main', {
+          screen: 'Tabs',
+          params: { screen: 'Manage' },
+        });
+      } else if (data.screen) {
+        logger.warn('[Notifications] No route for notification screen', {
+          screen: data.screen,
+        });
       }
 
       // Clear the notification badge

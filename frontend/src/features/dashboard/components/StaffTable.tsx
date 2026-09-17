@@ -3,6 +3,7 @@
 // button downloads a CSV of the currently visible rows.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { useAccent } from "../../../contexts/AccentContext";
 import { Icon } from "../../../design-system/Icon";
 import { Avatar } from "../../../design-system/primitives/Avatar";
@@ -91,6 +92,7 @@ export interface StaffTableProps {
 
 export function StaffTable({ staff }: StaffTableProps) {
   const { palette } = useAccent();
+  const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>("all");
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
@@ -359,7 +361,6 @@ export function StaffTable({ staff }: StaffTableProps) {
                 "Status",
                 "SIA License",
                 "Hours wk",
-                "Rating",
                 "",
               ].map((h, i) => (
                 <th
@@ -465,34 +466,14 @@ export function StaffTable({ staff }: StaffTableProps) {
                     {s.hours}h
                   </td>
                   <td style={{ ...TD_STYLE, textAlign: "right" }}>
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 4,
-                      }}
-                    >
-                      <span style={{ color: palette.primary, fontSize: 13 }}>
-                        ★
-                      </span>
-                      <span
-                        style={{
-                          fontWeight: 600,
-                          color: tokens.color.ink900,
-                          fontSize: 13,
-                        }}
-                      >
-                        {s.rating.toFixed(1)}
-                      </span>
-                    </div>
-                  </td>
-                  <td style={{ ...TD_STYLE, textAlign: "right" }}>
                     <button
                       type="button"
                       style={{ ...ghostBtnStyle, padding: "5px 8px" }}
-                      aria-label="Row actions"
+                      aria-label={`Open ${s.name} in the staff directory`}
+                      title="Open in staff directory"
+                      onClick={() => navigate(`/staff?focus=${s.id}`)}
                     >
-                      <Icon name="more" size={14} />
+                      <Icon name="external" size={14} />
                     </button>
                   </td>
                 </tr>

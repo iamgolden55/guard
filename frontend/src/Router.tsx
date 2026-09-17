@@ -25,23 +25,6 @@ import StaffPage from "./features/staff/StaffPage";
 import VenuesPage from "./features/venues/VenuesPage";
 import CapacityLogbookPage from "./features/capacity-logs/CapacityLogbookPage";
 import ThemeSmokePage from "./features/dev/ThemeSmokePage";
-import { Card, SectionHeader, textStyles } from "./design-system";
-
-// Phase 2 stub — protected routes mount inside AppLayout (Sidebar +
-// Topbar + scrollable main). Phases 3-7 build out each screen.
-function PagePlaceholder({ title }: { title: string }) {
-  return (
-    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-      <Card padding={28}>
-        <SectionHeader title={title} subtitle="Coming soon — placeholder" />
-        <p style={{ ...textStyles.body }}>
-          This route is reachable. The full screen will be built out in a later phase
-          against <code>project/{title}.html</code>.
-        </p>
-      </Card>
-    </div>
-  );
-}
 
 export default function Router() {
   return (

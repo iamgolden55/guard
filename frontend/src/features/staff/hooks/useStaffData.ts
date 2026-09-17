@@ -11,6 +11,8 @@
 //   deleteStaff                — optimistic remove from active
 //   inviteStaff                — invalidate active on success
 //   updateEmploymentType       — optimistic merge into active
+//   add/update/deleteStaffLicense, uploadLicenseDocument, verifyLicense
+//                              — invalidate the per-staff and global licence lists
 //
 // All cache writes are followed by `invalidateQueries` in onSettled so server
 // reality wins after the round-trip.
@@ -53,6 +55,10 @@ export interface SIALicenseRecord {
   expiry_date: string;
   status: string;
   document_url?: string | null;
+  /** A card is on file. The file itself is only ever fetched on demand. */
+  has_document?: boolean;
+  verified_at?: string | null;
+  verified_by?: number | null;
 }
 
 // Subset of StaffProfileSerializer used by the drawer's Address tab.
@@ -300,8 +306,8 @@ export function useStaffData(options: UseStaffDataOptions = {}) {
   });
 
   // ── SIA licence CRUD (admin) ──────────────────────────────────────────────
-  // All three invalidate both the per-staff list (drawer) and the global list
-  // (right-rail expiring card + per-row pill).
+  // All of these invalidate both the per-staff list (drawer) and the global
+  // list (right-rail expiring card + per-row pill).
   const invalidateSiaCaches = (staffProfileId: number) => {
     queryClient.invalidateQueries({
       queryKey: ["staff", staffProfileId, "sia"],
@@ -320,8 +326,12 @@ export function useStaffData(options: UseStaffDataOptions = {}) {
         licenseType: string;
         issueDate: string;
         expiryDate: string;
+        file?: File | null;
       };
-    }) => profileService.addSIALicense(staffProfileId, data),
+    }) =>
+      profileService
+        .addSIALicense(staffProfileId, data)
+        .then((created) => created as SIALicenseRecord),
     onSettled: (_d, _e, vars) => invalidateSiaCaches(vars.staffProfileId),
   });
 
@@ -344,6 +354,35 @@ export function useStaffData(options: UseStaffDataOptions = {}) {
       licenseId: number;
       staffProfileId: number;
     }) => profileService.deleteSIALicenseById(licenseId),
+    onSettled: (_d, _e, vars) => invalidateSiaCaches(vars.staffProfileId),
+  });
+
+  const uploadLicenseDocument = useMutation({
+    mutationFn: ({
+      licenseId,
+      file,
+    }: {
+      licenseId: number;
+      staffProfileId: number;
+      file: File;
+    }) =>
+      profileService
+        .uploadSIALicenseDocument(licenseId, file)
+        .then((updated) => updated as SIALicenseRecord),
+    onSettled: (_d, _e, vars) => invalidateSiaCaches(vars.staffProfileId),
+  });
+
+  // POST /sia-licenses/{id}/approve/ — the only path to a `valid` licence.
+  const verifyLicense = useMutation({
+    mutationFn: ({
+      licenseId,
+    }: {
+      licenseId: number;
+      staffProfileId: number;
+    }) =>
+      profileService
+        .approveSIALicense(licenseId)
+        .then((updated) => updated as SIALicenseRecord),
     onSettled: (_d, _e, vars) => invalidateSiaCaches(vars.staffProfileId),
   });
 
@@ -450,5 +489,7 @@ export function useStaffData(options: UseStaffDataOptions = {}) {
     addStaffLicense,
     updateStaffLicense,
     deleteStaffLicense,
+    uploadLicenseDocument,
+    verifyLicense,
   };
 }

@@ -70,6 +70,7 @@ export default function SchedulingPage() {
     shifts,
     officers,
     venues,
+    unavailability,
     isLoading,
     isError,
     error,
@@ -91,6 +92,7 @@ export default function SchedulingPage() {
       initialShifts={shifts}
       officers={officers}
       venues={venues}
+      unavailability={unavailability}
       week={week}
       monthGrid={monthGrid}
       rangeAnchorIso={rangeAnchor}
@@ -128,6 +130,7 @@ function SchedulingShell({
   const {
     shifts,
     officers,
+    unavailability,
     week,
     officerById,
     venueById,
@@ -230,7 +233,7 @@ function SchedulingShell({
       const shift = shifts.find((s) => s.id === overData.shiftId);
       if (!officer || !shift || shift.status !== "open") return;
 
-      const result = checkAssignment(officer, shift, shifts, week);
+      const result = checkAssignment(officer, shift, shifts, week, unavailability);
 
       if (!result.ok) {
         showToast({
@@ -285,7 +288,7 @@ function SchedulingShell({
         const officer = officerById(shift.officerId);
         if (officer) {
           const moved: Shift = { ...shift, venueId: newVenue.id };
-          const result = checkAssignment(officer, moved, shifts, week);
+          const result = checkAssignment(officer, moved, shifts, week, unavailability);
           if (!result.ok) {
             showToast({
               tone: "danger",
@@ -325,7 +328,7 @@ function SchedulingShell({
         const newOfficer = officerById(overData.rowKey);
         if (!newOfficer) return;
         const moved: Shift = { ...shift, officerId: newOfficer.id };
-        const result = checkAssignment(newOfficer, moved, shifts, week);
+        const result = checkAssignment(newOfficer, moved, shifts, week, unavailability);
         if (!result.ok) {
           showToast({
             tone: "danger",
@@ -369,7 +372,7 @@ function SchedulingShell({
       const officer = officerById(shift.officerId);
       if (officer) {
         const moved: Shift = { ...shift, day: targetDay };
-        const result = checkAssignment(officer, moved, shifts, week);
+        const result = checkAssignment(officer, moved, shifts, week, unavailability);
         if (!result.ok) {
           showToast({
             tone: "danger",
@@ -426,7 +429,7 @@ function SchedulingShell({
         officerId: newOfficer.id,
         day: targetDay,
       };
-      const result = checkAssignment(newOfficer, moved, shifts, week);
+      const result = checkAssignment(newOfficer, moved, shifts, week, unavailability);
       if (!result.ok) {
         showToast({
           tone: "danger",

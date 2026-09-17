@@ -82,6 +82,9 @@ export const EarningsScreenV2: React.FC = () => {
     customTotal: 0,
   });
 
+  // The stats request used to fail silently, so a rejected call left the
+  // hero card showing a confident £0.00 above a list of real invoices.
+  const [statsError, setStatsError] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date());
@@ -98,8 +101,10 @@ export const EarningsScreenV2: React.FC = () => {
       }
       const response = await apiService.get(url);
       setEarningsStats(response);
+      setStatsError(false);
     } catch (error) {
       logger.error('[EarningsV2] stats', error);
+      setStatsError(true);
     }
   }, []);
 
@@ -291,8 +296,21 @@ export const EarningsScreenV2: React.FC = () => {
               letterSpacing: -1.6,
             }}
           >
-            {formatCurrency(totalForPeriod)}
+            {statsError ? '—' : formatCurrency(totalForPeriod)}
           </Text>
+          {statsError ? (
+            <Text
+              allowFontScaling={false}
+              style={{
+                marginTop: 6,
+                fontSize: 12,
+                color: theme.colors.accent,
+                fontFamily: theme.fonts.sans,
+              }}
+            >
+              Totals unavailable — pull down to retry.
+            </Text>
+          ) : null}
 
           {/* Stat strip */}
           <View
@@ -327,11 +345,13 @@ export const EarningsScreenV2: React.FC = () => {
                   letterSpacing: -0.2,
                 }}
               >
-                {selectedPeriod === 'month'
-                  ? formatCurrency(earningsStats.lastMonth)
-                  : selectedPeriod === 'custom'
-                    ? `${startDate.toLocaleDateString('en-GB', { month: 'short' })}–${endDate.toLocaleDateString('en-GB', { month: 'short' })}`
-                    : 'N/A'}
+                {statsError
+                  ? '—'
+                  : selectedPeriod === 'month'
+                    ? formatCurrency(earningsStats.lastMonth)
+                    : selectedPeriod === 'custom'
+                      ? `${startDate.toLocaleDateString('en-GB', { month: 'short' })}–${endDate.toLocaleDateString('en-GB', { month: 'short' })}`
+                      : 'N/A'}
               </Text>
             </View>
             <View style={{ width: 1, backgroundColor: theme.colors.surface.hairline }} />

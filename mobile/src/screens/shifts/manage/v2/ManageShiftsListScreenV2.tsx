@@ -14,6 +14,7 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
+  Alert,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -148,7 +149,13 @@ export const ManageShiftsListScreenV2: React.FC = () => {
     try {
       await loadPageOne(filter).unwrap();
     } catch (err) {
+      // Silently swallowing this left the previous (possibly stale) roster on
+      // screen with no sign the reload had failed.
       logger.error('[ManageShifts] refresh failed', err);
+      Alert.alert(
+        'Could not refresh',
+        'The shift list could not be reloaded. Check your connection and pull down to try again.',
+      );
     } finally {
       setRefreshing(false);
     }

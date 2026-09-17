@@ -161,26 +161,6 @@ export function VenuesHeader({
           })}
         </div>
 
-        <button
-          type="button"
-          aria-label="Notifications"
-          style={{
-            position: "relative",
-            width: 38,
-            height: 38,
-            borderRadius: 8,
-            background: tokens.color.ink100,
-            border: "none",
-            color: tokens.color.ink800,
-            display: "grid",
-            placeItems: "center",
-            cursor: "pointer",
-            flexShrink: 0,
-          }}
-        >
-          <Icon name="bell" size={18} />
-        </button>
-
         <Button
           variant="primary"
           accent={palette}

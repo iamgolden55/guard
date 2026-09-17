@@ -8,6 +8,11 @@ interface ActivityMeta {
   icon: IconName;
 }
 
+const FALLBACK_META: ActivityMeta = {
+  color: tokens.color.ink600,
+  icon: "info",
+};
+
 const ACTIVITY_META: Record<ActivityKind, ActivityMeta> = {
   "check-in": { color: tokens.color.success, icon: "check" },
   "check-out": { color: tokens.color.ink600, icon: "arrow-down" },
@@ -94,8 +99,22 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
             background: tokens.color.ink200,
           }}
         />
+        {items.length === 0 && (
+          <div
+            style={{
+              padding: "20px 0 12px 46px",
+              fontSize: 13,
+              color: tokens.color.ink500,
+            }}
+          >
+            Nothing in the last 24 hours. Check-ins, check-outs and incidents
+            appear here as they happen.
+          </div>
+        )}
         {items.map((a, i) => {
-          const meta = ACTIVITY_META[a.kind];
+          // A kind the UI doesn't know about would otherwise read `.color`
+          // off undefined and take the whole dashboard down.
+          const meta = ACTIVITY_META[a.kind] ?? FALLBACK_META;
           return (
             <div
               key={i}

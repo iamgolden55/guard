@@ -10,7 +10,6 @@ from django.utils import timezone
 from django.db.models import Q, Count, Avg, Sum, Max, Min
 from django.core.cache import cache
 from django.http import HttpResponse, FileResponse, Http404
-import mimetypes
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
@@ -20,10 +19,11 @@ from rest_framework import viewsets, status, serializers, filters
 import django_filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import AuthenticationFailed, ValidationError, PermissionDenied
+from rest_framework.exceptions import APIException, AuthenticationFailed, ValidationError, PermissionDenied
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from api.permissions import IsManagerOrAdmin, IsAdminRole
 from api.middleware.tenant_middleware import resolve_request_company
+from api.utils import sia_documents
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -1720,7 +1720,122 @@ class SIALicenseViewSet(viewsets.ModelViewSet):
                     "You can only submit a licence against your own profile"
                 )
 
-        serializer.save(staff_profile=profile, status='pending')
+        # A card sent with the form is stored under the officer's directory —
+        # never the uploader's — before the row exists, and removed again if
+        # the row can't be written.
+        if 'file' in self.request.FILES:
+            key = self._store_uploaded_document(profile.user_id)
+            try:
+                serializer.save(
+                    staff_profile=profile, status='pending',
+                    document_url=sia_documents.url_for(self.request, key),
+                )
+            except Exception:
+                sia_documents.delete_quietly(key)
+                raise
+        else:
+            serializer.save(staff_profile=profile, status='pending')
+
+    def perform_update(self, serializer):
+        """A licence stays with the officer it was issued to.
+
+        `staff_profile` is writable on create, and nothing stopped a PATCH from
+        moving a verified licence — and its document — onto any profile id,
+        including one in another company.
+        """
+        new_profile = serializer.validated_data.get('staff_profile')
+        if new_profile is not None and new_profile.pk != serializer.instance.staff_profile_id:
+            raise ValidationError({
+                'staff_profile': ['A licence cannot be moved to another staff member.'],
+            })
+        serializer.save()
+
+    def _store_uploaded_document(self, owner_user_id):
+        if not settings.MEDIA_STORAGE_IS_DURABLE:
+            raise StorageUnavailable()
+        upload = self.request.FILES.get('file')
+        try:
+            extension, _ = sia_documents.validate_upload(upload)
+        except sia_documents.DocumentRejected as exc:
+            raise ValidationError({'file': [str(exc)]})
+        return sia_documents.store(upload, owner_user_id, extension)
+
+    @action(detail=True, methods=['get'], parser_classes=[MultiPartParser, FormParser])
+    def document(self, request, pk=None):
+        """The licence card, to the officer or a manager of their company.
+
+        `get_object()` is the authorisation: the queryset is company-scoped for
+        managers and admins and own-only for staff, so anyone else gets a 404.
+        """
+        licence = self.get_object()
+        if not licence.document_url:
+            return Response(
+                {'detail': 'No card is on file for this licence.', 'code': 'no_document'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        key = sia_documents.key_for_licence(licence)
+        response = sia_documents.serve(key, f'sia-licence-{licence.pk}') if key else None
+        if response is None:
+            return Response(
+                {
+                    'detail': 'The card file could not be found. Upload it again.',
+                    'code': 'document_missing',
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return response
+
+    @document.mapping.post
+    def upload_document(self, request, pk=None):
+        """Attach or replace the licence card.
+
+        Managers and admins may do this for any licence in their company. An
+        officer may only while their own licence is still pending: once a
+        manager has verified it, the card on file is the one they checked.
+        Replacing a card leaves the verified status alone — verification is
+        against the SIA register, and resetting it would pull the officer off
+        shifts over a rescan.
+        """
+        licence = self.get_object()
+        if (getattr(request.user, 'role', None) not in ('admin', 'manager')
+                and licence.status != 'pending'):
+            raise PermissionDenied(
+                'This licence has been verified. Ask a manager to replace the card.'
+            )
+
+        # Upload before taking the row lock; the network call can be slow.
+        new_key = self._store_uploaded_document(licence.staff_profile.user_id)
+        try:
+            with transaction.atomic():
+                locked = (
+                    SIALicense.objects.select_for_update(of=('self',))
+                    .select_related('staff_profile')
+                    .get(pk=licence.pk)
+                )
+                old_key = sia_documents.key_for_licence(locked)
+                locked.document_url = sia_documents.url_for(request, new_key)
+                locked.save(update_fields=['document_url', 'updated_at'])
+                if old_key and old_key != new_key:
+                    transaction.on_commit(lambda: sia_documents.delete_quietly(old_key))
+        except Exception:
+            sia_documents.delete_quietly(new_key)
+            raise
+
+        AuditLog.log(
+            user=request.user,
+            company=self._get_user_company(),
+            action='update',
+            resource_type='SIALicense',
+            resource_id=str(locked.id),
+            details={
+                'field': 'document',
+                'replaced': bool(old_key),
+                'staff_user_id': locked.staff_profile.user_id,
+                'size': request.FILES['file'].size,
+            },
+            request=request,
+        )
+        return Response(self.get_serializer(locked).data)
 
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
@@ -4253,98 +4368,43 @@ def request_account_deletion(request):
     })
 
 
+class StorageUnavailable(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = 'Document storage is not configured.'
+    default_code = 'storage_unavailable'
+
+
 class FileUploadView(APIView):
+    """Upload an SIA licence document for yourself.
+
+    Kept for older clients. It stores under the uploader's own directory and
+    returns a URL, but `document_url` is read-only on the licence serializer, so
+    that URL can no longer be attached to a licence. Attach a card with
+    `POST /sia-licenses/` (multipart, `file`) or `POST /sia-licenses/<id>/document/`.
+    Validation lives in `api.utils.sia_documents`.
+    """
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
-    def sanitize_filename(self, filename):
-        """
-        Sanitize filename by replacing spaces and special characters.
-        Preserves the file extension.
-        """
-        # Split filename and extension
-        name, ext = os.path.splitext(filename)
-        # Replace spaces with underscores
-        name = name.replace(' ', '_')
-        # Remove any other problematic characters (keep alphanumeric, underscores, hyphens, dots)
-        name = re.sub(r'[^\w\-.]', '_', name)
-        # Remove multiple consecutive underscores
-        name = re.sub(r'_+', '_', name)
-        # Strip leading/trailing underscores
-        name = name.strip('_')
-        return f"{name}{ext}"
-
-    # SECURITY: Restrict file types and size for SIA license uploads
-    ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-
-    # Magic byte signatures for file type validation
-    VALID_FILE_SIGNATURES = [
-        b'\xff\xd8\xff',  # JPEG
-        b'\x89PNG',       # PNG
-        b'%PDF',          # PDF
-    ]
-
-    @staticmethod
-    def validate_file_magic_bytes(file_obj):
-        """Validate file type by checking magic bytes, not just Content-Type header."""
-        valid_signatures = [
-            b'\xff\xd8\xff',  # JPEG
-            b'\x89PNG',       # PNG
-            b'%PDF',          # PDF
-        ]
-        header = file_obj.read(8)
-        file_obj.seek(0)
-        return any(header.startswith(sig) for sig in valid_signatures)
-
     def post(self, request, format=None):
+        if not settings.MEDIA_STORAGE_IS_DURABLE:
+            raise StorageUnavailable()
+
         file_obj = request.FILES.get('file')
-        if not file_obj:
-            return Response({'error': 'No file provided.'}, status=400)
+        try:
+            extension, _ = sia_documents.validate_upload(file_obj)
+        except sia_documents.DocumentRejected as exc:
+            return Response({'error': str(exc)}, status=400)
 
-        # Validate file size
-        if file_obj.size > self.MAX_FILE_SIZE:
-            return Response({'error': 'File too large. Maximum size is 10MB.'}, status=400)
-
-        # Validate file type by Content-Type header
-        if file_obj.content_type not in self.ALLOWED_TYPES:
-            return Response({
-                'error': 'Invalid file type. Allowed types: PDF, JPEG, PNG.'
-            }, status=400)
-
-        # SECURITY: Validate file type by magic bytes to prevent Content-Type spoofing
-        if not self.validate_file_magic_bytes(file_obj):
-            return Response({
-                'error': 'Invalid file type. Only JPEG, PNG, and PDF files are allowed.'
-            }, status=400)
-
-        # Store under an unguessable name, in a per-owner directory.
-        #
-        # Files used to land in a shared `sia_licenses/` prefix under the
-        # sanitised *original* filename — `John_Smith_SIA_Licence.pdf` — and
-        # the endpoint returned a bare media URL with no access control on it.
-        # Anyone with the link, or willing to guess a colleague's name, could
-        # read an officer's identity document.
-        #
-        # The owner id in the path is what `SIALicenseDocumentView` authorises
-        # against, so it has to be here and not merely in a database row: a
-        # document is uploaded before the licence record that references it
-        # exists.
-        original_name = self.sanitize_filename(file_obj.name)
-        extension = os.path.splitext(original_name)[1].lower()
-        stored_name = f"{uuid.uuid4().hex}{extension}"
-        file_path = os.path.join('sia_licenses', str(request.user.id), stored_name)
-        path = default_storage.save(file_path, ContentFile(file_obj.read()))
-
-        # Point at the authenticated view rather than at MEDIA_URL. A bare
-        # media URL is a bearer token that never expires and is checked by
-        # nobody.
-        relative = quote(path.split('sia_licenses/', 1)[-1], safe='/')
-        file_url = request.build_absolute_uri(
-            f'/api/v1/sia-license-documents/{relative}'
-        )
+        # Unguessable name in a per-owner directory; the owner id in the path is
+        # what `SIALicenseDocumentView` authorises against.
+        key = sia_documents.store(file_obj, request.user.id, extension)
         return Response(
-            {'url': file_url, 'filename': original_name}, status=201
+            {
+                'url': sia_documents.url_for(request, key),
+                'filename': sia_documents.display_name(file_obj.name),
+            },
+            status=201,
         )
 
 
@@ -4407,17 +4467,13 @@ class SIALicenseDocumentView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        storage_path = os.path.join('sia_licenses', path)
-        if not default_storage.exists(storage_path):
-            raise Http404
-
-        content_type, _ = mimetypes.guess_type(storage_path)
-        response = FileResponse(
-            default_storage.open(storage_path, 'rb'),
-            content_type=content_type or 'application/octet-stream',
+        # The served type comes from the file's bytes, not its extension: a
+        # stored `.html` must never go out as `text/html` on this origin.
+        response = sia_documents.serve(
+            f'{sia_documents.PREFIX}/{path}', 'sia-licence',
         )
-        # Never let a shared cache hold an identity document.
-        response['Cache-Control'] = 'private, no-store'
+        if response is None:
+            raise Http404
         return response
 
 
@@ -9904,6 +9960,11 @@ class AdminDashboardOverviewView(APIView):
     @staticmethod
     def _relative_time(now, then):
         secs = (now - then).total_seconds()
+        # A timestamp ahead of the server clock — device clock skew on a
+        # check-in, or an auto-checkout stamped to the shift's scheduled end —
+        # fell into the `< 60` branch and rendered as e.g. '-44047s'.
+        if secs < 0:
+            return 'just now'
         if secs < 60:
             return f'{int(secs)}s'
         if secs < 3600:

@@ -8,7 +8,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Avatar } from "../../../design-system/primitives/Avatar";
 import { Icon } from "../../../design-system/Icon";
 import { tokens } from "../../../design-system/tokens";
-import { fmtHrs, fmtRange, siaState, UNAVAIL, type Shift } from "../data/mocks";
+import { fmtHrs, fmtRange, siaState, type Shift } from "../data/mocks";
 import { officerWeeklyHrs, useScheduling } from "../state/SchedulingState";
 
 export interface RosterViewProps {
@@ -16,7 +16,8 @@ export interface RosterViewProps {
 }
 
 export function RosterView({ onOpenShift }: RosterViewProps) {
-  const { shifts, officers, venueById, week } = useScheduling();
+  const { shifts, officers, venueById, week, unavailabilityOn } =
+    useScheduling();
   return (
     <div
       style={{
@@ -157,7 +158,7 @@ export function RosterView({ onOpenShift }: RosterViewProps) {
                   const cellShifts = shifts.filter(
                     (s) => s.officerId === o.id && s.day === di,
                   );
-                  const unavail = UNAVAIL.find((u) => u.officerId === o.id && u.day === di);
+                  const unavail = unavailabilityOn(o.id, di);
                   return (
                     <DroppableCell
                       key={di}

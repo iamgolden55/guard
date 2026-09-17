@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import offlineExchangeService from '../../services/offlineExchangeService';
+import { navigate } from '../../navigation/navigationRef';
 import { spacing } from '../../theme';
 import { logger } from '../../utils/logger';
 
@@ -162,6 +163,13 @@ export const SyncStatusBanner: React.FC = () => {
     return null;
   }
 
+  const optionalColors = config.colors as {
+    bgDark?: string;
+    textLight?: string;
+  };
+  const iconBg = optionalColors.bgDark || config.colors.bg;
+  const subtitleColor = optionalColors.textLight || config.colors.text;
+
   return (
     <Animated.View
       style={[
@@ -175,22 +183,40 @@ export const SyncStatusBanner: React.FC = () => {
       ]}
     >
       <View style={styles.content}>
+        {/* Not every colour set in getBannerConfig carries bgDark/textLight,
+            so read them off a widened view once instead of repeating an
+            unchecked property access at each use site. */}
         {/* Icon container */}
-        <View style={[styles.iconContainer, { backgroundColor: config.colors.bgDark || config.colors.bg }]}>
+        <View style={[styles.iconContainer, { backgroundColor: iconBg }]}>
           <Ionicons name={config.icon} size={16} color={config.colors.text} />
         </View>
 
-        {/* Text content */}
-        <View style={styles.textContainer}>
+        {/* Text content — tapping opens the queue. SyncQueueScreen was
+            registered in MainNavigator but nothing navigated to it, so the
+            banner could tell an officer "3 items pending" with no way to see
+            which three. */}
+        <TouchableOpacity
+          style={styles.textContainer}
+          accessibilityRole="button"
+          accessibilityLabel="View pending sync items"
+          onPress={() => navigate('Main', { screen: 'SyncQueue' })}
+        >
           <Text style={[styles.message, { color: config.colors.text }]}>
             {config.message}
           </Text>
-          {config.subtitle && (
-            <Text style={[styles.subtitle, { color: config.colors.textLight || config.colors.text }]}>
-              {config.subtitle}
-            </Text>
-          )}
-        </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            {config.subtitle && (
+              <Text style={[styles.subtitle, { color: subtitleColor }]}>
+                {config.subtitle}
+              </Text>
+            )}
+            <Ionicons
+              name="chevron-forward"
+              size={11}
+              color={subtitleColor}
+            />
+          </View>
+        </TouchableOpacity>
 
         {/* Sync button */}
         {config.showSync && isOnline && !isSyncing && (

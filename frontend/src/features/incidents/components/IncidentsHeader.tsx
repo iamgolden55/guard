@@ -1,5 +1,5 @@
 // IncidentsHeader — same shape as RecruitmentHeader.
-// Row 1 = breadcrumb + title + open chip + bell + Export
+// Row 1 = breadcrumb + title + open chip + Export
 // Row 2 = three tabs (All / Open / Resolved) + search input
 import { Link } from "react-router-dom";
 import { useAccent } from "../../../contexts/AccentContext";
@@ -28,6 +28,9 @@ export interface IncidentsHeaderProps {
   stats: IncidentsStats;
   search: string;
   onSearchChange: (value: string) => void;
+  /** Downloads the rows currently in view as CSV. */
+  onExport?: () => void;
+  exportDisabled?: boolean;
 }
 
 export function IncidentsHeader({
@@ -36,6 +39,8 @@ export function IncidentsHeader({
   stats,
   search,
   onSearchChange,
+  onExport,
+  exportDisabled,
 }: IncidentsHeaderProps) {
   const { palette } = useAccent();
 
@@ -144,39 +149,17 @@ export function IncidentsHeader({
           </div>
         )}
 
-        <button
-          type="button"
-          aria-label="Notifications"
-          style={{
-            position: "relative",
-            width: 38,
-            height: 38,
-            borderRadius: 8,
-            background: tokens.color.ink100,
-            border: "none",
-            color: tokens.color.ink800,
-            display: "grid",
-            placeItems: "center",
-            cursor: "pointer",
-            flexShrink: 0,
-          }}
+        <Button
+          variant="secondary"
+          leading={<Icon name="download" size={14} />}
+          onClick={onExport}
+          disabled={!onExport || exportDisabled}
+          title={
+            exportDisabled
+              ? "Nothing to export in this view"
+              : "Download the incidents in this view as CSV"
+          }
         >
-          <Icon name="bell" size={18} />
-          <span
-            style={{
-              position: "absolute",
-              top: 6,
-              right: 7,
-              width: 7,
-              height: 7,
-              borderRadius: 4,
-              background: palette.primary,
-              border: "2px solid white",
-            }}
-          />
-        </button>
-
-        <Button variant="secondary" leading={<Icon name="download" size={14} />}>
           Export
         </Button>
       </div>

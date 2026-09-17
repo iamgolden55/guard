@@ -13,6 +13,7 @@
 // Optimistic mutation snapshots the current overview cache and removes the
 // row instantly; rolls back on error. Pattern from useRecruitmentData.ts.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { extractApiError } from "../../../lib/apiError";
 import { leaveService } from "../../../services";
 import {
   type DashboardOverviewResponse,
@@ -49,8 +50,26 @@ export interface UseDashboardDataResult {
   isLoading: boolean;
   error: Error | null;
   /** Approve or deny an approval. Routes by id prefix; shifts open the
-   * scheduling page rather than approving in-place (signature required). */
-  resolveApproval: (id: string, action: "approve" | "deny") => void;
+   * scheduling page rather than approving in-place (signature required).
+   * The optimistic row removal rolls back on failure, so `callbacks` is the
+   * only way the user finds out it didn't stick. */
+  resolveApproval: (
+    id: string,
+    action: "approve" | "deny",
+    callbacks?: {
+      onSuccess?: (message: string) => void;
+      onError?: (message: string) => void;
+    },
+  ) => void;
+  /** True while an approve/deny round-trip is in flight. */
+  isResolving: boolean;
+  /** Refetch the overview — the retry affordance on the error state. */
+  refetch: () => void;
+  // Raw KPI numbers for the hero illustration, which used to carry fixtures.
+  officersOnShift: number;
+  hoursDeliveredToday: number;
+  revenueThisWeek: number;
+  hoursSpark: number[];
 }
 
 const OVERVIEW_KEY = ["dashboard", "overview"] as const;
@@ -126,7 +145,6 @@ function toStaff(overview: DashboardOverviewResponse): DashboardStaff[] {
     license: s.license,
     expiresIn: s.expiresIn,
     hours: s.hours,
-    rating: 0, // Backend doesn't track ratings; column hidden in StaffTable.
     avatarHue: s.avatarHue,
   }));
 }
@@ -236,8 +254,34 @@ export function useDashboardData(): UseDashboardDataResult {
     heatmap: overview.coverage_heatmap,
     expiringLicensesCount: overview.sia_compliance.expiring_soon,
     openApprovalsCount: overview.kpis.open_approvals.value,
+    officersOnShift: overview.kpis.officers_on_shift.value,
+    hoursDeliveredToday: overview.kpis.hours_delivered_today.value,
+    revenueThisWeek: overview.kpis.revenue_this_week.value,
+    hoursSpark: overview.kpis.hours_delivered_today.spark ?? [],
     isLoading: overviewQuery.isLoading,
     error: overviewQuery.error as Error | null,
-    resolveApproval: (id, action) => resolveMutation.mutate({ id, action }),
+    isResolving: resolveMutation.isPending,
+    refetch: () => {
+      void overviewQuery.refetch();
+    },
+    resolveApproval: (id, action, callbacks) =>
+      resolveMutation.mutate(
+        { id, action },
+        {
+          onSuccess: () =>
+            callbacks?.onSuccess?.(
+              action === "approve" ? "Approved." : "Rejected.",
+            ),
+          onError: (err) =>
+            callbacks?.onError?.(
+              extractApiError(
+                err,
+                err instanceof Error
+                  ? err.message
+                  : "Couldn't update that approval. Please try again.",
+              ),
+            ),
+        },
+      ),
   };
 }

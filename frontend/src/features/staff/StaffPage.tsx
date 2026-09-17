@@ -5,7 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { Card } from "../../design-system/primitives/Card";
+import { Toast } from "../../design-system/primitives/Toast";
+import { extractApiError } from "../../lib/apiError";
 import { tokens } from "../../design-system/tokens";
+import profileService from "../../services/profileService";
 import { InviteStaffModal } from "./components/InviteStaffModal";
 import { PendingApprovalBanner } from "./components/PendingApprovalBanner";
 import {
@@ -55,6 +58,10 @@ function employmentTypeName(et: unknown): string | null {
   }
   return null;
 }
+
+// Module scope so the card viewer's fetch effect sees a stable reference.
+const fetchLicenseDocument = (licenseId: number) =>
+  profileService.fetchSIALicenseDocument(licenseId);
 
 function fullNameFromPending(p: PendingStaffProfile): string {
   if (p.full_name) return p.full_name;
@@ -227,9 +234,44 @@ export default function StaffPage() {
     setSearchParams(next, { replace: true });
   }, [focusId, activeRows, pendingRows, searchParams, setSearchParams]);
 
+  // Every mutation on this page was `await …mutateAsync(...)` with no catch:
+  // the optimistic row change rolled back in onError and the operator saw
+  // nothing at all — not on success, not on failure, and a rejected promise
+  // escaped as an unhandled rejection. One toast covers both directions.
+  const [toast, setToast] = useState<{
+    text: string;
+    tone: "neutral" | "danger";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [toast]);
+
+  /** Runs a mutation, reporting the outcome either way. */
+  const withFeedback = async (
+    run: () => Promise<unknown>,
+    success: string,
+    failure: string,
+  ): Promise<boolean> => {
+    try {
+      await run();
+      setToast({ text: success, tone: "neutral" });
+      return true;
+    } catch (err) {
+      setToast({ text: extractApiError(err, failure), tone: "danger" });
+      return false;
+    }
+  };
+
   const handleApprove = async (row: StaffRow) => {
-    await data.approveStaff.mutateAsync(row.id);
-    if (selectedRow?.id === row.id) setSelectedRow(null);
+    const ok = await withFeedback(
+      () => data.approveStaff.mutateAsync(row.id),
+      `${row.fullName} approved.`,
+      `Couldn't approve ${row.fullName}.`,
+    );
+    if (ok && selectedRow?.id === row.id) setSelectedRow(null);
   };
 
   const handleResendInvite = async (row: StaffRow) => {
@@ -252,10 +294,16 @@ export default function StaffPage() {
   };
 
   const handleDelete = async (row: StaffRow) => {
-    await data.deleteStaff.mutateAsync(row.id);
-    if (selectedRow?.id === row.id) setSelectedRow(null);
+    const ok = await withFeedback(
+      () => data.deleteStaff.mutateAsync(row.id),
+      `${row.fullName} removed from the team.`,
+      `Couldn't remove ${row.fullName}.`,
+    );
+    if (ok && selectedRow?.id === row.id) setSelectedRow(null);
   };
 
+  // ProfileTab renders its own inline notice from this result, so it stays
+  // pass-through rather than routing through the page toast.
   const handleUnlockAccount = async (row: StaffRow) => {
     return data.unlockAccount.mutateAsync(row.id);
   };
@@ -265,18 +313,28 @@ export default function StaffPage() {
     staffProfileId: number | null,
     employmentType: string | null,
   ) => {
-    await data.updateEmploymentType.mutateAsync({
-      userId,
-      staffProfileId,
-      employmentType,
-    });
+    await withFeedback(
+      () =>
+        data.updateEmploymentType.mutateAsync({
+          userId,
+          staffProfileId,
+          employmentType,
+        }),
+      "Employment type updated.",
+      "Couldn't update the employment type.",
+    );
   };
 
   const handleUpdatePayFrequency = async (
     staffProfileId: number,
     payFrequency: "weekly" | "monthly",
   ) => {
-    await data.updatePayFrequency.mutateAsync({ staffProfileId, payFrequency });
+    await withFeedback(
+      () =>
+        data.updatePayFrequency.mutateAsync({ staffProfileId, payFrequency }),
+      `Pay frequency set to ${payFrequency}.`,
+      "Couldn't update the pay frequency.",
+    );
   };
 
   const handleReviewPending = (profile: PendingStaffProfile) => {
@@ -303,12 +361,21 @@ export default function StaffPage() {
       country: string;
     }>,
   ) => {
-    await data.updateStaffAddress.mutateAsync({
-      staffProfileId,
-      data: addressPatch,
-    });
+    await withFeedback(
+      () =>
+        data.updateStaffAddress.mutateAsync({
+          staffProfileId,
+          data: addressPatch,
+        }),
+      "Address saved.",
+      "Couldn't save the address.",
+    );
   };
 
+  // The licence modal shows its own failure inline and keeps what the operator
+  // typed, so these two let the error reach it. Through withFeedback the
+  // rejection was swallowed, the modal closed as if it had saved, and the
+  // details were gone.
   const handleAddLicense = async (
     staffProfileId: number,
     payload: {
@@ -316,9 +383,21 @@ export default function StaffPage() {
       licenseType: string;
       issueDate: string;
       expiryDate: string;
+      file: File | null;
     },
   ) => {
-    await data.addStaffLicense.mutateAsync({ staffProfileId, data: payload });
+    const created = await data.addStaffLicense.mutateAsync({
+      staffProfileId,
+      data: payload,
+    });
+    if (payload.file && !created?.has_document) {
+      setToast({
+        text: "Licence added, but the card didn't attach. Use Upload card to try again.",
+        tone: "danger",
+      });
+      return;
+    }
+    setToast({ text: "SIA licence added.", tone: "neutral" });
   };
 
   const handleUpdateLicense = async (
@@ -331,13 +410,60 @@ export default function StaffPage() {
       staffProfileId,
       data: payload,
     });
+    setToast({ text: "SIA licence updated.", tone: "neutral" });
+  };
+
+  const handleUploadLicenseDocument = (
+    licenseId: number,
+    staffProfileId: number,
+    file: File,
+  ) =>
+    withFeedback(
+      () =>
+        data.uploadLicenseDocument.mutateAsync({
+          licenseId,
+          staffProfileId,
+          file,
+        }),
+      "Card uploaded.",
+      "Couldn't upload the card.",
+    );
+
+  // The server derives the outcome, so "verified" is only said when it was.
+  const handleVerifyLicense = async (
+    licenseId: number,
+    staffProfileId: number,
+  ) => {
+    try {
+      const updated = await data.verifyLicense.mutateAsync({
+        licenseId,
+        staffProfileId,
+      });
+      setToast(
+        updated?.status === "expired"
+          ? {
+              text: "Its expiry date has passed, so it was marked expired rather than verified.",
+              tone: "danger",
+            }
+          : { text: "Licence verified.", tone: "neutral" },
+      );
+    } catch (err) {
+      setToast({
+        text: extractApiError(err, "Couldn't verify the licence."),
+        tone: "danger",
+      });
+    }
   };
 
   const handleDeleteLicense = async (
     licenseId: number,
     staffProfileId: number,
   ) => {
-    await data.deleteStaffLicense.mutateAsync({ licenseId, staffProfileId });
+    await withFeedback(
+      () => data.deleteStaffLicense.mutateAsync({ licenseId, staffProfileId }),
+      "SIA licence deleted.",
+      "Couldn't delete the SIA licence.",
+    );
   };
 
   // ── Permission gate (admin-only for v1) ───────────────────────────────────
@@ -520,10 +646,15 @@ export default function StaffPage() {
         onAddLicense={handleAddLicense}
         onUpdateLicense={handleUpdateLicense}
         onDeleteLicense={handleDeleteLicense}
+        onUploadLicenseDocument={handleUploadLicenseDocument}
+        onVerifyLicense={handleVerifyLicense}
+        onFetchLicenseDocument={fetchLicenseDocument}
         isMutatingLicense={
           data.addStaffLicense.isPending ||
           data.updateStaffLicense.isPending ||
-          data.deleteStaffLicense.isPending
+          data.deleteStaffLicense.isPending ||
+          data.uploadLicenseDocument.isPending ||
+          data.verifyLicense.isPending
         }
         onApprove={handleApprove}
         onDelete={handleDelete}
@@ -536,10 +667,18 @@ export default function StaffPage() {
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         onSubmit={(payload) =>
-          data.inviteStaff.mutateAsync(payload).then(() => undefined)
+          data.inviteStaff.mutateAsync(payload).then((created) => {
+            setToast({
+              text: `Invitation sent to ${payload.email}.`,
+              tone: "neutral",
+            });
+            return created;
+          }).then(() => undefined)
         }
         isSubmitting={data.inviteStaff.isPending}
       />
+
+      {toast && <Toast message={toast.text} tone={toast.tone} />}
     </>
   );
 }

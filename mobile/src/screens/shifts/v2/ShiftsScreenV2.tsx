@@ -25,6 +25,7 @@ import {
   ActivityIndicator,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -47,6 +48,7 @@ import {
   fetchShifts,
 } from '../../../store/slices/shiftsSlice';
 import exchangeService from '../../../services/exchangeService';
+import { ApiTimeoutError, NetworkError } from '../../../services/api';
 import { logger } from '../../../utils/logger';
 import { useRedesignTheme } from '../../../theme/redesign';
 import { Eyebrow } from '../../../components/redesign';
@@ -526,7 +528,15 @@ export const ShiftsScreenV2 = () => {
     try {
       await refreshShiftData();
     } catch (e) {
+      // A pull-to-refresh that fails silently just puts the spinner away and
+      // leaves the old list on screen, which reads as "nothing changed".
       logger.error('[ShiftsScreenV2] refresh', e);
+      Alert.alert(
+        'Could not refresh',
+        e instanceof NetworkError || e instanceof ApiTimeoutError
+          ? 'You appear to be offline. These shifts may be out of date.'
+          : 'Your shifts could not be reloaded. Pull down to try again.',
+      );
     } finally {
       setRefreshing(false);
     }

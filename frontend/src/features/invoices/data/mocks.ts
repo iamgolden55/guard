@@ -2,14 +2,19 @@
 // Phase 5 ships with mocks for visual review parity. Phase 5.5 wires
 // real invoiceService calls.
 
+// Mirrors api.models.Invoice.STATUS_CHOICES plus two the serializer derives:
+// 'overdue' (sent + past due) and 'resolved' (rejected + superseded).
+// 'approved' was missing, so STATUS_COLOR['approved'] came back undefined and
+// InvStatusPill threw on `c.bg` for every manager-signed-off invoice.
 export type InvoiceStatus =
   | "draft"
+  | "pending"
   | "sent"
+  | "approved"
   | "paid"
   | "overdue"
   | "rejected"
-  | "resolved"
-  | "pending";
+  | "resolved";
 
 export type InvoiceKind = "client" | "staff";
 
@@ -95,8 +100,24 @@ export interface InvoiceRecord {
   party: ClientPartyDetails | StaffPartyDetails;
 }
 
-export const TODAY = new Date("2026-04-27");
-export const TODAY_STR = "Mon 27 Apr 2026";
+/** Local midnight today. This was frozen at `new Date("2026-04-27")`, which
+ *  meant the header printed a fixed date and every "overdue by N days"
+ *  counter was measured from that day rather than from now. */
+export function todayLocal(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/** "Mon 27 Apr 2026" for the header strip. */
+export function todayLabel(): string {
+  return todayLocal().toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
 
 export const money = (n: number) =>
   "£" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -116,8 +137,19 @@ export const dateGBShort = (iso: string | null | undefined) => {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 };
 
-export const daysFromToday = (iso: string | null | undefined) =>
-  iso ? Math.round((new Date(iso).getTime() - TODAY.getTime()) / 86400000) : 0;
+/** Whole days from today to `iso` — negative once the date has passed.
+ *  Both sides are normalised to local midnight so a due date never reads as
+ *  a day early west of Greenwich. */
+export const daysFromToday = (iso: string | null | undefined) => {
+  if (!iso) return 0;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  const target = m
+    ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+    : new Date(iso);
+  if (Number.isNaN(target.getTime())) return 0;
+  target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - todayLocal().getTime()) / 86400000);
+};
 
 export const COMPANY = {
   name: "Mead Security Ltd",
@@ -452,6 +484,7 @@ export interface StatusTone {
 export const STATUS_COLOR: Record<InvoiceStatus, StatusTone> = {
   draft: { bg: "#f3f2f1", border: "#e1dfdd", fg: "#605e5c", label: "Draft" },
   sent: { bg: "#e7f1fb", border: "#bcd9f2", fg: "#0b5c9b", label: "Sent" },
+  approved: { bg: "#eaf3ec", border: "#c3e0cb", fg: "#1d5e37", label: "Approved" },
   paid: { bg: "#e6f4ea", border: "#b8e0c2", fg: "#0f5132", label: "Paid" },
   overdue: { bg: "#fde7e9", border: "#f7c0c5", fg: "#8a1820", label: "Overdue" },
   rejected: { bg: "#fff4e5", border: "#ffd4a3", fg: "#8a4b0a", label: "Rejected" },

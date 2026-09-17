@@ -25,7 +25,14 @@ import {
   weekRangeIso,
   type MonthGrid,
 } from "../data/adapters";
-import type { SchedulingOfficer, SchedulingVenue, SchedulingWeek, Shift } from "../data/mocks";
+import type {
+  SchedulingOfficer,
+  SchedulingVenue,
+  SchedulingWeek,
+  Shift,
+  Unavailability,
+} from "../data/mocks";
+import { fetchUnavailability } from "../data/unavailability";
 
 export type SchedulingViewMode = "day" | "week" | "month" | "roster";
 
@@ -57,6 +64,9 @@ export interface UseSchedulingData {
   shifts: Shift[];
   officers: SchedulingOfficer[];
   venues: SchedulingVenue[];
+  /** Approved leave + self-declared contractor unavailability overlapping the
+   * visible range, as day offsets from `rangeAnchor`. */
+  unavailability: Unavailability[];
   isLoading: boolean;
   isError: boolean;
   error: unknown;
@@ -110,6 +120,22 @@ export function useSchedulingData({ viewDate, viewMode }: UseSchedulingDataArgs)
     queryFn: () => venueService.getAllVenues(),
   });
 
+  const dayCount = isMonth ? monthGrid.cells.length : 7;
+  const rangeEndDay = isMonth
+    ? monthGrid.rangeEnd
+    : (week.days[6]?.date ?? week.end);
+
+  const unavailabilityQuery = useQuery<Unavailability[]>({
+    queryKey: ["scheduling", "unavailability", rangeAnchor, rangeEndDay],
+    queryFn: () =>
+      fetchUnavailability({
+        anchorIso: rangeAnchor,
+        dayCount,
+        endIso: rangeEndDay,
+      }),
+    staleTime: 60 * 1000,
+  });
+
   const venues = useMemo<SchedulingVenue[]>(
     () => (venuesQuery.data ?? []).filter((v) => v.is_active).map(venueFromApi),
     [venuesQuery.data],
@@ -140,6 +166,7 @@ export function useSchedulingData({ viewDate, viewMode }: UseSchedulingDataArgs)
     shiftsQuery.refetch();
     officersQuery.refetch();
     venuesQuery.refetch();
+    unavailabilityQuery.refetch();
   };
 
   return {
@@ -148,6 +175,9 @@ export function useSchedulingData({ viewDate, viewMode }: UseSchedulingDataArgs)
     shifts,
     officers,
     venues,
+    unavailability: unavailabilityQuery.data ?? [],
+    // The unavailability overlay is additive: the grid renders correctly
+    // without it, so it doesn't gate the page's loading or error state.
     isLoading: shiftsQuery.isLoading || officersQuery.isLoading || venuesQuery.isLoading,
     isError: shiftsQuery.isError || officersQuery.isError || venuesQuery.isError,
     error: shiftsQuery.error ?? officersQuery.error ?? venuesQuery.error,

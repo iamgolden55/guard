@@ -152,7 +152,8 @@ export function ExceptionsView({ onSelect }: ExceptionsViewProps) {
               All clear
             </div>
             <div style={{ fontSize: 13, marginTop: 4 }}>
-              No open exceptions across {visibleShifts.length} shifts today.
+              No open exceptions across {visibleShifts.length}{" "}
+              {visibleShifts.length === 1 ? "shift" : "shifts"} today.
             </div>
           </div>
         )}
