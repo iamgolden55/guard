@@ -33,6 +33,8 @@ export interface OverviewViewProps {
   dashboard: ComplianceDashboardMetrics | null;
   recentViolations: ComplianceViolation[];
   isLoading: boolean;
+  /** The violations query failed — an empty list here is not an all-clear. */
+  loadFailed?: boolean;
   onSelectViolation: (v: ComplianceViolation) => void;
 }
 
@@ -40,6 +42,7 @@ export function OverviewView({
   dashboard,
   recentViolations,
   isLoading,
+  loadFailed = false,
   onSelectViolation,
 }: OverviewViewProps) {
   return (
@@ -57,6 +60,7 @@ export function OverviewView({
         <RecentViolations
           violations={recentViolations}
           isLoading={isLoading}
+          loadFailed={loadFailed}
           onSelect={onSelectViolation}
         />
       </div>
@@ -239,10 +243,12 @@ function KPICard({
 function RecentViolations({
   violations,
   isLoading,
+  loadFailed,
   onSelect,
 }: {
   violations: ComplianceViolation[];
   isLoading: boolean;
+  loadFailed: boolean;
   onSelect: (v: ComplianceViolation) => void;
 }) {
   const { palette } = useAccent();
@@ -291,6 +297,11 @@ function RecentViolations({
       </div>
       {isLoading ? (
         <RowMessage label="Loading violations…" />
+      ) : loadFailed ? (
+        // This panel used to say "staff are within thresholds" whenever the
+        // list came back empty — including when the request failed, which the
+        // violations endpoint did on every call until 2026-09-19.
+        <RowMessage label="Couldn't load violations. This is not an all-clear — refresh or try again shortly." />
       ) : violations.length === 0 ? (
         <RowMessage label="No violations detected — staff are within thresholds." />
       ) : (

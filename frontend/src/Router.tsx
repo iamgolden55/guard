@@ -25,6 +25,8 @@ import StaffPage from "./features/staff/StaffPage";
 import VenuesPage from "./features/venues/VenuesPage";
 import CapacityLogbookPage from "./features/capacity-logs/CapacityLogbookPage";
 import ThemeSmokePage from "./features/dev/ThemeSmokePage";
+import NotForThisRolePage from "./features/auth/NotForThisRolePage";
+import { UserRole } from "./types/auth";
 
 export default function Router() {
   return (
@@ -46,8 +48,12 @@ export default function Router() {
       {/* Public recruitment apply form (no auth, no chrome) */}
       <Route path="/apply/:companySlug" element={<ApplyPage />} />
 
-      {/* Protected app — standard layout */}
+      {/* Protected app. Signed in is not enough: the dashboard is for
+          managers and admins (officers use the mobile app). */}
       <Route element={<AuthGuard />}>
+        <Route path="/unauthorized" element={<NotForThisRolePage />} />
+      </Route>
+      <Route element={<AuthGuard allowedRoles={[UserRole.ADMIN, UserRole.MANAGER]} />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />

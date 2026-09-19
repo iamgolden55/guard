@@ -207,8 +207,14 @@ export default function IncidentsPage() {
       <IncidentsView
         incidents={visible}
         isLoading={data.isLoading}
-        emptyTitle={emptyCopy[view].title}
-        emptyHint={emptyCopy[view].hint}
+        // "No open incidents — every incident has been reviewed" is a claim
+        // about the venue. Don't make it when the list failed to load.
+        emptyTitle={data.error ? "Couldn't load incidents" : emptyCopy[view].title}
+        emptyHint={
+          data.error
+            ? "This doesn't mean there are none. Refresh the page or try again shortly."
+            : emptyCopy[view].hint
+        }
         onSelect={openDrawer}
       />
 

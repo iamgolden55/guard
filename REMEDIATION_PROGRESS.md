@@ -238,7 +238,7 @@ Batches, in order:
 | 2B | Trustworthy tests: repair the fixture drift behind ~140 standing failures, then make the full suite a required CI check | ⏳ |
 | 2C | Money integrity: `PROTECT` invoice lines, time adjustments and status history; backfill `payable_hours`; one definition of "outstanding"; Xero idempotency | ⏳ |
 | 2D | Would we know? A readiness health check, one beat scheduler, an alert when a payroll run is missing, startup checks for security settings, a backup/restore runbook | ⏳ |
-| 2E | Web honesty: fake payroll composition, dead bulk buttons, failures shown as "empty", admin role gate, company-scoped cache | ⏳ |
+| 2E | Web honesty: fake payroll composition, dead bulk buttons, failures shown as "empty", admin role gate, company-scoped cache | ✅ |
 | 2F | Mobile minimum-version gate; remove dead code | ⏳ |
 
 ### 2A: authorisation gaps ✅ (`fix/p2-authz`)
@@ -264,6 +264,24 @@ Tests:
 - `api/tests/test_p2_exchange_authz.py` (9): 7 failed before the fix
 - `api/tests/test_p2_writes_authz.py` (21): 19 failed before the fixes, checked by stashing them
 - `WriteRouteRatchetTests` (1)
+
+### 2E: web honesty ✅ (`fix/p2-reliability`)
+
+| Finding | Fix |
+| --- | --- |
+| Payroll sign-off screen showed £84,210 of made-up composition whenever its data was loading, failed, or had no run | Says loading / couldn't load / no run instead |
+| "No SIA issues this run" shown when the licence check hadn't loaded or had failed | Says so, and warns not to sign off |
+| Five buttons did nothing when clicked ("Approve N selected", "Approve N ready", "Bulk approve", "Review N", "Browse marketplace"); help text promised bulk approval | Disabled with a reason and where to do it instead; help text corrected. Real bulk approval needs a signature step: Phase 3 |
+| Compliance said "No violations — staff are within thresholds" when the list failed (it failed on *every* request until 1B fixed the endpoint) | "Couldn't load violations. This is not an all-clear." |
+| Leave approvals said "You're all caught up" when refused; incidents said "every incident has been reviewed"; recruitment "no applications yet", all on failure | Each says it couldn't load |
+| The dashboard had no role gate: officers could sign in and browse every page | Admin/manager only; officers see a page pointing them to the app |
+| The query cache survived logout, with no user or company in its keys, so a shared computer showed the previous user's (possibly another company's) data for up to 10 minutes | Cache cleared at login and logout |
+
+Verified: `npm run build` clean (it runs `tsc`); biome unchanged at 337. There is no frontend test suite.
+
+**Found, for later batches:**
+- **Managers can't approve leave.** A real manager gets a 403 on the approval queue: leave permissions read a role field that doesn't exist, so only Django platform staff pass. Backend fix in 2C; it also has to scope global leave types, policies and blackout periods first.
+- **No onboarding UI.** Self-serve signup can't create a company in the current frontend (Phase 3).
 
 ---
 

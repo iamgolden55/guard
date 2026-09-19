@@ -66,8 +66,15 @@ export function ViolationsBanner() {
             : "Overtime tiers, bank holiday uplift and rest-period warnings — admin can acknowledge."}
         </div>
       </div>
-      <Button variant="ghost" size="sm">
-        Review {hards.length + softs.length}
+      {/* Had no handler. The violations are listed on each shift; there is no
+          review screen to open yet. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled
+        title="Open the flagged shifts to review each violation."
+      >
+        {hards.length + softs.length} to review
       </Button>
     </div>
   );

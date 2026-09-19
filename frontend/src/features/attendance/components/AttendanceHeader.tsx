@@ -229,19 +229,19 @@ export function AttendanceHeader({
         <Button
           variant="primary"
           accent={palette}
-          leading={
-            <Icon name={readyCount === 0 ? "lock" : "check"} size={14} />
-          }
-          disabled={readyCount === 0}
+          leading={<Icon name="lock" size={14} />}
+          // Had no click handler — "Approve N ready" did nothing. Bulk
+          // approval needs a signature per shift; until it is built, say so.
+          disabled
           title={
             readyCount === 0
               ? "Nothing to approve — shifts auto-approve when officers check out cleanly. Manual approval is only for shifts that need review."
-              : undefined
+              : "Bulk approval isn't available yet. Open each shift to approve it."
           }
         >
           {readyCount === 0
             ? "Nothing to approve"
-            : `Approve ${readyCount} ready`}
+            : `${readyCount} ready · approve individually`}
         </Button>
       </div>
 

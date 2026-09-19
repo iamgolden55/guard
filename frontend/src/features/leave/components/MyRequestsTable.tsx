@@ -54,6 +54,8 @@ export interface MyRequestsTableProps {
   onCancel: (request: LeaveRequest) => void;
   cancellingId: number | null;
   isLoading: boolean;
+  /** The request list failed to load. */
+  loadFailed?: boolean;
 }
 
 export function MyRequestsTable({
@@ -61,9 +63,18 @@ export function MyRequestsTable({
   onCancel,
   cancellingId,
   isLoading,
+  loadFailed = false,
 }: MyRequestsTableProps) {
   if (isLoading) {
     return <Empty message="Loading your leave requests…" />;
+  }
+  if (loadFailed) {
+    return (
+      <Empty
+        message="Couldn't load your leave requests"
+        hint="Refresh the page. Your requests haven't been lost."
+      />
+    );
   }
   if (requests.length === 0) {
     return (
