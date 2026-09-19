@@ -92,6 +92,7 @@ jobs:
           api/tests/test_statutory_check_integrity.py
           api/tests/test_p0_authz.py
           api/tests/test_p0_money.py
+          api/tests/test_sia_assignment_warnings.py
           api/tests/test_tenancy_ratchet.py
           shifts/test_shift_authz.py
           shifts/test_overnight_attendance.py

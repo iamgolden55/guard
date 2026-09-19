@@ -78,6 +78,32 @@ def _alert_if_not_licensed_for_shift(request, shift):
             status='valid', expiry_date__gte=shift_date,
         ).exists()
         if has_valid_licence:
+            # A valid licence of the wrong kind — a CCTV licence on a door
+            # supervisor shift — is the case this used to wave through.
+            from api.utils.licence_requirements import licence_warnings_for_shift
+            mismatch = next(
+                (w for w in licence_warnings_for_shift(shift) if w['type'] == 'missing_qualification'),
+                None,
+            )
+            if mismatch:
+                AuditLog.log(
+                    user=shift.staff_user,
+                    company=shift.venue.company if shift.venue else None,
+                    action='compliance_alert',
+                    resource_type='Shift',
+                    resource_id=str(shift.id),
+                    details={
+                        'reason': 'licence_does_not_cover_role',
+                        'required_role': shift.required_security_role,
+                        'shift_date': str(shift_date),
+                        'message': mismatch['message'],
+                    },
+                    request=request,
+                )
+                logger.warning(
+                    "Check-in on a role the licence does not cover: shift %s, officer %s, role %s",
+                    shift.id, shift.staff_user_id, shift.required_security_role,
+                )
             return
 
         latest = profile.sia_licenses.order_by('-expiry_date').first()
@@ -171,6 +197,15 @@ class ShiftViewSet(viewsets.ModelViewSet):
     #: account — including one with no company — mint approved shifts at an
     #: arbitrary rate in any company's venue (AUDIT-2026-09-17 S-22).
     MANAGER_WRITE_ACTIONS = ('create_multi_staff',)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        # The scheduler reads SIA licence warnings from the create/update
+        # response. Only on writes: computing them per row would put a licence
+        # query on every shift in a list.
+        if self.action in ('create', 'update', 'partial_update'):
+            context['include_licence_warnings'] = True
+        return context
 
     def get_serializer_class(self):
         # Use the camelCase serializer for the frontend
@@ -1580,7 +1615,9 @@ class ShiftViewSet(viewsets.ModelViewSet):
             # No notification here — these shifts are created unpublished, so
             # the officers hear about them when the manager publishes.
             # Return the created shifts using the regular serializer
-            shift_data = ShiftSerializer(shifts, many=True).data
+            shift_data = ShiftSerializer(
+                shifts, many=True, context={'request': request, 'include_licence_warnings': True},
+            ).data
             return Response({
                 'message': f'Successfully created {len(shifts)} shifts',
                 'shifts': shift_data,
@@ -2762,6 +2799,7 @@ class ShiftViewSet(viewsets.ModelViewSet):
 
                 staff = users[staff_id]
                 conflict_reason = None
+                licence_note = None
 
                 if conflict_reason is None:
                     prior = batch_intervals.setdefault(staff_id, [])
@@ -2784,13 +2822,25 @@ class ShiftViewSet(viewsets.ModelViewSet):
                         leave_warning = next((w for w in result.get('warnings', []) if w.get('type') == 'on_leave'), None)
                         if leave_warning:
                             conflict_reason = leave_warning['message']
+                        # Not a conflict (decision D-B: warn, don't block), but
+                        # the manager should see it before creating.
+                        from api.utils.licence_requirements import RECORDED_WARNING_TYPES
+                        licence = next(
+                            (w for w in result.get('warnings', []) if w.get('type') in RECORDED_WARNING_TYPES),
+                            None,
+                        )
+                        if licence:
+                            licence_note = licence['message']
 
                 if conflict_reason:
                     slot_results.append({'staff_user': staff_id, 'status': 'conflict', 'reason': conflict_reason})
                     conflict_total += 1
                 else:
                     batch_intervals[staff_id].append((slot['start'], slot['end']))
-                    slot_results.append({'staff_user': staff_id, 'status': 'ok'})
+                    ok_slot = {'staff_user': staff_id, 'status': 'ok'}
+                    if licence_note:
+                        ok_slot['licence_warning'] = licence_note
+                    slot_results.append(ok_slot)
                     assigned_total += 1
 
             shift_plans.append({

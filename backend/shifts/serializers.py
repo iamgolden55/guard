@@ -105,6 +105,13 @@ def resolve_request_company(request):
 
 
 class ShiftSerializer(serializers.ModelSerializer):
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if self.context.get('include_licence_warnings'):
+            from api.utils.licence_requirements import licence_warnings_for_shift
+            data['licence_warnings'] = licence_warnings_for_shift(instance)
+        return data
+
     venue_details = SimpleVenueSerializer(source='venue', read_only=True)
     staff_details = SimpleUserSerializer(source='staff_user', read_only=True)
     required_security_role = serializers.CharField(default='sg', required=False)

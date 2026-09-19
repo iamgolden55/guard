@@ -18,8 +18,8 @@ Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋
 | 1B | Tenancy and authorisation P0s | ✅ committed, no regressions |
 | 1C | Money P0s (client bill rate, manager hour overrides, mark-paid) | ✅ committed, no regressions |
 | 1D | Mobile check-in data loss | ✅ committed, no regressions |
-| 1E | SIA role↔licence, warn and record | 🟡 in progress |
-| — | **Stop and report** after 1E | ⏳ |
+| 1E | SIA role↔licence, warn and record | ✅ committed, no regressions |
+| — | **Stop and report** after 1E | ✅ report below — waiting on your review |
 | 2 | Reliability (backups, alerts, PROTECT, pay basis, Xero, web honesty) | ⏳ planned |
 | 3 | Product completion (no-show alerts, manager inbox, incident evidence) | ⏳ planned |
 | 4–5 | Scale, advanced | ⏳ planned |
@@ -143,11 +143,26 @@ Reproduction tests: `api/tests/test_p0_money.py` (13). 11 failed before the fixe
 - A live late arrival (running late, no queued attempt) still meets the no-show. That's the "running late" case in Phase 3.
 - This only protects officers once they install the new build (EAS). Phase 2 adds a minimum-version gate.
 
-## Phase 1E: SIA warn-and-record 🟡
+## Phase 1E: SIA warn-and-record ✅ (`fix/p0-sia-warn`)
 
-- **Reproduction tests:** `api/tests/test_sia_assignment_warnings.py` (7)
-- **Shared helper:** `api/utils/licence_requirements.py` (role→licence mapping, warnings)
-- **Wiring:** into the validators, a Shift signal for the audit record, create/update responses, the check-in alert, and the scheduler toast. Next.
+Following your choice: **warn and record, never block.**
+
+| What | Status |
+| --- | --- |
+| One role→licence mapping (`api/utils/licence_requirements.py`) used by the scheduling preview, the create/update responses, the audit record and the check-in alert | ✅ |
+| Roles with no licence mapping (steward, retail, static, mobile, event) are flagged `unverifiable_role`, not silently passed | ✅ |
+| Every new assignment to an officer whose licence doesn't cover the role writes an AuditLog `licence_warning` row, whichever path made it. It's recorded once, not on every re-save. | ✅ |
+| Manager sees it: a warning toast on create, edit, assign and move in the scheduler; a "licence check" marker on the bulk-wizard slot; `licence_warnings` in the multi-staff response | ✅ |
+| Check-in alert now also fires for a valid licence of the *wrong kind* (e.g. CCTV on a door) | ✅ |
+| Tests: `api/tests/test_sia_assignment_warnings.py` (10). 7 failed without the fix, confirmed by stashing it; all pass with it. | ✅ |
+| Frontend build clean, biome unchanged at 337 | ✅ |
+| Full backend suite, per file vs baseline | ✅ versus 1D, the only change is +10 passing SIA tests (496 passed / 167 failed / 9 errors — all standing) |
+
+**Caught by the regression guards:** my first mapping accepted only a licence with the same name as the role. So it flagged door-supervisor holders on security-guard shifts, which the previous audit's check-in guard says is fine. That matches the SIA's rule that a door supervisor licence also covers security guarding, so the mapping now accepts it. The guard was not changed, and two new tests pin the rule both ways.
+
+**Needs your confirmation (business rules I didn't invent):**
+- A door supervisor licence covering security-guarding shifts: now assumed, per the SIA and the existing guard. Tell me if your contracts say otherwise.
+- What do the steward, retail, static, mobile and event roles require? They are flagged "unverifiable" until you tell me.
 
 ---
 

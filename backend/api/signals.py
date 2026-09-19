@@ -1270,3 +1270,59 @@ def delete_sia_licence_document(sender, instance, **kwargs):
     key = sia_documents.key_for_licence(instance)
     if key:
         transaction.on_commit(lambda: sia_documents.delete_quietly(key))
+
+
+# =============================================================================
+# SIA licence at assignment (AUDIT-2026-09-17 P0-C, decision D-B)
+# =============================================================================
+
+@receiver(post_save, sender=Shift)
+def record_licence_warning_on_assignment(sender, instance, created, **kwargs):
+    """Leave an AuditLog row when an officer is assigned to a shift their SIA
+    licence doesn't cover.
+
+    Warn and record, never block: the assignment stands, the manager is told
+    in the response, and this row is the evidence that it happened and who did
+    it. A signal rather than per-view code so no assignment path — create,
+    edit, bulk create, multi-staff, swap, open-shift claim, a script — can
+    skip it.
+    """
+    if kwargs.get('raw') or not instance.staff_user_id:
+        return
+    assigned_now = created or instance._original_staff_user_id != instance.staff_user_id
+    if not assigned_now:
+        return
+    # `_original_staff_user_id` is not reset after a save, so the same instance
+    # saved again would look newly assigned. Check each officer/role once.
+    checked = (instance.staff_user_id, instance.required_security_role)
+    if getattr(instance, '_licence_checked_for', None) == checked:
+        return
+    instance._licence_checked_for = checked
+
+    from api.middleware.audit_context import get_current_actor, get_current_request
+    from api.utils.licence_requirements import RECORDED_WARNING_TYPES, licence_warnings_for_shift
+    from .models import AuditLog
+
+    try:
+        warnings = [
+            w for w in licence_warnings_for_shift(instance) if w['type'] in RECORDED_WARNING_TYPES
+        ]
+        if not warnings:
+            return
+        AuditLog.log(
+            user=get_current_actor(),
+            company=instance.venue.company if instance.venue_id else None,
+            action='licence_warning',
+            resource_type='Shift',
+            resource_id=str(instance.pk),
+            details={
+                'officer_id': instance.staff_user_id,
+                'required_role': instance.required_security_role,
+                'shift_date': str(instance.start_time.date()) if instance.start_time else None,
+                'warnings': warnings,
+            },
+            request=get_current_request(),
+        )
+    except Exception:
+        # A record must never be the reason an assignment fails.
+        logger.exception("Could not record licence warning for shift %s", instance.pk)
