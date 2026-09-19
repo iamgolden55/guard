@@ -35,8 +35,10 @@ module.exports = {
         NSCameraUsageDescription: "This app requires camera access to capture venue entrance photos during shift check-in and incident evidence photos.",
         NSPhotoLibraryUsageDescription: "This app requires photo library access to attach existing photos to incident reports.",
         NSLocationWhenInUseUsageDescription: "This app requires location access to verify you are at the venue during shift check-in and check-out.",
-        NSFaceIDUsageDescription: "This app uses Face ID for secure and convenient login.",
-        NSMicrophoneUsageDescription: "This app requires microphone access for voice-to-text incident reporting."
+        NSFaceIDUsageDescription: "This app uses Face ID for secure and convenient login."
+        // No microphone: it was declared "for voice-to-text incident
+        // reporting", which was never built. Asking for a permission the app
+        // doesn't use is an App Store review and privacy-label risk.
       },
       config: {
         usesNonExemptEncryption: false
@@ -65,7 +67,6 @@ module.exports = {
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
       permissions: [
         "CAMERA",
-        "RECORD_AUDIO",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "READ_EXTERNAL_STORAGE",
@@ -74,6 +75,8 @@ module.exports = {
         "USE_FINGERPRINT",
         "VIBRATE"
       ],
+      // Stripped even if a library manifest adds it at build time.
+      blockedPermissions: ["android.permission.RECORD_AUDIO"],
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false
     },
@@ -82,7 +85,12 @@ module.exports = {
     },
     plugins: [
       "expo-secure-store",
-      "expo-camera",
+      // expo-camera adds a microphone permission for video recording unless
+      // told not to. The app takes photos only.
+      ["expo-camera", { microphonePermission: false, recordAudioAndroid: false }],
+      // expo-av is used for video playback only, and would otherwise add the
+      // microphone permission too.
+      ["expo-av", { microphonePermission: false }],
       "expo-location",
       "expo-notifications",
       "expo-local-authentication",
