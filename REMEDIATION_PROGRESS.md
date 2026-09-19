@@ -3,7 +3,7 @@
 Live tracker for fixing the 2026-09-17 engineering audit (`AUDIT-2026-09-17.md`).
 The audit says what is wrong. This file says what has been done about it, what is next, and what is waiting on you.
 
-**Last updated:** 2026-09-19 · **Current branch:** `fix/p2-reliability` · **Now working on:** Phase 2F server side (minimum app version), then the Phase 2 report
+**Last updated:** 2026-09-19 · **Current branch:** `fix/p2-reliability` · **Now:** Phase 2 finished; stopped for your review (report below)
 
 Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋 needs you · ❌ did not reproduce (audit corrected)
 
@@ -20,7 +20,7 @@ Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋
 | 1D | Mobile check-in data loss | ✅ committed, no regressions |
 | 1E | SIA role↔licence, warn and record | ✅ committed, no regressions |
 | — | **Stop and report** after 1E | ✅ report below — waiting on your review |
-| 2 | Reliability (backups, alerts, PROTECT, pay basis, Xero, web honesty) | 🟡 2A–2E done; 2F server gate next |
+| 2 | Reliability (backups, alerts, PROTECT, pay basis, Xero, web honesty) | ✅ done; report below, waiting on your review |
 | 3 | Product completion (no-show alerts, manager inbox, incident evidence) | ⏳ planned |
 | 4–5 | Scale, advanced | ⏳ planned |
 
@@ -30,9 +30,8 @@ The full phase plan, with the reasoning for its order, is in `~/.claude/plans/pa
 
 ## What's next, in order
 
-1. **2F server side:** the API refuses app builds below a minimum with a clear "update required" (the mobile side already sends its build and shows the message).
-2. **Phase 2 report**, in the same format as the Phase 1 report, then stop for your review.
-3. Then Phase 3, starting with a no-show alert that reaches a manager.
+1. **Your review of Phase 2** (report below), and the deploy steps in it.
+2. Phase 3, starting with a no-show alert that reaches a manager, then the manager inbox on the web and incident evidence reaching storage.
 
 ---
 
@@ -53,7 +52,7 @@ The full phase plan, with the reasoning for its order, is in `~/.claude/plans/pa
 - **Baseline (isolated DB):** 429 passed · 170 failed · 9 errors · 1 skipped. The regression-guard set passes 246/246.
 - CI (`.github/workflows/ci.yml`):
   - required: regression guards, frontend build (`tsc` + vite), mobile Jest, gitleaks
-  - informational: the full suite and biome (337 standing errors)
+  - informational: the full suite and biome (419 standing findings; see the Phase 2 report for why this once read 337)
 - Mobile baseline: Jest 45 passed, 1 skipped.
 
 ## Phase 1B: tenancy and authorisation ✅ (`fix/p0-authz`)
@@ -104,7 +103,7 @@ Reproduction tests: `api/tests/test_p0_money.py` (13). 11 failed before the fixe
 | P1-a / P1-b | `force_complete` and `manual_checkout` go through `record_attendance` in one transaction. Typed hours persist (the audit's case was 8 typed, 9 stored). Negative or junk hours get a 400; over 24 h gets a 400 (was a raw 500); a locked invoice gets a 409 with nothing written. | ✅ |
 | Payments that never happened | Facade mark-paid: staff invoices must be `approved`, and client invoices must have been issued | ✅ |
 | — | Migration `0075` is additive only (one column, default false); `makemigrations --check` is clean | ✅ |
-| — | Frontend build (with `tsc`) is clean; biome unchanged at 337 | ✅ |
+| — | Frontend build (with `tsc`) is clean; biome unchanged (419; see the Phase 2 report) | ✅ |
 | — | Full backend suite, per file vs baseline | ✅ versus 1B, the only change is +13 passing money tests; every other file identical (482 passed / 167 failed / 9 errors — all standing) |
 
 **Pay-affecting, per decision D-G (please note):**
@@ -144,7 +143,7 @@ Following your choice: **warn and record, never block.**
 | Manager sees it: a warning toast on create, edit, assign and move in the scheduler; a "licence check" marker on the bulk-wizard slot; `licence_warnings` in the multi-staff response | ✅ |
 | Check-in alert now also fires for a valid licence of the *wrong kind* (e.g. CCTV on a door) | ✅ |
 | Tests: `api/tests/test_sia_assignment_warnings.py` (10). 7 failed without the fix, confirmed by stashing it; all pass with it. | ✅ |
-| Frontend build clean, biome unchanged at 337 | ✅ |
+| Frontend build clean, biome unchanged (419; see the Phase 2 report) | ✅ |
 | Full backend suite, per file vs baseline | ✅ versus 1D, the only change is +10 passing SIA tests (496 passed / 167 failed / 9 errors — all standing) |
 
 **Caught by the regression guards:** my first mapping accepted only a licence with the same name as the role. So it flagged door-supervisor holders on security-guard shifts, which the previous audit's check-in guard says is fine. That matches the SIA's rule that a door supervisor licence also covers security guarding, so the mapping now accepts it. The guard was not changed, and two new tests pin the rule both ways.
@@ -178,7 +177,7 @@ The branches are stacked in that order on top of `fix/sia-licence-cards`. **Noth
 | Regression-guard set (CI gate) | 246 | **311**, all passing |
 | Mobile Jest | 45 | **58** |
 | Mobile `tsc` | did not run | runs; 247 → 246 errors |
-| Frontend build / biome | clean / 337 | clean / 337 |
+| Frontend build / biome | clean / 419 | clean / 419 |
 
 The only per-file changes are new test files, all passing, and `api/test_onboarding_api.py` going from 15 to 12 failures. Every other file is identical to the baseline.
 
@@ -217,7 +216,7 @@ Phase 2 (reliability). It starts by draining the tenancy-ratchet allowlist, repa
 
 ---
 
-## Phase 2: reliability 🟡
+## Phase 2: reliability ✅
 
 Batches, in order:
 
@@ -228,7 +227,7 @@ Batches, in order:
 | 2C | Money integrity: `PROTECT` invoice lines, time adjustments and status history; backfill `payable_hours`; one definition of "outstanding"; Xero idempotency | ✅ |
 | 2D | Would we know? A readiness health check, one beat scheduler, an alert when a payroll run is missing, startup checks for security settings, a backup/restore runbook | ✅ code; 🙋 runbook needs your dashboard values |
 | 2E | Web honesty: fake payroll composition, dead bulk buttons, failures shown as "empty", admin role gate, company-scoped cache | ✅ |
-| 2F | Mobile minimum-version gate; remove dead code | 🟡 mobile side done; server gate after 2B |
+| 2F | Mobile minimum-version gate; remove dead code | ✅ built, off until you set the minimum |
 
 ### 2A: authorisation gaps ✅ (`fix/p2-authz`)
 
@@ -266,23 +265,24 @@ Tests:
 | The dashboard had no role gate: officers could sign in and browse every page | Admin/manager only; officers see a page pointing them to the app |
 | The query cache survived logout, with no user or company in its keys, so a shared computer showed the previous user's (possibly another company's) data for up to 10 minutes | Cache cleared at login and logout |
 
-Verified: `npm run build` clean (it runs `tsc`); biome unchanged at 337. There is no frontend test suite.
+Verified: `npm run build` clean (it runs `tsc`); biome unchanged at 419. There is no frontend test suite.
 
 **Found, for later batches:**
 - **Managers can't approve leave.** A real manager gets a 403 on the approval queue: leave permissions read a role field that doesn't exist, so only Django platform staff pass. Backend fix in 2C; it also has to scope global leave types, policies and blackout periods first.
 - **No onboarding UI.** Self-serve signup can't create a company in the current frontend (Phase 3).
 
-### 2F: mobile 🟡 (`fix/p2-reliability`)
+### 2F: mobile ✅ (`fix/p2-reliability`)
 
 | What | Status |
 | --- | --- |
 | Dead code: a reachability scan from `index.ts` found **63 files, about 18,400 lines** nothing can reach (v1 screens the navigators replaced with V2 but kept importing under old names). Deleted; they held 91 of the type errors. `ResetPasswordConfirmScreen` kept for the Phase 3 deep-link fix. | ✅ `b65b007f` |
 | Microphone permission declared "for voice-to-text incident reporting", which was never built, and re-added by expo-camera and expo-av. Removed on both platforms and blocked on Android (App Store / privacy risk). | ✅ `b65b007f` |
 | Version gate, app side: every request sends `X-App-Platform` and `X-App-Build`; a 426 shows one blocking "update required" message | ✅ `a9fcb135` |
-| Version gate, server side: a configurable minimum build per platform | ⏳ after 2B |
+| Version gate, server side: `MIN_APP_BUILD_IOS` / `MIN_APP_BUILD_ANDROID` on Render; a build below it gets 426 and the app shows "Update required". Off (0) until you set it. Requests without the headers (the web admin, older builds) pass | ✅ |
+| Build number bumped 15 → 16, so the fixed build is distinguishable from the one officers have now (EAS reads it from `app.config.js`) | ✅ |
 | Checks: mobile `tsc` 246 → 155 errors (none new); Jest 58 → 61 passing | ✅ |
 
-**Note:** builds from before this one send no header, so the floor only applies from this build onwards. Getting everyone onto this build is still an EAS release plus asking officers to update.
+**Note:** builds from before this one send no header, and the server deliberately lets them through. Those builds have the offline queue that loses a check-in when a request fails, so a refusal would push their check-ins straight into it. They're retired by getting officers onto build 16 (and TestFlight builds expire after 90 days); the floor protects every build from 16 onwards.
 
 ### 2B: trustworthy tests ✅ (`fix/p2-reliability`)
 
@@ -346,7 +346,79 @@ Full suite: **48 → 22 failures**, all known and listed: 16 regional-compliance
 
 Also found: `core/settings/production.py` is never loaded, because `core.settings` resolves to `settings.py`, so nothing in it applies in production. Sentry is initialised twice in `settings.py`, the first time with `send_default_pii=True`, which sends officers' emails and IPs to Sentry. Both are listed for clean-up, not changed.
 
-Full suite after 2C/2D: **684 passed, 22 failed** (the same 22 known failures, no regressions). The CI guard set is now 28 files, **375 passed**.
+Full suite after 2C/2D: **684 passed, 22 failed** (the same 22 known failures, no regressions). At that point the CI guard set was 28 files, **375 passed**.
+
+---
+
+## Phase 2 report (2026-09-19)
+
+### Executed
+
+All on `fix/p2-reliability`, stacked on the Phase 1 branches (2A is also on `fix/p2-authz`). **Nothing is pushed or merged.**
+
+| Batch | Commit | Result |
+| --- | --- | --- |
+| 2A authorisation gaps | `f70df73b` | VERIFIED |
+| 2E web honesty | `fcddab4e` | VERIFIED |
+| 2F mobile clean-up, app side of the version gate | `b65b007f`, `a9fcb135` | VERIFIED |
+| 2D backup and restore runbook | `494873dc` | Written; needs your dashboard values |
+| 2B fixture repair | `fb7af53f` | VERIFIED |
+| 2C bugs the repaired tests exposed | `6091213f` | VERIFIED |
+| 2C money integrity | `b736e2cd` | VERIFIED |
+| 2D would we know | `3aaa8b30` | VERIFIED |
+| 2F server gate, build 16 | this commit | VERIFIED |
+
+### Test delta (isolated DB, per file)
+
+| | End of Phase 1 | End of Phase 2 |
+| --- | --- | --- |
+| Backend passed | 496 | **715** |
+| Backend failed / errors | 167 / 9 | **22 / 0** |
+| Regression-guard set (CI gate) | 311 (23 files) | **384 (29 files)**, all passing |
+| Mobile Jest | 58 | **61** |
+| Mobile `tsc` errors | 246 | **155** |
+| Frontend build / biome | clean / 419 | clean / 419 |
+
+The remaining failures are all known product bugs, none new: 16 in regional compliance (the feature is Phase 3; guards are already in place), 3 in onboarding and 3 in recruitment conversion (Phase 3). Every per-file change in Phase 2 was an improvement or a new file.
+
+**Test hygiene fix:** `api/tests/test_recruitment_conversion.py` switched all logging off at import. Pytest imports every file during collection, so logging was off for every test that ran before it, and `assertLogs` in an earlier file failed only in a full run. It's now scoped to that module (`setUpModule` / `tearDownModule`).
+
+**Biome correction:** the Phase 1 report said 337. Measured the same way at every commit, from before Phase 1 to now, it's 419 and has never moved. The 337 came from a different measurement. The count and the CI job are unaffected; the job is informational.
+
+### Did not reproduce, or differed from the audit
+- **The Xero payment webhook has never processed a payment.** Its two signature checks read one header as a hex and as a base64 HMAC, which can't both match, and it doesn't read Xero's real payload. The risks the audit named (paying unapproved invoices, no paid date, replays) were real but latent. They're fixed before anyone wires it up.
+- **Leave was worse than reported.** Once admins were recognised, leave balances were visible across companies. The tenancy ratchet caught it before it shipped.
+- **"Outstanding" was worse than reported.** Approved invoices, not just pending ones, were in no money total.
+- **The discarded beat schedule** was confirmed. Its two report clean-up jobs have never run anywhere.
+- **`core/settings/production.py` is never loaded**, so nothing in it applies in production.
+
+### Built but disarmed
+- **Minimum app build:** `MIN_APP_BUILD_IOS` / `MIN_APP_BUILD_ANDROID`, 0 (off) until you set them.
+- **`OT_BASIS_ALIGNED`** stays off. `backfill_payable_hours` is ready; run it, then `report_ot_basis_delta`, then decide.
+- **Report clean-up jobs** are not enabled (they delete generated report files).
+
+### Pay-affecting
+None of Phase 2 moves anyone's pay. The backfill writes a column that nothing reads while `OT_BASIS_ALIGNED` is off. "Outstanding" is a display total. The webhook settles fewer invoices than before (approved only), and it has never run.
+
+### Deferred: needs a decision
+- Turn on `OT_BASIS_ALIGNED`, after the backfill and the report.
+- Enable the two report clean-up jobs.
+- Stop sending personal data to Sentry (`send_default_pii=True`), and remove the second Sentry initialisation.
+- Encrypt `CompanyIntegration.credentials` at rest (third-party secrets are now kept only there).
+- Protect incident reports the way pay records now are: they still go when their shift or venue is deleted. They're evidence, so I'd do this next.
+- Make the full backend suite a required CI check once the 22 known failures are fixed (Phase 3).
+
+### Deploying Phase 2 (your call), in order
+1. Take a Postgres snapshot, then run `docs/audit-2026-09-17-prod-checks.sql`. Check (e) lists companies whose integration credentials were exposed; rotate those.
+2. Merge after the Phase 1 branches. Migration `0076` changes no SQL. The build's `migrate` now runs the new settings checks: **DEBUG on in production fails the deploy** (intended), and an open signup flag or a missing Sentry DSN shows as a warning in the build log.
+3. Run `manage.py backfill_payable_hours` (dry run), then with `--apply`, then `report_ot_basis_delta --weeks 12`.
+4. Point an uptime monitor at `/api/v1/health/ready/`.
+5. Vercel deploys the web app.
+6. EAS build 16 to TestFlight / internal testing. Once officers have it, set `MIN_APP_BUILD_IOS=16` and `MIN_APP_BUILD_ANDROID=16` on Render.
+7. Enable branch protection on `main`.
+
+### Next after your review
+Phase 3: a no-show alert that reaches a manager, the manager inbox on the web, incident evidence reaching storage, wiring the Xero webhook properly, and the regional compliance, onboarding and recruitment bugs behind the 22 failures.
 
 ---
 

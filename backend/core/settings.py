@@ -86,6 +86,9 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Serve static files in production
     'corsheaders.middleware.CorsMiddleware',
+    # 426 for mobile builds below MIN_APP_BUILD; before auth, so a refused
+    # build does no work at all.
+    'api.middleware.app_version.MinimumAppBuildMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -609,6 +612,15 @@ OT_BASIS_ALIGNED = os.getenv('OT_BASIS_ALIGNED', 'False') == 'True'
 REGISTRATION_REQUIRES_INVITE = (
     os.getenv('REGISTRATION_REQUIRES_INVITE', 'False') == 'True'
 )
+
+# Oldest mobile build the API still serves, per platform (the app's
+# `ios.buildNumber` / `android.versionCode`). Below it, requests get 426 and the
+# app shows "Update required". 0 (the default) refuses nothing. Raise it only
+# once the fixed build is in the stores: see api/middleware/app_version.py.
+MIN_APP_BUILD = {
+    'ios': int(os.getenv('MIN_APP_BUILD_IOS', '0') or 0),
+    'android': int(os.getenv('MIN_APP_BUILD_ANDROID', '0') or 0),
+}
 
 # One scheduler everywhere. Render's beat service passes this explicitly; local
 # compose used Celery's file-based default, so dev and prod kept different

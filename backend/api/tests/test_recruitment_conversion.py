@@ -24,8 +24,15 @@ from api.models import (
 
 User = get_user_model()
 
-# Disable logging during tests to reduce noise
-logging.disable(logging.CRITICAL)
+# Quiet this module's expected-error logging, and only this module's. This used
+# to run at import, which pytest does at collection, so it silenced logging for
+# every test collected after it and broke assertLogs in unrelated files.
+def setUpModule():
+    logging.disable(logging.CRITICAL)
+
+
+def tearDownModule():
+    logging.disable(logging.NOTSET)
 
 
 class RecruitmentConversionModelTest(TransactionTestCase):

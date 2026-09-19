@@ -30,7 +30,7 @@ module.exports = {
     ios: {
       supportsTablet: false,
       bundleIdentifier: "com.meadsecurity.staffapp",
-      buildNumber: "15",
+      buildNumber: "16",
       infoPlist: {
         NSCameraUsageDescription: "This app requires camera access to capture venue entrance photos during shift check-in and incident evidence photos.",
         NSPhotoLibraryUsageDescription: "This app requires photo library access to attach existing photos to incident reports.",
@@ -50,7 +50,7 @@ module.exports = {
         backgroundColor: "#0b0b0e"
       },
       package: "com.meadsecurity.staffapp",
-      versionCode: 15,
+      versionCode: 16,
       // Firebase / FCM for Android push notifications.
       //
       // google-services.json is GITIGNORED — it contains a live Google API
