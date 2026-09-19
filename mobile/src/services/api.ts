@@ -7,6 +7,7 @@
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import authService from './authService';
+import { appVersionHeaders, notifyUpdateRequired, UPDATE_REQUIRED_STATUS } from '../utils/appVersion';
 
 /**
  * Custom Error Classes for API
@@ -38,6 +39,9 @@ export class ApiError extends Error {
     super(`HTTP ${statusCode}: ${errorMessage}`);
     this.name = 'ApiError';
     this.response = responseData;
+    // Every fetch-based request builds its error here, so this is the one
+    // place that sees the server say this build is too old.
+    if (statusCode === UPDATE_REQUIRED_STATUS) notifyUpdateRequired();
   }
 }
 
@@ -83,6 +87,7 @@ class ApiService {
 
     return {
       'Content-Type': 'application/json',
+      ...appVersionHeaders(),
       ...(token && { Authorization: `Bearer ${token}` }),
     };
   }
@@ -374,6 +379,7 @@ class ApiService {
       const token = await SecureStore.getItemAsync('accessToken');
 
       const headers: HeadersInit = {
+        ...appVersionHeaders(),
         ...(token && { Authorization: `Bearer ${token}` }),
         // Don't set Content-Type for FormData - browser will set it with boundary
       };
