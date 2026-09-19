@@ -1942,8 +1942,10 @@ def detect_attendance_exceptions():
     )
     for shift in no_show_shifts:
         shift.status = 'no_show'
+        # Shift.AUTO_NO_SHOW_MARKER is how a replayed offline check-in tells
+        # this automatic flag from a no-show a manager recorded.
         shift.notes = (shift.notes or '') + (
-            '\n[Auto] No-show detected: no check-in 30 minutes after shift start.'
+            f'\n{Shift.AUTO_NO_SHOW_MARKER}: no check-in 30 minutes after shift start.'
         )
         shift.save(update_fields=['status', 'notes', 'updated_at'])
         results['no_shows'] += 1

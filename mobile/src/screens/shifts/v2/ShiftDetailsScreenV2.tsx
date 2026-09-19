@@ -54,6 +54,7 @@ import { syncService } from '../../../services/syncService';
 import { database } from '../../../services/database';
 import { logger } from '../../../utils/logger';
 import { ERROR_MESSAGES } from '../../../utils/constants';
+import { classifyAttendanceFailure } from '../../../utils/attendanceFailure';
 import { shiftsService } from '../../../services/shiftsService';
 import exchangeService from '../../../services/exchangeService';
 
@@ -325,20 +326,23 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
         Alert.alert('Error', 'Unable to get your location. Please try again.');
         return;
       }
+      const checkInPayload = {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        // Previously collected and dropped. The server records both and
+        // flags a low-accuracy or mock-provider fix for manager review
+        // rather than blocking on it.
+        accuracy: currentLocation.accuracy,
+        mocked: currentLocation.mocked,
+        photo: venuePhoto || null,
+        signature: signature || null,
+      };
+      // The moment the officer pressed check-in, kept with a queued replay so
+      // the server records the officer's own time beside its own stamp.
+      const attemptedAt = new Date().toISOString();
       try {
         const removed = await database.removeSyncQueueItemsForShift(shift.id, ['check_in']);
         if (removed > 0) logger.info('[ShiftDetailsV2] cleared stale check_in queue', { removed });
-        const checkInPayload = {
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude,
-          // Previously collected and dropped. The server records both and
-          // flags a low-accuracy or mock-provider fix for manager review
-          // rather than blocking on it.
-          accuracy: currentLocation.accuracy,
-          mocked: currentLocation.mocked,
-          photo: venuePhoto || null,
-          signature: signature || null,
-        };
         const response = await apiService.post(API_ENDPOINTS.SHIFTS.CHECK_IN(shift.id), checkInPayload);
         dispatch(checkInShift({
           shiftId: shift.id,
@@ -352,33 +356,74 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
           { text: 'OK', onPress: () => navigation.goBack() },
         ]);
       } catch (apiError: any) {
-        let title = 'Check-in saved locally';
-        let msg = 'Your check-in was saved but will sync when you have internet.';
-        if (apiError instanceof ApiTimeoutError) {
-          title = 'Timeout';
-          msg = ERROR_MESSAGES.TIMEOUT_ERROR + '\nSaved locally; will sync when connection improves.';
-        } else if (apiError instanceof NetworkError) {
-          title = 'Offline';
-          msg = ERROR_MESSAGES.NETWORK_ERROR + '\nSaved locally; will sync when back online.';
-        } else if (apiError instanceof ApiError) {
-          const serverMessage = apiError.response?.detail || apiError.response?.error || apiError.statusText || 'Unknown error';
-          if (serverMessage.toLowerCase().includes('already checked in')) {
-            Alert.alert('Already checked in', 'Refresh and try checking out instead.', [
-              { text: 'OK', onPress: () => navigation.goBack() },
-            ]);
-            return;
-          }
-          title = 'Server error';
-          msg = `Server error: ${serverMessage}\nSaved locally and will retry.`;
+        const failure = classifyAttendanceFailure(apiError, 'check_in');
+
+        if (failure.kind === 'already_done') {
+          Alert.alert('Already checked in', 'Refresh and try checking out instead.', [
+            { text: 'OK', onPress: () => navigation.goBack() },
+          ]);
+          return;
         }
+
+        // The server answered and refused — off-site, not assigned, outside
+        // the check-in window. That is a decision, not a connection problem:
+        // say what it said, and do not pretend the check-in happened. This
+        // used to read "Saved locally and will retry" while queueing nothing.
+        if (failure.kind === 'refused') {
+          Alert.alert(
+            'Check-in failed',
+            `${failure.message}\n\nYou are not checked in. Fix the problem and try again, ` +
+              'or ask your manager to record your attendance.',
+            [{ text: 'OK' }],
+          );
+          return;
+        }
+
+        // A connection problem. Queue the check-in so it replays when the
+        // phone is back online — and only then tell the officer it was saved.
+        try {
+          await syncService.addToQueue({
+            type: 'check_in',
+            entityType: 'shifts',
+            entityId: shift.id.toString(),
+            payload: {
+              shift_id: shift.id,
+              ...checkInPayload,
+              check_in_time: attemptedAt,
+            },
+            priority: 1,
+          });
+        } catch (queueError) {
+          logger.error('[ShiftDetailsV2] could not queue check-in', queueError);
+          Alert.alert(
+            'Check-in not saved',
+            'We could not reach the office, and could not save your check-in on this phone either. ' +
+              'Try again, or ask your manager to record your attendance.',
+            [{ text: 'OK' }],
+          );
+          return;
+        }
+
+        const detail =
+          failure.reason === 'timeout'
+            ? ERROR_MESSAGES.TIMEOUT_ERROR
+            : failure.reason === 'offline'
+              ? ERROR_MESSAGES.NETWORK_ERROR
+              : 'The office system did not respond.';
         dispatch(checkInShift({
           shiftId: shift.id,
           location: currentLocation,
           photo: venuePhoto || undefined,
           signature: signature || undefined,
           syncStatus: 'pending',
+          checkInTime: attemptedAt,
         }));
-        Alert.alert(title, msg, [{ text: 'OK', onPress: () => navigation.goBack() }]);
+        Alert.alert(
+          'Check-in saved on this phone',
+          `${detail}\nIt will be sent automatically when you have a connection. ` +
+            'Keep the app installed until it has synced.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }],
+        );
       }
     } catch (e) {
       logger.error('[ShiftDetailsV2] check-in', e);
@@ -589,6 +634,9 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
             longitude: currentLocation.longitude,
             photo: checkOutPhoto || null,
             signature: signatureData || null,
+            // The replay sends this as `occurred_at`; without it the server
+            // received `undefined` and lost the officer's own time.
+            check_out_time: new Date().toISOString(),
           },
           priority: 1,
         });

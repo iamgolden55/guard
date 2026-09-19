@@ -3,7 +3,7 @@
 Live tracker for fixing the 2026-09-17 engineering audit (`AUDIT-2026-09-17.md`).
 The audit says what is wrong. This file says what has been done about it, what is next, and what is waiting on you.
 
-**Last updated:** 2026-09-19 · **Current branch:** `fix/p0-mobile-checkin` · **Now working on:** Phase 1D (mobile check-in)
+**Last updated:** 2026-09-19 · **Current branch:** `fix/p0-sia-warn` · **Now working on:** Phase 1E (SIA warn-and-record)
 
 Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋 needs you · ❌ did not reproduce (audit corrected)
 
@@ -17,8 +17,8 @@ Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋
 | 1A | Safety net: pytest config, CI, baseline | ✅ committed |
 | 1B | Tenancy and authorisation P0s | ✅ committed, no regressions |
 | 1C | Money P0s (client bill rate, manager hour overrides, mark-paid) | ✅ committed, no regressions |
-| 1D | Mobile check-in data loss | 🟡 mobile side done and tested; backend no-show recovery next |
-| 1E | SIA role↔licence, warn and record | ⏳ |
+| 1D | Mobile check-in data loss | ✅ committed, no regressions |
+| 1E | SIA role↔licence, warn and record | 🟡 in progress |
 | — | **Stop and report** after 1E | ⏳ |
 | 2 | Reliability (backups, alerts, PROTECT, pay basis, Xero, web honesty) | ⏳ planned |
 | 3 | Product completion (no-show alerts, manager inbox, incident evidence) | ⏳ planned |
@@ -124,9 +124,30 @@ Reproduction tests: `api/tests/test_p0_money.py` (13). 11 failed before the fixe
 
 **Waiting on you:** the company filter on staff payroll generation (the "unverified but material" item) ships only if production check 0.4(c) shows no officer with two active memberships.
 
-## Phase 1D: mobile ⏳ · Phase 1E: SIA ⏳
+## Phase 1D: mobile check-in ✅ (`fix/p0-mobile-checkin`)
 
-Not started. The scope is under "What's next" above.
+| Audit ref | Fix | Status |
+| --- | --- | --- |
+| Dead code first | Deleted `CheckInFlowV2.tsx`: 1,219 lines, routed but unreachable, and the file the last audit's offline fix went into | ✅ |
+| P0-B / MOB-1 | Check-in handling follows one rule, shared with the tests (`src/utils/attendanceFailure.ts`). If the server refused, the officer sees its reason and "you are not checked in", and nothing is queued. If it's a connection problem or the server is down, the check-in is queued with the device time, and only then does the app say "saved on this phone". | ✅ |
+| MOB-2 | Failed queue items are no longer deleted at every app launch | ✅ |
+| Stranded items | On start-up, items left in `processing` when the app was killed are put back in the queue | ✅ |
+| Replay time | Queued check-outs now carry `check_out_time` (the replay was sending `undefined`) | ✅ |
+| P0-B backend | A replayed offline check-in can lift an *automatic* no-show into manager review, if the device time falls inside the shift. A manager-recorded no-show is never lifted. Nothing is auto-approved or auto-paid. | ✅ |
+| Type-check | `tsc` runs again (it aborted on a config error): 247 errors before, 246 after, none in the files touched | ✅ |
+| Tests | Mobile Jest 45 → 58 passing: the first coverage of the offline queue. Backend: `shifts/test_offline_no_show_recovery.py` (4). | ✅ |
+| — | Full backend suite, per file vs baseline | ✅ versus 1C, the only change is +4 passing recovery tests (486 passed / 167 failed / 9 errors — all standing) |
+
+**Honest limits:**
+- If the officer is offline for the *whole* shift, the replay arrives after the shift has ended. The server still refuses it, and the app then shows its existing permanent-failure alert naming the shift and telling the officer to contact their manager. That is honest, but it is not automatic recovery.
+- A live late arrival (running late, no queued attempt) still meets the no-show. That's the "running late" case in Phase 3.
+- This only protects officers once they install the new build (EAS). Phase 2 adds a minimum-version gate.
+
+## Phase 1E: SIA warn-and-record 🟡
+
+- **Reproduction tests:** `api/tests/test_sia_assignment_warnings.py` (7)
+- **Shared helper:** `api/utils/licence_requirements.py` (role→licence mapping, warnings)
+- **Wiring:** into the validators, a Shift signal for the audit record, create/update responses, the check-in alert, and the scheduler toast. Next.
 
 ---
 

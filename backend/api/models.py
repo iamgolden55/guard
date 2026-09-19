@@ -2191,6 +2191,11 @@ class Shift(models.Model):
             record['mocked'] = bool(mocked)
         return record
 
+    #: Written into `notes` by `api.tasks.detect_attendance_exceptions`. Its
+    #: presence is how `check_in` tells an automatic no-show from one a
+    #: manager recorded.
+    AUTO_NO_SHOW_MARKER = '[Auto] No-show detected'
+
     def check_in(self, latitude, longitude, signature=None, photo=None,
                  accuracy=None, mocked=None, occurred_at=None,
                  offline_replay=False):
@@ -2267,7 +2272,26 @@ class Shift(models.Model):
         can_start, message = self.can_start_shift()
         if not can_start:
             raise ValueError(message)
-            
+
+        # An offline check-in replaying after the no-show job has run. The
+        # officer pressed check-in on a phone with no signal; 30 minutes later
+        # `detect_attendance_exceptions` flipped the shift to no_show, and this
+        # method then refused the replay — a worked shift became an unpaid
+        # no-show (AUDIT-2026-09-17 P0-B). Lift it, but only a no-show the
+        # automatic job set, only when the officer's recorded time is inside
+        # the shift, and always into manager review: nothing here approves or
+        # pays anything. A no-show a manager recorded is never lifted.
+        if (offline_replay and self.status == 'no_show'
+                and self.AUTO_NO_SHOW_MARKER in (self.notes or '')
+                and occurred_at
+                and self.start_time - timedelta(minutes=15) <= occurred_at <= self.end_time):
+            self.status = 'scheduled'
+            self.needs_attendance_review = True
+            self.notes = (self.notes or '') + (
+                f"\n[Auto] No-show lifted: offline check-in replayed, recorded by the "
+                f"device at {occurred_at.isoformat()}. Needs manager review."
+            )
+
         if self.status not in ['active', 'scheduled']:
             raise ValueError("Shift must be active or scheduled to check in")
         

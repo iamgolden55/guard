@@ -96,6 +96,7 @@ jobs:
           shifts/test_shift_authz.py
           shifts/test_overnight_attendance.py
           shifts/test_checkin_window.py
+          shifts/test_offline_no_show_recovery.py
           shifts/tests.py
 
   backend-full:
