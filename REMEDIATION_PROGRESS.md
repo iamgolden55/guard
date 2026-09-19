@@ -3,7 +3,7 @@
 Live tracker for fixing the 2026-09-17 engineering audit (`AUDIT-2026-09-17.md`).
 The audit says what is wrong. This file says what has been done about it, what is next, and what is waiting on you.
 
-**Last updated:** 2026-09-19 · **Current branch:** `fix/p0-money` · **Now working on:** Phase 1C (money)
+**Last updated:** 2026-09-19 · **Current branch:** `fix/p0-mobile-checkin` · **Now working on:** Phase 1D (mobile check-in)
 
 Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋 needs you · ❌ did not reproduce (audit corrected)
 
@@ -16,8 +16,8 @@ Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋
 | 0 | Containment: rotate secrets, lock signup, snapshot, prod checks | 🙋 waiting on you (code parts ✅) |
 | 1A | Safety net: pytest config, CI, baseline | ✅ committed |
 | 1B | Tenancy and authorisation P0s | ✅ committed, no regressions |
-| 1C | Money P0s (client bill rate, manager hour overrides, mark-paid) | 🟡 in progress |
-| 1D | Mobile check-in data loss | ⏳ |
+| 1C | Money P0s (client bill rate, manager hour overrides, mark-paid) | ✅ committed, no regressions |
+| 1D | Mobile check-in data loss | 🟡 mobile side done and tested; backend no-show recovery next |
 | 1E | SIA role↔licence, warn and record | ⏳ |
 | — | **Stop and report** after 1E | ⏳ |
 | 2 | Reliability (backups, alerts, PROTECT, pay basis, Xero, web honesty) | ⏳ planned |
@@ -102,11 +102,27 @@ Every fix below has a reproduction test that failed before the fix and passes af
 - `BlackoutPeriodsViewSet` is admin-only but unscoped. It's on the ratchet allowlist.
 - Two compliance dashboard endpoints return hard-coded fixture numbers rather than data.
 
-## Phase 1C: money 🟡
+## Phase 1C: money ✅ (`fix/p0-money`)
 
-- Reproduction tests: `api/tests/test_p0_money.py`. 11 fail before any fix, including the audit's "manager types 8, payroll stores 9".
-- Found while writing them: `force_complete` with no check-out time stamps "now". Days after the shift, that trips the 24-hour guard and returns a raw 500.
-- **Waiting on 0.4(c):** a company filter on staff payroll generation ships only if no officer has more than one active membership in production. Otherwise it moves pay, and that's your decision (D-C).
+Reproduction tests: `api/tests/test_p0_money.py` (13). 11 failed before the fixes; all 13 pass after.
+
+| Audit ref | Fix | Status |
+| --- | --- | --- |
+| P0-D / ENG-008 | Client lines are priced at `Shift.bill_rate`. A line with no bill rate is held (priced at £0, flagged `needs_rate`), and issue/send refuse until a manager sets the rate. | ✅ |
+| P0-D | Managers set a missing client rate from the invoice itself: the click-to-edit rate cell now works on client drafts and writes `bill_rate` only. Officer pay (`hourly_rate`) never moves. A held line reads "Rate needed" rather than £0.00. | ✅ |
+| P0-D | Measured on the seeded venue, 77 lines, in a rolled-back transaction: **24.00% realised margin**. The audit measured 1.45%. | ✅ |
+| D-E | `manage.py report_client_billing_delta [--csv path]`: read-only, per-line under-billing on existing client invoices | ✅ |
+| P1-a / P1-b | `force_complete` and `manual_checkout` go through `record_attendance` in one transaction. Typed hours persist (the audit's case was 8 typed, 9 stored). Negative or junk hours get a 400; over 24 h gets a 400 (was a raw 500); a locked invoice gets a 409 with nothing written. | ✅ |
+| Payments that never happened | Facade mark-paid: staff invoices must be `approved`, and client invoices must have been issued | ✅ |
+| — | Migration `0075` is additive only (one column, default false); `makemigrations --check` is clean | ✅ |
+| — | Frontend build (with `tsc`) is clean; biome unchanged at 337 | ✅ |
+| — | Full backend suite, per file vs baseline | ✅ versus 1B, the only change is +13 passing money tests; every other file identical (482 passed / 167 failed / 9 errors — all standing) |
+
+**Pay-affecting, per decision D-G (please note):**
+- If a shift already had attendance, the hours a manager types in force-complete or manual check-out now become a `TimeAdjustment`, and that is what pay reads. Before, the typed figure was silently ignored and pay stayed at scheduled hours.
+- If a shift had no attendance, it still pays scheduled hours.
+
+**Waiting on you:** the company filter on staff payroll generation (the "unverified but material" item) ships only if production check 0.4(c) shows no officer with two active memberships.
 
 ## Phase 1D: mobile ⏳ · Phase 1E: SIA ⏳
 

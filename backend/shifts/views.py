@@ -11,7 +11,8 @@ from .serializers import (
     StaffShiftSerializer,
     FrontendShiftSerializer,
     FrontendShiftDetailSerializer,
-    MultiStaffShiftSerializer
+    MultiStaffShiftSerializer,
+    ManagerAttendanceOverrideSerializer,
 )
 from api.permissions import IsManagerOrAdmin
 from api.middleware.tenant_middleware import resolve_request_company
@@ -944,32 +945,97 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    def _manager_override_input(self, request):
+        """Validate override input; returns (data, error_response)."""
+        serializer = ManagerAttendanceOverrideSerializer(data=request.data)
+        if serializer.is_valid():
+            return serializer.validated_data, None
+        field, messages = next(iter(serializer.errors.items()))
+        return None, Response(
+            {"detail": f"{field}: {messages[0]}", "errors": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    def _apply_manager_override(self, request, shift, *, check_in, check_out, hours,
+                                final_status, signature, note, sign_start):
+        """Write a manager override through `record_attendance`.
+
+        `force_complete` and `manual_checkout` used to set the columns and call
+        `save()` themselves (AUDIT-2026-09-17 P1-a). Bypassing the attendance
+        chokepoint meant the hours a manager typed were re-derived from the
+        timestamps and overwritten, no TimeAdjustment was written, and so the
+        signal that refuses changes to an approved or exported invoice never
+        fired. Everything is one transaction, so a refusal leaves no partial
+        write behind.
+        """
+        from django.db import transaction
+        from api.signals import LockedInvoiceError
+        from .services import record_attendance
+
+        # Set in memory first so the attendance save cannot route the shift
+        # through the pending_approval → auto-approve path on its way here.
+        shift.status = final_status
+        shift.end_signature = signature
+        if sign_start:
+            shift.start_signature = signature
+        existing_notes = shift.manager_notes or ''
+        shift.manager_notes = f"{existing_notes}\n{note}" if existing_notes else note
+
+        try:
+            with transaction.atomic():
+                shift, _ = record_attendance(
+                    shift=shift, check_in=check_in, check_out=check_out, hours=hours,
+                    actor=request.user, source=signature or 'manager', reason=note,
+                )
+                shift.save(update_fields=[
+                    'status', 'start_signature', 'end_signature', 'manager_notes',
+                    'payable_hours',
+                ])
+        except LockedInvoiceError as e:
+            return Response(
+                {'detail': str(e), 'code': 'invoice_locked'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            return Response(
+                {'detail': '; '.join(e.messages) if hasattr(e, 'messages') else str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return None
+
+    @staticmethod
+    def _checkout_problem(check_in, check_out, now):
+        if check_out > now:
+            return "Check-out time cannot be in the future"
+        if check_in and check_out <= check_in:
+            return "Check-out time must be after check-in time"
+        if check_in and check_out - check_in > timedelta(hours=24):
+            return ("That would make the shift longer than 24 hours. "
+                    "Enter the time the officer actually left.")
+        return None
+
     @action(detail=True, methods=['post'], url_path='manual_checkout')
     def manual_checkout(self, request, pk=None):
         """Manager override: manually check out a staff member"""
         shift = self.get_object()
-        
+
         # Check manager permissions
         if not (request.user.role in ['manager', 'admin'] or request.user.is_staff):
             return Response(
-                {"detail": "Manager or admin permissions required"}, 
+                {"detail": "Manager or admin permissions required"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         # Check if already checked out
         if shift.check_out_time:
             return Response(
-                {"detail": "Shift already checked out"}, 
+                {"detail": "Shift already checked out"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Get manager signature, notes, and hours
-        manager_signature = request.data.get('manager_signature')
-        manager_notes = request.data.get('manager_notes', '')
-        checkout_time = request.data.get('checkout_time')  # Allow backdating
-        actual_hours = request.data.get('actual_hours')  # Manual hours input
-        
-        if not manager_signature:
+
+        if not request.data.get('manager_signature'):
             return Response(
                 {"detail": "Manager signature is required for manual check-out"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -982,150 +1048,111 @@ class ShiftViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        try:
-            from django.utils import timezone
-            import logging
-
-            # Use provided time or current time
-            if checkout_time:
-                from datetime import datetime
-                checkout_datetime = datetime.fromisoformat(checkout_time.replace('Z', '+00:00'))
-
-                # Validate: override time must not be in the future
-                if checkout_datetime > timezone.now():
-                    return Response(
-                        {"detail": "Check-out time cannot be in the future"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                # Validate: checkout time must be after check-in time
-                if shift.check_in_time and checkout_datetime <= shift.check_in_time:
-                    return Response(
-                        {"detail": "Check-out time must be after check-in time"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            else:
-                checkout_datetime = timezone.now()
-
-            # Perform manual check-out
-            shift.check_out_time = checkout_datetime
-            shift.status = 'completed'
-            shift.end_signature = manager_signature
-
-            # Set actual hours if provided
-            if actual_hours:
-                shift.actual_hours_worked = float(actual_hours)
-            
-            # Update manager notes
-            existing_notes = shift.manager_notes or ''
-            new_note = f"Manual check-out by {request.user.get_full_name() or request.user.username}: {manager_notes}"
-            shift.manager_notes = f"{existing_notes}\n{new_note}" if existing_notes else new_note
-            
-            shift.save()
-            
-            # Log the manual intervention
-            logger = logging.getLogger(__name__)
-            logger.info(f"Manual check-out performed by manager {request.user.username} for shift {shift.id} - Staff: {shift.staff_user.username if shift.staff_user else 'Unassigned'}")
-            
-            serializer = self.get_serializer(shift)
-            return Response({
-                "detail": "Manual check-out successful",
-                "shift": serializer.data
-            })
-            
-        except Exception as e:
+        data, error = self._manager_override_input(request)
+        if error:
+            return error
+        hours = data.get('actual_hours')
+        if hours is not None and hours <= 0:
             return Response(
-                {"detail": f"Manual check-out failed: {str(e)}"}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"detail": "actual_hours must be greater than 0 for a check-out"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
+
+        now = timezone.now()
+        checkout_datetime = data.get('checkout_time') or now
+        problem = self._checkout_problem(shift.check_in_time, checkout_datetime, now)
+        if problem:
+            return Response({"detail": problem}, status=status.HTTP_400_BAD_REQUEST)
+
+        name = request.user.get_full_name() or request.user.username
+        note = f"Manual check-out by {name}: {data.get('manager_notes', '')}".rstrip(': ')
+        error = self._apply_manager_override(
+            request, shift,
+            check_in=None, check_out=checkout_datetime, hours=hours,
+            final_status='completed', signature=data['manager_signature'],
+            note=note, sign_start=False,
+        )
+        if error:
+            return error
+
+        logger.info(
+            f"Manual check-out performed by manager {request.user.username} for shift {shift.id} - "
+            f"Staff: {shift.staff_user.username if shift.staff_user else 'Unassigned'}"
+        )
+        serializer = self.get_serializer(shift)
+        return Response({
+            "detail": "Manual check-out successful",
+            "shift": serializer.data
+        })
 
     @action(detail=True, methods=['post'], url_path='force_complete')
     def force_complete(self, request, pk=None):
         """Manager override: force complete a shift with custom hours"""
         shift = self.get_object()
-        
+
         # Check manager permissions
         if not (request.user.role in ['manager', 'admin'] or request.user.is_staff):
             return Response(
-                {"detail": "Manager or admin permissions required"}, 
+                {"detail": "Manager or admin permissions required"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         # Check if already completed
         if shift.status in ('completed', 'no_show'):
             return Response(
                 {"detail": "Shift already completed"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Get required data
-        manager_signature = request.data.get('manager_signature')
-        manager_notes = request.data.get('manager_notes', '')
-        actual_hours = request.data.get('actual_hours')
-        checkin_time = request.data.get('checkin_time')
-        checkout_time = request.data.get('checkout_time')
-        
-        if not manager_signature:
+
+        if not request.data.get('manager_signature'):
             return Response(
-                {"detail": "Manager signature is required for force complete"}, 
+                {"detail": "Manager signature is required for force complete"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        if actual_hours is None:
+
+        if request.data.get('actual_hours') in (None, ''):
             return Response(
                 {"detail": "Actual hours worked is required for force complete"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        try:
-            from django.utils import timezone
-            from datetime import datetime
-            import logging
 
-            # Only set check-in/check-out times if actual hours > 0 (not a no-show)
-            if float(actual_hours) > 0:
-                # Set check-in time if not already set
-                if not shift.check_in_time and checkin_time:
-                    shift.check_in_time = datetime.fromisoformat(checkin_time.replace('Z', '+00:00'))
-                elif not shift.check_in_time:
-                    shift.check_in_time = shift.start_time
+        data, error = self._manager_override_input(request)
+        if error:
+            return error
+        hours = data['actual_hours']
 
-                # Set check-out time
-                if checkout_time:
-                    shift.check_out_time = datetime.fromisoformat(checkout_time.replace('Z', '+00:00'))
-                else:
-                    shift.check_out_time = timezone.now()
-            # else: No-show - leave check_in_time and check_out_time as None/unset
+        # Zero hours is a no-show: no attendance times are recorded.
+        check_in = check_out = None
+        if hours > 0:
+            now = timezone.now()
+            if not shift.check_in_time:
+                check_in = data.get('checkin_time') or shift.start_time
+            check_out = data.get('checkout_time') or now
+            problem = self._checkout_problem(check_in or shift.check_in_time, check_out, now)
+            if problem:
+                return Response({"detail": problem}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Set status based on hours (0 hours = no show)
-            shift.status = 'no_show' if float(actual_hours) == 0 else 'completed'
-            shift.actual_hours_worked = float(actual_hours)
-            shift.start_signature = manager_signature
-            shift.end_signature = manager_signature
-            
-            # Update manager notes
-            existing_notes = shift.manager_notes or ''
-            new_note = f"Force completed by {request.user.get_full_name() or request.user.username}: {manager_notes}"
-            shift.manager_notes = f"{existing_notes}\n{new_note}" if existing_notes else new_note
-            
-            shift.save()
-            
-            # Log the manual intervention
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Force complete performed by manager {request.user.username} for shift {shift.id} - Staff: {shift.staff_user.username if shift.staff_user else 'Unassigned'} - Hours: {actual_hours}")
-            
-            serializer = self.get_serializer(shift)
-            return Response({
-                "detail": "Shift force completed successfully",
-                "shift": serializer.data
-            })
-            
-        except Exception as e:
-            return Response(
-                {"detail": f"Force complete failed: {str(e)}"}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-        
+        name = request.user.get_full_name() or request.user.username
+        note = f"Force completed by {name}: {data.get('manager_notes', '')}".rstrip(': ')
+        error = self._apply_manager_override(
+            request, shift,
+            check_in=check_in, check_out=check_out, hours=hours,
+            final_status='no_show' if hours == 0 else 'completed',
+            signature=data['manager_signature'], note=note, sign_start=True,
+        )
+        if error:
+            return error
+
+        logger.warning(
+            f"Force complete performed by manager {request.user.username} for shift {shift.id} - "
+            f"Staff: {shift.staff_user.username if shift.staff_user else 'Unassigned'} - Hours: {hours}"
+        )
+        serializer = self.get_serializer(shift)
+        return Response({
+            "detail": "Shift force completed successfully",
+            "shift": serializer.data
+        })
+
     @action(detail=True, methods=['post'])
     def check_in(self, request, pk=None):
         """Check in for a shift with location verification, signature, and photo"""

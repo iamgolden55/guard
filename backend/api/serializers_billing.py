@@ -221,6 +221,14 @@ class ClientInvoiceItemSerializer(serializers.Serializer):
     hours = serializers.FloatField()
     rate = serializers.FloatField()
     amount = serializers.FloatField(source='total')
+    # The invoice document edits a shift-backed line's rate in place, and marks
+    # lines still waiting for a client bill rate.
+    shiftId = serializers.IntegerField(source='shift_id', allow_null=True)
+    type = serializers.SerializerMethodField()
+    needsRate = serializers.BooleanField(source='needs_rate')
+
+    def get_type(self, obj):
+        return 'shift' if obj.shift_id else 'manual'
 
     def get_venue(self, obj):
         if obj.shift and obj.shift.venue:

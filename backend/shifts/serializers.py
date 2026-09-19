@@ -564,6 +564,23 @@ class FrontendShiftDetailSerializer(FrontendShiftSerializer):
             return SimpleUserSerializer(obj.staff_user).data
         return None
 
+class ManagerAttendanceOverrideSerializer(serializers.Serializer):
+    """Input for the manager overrides `force_complete` and `manual_checkout`.
+
+    These took `actual_hours` straight from the request into `float()`: -5
+    was stored as -5.00 hours and 'eight' returned a raw 500
+    (AUDIT-2026-09-17 P1-b). Hours are a bounded Decimal here.
+    """
+    manager_signature = serializers.CharField()
+    manager_notes = serializers.CharField(required=False, allow_blank=True, default='')
+    actual_hours = serializers.DecimalField(
+        max_digits=5, decimal_places=2, required=False, allow_null=True,
+        min_value=0, max_value=24,
+    )
+    checkin_time = serializers.DateTimeField(required=False, allow_null=True)
+    checkout_time = serializers.DateTimeField(required=False, allow_null=True)
+
+
 class MultiStaffShiftSerializer(serializers.Serializer):
     """Serializer for creating shifts with multiple staff members"""
     venue = serializers.IntegerField()

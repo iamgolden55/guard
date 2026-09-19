@@ -334,14 +334,28 @@ class BillingInvoiceFacadeViewSet(viewsets.ViewSet):
             run.recompute_totals()
             run.update_status_from_invoices()
 
+    #: Statuses from which an invoice may be marked paid.
+    PAYABLE_STATUSES = {
+        'staff': ('approved',),
+        # `issue` moves a client draft to 'pending'; 'sent'/'overdue' come from
+        # the ClientInvoice endpoints. Anything past draft has been issued.
+        'client': ('pending', 'sent', 'overdue'),
+    }
+
     @action(detail=True, methods=['post'], url_path='mark-paid')
     def mark_paid(self, request, pk=None):
         instance, kind = self._resolve_one(request, pk)
         if not instance:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if instance.status not in ('draft', 'pending', 'sent', 'overdue', 'approved'):
+        # A staff invoice is paid only after a manager has approved it — the
+        # same rule the run-level officer endpoints enforce. A client invoice
+        # must have been issued. This used to accept draft and pending, so a
+        # payment could be recorded against pay nobody had reviewed.
+        payable = self.PAYABLE_STATUSES[kind]
+        if instance.status not in payable:
             return Response(
-                {'detail': f"Cannot mark a '{instance.status}' invoice as paid."},
+                {'detail': f"Cannot mark a '{instance.status}' invoice as paid — "
+                           + ("approve it first." if kind == 'staff' else "issue it first.")},
                 status=status.HTTP_409_CONFLICT,
             )
         instance.status = 'paid'
@@ -434,6 +448,15 @@ class BillingInvoiceFacadeViewSet(viewsets.ViewSet):
                 {'detail': f"Can only issue draft invoices (current: {instance.status})."},
                 status=status.HTTP_409_CONFLICT,
             )
+        if kind == 'client':
+            missing = instance.lines_needing_rate().count()
+            if missing:
+                return Response(
+                    {'detail': f"{missing} line(s) have no client bill rate. Set the rate "
+                               "on each before issuing.",
+                     'code': 'bill_rate_missing'},
+                    status=status.HTTP_409_CONFLICT,
+                )
         instance.status = 'pending'
         instance.issued_date = timezone.localdate()
         instance.save(update_fields=['status', 'issued_date', 'updated_at'])
@@ -499,14 +522,18 @@ class BillingInvoiceFacadeViewSet(viewsets.ViewSet):
 
     @action(detail=True, methods=['post'])
     def edit_shift_rate(self, request, pk=None):
-        """Update the hourly_rate on one shift attached to this draft invoice
-        and recalculate in a single mutation. Powers the click-to-edit rate
-        cell on the invoice document — saves the admin a trip to Scheduling.
+        """Update the rate for one shift on this draft invoice and reprice it in
+        a single mutation. Powers the click-to-edit rate cell on the invoice
+        document — saves the admin a trip to Scheduling.
 
         Body: {"shift_id": <int>, "hourly_rate": <decimal>}.
 
+        On a staff invoice this is the officer's pay rate (`Shift.hourly_rate`).
+        On a client invoice it is the client bill rate (`Shift.bill_rate`) — the
+        way a manager fills in a line held for a missing rate. The two never
+        touch each other's field.
+
         Constraints:
-          - Staff invoices only (ClientInvoice line items aren't shift-backed).
           - Draft only — issued/paid/rejected invoices already represent a
             committed record; rate corrections there go through `resolve` to
             preserve audit trail.
@@ -518,11 +545,6 @@ class BillingInvoiceFacadeViewSet(viewsets.ViewSet):
         instance, kind = self._resolve_one(request, pk)
         if not instance:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-        if kind != 'staff':
-            return Response(
-                {'detail': 'Edit shift rate is only supported on staff invoices.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         if instance.status != 'draft':
             return Response(
                 {'detail': f"Can only edit rates on draft invoices (current: {instance.status})."},
@@ -550,6 +572,9 @@ class BillingInvoiceFacadeViewSet(viewsets.ViewSet):
         if new_rate <= 0:
             return Response({'detail': "'hourly_rate' must be greater than 0."},
                             status=status.HTTP_400_BAD_REQUEST)
+
+        if kind == 'client':
+            return self._edit_client_bill_rate(request, instance, shift_id, new_rate)
 
         # Confirm the shift is actually on this invoice — prevents using this
         # endpoint as a generic shift-update sidedoor.
@@ -587,6 +612,50 @@ class BillingInvoiceFacadeViewSet(viewsets.ViewSet):
         )
         self._bump_run_totals(instance)
         return Response(self._serializer_for(kind)(instance).data)
+
+    def _edit_client_bill_rate(self, request, instance, shift_id, new_rate):
+        """Set the client bill rate for one shift and reprice its lines."""
+        from django.db import transaction
+        from .models import Shift
+
+        lines = instance.line_items.filter(shift_id=shift_id)
+        if not lines.exists():
+            return Response(
+                {'detail': 'That shift is not on this invoice.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        shift = Shift.objects.get(pk=shift_id)
+        before_rate = shift.bill_rate
+        before_amount = float(instance.total_amount or 0)
+
+        with transaction.atomic():
+            shift.bill_rate = new_rate
+            shift.save(update_fields=['bill_rate', 'updated_at'])
+            for line in lines:
+                line.rate = new_rate
+                line.needs_rate = False
+                line.save()  # recomputes the line total
+            # A fresh instance: `_resolve_one` prefetches line_items, and totals
+            # computed from that cache would use the pre-edit rates.
+            instance = type(instance).objects.get(pk=instance.pk)
+            instance.calculate_totals()
+
+        AuditLog.objects.create(
+            user=request.user,
+            action='invoice_shift_rate_edited',
+            resource_type=self._resource_type('client'),
+            resource_id=str(instance.pk),
+            details={
+                'shift_id': int(shift_id),
+                'field': 'bill_rate',
+                'before_rate': float(before_rate) if before_rate is not None else None,
+                'after_rate': float(new_rate),
+                'before_amount': before_amount,
+                'after_amount': float(instance.total_amount or 0),
+            },
+        )
+        instance.refresh_from_db()
+        return Response(self._serializer_for('client')(instance).data)
 
     @action(detail=True, methods=['patch'])
     def update_note(self, request, pk=None):

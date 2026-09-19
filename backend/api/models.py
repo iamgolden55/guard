@@ -7491,7 +7491,7 @@ class ClientInvoice(models.Model):
 
         Pulls every approved shift at the venue with recorded actual hours
         in the period and turns each into a ClientInvoiceItem priced at the
-        shift's effective hourly rate. Returns the new draft.
+        shift's bill rate. Returns the new draft.
 
         Idempotent guard: if a draft already exists for the same
         (venue, start_date, end_date), it is returned instead of being
@@ -7546,7 +7546,16 @@ class ClientInvoice(models.Model):
         )
 
         for shift in shifts:
-            rate = shift.get_effective_hourly_rate() or Decimal('0')
+            # Clients are billed at the shift's bill rate. This used
+            # `get_effective_hourly_rate()` — the officer's *pay* rate — so every
+            # client invoice was priced at cost (AUDIT-2026-09-17 P0-D: 1.45%
+            # realised margin against 25% intended). A shift with no bill rate
+            # is not guessed at: the line is priced at 0 and flagged, and the
+            # invoice cannot be issued until a manager sets the rate.
+            rate = shift.bill_rate
+            needs_rate = rate is None or rate <= 0
+            if needs_rate:
+                rate = Decimal('0')
             hours = Decimal(str(shift.actual_hours_worked or 0))
             staff_label = ''
             if shift.staff_user:
@@ -7568,10 +7577,14 @@ class ClientInvoice(models.Model):
                 date=shift.start_time.date(),
                 hours=hours,
                 rate=rate,
+                needs_rate=needs_rate,
             )
 
         invoice.calculate_totals()
         return invoice
+
+    def lines_needing_rate(self):
+        return self.line_items.filter(needs_rate=True)
 
 
 class ClientInvoiceItem(models.Model):
@@ -7593,6 +7606,13 @@ class ClientInvoiceItem(models.Model):
         help_text="Client billing rate per hour (distinct from staff pay rate)"
     )
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    needs_rate = models.BooleanField(
+        default=False,
+        help_text=(
+            "The source shift had no bill rate, so this line is priced at 0 "
+            "and the invoice cannot be issued until a manager sets one."
+        ),
+    )
 
     class Meta:
         db_table = 'client_invoice_items'

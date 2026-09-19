@@ -9422,6 +9422,13 @@ class ClientInvoiceViewSet(viewsets.ModelViewSet):
                 {'error': f'Cannot send invoice with status "{invoice.status}". Only draft invoices can be sent.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        missing = invoice.lines_needing_rate().count()
+        if missing:
+            return Response(
+                {'error': f'{missing} line(s) have no client bill rate. Set the rate on each before sending.',
+                 'code': 'bill_rate_missing'},
+                status=status.HTTP_409_CONFLICT
+            )
 
         today = timezone.now().date()
         invoice.status = 'sent'

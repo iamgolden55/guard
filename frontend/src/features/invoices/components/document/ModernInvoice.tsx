@@ -29,10 +29,12 @@ export function ModernInvoice({ inv, accent, onEditShiftRate }: ModernInvoicePro
   const staffParty = isStaff ? (party as import("../../data/mocks").StaffPartyDetails) : null;
   void isClientParty;
 
-  // Click-to-edit rate state. Only base-rate shift lines on draft staff
-  // invoices are editable — overtime tiers are derived, leave lines aren't
-  // shift-backed. Index-based because items[] don't carry stable client IDs.
-  const rateEditable = isStaff && inv.status === "draft" && Boolean(onEditShiftRate);
+  // Click-to-edit rate state. Only base-rate shift lines on draft invoices are
+  // editable — overtime tiers are derived, leave lines aren't shift-backed.
+  // On a staff invoice the rate is the officer's pay rate; on a client invoice
+  // it is the client bill rate, which is how a line held for a missing rate
+  // gets filled in. Index-based because items[] don't carry stable client IDs.
+  const rateEditable = inv.status === "draft" && Boolean(onEditShiftRate);
   const isItemEditable = (it: InvoiceItem) =>
     rateEditable && it.type === "shift" && typeof it.shiftId === "number";
 
@@ -248,6 +250,7 @@ export function ModernInvoice({ inv, accent, onEditShiftRate }: ModernInvoicePro
                     item={it}
                     accent={accent}
                     editable={isItemEditable(it)}
+                    rateLabel={isStaff ? "pay rate" : "client rate"}
                     onSave={
                       onEditShiftRate
                         ? (rate) => onEditShiftRate(it.shiftId as number, rate)
@@ -402,11 +405,13 @@ function RateCell({
   item,
   accent,
   editable,
+  rateLabel,
   onSave,
 }: {
   item: InvoiceItem;
   accent: Accent;
   editable: boolean;
+  rateLabel: string;
   onSave?: (hourlyRate: number) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -421,12 +426,20 @@ function RateCell({
     fontVariantNumeric: "tabular-nums" as const,
   };
 
+  // A line with no client bill rate says so, rather than showing £0.00 as
+  // though that were the price.
+  const shown = item.needsRate ? (
+    <span style={{ color: "#c50f1f", fontWeight: 600 }}>Rate needed</span>
+  ) : (
+    money(item.rate)
+  );
+
   if (!editable) {
-    return <td style={baseTd}>{money(item.rate)}</td>;
+    return <td style={baseTd}>{shown}</td>;
   }
 
   const enter = () => {
-    setDraft(String(item.rate.toFixed(2)));
+    setDraft(item.needsRate ? "" : String(item.rate.toFixed(2)));
     setError(null);
     setEditing(true);
   };
@@ -518,7 +531,7 @@ function RateCell({
       <button
         type="button"
         onClick={enter}
-        title="Click to edit rate"
+        title={`Click to edit the ${rateLabel}`}
         style={{
           background: "transparent",
           border: `1px dashed transparent`,
@@ -541,7 +554,7 @@ function RateCell({
           (e.currentTarget as HTMLButtonElement).style.background = "transparent";
         }}
       >
-        {money(item.rate)}
+        {shown}
       </button>
     </td>
   );
