@@ -3,7 +3,7 @@
 Live tracker for fixing the 2026-09-17 engineering audit (`AUDIT-2026-09-17.md`).
 The audit says what is wrong. This file says what has been done about it, what is next, and what is waiting on you.
 
-**Last updated:** 2026-09-19 · **Current branch:** `fix/p0-sia-warn` · **Now working on:** Phase 1E (SIA warn-and-record)
+**Last updated:** 2026-09-19 · **Current branch:** `fix/p0-sia-warn` · **Now working on:** stopped after Phase 1, waiting on your review
 
 Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋 needs you · ❌ did not reproduce (audit corrected)
 
@@ -163,6 +163,68 @@ Following your choice: **warn and record, never block.**
 **Needs your confirmation (business rules I didn't invent):**
 - A door supervisor licence covering security-guarding shifts: now assumed, per the SIA and the existing guard. Tell me if your contracts say otherwise.
 - What do the steward, retail, static, mobile and event roles require? They are flagged "unverifiable" until you tell me.
+
+---
+
+## Phase 1 report (2026-09-19)
+
+### Executed
+
+| Batch | Branch | Commit | Result |
+| --- | --- | --- | --- |
+| 1A safety net + docs | `chore/test-safety-net` | `1b42f1f3`, `2850972a` | VERIFIED |
+| 1B tenancy and authorisation | `fix/p0-authz` | `be4d3e32` | VERIFIED |
+| 1C money | `fix/p0-money` | `513c617e` | VERIFIED |
+| 1D mobile check-in | `fix/p0-mobile-checkin` | `418af829` | VERIFIED |
+| 1E SIA warn-and-record | `fix/p0-sia-warn` | `e2452f0e` | VERIFIED |
+
+The branches are stacked in that order on top of `fix/sia-licence-cards`. **Nothing is pushed or merged.** `fix/audit-second-pass` and `fix/sia-licence-cards` need to reach `main` first.
+
+### Test delta vs the pre-change baseline (isolated DB, per file)
+
+| | Before | After |
+| --- | --- | --- |
+| Backend passed | 429 | **496** |
+| Backend failed / errors | 170 / 9 | **167 / 9** (all standing; none new) |
+| Regression-guard set (CI gate) | 246 | **311**, all passing |
+| Mobile Jest | 45 | **58** |
+| Mobile `tsc` | did not run | runs; 247 → 246 errors |
+| Frontend build / biome | clean / 337 | clean / 337 |
+
+The only per-file changes are new test files, all passing, and `api/test_onboarding_api.py` going from 15 to 12 failures. Every other file is identical to the baseline.
+
+### Did not reproduce, or differed from the audit
+- **S-15** (report `limit` injection): real, but weaker than reported. The injected SQL ran, but the response then failed, so an attacker got a timing side-channel rather than rows. Fixed anyway.
+- **P0-E** (compliance): **worse** than reported. `set_active` and a country's regulation on/off switch were open to *any* signed-in account, officers included, not just tenant admins.
+- **P0-G** (onboarding): the existing test couldn't pass under any correct rule, because its "staff" user had no company. Its fixture was corrected rather than the rule bent to fit it.
+
+### Built but disarmed
+Nothing new. `OT_BASIS_ALIGNED` from the previous audit is still off. Don't turn it on until `payable_hours` is backfilled (Phase 2); today it would zero every officer's overtime.
+
+### Pay-affecting (per your decisions)
+- **D-G:** if a shift already had attendance, the hours a manager types in force-complete or manual check-out now become a `TimeAdjustment`, which is what pay reads. Before, pay silently stayed at scheduled hours.
+- **Client billing:** new client invoices use the bill rate. On the seeded venue that's 24% margin instead of 1.45%. Existing invoices are unchanged; `report_client_billing_delta` lists what they under-billed.
+
+### Deferred: needs a decision
+- The company filter on staff payroll generation. It ships only if production check 0.4(c) finds no officer with two active memberships.
+- Officers can self-edit `pay_frequency` and `employmentType`. That's pay-adjacent, so I haven't changed it.
+- The SIA mapping: confirm that a door supervisor licence covers security guarding (now assumed), and what steward, retail, static, mobile and event require.
+- Whether to re-issue historically under-billed client invoices.
+
+### Data findings (dev database; run the SQL for production)
+- 413 of 418 approved shifts have no `payable_hours`, which blocks the overtime-basis fix.
+- 10 staff invoice headers are no longer supported by their line items (CASCADE deletes).
+- No dual-membership officers, no membership-less users and no cross-tenant invoice writes. Production may differ; that's what `docs/audit-2026-09-17-prod-checks.sql` is for.
+
+### Deploying Phase 1 (your call), in order
+1. Take a Postgres snapshot, then run the production checks.
+2. Merge to `main`, oldest branch first. The backend deploys first; it stays compatible with the mobile builds officers already have installed.
+3. Vercel deploys the web app.
+4. Build a new EAS release with a build bump. The offline check-in fix only protects officers once they install it.
+5. Enable branch protection on `main`, requiring `backend-guards`, `frontend`, `mobile` and `secrets` once CI has run once.
+
+### Next after your review
+Phase 2 (reliability). It starts by draining the tenancy-ratchet allowlist, repairing the three fixture drifts behind about 140 standing failures, a real health check, backups with a tested restore, and `PROTECT` on the money path.
 
 ---
 
