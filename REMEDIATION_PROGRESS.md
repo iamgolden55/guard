@@ -239,7 +239,7 @@ Batches, in order:
 | 2C | Money integrity: `PROTECT` invoice lines, time adjustments and status history; backfill `payable_hours`; one definition of "outstanding"; Xero idempotency | ⏳ |
 | 2D | Would we know? A readiness health check, one beat scheduler, an alert when a payroll run is missing, startup checks for security settings, a backup/restore runbook | ⏳ |
 | 2E | Web honesty: fake payroll composition, dead bulk buttons, failures shown as "empty", admin role gate, company-scoped cache | ✅ |
-| 2F | Mobile minimum-version gate; remove dead code | ⏳ |
+| 2F | Mobile minimum-version gate; remove dead code | 🟡 mobile side done; server gate after 2B |
 
 ### 2A: authorisation gaps ✅ (`fix/p2-authz`)
 
@@ -282,6 +282,18 @@ Verified: `npm run build` clean (it runs `tsc`); biome unchanged at 337. There i
 **Found, for later batches:**
 - **Managers can't approve leave.** A real manager gets a 403 on the approval queue: leave permissions read a role field that doesn't exist, so only Django platform staff pass. Backend fix in 2C; it also has to scope global leave types, policies and blackout periods first.
 - **No onboarding UI.** Self-serve signup can't create a company in the current frontend (Phase 3).
+
+### 2F: mobile 🟡 (`fix/p2-reliability`)
+
+| What | Status |
+| --- | --- |
+| Dead code: a reachability scan from `index.ts` found **63 files, about 18,400 lines** nothing can reach (v1 screens the navigators replaced with V2 but kept importing under old names). Deleted; they held 91 of the type errors. `ResetPasswordConfirmScreen` kept for the Phase 3 deep-link fix. | ✅ `b65b007f` |
+| Microphone permission declared "for voice-to-text incident reporting", which was never built, and re-added by expo-camera and expo-av. Removed on both platforms and blocked on Android (App Store / privacy risk). | ✅ `b65b007f` |
+| Version gate, app side: every request sends `X-App-Platform` and `X-App-Build`; a 426 shows one blocking "update required" message | ✅ `a9fcb135` |
+| Version gate, server side: a configurable minimum build per platform | ⏳ after 2B |
+| Checks: mobile `tsc` 246 → 155 errors (none new); Jest 58 → 61 passing | ✅ |
+
+**Note:** builds from before this one send no header, so the floor only applies from this build onwards. Getting everyone onto this build is still an EAS release plus asking officers to update.
 
 ---
 
