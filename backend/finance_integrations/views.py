@@ -629,18 +629,27 @@ class WebhookView(APIView):
                 status='connected'
             )
             
+            event_id = payload_data.get('eventId', '')
             webhook_events = []
             for connection in connections:
-                # Create webhook event record
+                # The signature covers the body alone, so a captured delivery
+                # stays valid forever. An event already processed for this
+                # connection is recorded and not applied again.
+                duplicate = bool(event_id) and WebhookEvent.objects.filter(
+                    connection=connection, event_id=event_id, status='processed',
+                ).exists()
                 webhook_event = WebhookEvent.objects.create(
                     connection=connection,
                     event_type=payload_data.get('eventType', 'unknown'),
-                    event_id=payload_data.get('eventId', ''),
+                    event_id=event_id,
                     raw_payload=payload_data,
                     signature=signature,
-                    status='pending'
+                    status='ignored' if duplicate else 'pending',
+                    error_message='Duplicate delivery: already processed' if duplicate else '',
                 )
                 webhook_events.append(webhook_event)
+                if duplicate:
+                    continue
                 
                 try:
                     # Verify signature

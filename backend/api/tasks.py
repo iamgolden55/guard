@@ -2025,6 +2025,7 @@ def hard_delete_expired_accounts():
     )
 
     deleted_count = 0
+    failed_count = 0
     for user in users_to_delete:
         try:
             with transaction.atomic():
@@ -2047,10 +2048,11 @@ def hard_delete_expired_accounts():
 
                 deleted_count += 1
         except Exception as e:
+            failed_count += 1
             logger.error(f"Failed to hard-delete user_id={user.id}: {e}")
 
-    logger.info(f"Hard-delete task completed: {deleted_count} accounts anonymized")
-    return result
+    logger.info(f"Hard-delete task completed: {deleted_count} accounts anonymized, {failed_count} failed")
+    return {'anonymized': deleted_count, 'failed': failed_count}
 
 
 @shared_task

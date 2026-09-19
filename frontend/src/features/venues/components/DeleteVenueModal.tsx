@@ -39,8 +39,11 @@ export function DeleteVenueModal({
     try {
       await onConfirm(venue.id);
       onClose();
-    } catch {
-      setSubmitError("Couldn't delete the venue. Please try again.");
+    } catch (err) {
+      // 409: the venue has shifts or invoices, so the server refuses and says
+      // what to do instead. Show that rather than "try again".
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setSubmitError(detail ?? "Couldn't delete the venue. Please try again.");
     }
   };
 
@@ -51,7 +54,7 @@ export function DeleteVenueModal({
       title="Delete venue"
       description={
         venue
-          ? `This permanently deletes ${venue.name}. Past shifts at this venue keep their record but no new shifts can reference it.`
+          ? `This permanently deletes ${venue.name}. A venue that has shifts or invoices can't be deleted; deactivate it instead to keep its history.`
           : "Confirm to delete this venue."
       }
       size="sm"

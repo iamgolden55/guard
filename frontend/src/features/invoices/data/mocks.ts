@@ -421,6 +421,7 @@ export interface InvoiceStats {
     draft: number;
     sent: number;
     pending: number;
+    approved: number;
     overdue: number;
     paid: number;
     rejected: number;
@@ -431,6 +432,10 @@ export interface InvoiceStats {
     overdue: number;
     paid: number;
     draft: number;
+    pending: number;
+    approved: number;
+    /** Everything not yet paid: draft + pending + approved + sent + overdue —
+     *  the same set the Outbox tab lists and counts. */
     outstanding: number;
   };
   buckets: { "0-30": number; "31-60": number; "61-90": number; "90+": number };
@@ -446,6 +451,7 @@ export function statsFor(invoices: InvoiceRecord[]): InvoiceStats {
   const rejected = byStatus("rejected");
   const resolved = byStatus("resolved");
   const pending = byStatus("pending");
+  const approved = byStatus("approved");
   const buckets = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
   overdue.forEach((i) => {
     const d = -daysFromToday(i.dueDate);
@@ -460,6 +466,7 @@ export function statsFor(invoices: InvoiceRecord[]): InvoiceStats {
       overdue: overdue.length,
       paid: paid.length,
       pending: pending.length,
+      approved: approved.length,
       rejected: rejected.length,
       resolved: resolved.length,
     },
@@ -468,7 +475,9 @@ export function statsFor(invoices: InvoiceRecord[]): InvoiceStats {
       overdue: sum(overdue),
       paid: sum(paid),
       draft: sum(draft),
-      outstanding: sum([...sent, ...overdue]),
+      pending: sum(pending),
+      approved: sum(approved),
+      outstanding: sum([...draft, ...pending, ...approved, ...sent, ...overdue]),
     },
     buckets,
   };

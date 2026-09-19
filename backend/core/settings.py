@@ -435,6 +435,8 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
+    # A delete refused to protect pay history answers 409, not 500.
+    'EXCEPTION_HANDLER': 'api.exception_handlers.exception_handler',
 }
 
 # JWT settings

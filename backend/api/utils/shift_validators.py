@@ -439,13 +439,23 @@ def clean_duplicate_shifts(dry_run=True):
                 'keeping_id': dup['min_id']
             })
 
+    kept_ids = []
     if not dry_run and shifts_to_delete:
-        ids_to_delete = [s['id'] for s in shifts_to_delete]
-        deleted_count, _ = Shift.objects.filter(id__in=ids_to_delete).delete()
-        logger.info(f"Deleted {deleted_count} duplicate shifts")
+        from django.db.models import ProtectedError
+
+        deleted_count = 0
+        for shift in Shift.objects.filter(id__in=[s['id'] for s in shifts_to_delete]):
+            try:
+                shift.delete()
+                deleted_count += 1
+            except ProtectedError:
+                # Invoiced or time-adjusted: pay history, not a duplicate to drop.
+                kept_ids.append(shift.id)
+        logger.info(f"Deleted {deleted_count} duplicate shifts, kept {len(kept_ids)} with pay records")
 
     return {
         'dry_run': dry_run,
         'total_duplicates_found': total_duplicates,
-        'duplicates': shifts_to_delete
+        'duplicates': shifts_to_delete,
+        'kept_with_pay_records': kept_ids,
     }
