@@ -319,6 +319,19 @@ Every other test file is identical. Assertions removed: 28 (each tied to a docum
 
 Also found: `regional-settings` create/update return "saved successfully" without saving anything.
 
+### 2C (part 1): the bugs 2B surfaced ✅
+
+| Finding | Fix |
+| --- | --- |
+| **E1: onboarding returned third-party credentials** (Deputy API key, payroll/accounting client secrets, Slack webhook) to any company member | Secrets stored only in `credentials`, which no serializer exposes; all output redacted. **Action for you:** production check (e) lists any company whose credentials were exposed; rotate those at the provider |
+| **A: managers couldn't approve leave** (403 on approvals, team overview, reports) | Leave permissions read `User.role`. Global leave configuration stays platform-staff only; the ratchet caught leave balances leaking across companies the moment admins were recognised, and they're scoped now |
+| C: compliance metrics endpoint crashed on any data | Serializer matches the model |
+| D: bulk-resolve locked to platform staff; "recalculate" claimed to start work it never did | Bulk-resolve opened to tenant managers/admins (scoped); recalculate says "not implemented" |
+| B: regional compliance: latent cross-tenant write behind a 500 | Guards in place before the repair; fake "settings saved" responses now say "not implemented". The feature itself is Phase 3 |
+| Leave report export always 500 | Fixed |
+
+Full suite: **48 → 22 failures**, all known and listed: 16 regional-compliance bugs (Phase 3), 3 onboarding, 3 recruitment.
+
 ---
 
 ## Decisions in force

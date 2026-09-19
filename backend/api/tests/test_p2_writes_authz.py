@@ -289,3 +289,24 @@ class LeaveConfigurationTests(WritesTestCase):
         )
         self.assertEqual(response.status_code, 403)
         self.assertFalse(LeaveType.objects.filter(code="free").exists())
+
+
+class RegionalComplianceGuardTests(WritesTestCase):
+    """Guards ahead of the regional-compliance repair (Phase 3). The feature
+    500s today; these make sure fixing it cannot open a cross-tenant write."""
+
+    def test_a_tenant_admin_cannot_repoint_a_shared_compliance_profile(self):
+        admin = self._user("wr_admin", "admin", self.company)
+        self.client.force_authenticate(user=admin)
+        response = self.client.post(
+            "/api/v1/compliance/regional/profiles/apply-preset/",
+            {"region_code": "UK", "profile_id": 1, "override_existing": True}, format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_regional_settings_do_not_pretend_to_save(self):
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.post(
+            "/api/v1/compliance/regional/regional-settings/", {}, format="json",
+        )
+        self.assertNotIn(response.status_code, (200, 201))

@@ -228,8 +228,10 @@ class PresetApplicationAPITest(APITestCase):
         }
 
         response = self.client.post(url, data, format='json')
+        # apply-preset rewrites shared profiles, so it is platform staff only and
+        # refuses a tenant user before looking at the profile id (Phase 2C guard).
 
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class RegulationComparisonAPITest(APITestCase):
@@ -676,10 +678,12 @@ class RegionalSettingsAPITest(APITestCase):
         }
 
         response = self.client.post(url, data, format='json')
+        # There is no RegionalSettings model; this returned 201 with a made-up id and
+        # saved nothing. It now says it is not implemented.
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_501_NOT_IMPLEMENTED)
         result = response.json()
-        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['status'], 'error')
 
     def test_update_regional_settings(self):
         """Test updating existing regional settings"""
@@ -694,10 +698,11 @@ class RegionalSettingsAPITest(APITestCase):
         }
 
         response = self.client.put(url, data, format='json')
+        # As create: nothing was ever saved, so it now says so.
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_501_NOT_IMPLEMENTED)
         result = response.json()
-        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['status'], 'error')
 
 
 class RegionalComplianceIntegrationTest(APITestCase):
@@ -858,7 +863,9 @@ class RegionalComplianceIntegrationTest(APITestCase):
             'region_code': 'INVALID',
             'profile_id': self.profile.id
         }, format='json')
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # apply-preset is platform staff only (Phase 2C guard); this used to pass only
+        # because every regional endpoint returned 500.
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
         # Test schedule validation with malformed shift data
         validation_url = reverse('compliance-regional-validate-schedule')

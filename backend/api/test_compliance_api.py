@@ -670,15 +670,14 @@ class WorkingHoursMetricsAPITests(BaseComplianceTestCase):
         self.assertEqual(response.data['results'][0]['period_type'], 'monthly')
 
     def test_recalculate_metrics_admin(self):
-        """Test admin can trigger metrics recalculation"""
+        """Recalculation is not implemented, so it must not claim to have started."""
         self.client.force_authenticate(user=self.admin_user)
         url = reverse('compliance-metrics-recalculate')
         data = {'user_id': self.staff_user.id, 'period_type': 'weekly'}
 
         response = self.client.post(url, data)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['status'], 'success')
-        self.assertIn('initiated', response.data['message'])
+        self.assertEqual(response.status_code, status.HTTP_501_NOT_IMPLEMENTED)
+        self.assertNotIn('initiated', response.data['message'])
 
     def test_recalculate_metrics_staff_forbidden(self):
         """Test staff user cannot trigger metrics recalculation"""

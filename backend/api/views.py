@@ -5652,7 +5652,10 @@ class ComplianceViolationViewSet(ManagerOnlyWritesMixin, viewsets.ModelViewSet):
             'resolved_at': violation.resolved_at
         })
 
-    @action(detail=False, methods=['post'], permission_classes=[IsAdminUser])
+    # Same audience as the single `resolve`: a company's managers and admins.
+    # It was platform-staff only (DRF IsAdminUser), which no tenant admin is;
+    # the queryset has been company-scoped since Phase 1B.
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsManagerOrAdmin])
     def bulk_resolve(self, request):
         """Bulk resolve multiple violations"""
         serializer = BulkViolationResolveSerializer(data=request.data)
@@ -5912,27 +5915,18 @@ class WorkingHoursMetricsViewSet(viewsets.ReadOnlyModelViewSet):
 
         return queryset.order_by('-period_start')
 
-    @action(detail=False, methods=['post'], permission_classes=[IsAdminUser])
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsManagerOrAdmin])
     def recalculate(self, request):
-        """Trigger metrics recalculation"""
-        try:
-            user_id = request.data.get('user_id')
-            period_type = request.data.get('period_type', 'all')
+        """Trigger metrics recalculation — not implemented.
 
-            # Use background task for heavy calculations
-            # TODO: Implement celery task for metrics recalculation
-            # recalculate_metrics.delay(user_id, period_type)
-
-            return Response({
-                'status': 'success',
-                'message': 'Metrics recalculation initiated'
-            })
-        except Exception as e:
-            logger.error(f"Metrics recalculation error: {str(e)}")
-            return Response({
-                'status': 'error',
-                'message': 'Failed to initiate metrics recalculation'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        This answered "Metrics recalculation initiated" and did nothing: the
+        task it would queue was a commented-out TODO. Say so instead of
+        claiming work that never happens.
+        """
+        return Response({
+            'status': 'error',
+            'message': 'Metrics recalculation is not available yet.',
+        }, status=status.HTTP_501_NOT_IMPLEMENTED)
 
 
 @api_view(['POST'])
@@ -6192,7 +6186,7 @@ class RegionalComplianceViewSet(viewsets.ViewSet):
             data = serializer.validated_data
 
             # Region detection logic
-            region_data = self._detect_region_from_data(data)
+            region_data = self._detect_region_from_data(data, resolve_request_company(request))
 
             response_serializer = RegionDetectionResponseSerializer(data=region_data)
             if response_serializer.is_valid():
@@ -6213,13 +6207,14 @@ class RegionalComplianceViewSet(viewsets.ViewSet):
                 'message': 'Failed to detect region'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def _detect_region_from_data(self, data):
+    def _detect_region_from_data(self, data, company=None):
         """Internal method to detect region from various data sources"""
 
-        # Method 1: Venue-based detection (highest confidence)
+        # Method 1: Venue-based detection (highest confidence). Only the
+        # caller's company's venues — any id on the platform was accepted.
         if 'venue_id' in data:
             try:
-                venue = Venue.objects.get(id=data['venue_id'])
+                venue = Venue.objects.get(id=data['venue_id'], company=company)
                 if venue.latitude and venue.longitude:
                     region_data = self._detect_region_from_coordinates(
                         float(venue.latitude), float(venue.longitude)
@@ -6384,7 +6379,18 @@ class RegionalComplianceViewSet(viewsets.ViewSet):
 
         POST /api/compliance/profiles/apply-preset/
         Body: {region_code, profile_id, override_existing}
+
+        Rewrites a compliance profile's regulation. Profiles are shared by
+        every company, so this is platform staff only. Today the whole
+        regional API returns 500 (`for_country` does not exist), which hid the
+        fact that any account could repoint any profile here; the guard comes
+        first so the eventual repair cannot open it (AUDIT-2026-09-17, 2B/B).
         """
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response({
+                'status': 'error',
+                'message': 'Only platform staff can change shared compliance profiles.',
+            }, status=status.HTTP_403_FORBIDDEN)
         try:
             serializer = PresetApplicationSerializer(data=request.data)
             if not serializer.is_valid():
@@ -6651,7 +6657,9 @@ class RegionalComplianceViewSet(viewsets.ViewSet):
             data = serializer.validated_data
 
             # Validate schedule
-            validation_result = self._validate_shift_schedule(data, request.user)
+            validation_result = self._validate_shift_schedule(
+                data, request.user, resolve_request_company(request),
+            )
 
             return Response({
                 'status': 'success',
@@ -6665,7 +6673,7 @@ class RegionalComplianceViewSet(viewsets.ViewSet):
                 'message': 'Failed to validate schedule'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def _validate_shift_schedule(self, data, requesting_user):
+    def _validate_shift_schedule(self, data, requesting_user, company=None):
         """Validate shift schedule against compliance rules"""
         user_id = data['user_id']
         shifts = data['shifts']
@@ -6678,8 +6686,16 @@ class RegionalComplianceViewSet(viewsets.ViewSet):
         overtime_hours = Decimal('0.00')
 
         try:
-            # Get user and their compliance profile
-            user = User.objects.get(id=user_id)
+            # Get user and their compliance profile. Only a member of the
+            # caller's company, and an officer only for themselves — any
+            # user_id on the platform was accepted, exposing their licences.
+            if requesting_user.role not in ('manager', 'admin') and int(user_id) != requesting_user.id:
+                raise User.DoesNotExist
+            user = User.objects.get(
+                id=user_id,
+                company_memberships__company=company,
+                company_memberships__is_active=True,
+            )
 
             # Get compliance profile (create default if doesn't exist)
             profile, created = ComplianceProfile.objects.get_or_create(
@@ -6848,14 +6864,12 @@ class RegionalComplianceViewSet(viewsets.ViewSet):
                     'errors': serializer.errors
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            # Implementation would create RegionalSettings record
-            # For now, return success response
-
+            # There is no RegionalSettings model: this returned "created
+            # successfully" with a made-up id and saved nothing.
             return Response({
-                'status': 'success',
-                'message': 'Regional settings created successfully',
-                'data': {'id': 1, **serializer.validated_data}
-            }, status=status.HTTP_201_CREATED)
+                'status': 'error',
+                'message': 'Regional settings overrides are not available yet.',
+            }, status=status.HTTP_501_NOT_IMPLEMENTED)
 
         except Exception as e:
             logger.error(f"Regional settings creation error: {str(e)}")
@@ -6875,13 +6889,11 @@ class RegionalComplianceViewSet(viewsets.ViewSet):
                     'errors': serializer.errors
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            # Implementation would update RegionalSettings record
-
+            # As above: nothing was ever saved.
             return Response({
-                'status': 'success',
-                'message': 'Regional settings updated successfully',
-                'data': serializer.validated_data
-            })
+                'status': 'error',
+                'message': 'Regional settings overrides are not available yet.',
+            }, status=status.HTTP_501_NOT_IMPLEMENTED)
 
         except Exception as e:
             logger.error(f"Regional settings update error: {str(e)}")
@@ -8291,10 +8303,14 @@ class OnboardingViewSet(viewsets.ViewSet):
                 'errors': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Save integrations configuration
+        # Save integrations configuration. Secrets never go into `step_data`
+        # (returned by every onboarding response) or `configuration`: only into
+        # `credentials`, which no serializer exposes. Encrypting `credentials`
+        # at rest is a follow-up — it is a plain JSONField today.
+        from .serializers import redact_secrets
         validated_data = serializer.validated_data
         onboarding = company.onboarding
-        onboarding.step_data['integrations'] = validated_data
+        onboarding.step_data['integrations'] = redact_secrets(dict(validated_data))
         onboarding.mark_step_completed(4)
 
         # Create integration records for enabled services
@@ -8307,10 +8323,8 @@ class OnboardingViewSet(viewsets.ViewSet):
                 name='Deputy Workforce Management',
                 defaults={
                     'description': 'Integration with Deputy for workforce management',
-                    'configuration': {
-                        'api_key': validated_data.get('deputy_api_key'),
-                        'endpoint': validated_data.get('deputy_endpoint')
-                    },
+                    'configuration': {'endpoint': validated_data.get('deputy_endpoint')},
+                    'credentials': {'api_key': validated_data.get('deputy_api_key')},
                     'status': 'configuring',
                     'configured_by': request.user
                 }
@@ -8328,7 +8342,8 @@ class OnboardingViewSet(viewsets.ViewSet):
                     name=f"{system_value.title()} Integration",
                     defaults={
                         'description': f'Integration with {system_value.title()}',
-                        'configuration': validated_data.get(f"{system_type.replace('_system', '').replace('_platform', '')}_credentials", {}),
+                        'configuration': {},
+                        'credentials': validated_data.get(f"{system_type.replace('_system', '').replace('_platform', '')}_credentials", {}),
                         'status': 'configuring',
                         'configured_by': request.user
                     }

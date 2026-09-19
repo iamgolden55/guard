@@ -1118,3 +1118,20 @@ class OnboardingIntegrationFlowTest(TransactionTestCase):
             final_step_data['regional_setup']['primary_jurisdiction'],
             'Test Jurisdiction'
         )
+
+class IntegrationSecretStorageTest(OnboardingAPITestCase):
+    """Secrets from onboarding are kept only where no serializer can return them."""
+
+    def test_secrets_are_stored_in_credentials_not_in_readable_fields(self):
+        from api.models import CompanyIntegration
+        self.authenticate_as_owner()
+        self.client.post(reverse('onboarding-initiate-onboarding'), self.valid_company_data, format='json')
+        response = self.client.put(reverse('onboarding-save-integrations'), self.valid_integrations, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn('test_deputy_api_key_123', response.content.decode())
+
+        onboarding = CompanyOnboarding.objects.get(company__created_by=self.owner_user)
+        self.assertNotIn('test_deputy_api_key_123', json.dumps(onboarding.step_data))
+        deputy = CompanyIntegration.objects.get(integration_type='deputy')
+        self.assertNotIn('test_deputy_api_key_123', json.dumps(deputy.configuration))
+        self.assertEqual(deputy.credentials.get('api_key'), 'test_deputy_api_key_123')

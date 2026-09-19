@@ -297,11 +297,21 @@ class LeaveSettingsAPITestCase(APITestCase):
 
     def setUp(self):
         """Set up test data"""
+        # Leave system settings (SystemConfig) are shared by every company, so
+        # changing them is a platform-staff job: a company admin editing them
+        # would change accruals and notifications for all tenants.
         self.admin_user = User.objects.create_user(
             username='admin',
             email='admin@test.com',
             password='testpass123',
-            role='admin'
+            role='admin',
+            is_staff=True,
+        )
+        self.tenant_admin = User.objects.create_user(
+            username='tenant_admin',
+            email='tenant_admin@test.com',
+            password='testpass123',
+            role='admin',
         )
 
         self.manager_user = User.objects.create_user(
@@ -311,9 +321,15 @@ class LeaveSettingsAPITestCase(APITestCase):
             role='manager'
         )
 
-        self.company = _join_company(self.admin_user, self.manager_user)
+        self.company = _join_company(self.admin_user, self.manager_user, self.tenant_admin)
 
         self.client = APIClient()
+
+    def test_a_company_admin_cannot_change_platform_leave_settings(self):
+        self.client.force_authenticate(user=self.tenant_admin)
+        url = reverse('leave_management:leave-settings-system-config')
+        response = self.client.put(url, {'accrual_settings': {'x': 1}}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_settings_overview_admin(self):
         """Test settings overview as admin"""
@@ -374,14 +390,24 @@ class BlackoutPeriodsAPITestCase(APITestCase):
 
     def setUp(self):
         """Set up test data"""
+        # Blackout periods have no company of their own (a null venue applies to
+        # everyone), so managing them is platform staff only until they are
+        # scoped by venue__company.
         self.admin_user = User.objects.create_user(
             username='admin',
             email='admin@test.com',
             password='testpass123',
-            role='admin'
+            role='admin',
+            is_staff=True,
+        )
+        self.tenant_admin = User.objects.create_user(
+            username='tenant_admin',
+            email='tenant_admin@test.com',
+            password='testpass123',
+            role='admin',
         )
 
-        self.company = _join_company(self.admin_user)
+        self.company = _join_company(self.admin_user, self.tenant_admin)
 
         # Create venue for testing
         self.venue = Venue.objects.create(
@@ -410,6 +436,13 @@ class BlackoutPeriodsAPITestCase(APITestCase):
         )
 
         self.client = APIClient()
+
+    def test_a_company_admin_cannot_create_global_blackout_periods(self):
+        self.client.force_authenticate(user=self.tenant_admin)
+        response = self.client.post(
+            reverse('leave_management:blackout-periods-list'), {}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_blackout_periods_list(self):
         """Test blackout periods list"""
