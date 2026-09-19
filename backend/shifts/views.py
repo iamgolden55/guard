@@ -161,9 +161,15 @@ class ShiftViewSet(viewsets.ModelViewSet):
         keep read plus the attendance and release/exchange actions; the write
         verbs that mint or reprice a shift are manager/admin only.
         """
-        if self.action in IsManagerOrAdmin.WRITE_ACTIONS:
+        if self.action in IsManagerOrAdmin.WRITE_ACTIONS + self.MANAGER_WRITE_ACTIONS:
             return [permissions.IsAuthenticated(), IsManagerOrAdmin()]
         return super().get_permissions()
+
+    #: Custom actions that create or price shifts. They must carry the same
+    #: gate as `create`: `create_multi_staff` sat outside it and let any
+    #: account — including one with no company — mint approved shifts at an
+    #: arbitrary rate in any company's venue (AUDIT-2026-09-17 S-22).
+    MANAGER_WRITE_ACTIONS = ('create_multi_staff',)
 
     def get_serializer_class(self):
         # Use the camelCase serializer for the frontend
@@ -1537,8 +1543,10 @@ class ShiftViewSet(viewsets.ModelViewSet):
         """Create shifts for multiple staff members at the same venue and time"""
         # Check if this is a copy operation that should allow past dates
         allow_past_dates = request.data.get('allow_past_dates', False)
-        context = {'allow_past_dates': allow_past_dates}
-        
+        # `request` carries the tenant: the serializer checks the venue and every
+        # staff member against the company it resolves.
+        context = {'allow_past_dates': allow_past_dates, 'request': request}
+
         serializer = MultiStaffShiftSerializer(data=request.data, context=context)
         if serializer.is_valid():
             shifts = serializer.save()

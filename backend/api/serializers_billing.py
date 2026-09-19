@@ -797,8 +797,9 @@ class FinanceProviderSerializer(serializers.Serializer):
         return PROVIDER_COLORS.get(obj.provider_key, '#999999')
 
     def get_connected(self, obj):
-        # `connections` is the related_name on ProviderConnection
-        return obj.connections.filter(status='connected').exists()
+        # Supplied by the view, scoped to the requesting company. Without it the
+        # answer is "no" — never "some tenant has connected this provider".
+        return obj.pk in self.context.get('connected_provider_ids', ())
 
     def get_default(self, obj):
         return obj.provider_key == 'xero'

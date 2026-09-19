@@ -866,6 +866,15 @@ class OnboardingPermissionTest(OnboardingAPITestCase):
 
     def test_staff_user_cannot_initiate_onboarding(self):
         """Test that staff users cannot initiate onboarding"""
+        # "Staff" means a member of an existing company. Without a membership
+        # this user is indistinguishable from a brand-new signup, which must be
+        # allowed to create its company (see api/tests/test_p0_authz.py).
+        employer = SecurityCompany.objects.create(
+            name='Employer Ltd', registration_number='EMP-1',
+        )
+        UserCompanyMembership.objects.create(
+            user=self.staff_user, company=employer, role='staff', is_active=True,
+        )
         self.authenticate_as_staff()
 
         url = reverse('onboarding-initiate-onboarding')

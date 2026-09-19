@@ -1,0 +1,136 @@
+# Remediation progress
+
+Live tracker for fixing the 2026-09-17 engineering audit (`AUDIT-2026-09-17.md`).
+The audit says what is wrong. This file says what has been done about it, what is next, and what is waiting on you.
+
+**Last updated:** 2026-09-19 · **Current branch:** `fix/p0-money` · **Now working on:** Phase 1C (money)
+
+Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋 needs you · ❌ did not reproduce (audit corrected)
+
+---
+
+## At a glance
+
+| Phase | What it is | Status |
+| --- | --- | --- |
+| 0 | Containment: rotate secrets, lock signup, snapshot, prod checks | 🙋 waiting on you (code parts ✅) |
+| 1A | Safety net: pytest config, CI, baseline | ✅ committed |
+| 1B | Tenancy and authorisation P0s | ✅ committed, no regressions |
+| 1C | Money P0s (client bill rate, manager hour overrides, mark-paid) | 🟡 in progress |
+| 1D | Mobile check-in data loss | ⏳ |
+| 1E | SIA role↔licence, warn and record | ⏳ |
+| — | **Stop and report** after 1E | ⏳ |
+| 2 | Reliability (backups, alerts, PROTECT, pay basis, Xero, web honesty) | ⏳ planned |
+| 3 | Product completion (no-show alerts, manager inbox, incident evidence) | ⏳ planned |
+| 4–5 | Scale, advanced | ⏳ planned |
+
+The full phase plan, with the reasoning for its order, is in `~/.claude/plans/pasted-content-id-e5a5-it-beautifully-valiant-mist.md`.
+
+---
+
+## What's next, in order
+
+1. **1C: money** (branch `fix/p0-money`).
+   - Price client invoices at `Shift.bill_rate`. A line with no bill rate is held as a draft and can't be issued until a manager sets the rate from the invoice (decision D-A). Officer pay does not move.
+   - Route `force_complete` and `manual_checkout` through `record_attendance`, so the hours a manager types are the hours stored, junk and negative hours get a 400, and a locked invoice gets a 409.
+   - Facade `mark-paid`: staff invoices must be `approved` first, and client invoices must be issued first.
+   - Read-only report of historically under-billed client invoices (CSV only; it changes no data).
+2. **1D: mobile** (branch `fix/p0-mobile-checkin`).
+   - Delete the dead `CheckInFlowV2.tsx`.
+   - Make check-in queue on connectivity failure and show the server's reason on a 4xx, as check-out already does.
+   - Stop purging failed queue items at startup, and recover items stuck in `processing`.
+   - Add the missing `check_out_time` to queued check-outs.
+   - Let a flagged offline replay lift an *automatic* no-show into manager review.
+   - Get `tsc` running, and add Jest tests for `syncService`.
+3. **1E: SIA** (branch `fix/p0-sia-warn`). One role→licence mapping, evaluated on every assignment path. Warnings are returned to the manager and logged when overridden. The check-in alert extends to role mismatch.
+4. **Stop.** Report in the `full_fix.md` §6 format, with the test delta per file.
+
+---
+
+## Phase 0: containment
+
+| # | Item | Status | Notes |
+| --- | --- | --- | --- |
+| 0.1 | Rotate the Twilio SID/token, the WhatsApp webhook secret and the Firebase key | 🙋 | All still in git history: `agents/.env.whatsapp` (`72e8f04d`), `mobile/google-services.json` (`a1e0cd88`). Rotating at the provider is what makes them safe. |
+| 0.2 | `REGISTRATION_REQUIRES_INVITE=True` on Render | 🙋 | Pauses web self-serve company signup until GA. Mobile has no signup. |
+| 0.3 | Manual Postgres snapshot; confirm the backup plan and retention | 🙋 | Needed before Phase 1 deploys, because 1C adds a migration. |
+| 0.4 | Read-only production checks | ✅ written · 🙋 run | `docs/audit-2026-09-17-prod-checks.sql`. Dry-run on dev reproduces the audit's figures. Section (b) says whether the fail-open exposure was used; (c) decides one 1C item. |
+| 0.5 | Audit into the repo; `CLAUDE.md` corrected | ✅ | `2850972a` |
+
+## Phase 1A: safety net ✅ (`chore/test-safety-net`, `1b42f1f3`)
+
+- A bare `pytest` now collects all 609 real tests and none of the loose scripts. `api/tests.py` had been uncollectable, so it moved into the `api/tests/` package. One dead test file was removed.
+- `DJANGO_TEST_DB_NAME` isolates concurrent test runs.
+- **Baseline (isolated DB):** 429 passed · 170 failed · 9 errors · 1 skipped. The regression-guard set passes 246/246.
+- CI (`.github/workflows/ci.yml`):
+  - required: regression guards, frontend build (`tsc` + vite), mobile Jest, gitleaks
+  - informational: the full suite and biome (337 standing errors)
+- Mobile baseline: Jest 45 passed, 1 skipped.
+
+## Phase 1B: tenancy and authorisation ✅ (`fix/p0-authz`)
+
+Every fix below has a reproduction test that failed before the fix and passes after, in `api/tests/test_p0_authz.py` (35 tests).
+
+| Audit ref | Fix | Status |
+| --- | --- | --- |
+| P0-A / ENG-002 | Billing helpers `_client_qs`, `_staff_qs` and `_company_qs`, plus `StatementViewSet`, return `.none()` when no company resolves | ✅ |
+| P0-F / ENG-004 | Billing facade, payroll runs, statements, finance providers and the Xero export are manager/admin only. Officers read their own pay via `/invoices/`. | ✅ |
+| S-22 / ENG-005 | `create_multi_staff`: role gate; the venue and every staff member must belong to the acting company; it can't create a shift already `approved` | ✅ |
+| ENG-006 | `PATCH /users/me` no longer writes `security_roles`; `is_approved` is read-only on staff profiles | ✅ |
+| P0-G | An officer of an existing company can't create a tenant. A genuine new signup still can. | ✅ |
+| P0-E / ENG-009 | Compliance violations, working-hours metrics, summaries, reports, alerts and bulk resolve are scoped to the company. `set_active` chooses the profile for the admin's own company. | ✅ |
+| S-3 / S-15 | Running a report template's stored SQL is platform-staff only; preview `limit` must be an integer from 1 to 1000 before any SQL runs | ✅ |
+| P1-k | The shadow company resolver in `shifts/serializers.py` delegates to the shared one; the venue guard fails closed | ✅ |
+| ENG-010 | Tenancy ratchet (`api/tests/test_tenancy_ratchet.py`): queryset inspection plus an HTTP pass over every list route. Proven to catch a reverted P0-A fix. | ✅ |
+| — | Full backend suite, per file vs baseline | ✅ only improvements: `test_onboarding_api.py` 15 → 12 failures, +37 new passing tests, every other file identical (469 passed / 167 failed / 9 errors) |
+
+**Found beyond the audit, and fixed:**
+- `StatementViewSet` and `PayrollRunViewSet` had the same fail-open / no-role-gate shape.
+- `initiate_onboarding` also promoted the caller to `role='admin'`.
+- The facade's `PAY-<n>` fallback matched *any* invoice with pk `n`, so mark-paid on one number could settle a different invoice.
+- `set_active`, and regulation `activate`/`deactivate`, declared `IsAdminUser`, but the ViewSet's `get_permissions()` override discarded it. **Any logged-in account**, officers included, could switch a tenant's working-time profile, or switch off a country's regulation that the overtime engine reads.
+- Five statutory-check ViewSets (capacity, fire exit, toilet, logbook sign-off, missed slots) failed open the same way. The ratchet found them.
+- Report jobs, and their downloadable files, were visible across tenants to any `role='admin'` user.
+- The Xero export bound an invoice to whichever tenant connected Xero first.
+- The compliance violations endpoint crashed on every request: two DRF `source=` assertions in its serializer.
+
+**Corrected from the audit:**
+- S-15 (report `limit` injection) is real, but weaker than reported. The injected SQL executed and the response then failed, so an attacker got a 400 and a timing side-channel, not rows. Fixed anyway.
+
+**Recorded for Phase 2, not changed:**
+- Officers can self-edit `pay_frequency` and `employmentType` on their own profile. These may decide which payroll run includes them; changing them would affect pay behaviour, so it needs a decision.
+- `BlackoutPeriodsViewSet` is admin-only but unscoped. It's on the ratchet allowlist.
+- Two compliance dashboard endpoints return hard-coded fixture numbers rather than data.
+
+## Phase 1C: money 🟡
+
+- Reproduction tests: `api/tests/test_p0_money.py`. 11 fail before any fix, including the audit's "manager types 8, payroll stores 9".
+- Found while writing them: `force_complete` with no check-out time stamps "now". Days after the shift, that trips the 24-hour guard and returns a raw 500.
+- **Waiting on 0.4(c):** a company filter on staff payroll generation ships only if no officer has more than one active membership in production. Otherwise it moves pay, and that's your decision (D-C).
+
+## Phase 1D: mobile ⏳ · Phase 1E: SIA ⏳
+
+Not started. The scope is under "What's next" above.
+
+---
+
+## Decisions in force
+
+| # | Decision |
+| --- | --- |
+| D-A | A client line with no `bill_rate` is held as a draft until a manager sets it |
+| D-B | SIA role↔licence mismatch at assignment: warn and record, don't block |
+| D-C | Nothing that moves an officer's pay ships armed: build it, prove it, report it, and you flip it |
+| D-D | Migrations are additive only; existing rows are never deleted or rewritten |
+| D-E | Historical under-billing and orphaned invoice headers: report only |
+| D-F | Client invoice hours basis unchanged in Phase 1 (only the rate changes) |
+| D-G | Manager-typed hours on force-complete / manual check-out are honoured |
+
+## Waiting on you
+
+- [ ] Rotate the Twilio, WhatsApp and Firebase credentials (0.1)
+- [ ] Set `REGISTRATION_REQUIRES_INVITE=True` on Render (0.2)
+- [ ] Take a Postgres snapshot and confirm the backup plan (0.3)
+- [ ] Run `docs/audit-2026-09-17-prod-checks.sql` against production and share the output (0.4)
+- [ ] Confirm the SIA role→licence mapping, including whether a door supervisor licence covers security guarding (1E)
+- [ ] After Phase 1: review, merge, deploy (backend → web → EAS build), and enable branch protection once CI has run

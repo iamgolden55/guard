@@ -93,23 +93,15 @@ User = get_user_model()
 
 
 def resolve_request_company(request):
-    """Resolve the acting user's company.
+    """The single company in scope; see `api.middleware.tenant_middleware`.
 
-    Prefers the middleware value and falls back to the user's active
-    membership, the same two-step every ViewSet in `api/views.py` uses.
-    `TenantMiddleware` runs before DRF authenticates, so on a JWT request the
-    middleware value is almost always `None` and the fallback is what actually
-    answers — see P1-6.
+    This was a separate copy of the old two-step fallback. It ignored the
+    `X-Company-ID` header and picked the *newest* membership, so for a user in
+    two companies the venue guard below checked against a different company
+    from the one every ViewSet had resolved.
     """
-    company = getattr(request, 'current_company', None)
-    if company:
-        return company
-
-    from api.models import UserCompanyMembership
-    membership = UserCompanyMembership.objects.filter(
-        user=request.user, is_active=True, company__is_active=True
-    ).select_related('company').order_by('-joined_at').first()
-    return membership.company if membership else None
+    from api.middleware.tenant_middleware import resolve_request_company as resolve
+    return resolve(request)
 
 
 class ShiftSerializer(serializers.ModelSerializer):
@@ -261,7 +253,7 @@ class ShiftSerializer(serializers.ModelSerializer):
             request = self.context.get('request')
             if request is not None and getattr(request, 'user', None) and request.user.is_authenticated:
                 company = resolve_request_company(request)
-                if company and venue.company_id != company.id:
+                if company is None or venue.company_id != company.id:
                     raise serializers.ValidationError(
                         {'venue': 'Venue does not belong to the current company'}
                     )
@@ -582,7 +574,9 @@ class MultiStaffShiftSerializer(serializers.Serializer):
     )
     start_time = serializers.DateTimeField()
     end_time = serializers.DateTimeField()
-    status = serializers.CharField(default='scheduled')
+    # A new shift starts scheduled. Accepting any string let a caller create
+    # shifts already `approved`, which flow straight into payroll.
+    status = serializers.ChoiceField(choices=[('scheduled', 'Scheduled')], default='scheduled')
     required_security_role = serializers.CharField(default='sg')
     notes = serializers.CharField(required=False, allow_blank=True)
     hourly_rate = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
@@ -599,15 +593,33 @@ class MultiStaffShiftSerializer(serializers.Serializer):
             if data['start_time'] <= timezone.now():
                 raise serializers.ValidationError("Start time must be in the future")
 
-        # Validate venue exists
-        from api.models import Venue
+        # Tenant guard, as `bulk_create` has always applied: the venue and every
+        # staff member must belong to the acting company. No company, no shifts.
+        from api.models import UserCompanyMembership, Venue
+        request = self.context.get('request')
+        company = resolve_request_company(request) if request is not None else None
+        if company is None:
+            raise serializers.ValidationError("No company context available")
+
         try:
-            venue = Venue.objects.get(id=data['venue'])
+            venue = Venue.objects.get(id=data['venue'], company=company)
             data['venue_obj'] = venue
         except Venue.DoesNotExist:
-            raise serializers.ValidationError("Invalid venue ID")
+            raise serializers.ValidationError(
+                {'venue': 'Venue does not belong to the current company'}
+            )
 
-        # Validate all staff users exist
+        members = set(
+            UserCompanyMembership.objects.filter(
+                user_id__in=data['staff_users'], company=company, is_active=True,
+            ).values_list('user_id', flat=True)
+        )
+        foreign = sorted(set(data['staff_users']) - members)
+        if foreign:
+            raise serializers.ValidationError(
+                {'staff_users': f'Staff {foreign} do not belong to the current company'}
+            )
+
         from api.models import User
         staff_users = []
         for user_id in data['staff_users']:
