@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status, permissions, filters, renderers
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
@@ -946,6 +947,29 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                 else 'Your request has been saved as draft'
             )
         }, status=status.HTTP_201_CREATED, headers=headers)
+
+    #: Statuses in which the requesting officer may still change or delete a
+    #: request. Once decided it is paid leave (Invoice.generate_for_staff_period
+    #: pays every approved day); an officer could previously PATCH `end_date`
+    #: on approved leave and be paid for the extra days.
+    STAFF_EDITABLE_STATUSES = ('draft', 'pending')
+
+    def _check_staff_may_change(self, leave_request):
+        user = self.request.user
+        if user.role in ('manager', 'admin') or user.is_staff or user.is_superuser:
+            return
+        if leave_request.status not in self.STAFF_EDITABLE_STATUSES:
+            raise PermissionDenied(
+                f"This request is {leave_request.status}; ask your manager to change it."
+            )
+
+    def perform_update(self, serializer):
+        self._check_staff_may_change(serializer.instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._check_staff_may_change(instance)
+        instance.delete()
 
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):

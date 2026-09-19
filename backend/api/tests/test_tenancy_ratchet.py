@@ -45,7 +45,11 @@ KNOWN_UNSCOPED = {
     "RecruitmentApplicationPublicViewSet": "POST-only public application form (http_method_names)",
     "LeaveReportsViewSet": "list() is overridden and reads scoped_leave_requests()",
     # Real, lower-severity gaps scheduled by the audit roadmap.
-    "BlackoutPeriodsViewSet": "phase 2: admin-only, but scoped by nothing; venue FK is the tenant link",
+    "BlackoutPeriodsViewSet": (
+        "platform staff only in practice: leave_management's AdminOnlyPermission reads "
+        "`user.profile.role`, which StaffProfile doesn't have, so only is_staff/superuser "
+        "pass. Must be scoped by venue__company before that permission is fixed."
+    ),
 }
 
 
@@ -190,3 +194,112 @@ class TenancyRatchetOverHttpTests(APITestCase):
             leaks[name] = f"{len(rows)} row(s) from {url}"
 
         self.assertEqual(leaks, {}, "List routes returned rows to an account with no company")
+
+
+# ---------------------------------------------------------------------------
+# Write routes an ordinary officer may reach (AUDIT-2026-09-17, Phase 2A)
+# ---------------------------------------------------------------------------
+
+_SELF = "self-service: queryset is the officer's own rows"
+
+#: (ViewSet, default write action) an officer passes the permission check on,
+#: and why that is acceptable. Anything else reachable is a failure: a new
+#: ViewSet whose default writes are open to officers must be argued for here.
+OFFICER_WRITABLE = {
+    ("UserViewSet", "create"): "registration; closed by REGISTRATION_REQUIRES_INVITE in production",
+    ("UserViewSet", "partial_update"): _SELF + "; role/is_active/security_roles read-only for staff",
+    ("UserViewSet", "destroy"): _SELF + " (soft delete of own account)",
+    ("StaffProfileViewSet", "create"): _SELF,
+    ("StaffProfileViewSet", "partial_update"): _SELF + "; is_approved, pay_frequency, employment type locked",
+    ("EmergencyContactViewSet", "create"): "OwnProfileRowsMixin: own profile only",
+    ("EmergencyContactViewSet", "partial_update"): "OwnProfileRowsMixin: own profile only",
+    ("EmergencyContactViewSet", "destroy"): _SELF,
+    ("BankDetailsViewSet", "create"): _SELF,
+    ("BankDetailsViewSet", "partial_update"): _SELF + "; staff_profile read-only",
+    ("BankDetailsViewSet", "destroy"): _SELF,
+    ("SIALicenseViewSet", "create"): "own profile forced; status server-derived as pending",
+    ("StaffAvailabilityViewSet", "create"): "OwnProfileRowsMixin: own profile only",
+    ("StaffAvailabilityViewSet", "partial_update"): "OwnProfileRowsMixin: own profile only",
+    ("StaffAvailabilityViewSet", "destroy"): _SELF,
+    ("VenueTermsAcceptanceViewSet", "create"): "staff_user forced to the caller",
+    ("PreferredVenueViewSet", "create"): "OwnProfileRowsMixin: own profile, own company's venue",
+    ("PreferredVenueViewSet", "partial_update"): "OwnProfileRowsMixin: own profile, own company's venue",
+    ("PreferredVenueViewSet", "destroy"): _SELF,
+    ("FireExitCheckViewSet", "create"): "officers record checks; shift ownership validated, fields server-stamped",
+    ("CapacityCheckViewSet", "create"): "officers record checks; shift ownership validated, fields server-stamped",
+    ("ToiletCheckViewSet", "create"): "officers record checks; shift ownership validated, fields server-stamped",
+    ("CapacityLogbookSignoffViewSet", "create"): "shift-group members sign off; venue checked against the group",
+    ("IncidentReportViewSet", "create"): "officers report; venue/shift checked against their company and shifts",
+    ("ShiftExchangeViewSet", "create"): "own shift, same-company colleague; status forced pending",
+    ("ShiftExchangeViewSet", "partial_update"): "update() raises 405",
+    ("ShiftExchangeViewSet", "destroy"): "destroy() raises 405",
+    ("OpenShiftRequestViewSet", "create"): "release_to_pool on the caller's own shift",
+    ("OpenShiftRequestViewSet", "partial_update"): "update() raises 405",
+    ("OpenShiftRequestViewSet", "destroy"): "destroy() raises 405",
+    ("RecruitmentApplicationPublicViewSet", "create"): "public job application form",
+    ("ReportJobViewSet", "create"): _SELF,
+    ("ReportJobViewSet", "partial_update"): _SELF,
+    ("ReportJobViewSet", "destroy"): _SELF,
+    ("SNSDeviceTokenViewSet", "create"): "own push token",
+    ("SNSDeviceTokenViewSet", "partial_update"): "own push token",
+    ("SNSDeviceTokenViewSet", "destroy"): "own push token",
+    ("NotificationPreferencesViewSet", "partial_update"): "own preferences object",
+    ("ContractorUnavailabilityViewSet", "create"): _SELF,
+    ("ContractorUnavailabilityViewSet", "partial_update"): "owner checked; staff_user pinned on update",
+    ("ContractorUnavailabilityViewSet", "destroy"): "owner checked",
+    ("LeaveRequestViewSet", "create"): "staff_user forced to the caller",
+    ("LeaveRequestViewSet", "partial_update"): "own request, and only while draft/pending",
+    ("LeaveRequestViewSet", "destroy"): "own request, and only while draft/pending",
+    ("BankHolidayViewSet", "create"): "perform_* rejects non-admins",
+    ("BankHolidayViewSet", "partial_update"): "perform_* rejects non-admins",
+    ("BankHolidayViewSet", "destroy"): "perform_* rejects non-admins",
+    ("StaffLeaveDailyRateViewSet", "create"): "queryset is empty for staff and perform_* rejects them",
+    ("StaffLeaveDailyRateViewSet", "partial_update"): "queryset is empty for staff and perform_* rejects them",
+    ("StaffLeaveDailyRateViewSet", "destroy"): "queryset is empty for staff and perform_* rejects them",
+    ("ClientInvoiceViewSet", "create"): "get_queryset and perform_create raise for non-managers",
+    ("ClientInvoiceViewSet", "partial_update"): "get_queryset raises for non-managers",
+    ("ClientInvoiceViewSet", "destroy"): "get_queryset raises for non-managers",
+}
+
+
+class WriteRouteRatchetTests(APITestCase):
+    """No default write route is open to an officer unless it is argued for above.
+
+    The audit's pattern: a ViewSet gates its custom action (`approve`,
+    `resolve`) and leaves the default PATCH/DELETE beside it open. This walks
+    every router as a `role='staff'` user and lists the default writes whose
+    permission checks pass. The list must match OFFICER_WRITABLE exactly — a
+    new open write fails until it is gated or justified, and a fixed one fails
+    until its entry is removed.
+    """
+
+    WRITES = (("create", "post"), ("partial_update", "patch"), ("destroy", "delete"))
+
+    def test_officer_writable_routes_are_exactly_the_justified_ones(self):
+        officer = User(username="ratchet_officer", role="staff")
+        officer.pk = 10 ** 9
+        factory = APIRequestFactory()
+        found = set()
+        for _prefix, viewset_class, _basename in _routers():
+            allowed = [m.lower() for m in getattr(viewset_class, "http_method_names", [])]
+            for action, verb in self.WRITES:
+                if not hasattr(viewset_class, action) or verb not in allowed:
+                    continue
+                request = Request(getattr(factory, verb)("/"))
+                request.user = officer
+                request._request.user = officer
+                view = viewset_class()
+                view.action, view.request, view.args, view.kwargs = action, request, (), {}
+                view.format_kwarg = None
+                if all(p.has_permission(request, view) for p in view.get_permissions()):
+                    found.add((viewset_class.__name__, action))
+
+        self.assertEqual(
+            sorted(found - set(OFFICER_WRITABLE)), [],
+            "These default writes are open to an officer with no recorded reason. "
+            "Gate them (ManagerOnlyWritesMixin) or justify them in OFFICER_WRITABLE.",
+        )
+        self.assertEqual(
+            sorted(set(OFFICER_WRITABLE) - found), [],
+            "These are no longer open to officers — delete their OFFICER_WRITABLE entries.",
+        )

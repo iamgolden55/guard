@@ -3,7 +3,7 @@
 Live tracker for fixing the 2026-09-17 engineering audit (`AUDIT-2026-09-17.md`).
 The audit says what is wrong. This file says what has been done about it, what is next, and what is waiting on you.
 
-**Last updated:** 2026-09-19 · **Current branch:** `fix/p0-sia-warn` · **Now working on:** stopped after Phase 1, waiting on your review
+**Last updated:** 2026-09-19 · **Current branch:** `fix/p2-authz` · **Now working on:** Phase 2B (trustworthy tests) and 2E (web honesty), in parallel
 
 Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋 needs you · ❌ did not reproduce (audit corrected)
 
@@ -20,7 +20,7 @@ Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋
 | 1D | Mobile check-in data loss | ✅ committed, no regressions |
 | 1E | SIA role↔licence, warn and record | ✅ committed, no regressions |
 | — | **Stop and report** after 1E | ✅ report below — waiting on your review |
-| 2 | Reliability (backups, alerts, PROTECT, pay basis, Xero, web honesty) | ⏳ planned |
+| 2 | Reliability (backups, alerts, PROTECT, pay basis, Xero, web honesty) | 🟡 in progress (2A) |
 | 3 | Product completion (no-show alerts, manager inbox, incident evidence) | ⏳ planned |
 | 4–5 | Scale, advanced | ⏳ planned |
 
@@ -225,6 +225,45 @@ Nothing new. `OT_BASIS_ALIGNED` from the previous audit is still off. Don't turn
 
 ### Next after your review
 Phase 2 (reliability). It starts by draining the tenancy-ratchet allowlist, repairing the three fixture drifts behind about 140 standing failures, a real health check, backups with a tested restore, and `PROTECT` on the money path.
+
+---
+
+## Phase 2: reliability 🟡
+
+Batches, in order:
+
+| Batch | Scope | Status |
+| --- | --- | --- |
+| 2A | Remaining authorisation gaps: default write routes weaker than their own actions; drain the ratchet allowlist | ✅ |
+| 2B | Trustworthy tests: repair the fixture drift behind ~140 standing failures, then make the full suite a required CI check | ⏳ |
+| 2C | Money integrity: `PROTECT` invoice lines, time adjustments and status history; backfill `payable_hours`; one definition of "outstanding"; Xero idempotency | ⏳ |
+| 2D | Would we know? A readiness health check, one beat scheduler, an alert when a payroll run is missing, startup checks for security settings, a backup/restore runbook | ⏳ |
+| 2E | Web honesty: fake payroll composition, dead bulk buttons, failures shown as "empty", admin role gate, company-scoped cache | ⏳ |
+| 2F | Mobile minimum-version gate; remove dead code | ⏳ |
+
+### 2A: authorisation gaps ✅ (`fix/p2-authz`)
+
+| Finding | Fix | Status |
+| --- | --- | --- |
+| **Shift swaps:** creating a swap never checked the requester owned the shift. An officer could offer a colleague's shift, even another company's, to an accomplice, who accepted, and auto-approval reassigned it. | Requester must own the shift; the other officer must be in the same company; a bilateral swap's second shift must be theirs | ✅ |
+| Swaps and releases could be created or PATCHed straight to `approved` (notifications go out as if a manager signed off), or deleted outright | Workflow fields are server-controlled; default update and delete are disabled (no client used them; the dedicated actions still work) | ✅ |
+| 28 other ViewSets let an officer pass the permission check on default writes | Triaged one by one: 17 were escalations, all closed (below); the rest are genuine self-service | ✅ |
+| **Finance:** an officer could repoint, reconfigure or delete the company's Xero connection, move it to another company by rewriting `created_by`, delete the earnings mapping payroll lines are built from, or run exports | The whole finance-integration surface is manager/admin only; `created_by` is read-only | ✅ |
+| **Leave:** an officer could extend already-approved leave, which is paid per day | Officers can change or withdraw only draft/pending requests | ✅ |
+| **Evidence:** an officer could rewrite or delete a colleague's fire-exit, capacity or toilet check, clear missed-check alerts, clear or delete their own compliance violations, or resolve their own incident reports | Those writes are manager/admin only; incident resolution goes through `resolve` only; incident venue/shift checked | ✅ |
+| **Pay settings:** an officer could set their own employment category (drives paid leave and bank-holiday pay) and pay cycle, through either profile endpoint | Employer-set only | ✅ |
+| **Other people's records:** an officer could move their unavailability onto a colleague (blocking their shifts), record terms acceptance for a colleague (unlocking their check-in), or add emergency contacts or preferred venues to anyone's profile | Bound to the caller's own profile and company | ✅ |
+| Shift templates editable by officers, and templatable onto another company's venue; `apply` accepted any staff | Manager/admin only; venue and staff checked against the company | ✅ |
+| Logbook sign-off could name another company's venue | Checked against the shift group | ✅ |
+| `PATCH /users/{id}/` echoed a newly set password back in plain text | Password never returned | ✅ |
+| Refused writes to leave types and policies crashed with a 500 (a permission *class* instead of an instance) | Refused cleanly with 403 | ✅ |
+| **New guard** against this recurring | A second ratchet walks every ViewSet as an officer; the 52 remaining open write routes are each listed with a reason. A new open route fails CI until it's gated or justified. | ✅ |
+| Full backend suite, per file vs end of Phase 1 | ✅ only change: +31 passing tests; every other file identical (527 passed / 167 failed / 9 errors — all standing) |
+
+Tests:
+- `api/tests/test_p2_exchange_authz.py` (9): 7 failed before the fix
+- `api/tests/test_p2_writes_authz.py` (21): 19 failed before the fixes, checked by stashing them
+- `WriteRouteRatchetTests` (1)
 
 ---
 

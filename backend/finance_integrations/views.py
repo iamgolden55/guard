@@ -34,6 +34,15 @@ from api.models import Invoice
 from api.middleware.tenant_middleware import resolve_request_company
 from .scoping import company_connections
 
+from api.permissions import IsManagerOrAdmin
+
+#: Accounting connections, ledger/VAT/earnings mappings, exports and sync logs
+#: are company finance configuration. They were open to any signed-in account,
+#: so an officer could repoint or delete the company's Xero connection, move it
+#: into another company by rewriting `created_by`, or delete the earnings
+#: mapping that payroll lines are built from (AUDIT-2026-09-17, Phase 2A).
+FINANCE_PERMISSIONS = [IsAuthenticated, IsManagerOrAdmin]
+
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
@@ -56,7 +65,7 @@ class ProviderConnectionViewSet(viewsets.ModelViewSet):
     """ViewSet for provider connections"""
 
     serializer_class = ProviderConnectionSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
 
     def get_queryset(self):
         """Filter connections by the request's company (multi-tenant isolation)"""
@@ -199,7 +208,7 @@ class AccountMappingViewSet(viewsets.ModelViewSet):
     """ViewSet for account mappings"""
 
     serializer_class = AccountMappingSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
 
     def get_queryset(self):
         # Get company-filtered connections
@@ -218,7 +227,7 @@ class VATCodeMappingViewSet(viewsets.ModelViewSet):
     """ViewSet for VAT code mappings"""
 
     serializer_class = VATCodeMappingSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
 
     def get_queryset(self):
         allowed_connection_ids = get_user_company_connection_filter(self.request)
@@ -236,7 +245,7 @@ class EarningsTypeMappingViewSet(viewsets.ModelViewSet):
     """ViewSet for earnings type mappings"""
 
     serializer_class = EarningsTypeMappingSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
 
     def get_queryset(self):
         allowed_connection_ids = get_user_company_connection_filter(self.request)
@@ -254,7 +263,7 @@ class ContactMappingViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for contact mappings (read-only, created automatically)"""
 
     serializer_class = ContactMappingSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
 
     def get_queryset(self):
         allowed_connection_ids = get_user_company_connection_filter(self.request)
@@ -272,7 +281,7 @@ class InvoiceExportViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for invoice exports"""
 
     serializer_class = InvoiceExportSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
 
     def get_queryset(self):
         allowed_connection_ids = get_user_company_connection_filter(self.request)
@@ -290,7 +299,7 @@ class PayrollExportViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for payroll exports"""
 
     serializer_class = PayrollExportSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
 
     def get_queryset(self):
         allowed_connection_ids = get_user_company_connection_filter(self.request)
@@ -308,7 +317,7 @@ class SyncLogViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for sync logs"""
 
     serializer_class = SyncLogSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
 
     def get_queryset(self):
         allowed_connection_ids = get_user_company_connection_filter(self.request)
@@ -332,7 +341,7 @@ class SyncLogViewSet(viewsets.ReadOnlyModelViewSet):
 class OAuthView(APIView):
     """Handle OAuth flows"""
     
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
     
     def post(self, request):
         """Initiate OAuth flow"""
@@ -363,7 +372,7 @@ class OAuthView(APIView):
 class OAuthCallbackView(APIView):
     """Handle OAuth callback"""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
 
     def post(self, request):
         """Complete OAuth flow"""
@@ -395,7 +404,7 @@ class OAuthCallbackView(APIView):
 class OAuthTenantsView(APIView):
     """Fetch available tenants/organizations for provider (specifically Xero)"""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
 
     def post(self, request):
         """
@@ -434,7 +443,7 @@ class OAuthTenantsView(APIView):
 class InvoiceExportView(APIView):
     """Export invoices to accounting provider"""
     
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
     
     def post(self, request):
         """Export invoices"""
@@ -510,7 +519,7 @@ class InvoiceExportView(APIView):
 class PayrollExportView(APIView):
     """Export payroll to accounting provider"""
     
-    permission_classes = [IsAuthenticated]
+    permission_classes = FINANCE_PERMISSIONS
     
     def post(self, request):
         """Export payroll"""

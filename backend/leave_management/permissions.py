@@ -271,7 +271,9 @@ class ReadOnlyForStaffMixin:
             # If staff user and non-safe method, deny
             if (base_permission.is_staff_user(self.request.user) and
                 self.request.method not in SAFE_METHODS):
-                permission_classes = [permissions.IsAuthenticated]
+                # Instances, not classes: DRF calls `has_permission` on each, and
+                # the bare class here turned every refused write into a 500.
+                permission_classes = [permissions.IsAuthenticated()]
                 # Add a custom permission that always returns False for write operations
                 class DenyWritePermission(BasePermission):
                     def has_permission(self, request, view):

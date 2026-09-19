@@ -21,7 +21,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import APIException, AuthenticationFailed, ValidationError, PermissionDenied
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
-from api.permissions import IsManagerOrAdmin, IsAdminRole
+from rest_framework.exceptions import MethodNotAllowed
+from api.permissions import IsManagerOrAdmin, IsAdminRole, ManagerOnlyWritesMixin
 from api.middleware.tenant_middleware import resolve_request_company
 from api.utils import sia_documents
 from rest_framework.response import Response
@@ -722,10 +723,14 @@ class UserViewSet(viewsets.ModelViewSet):
                                         partial=partial)
         if serializer.is_valid():
             user = serializer.save()
+            # Never echo a password back: this spread `validated_data` whole,
+            # so a PATCH that set a password returned it in plain text — into
+            # browser devtools, proxies and any response logging.
             return Response({
                 'message': 'User updated successfully',
                 'user': {
-                    **serializer.validated_data  # This will include any additional fields
+                    key: value for key, value in serializer.validated_data.items()
+                    if key != 'password'
                 }
             })
         
@@ -1522,7 +1527,7 @@ def payroll_generate(request):
             'error': 'An internal error occurred while generating payroll'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class StaffProfileViewSet(viewsets.ModelViewSet):
+class StaffProfileViewSet(ManagerOnlyWritesMixin, viewsets.ModelViewSet):
     """
     Handles the management of staff profile records.
 
@@ -1602,12 +1607,26 @@ class StaffProfileViewSet(viewsets.ModelViewSet):
                     # For staff users, remove immutable fields from request data
                     request.data.pop(field)
         
+        # Employment category decides paid leave and bank-holiday pay, and pay
+        # frequency decides which pay run includes the officer. Both are the
+        # employer's to set; an officer could previously PATCH their own.
+        if request.user.role not in ('admin', 'manager'):
+            for field in self.EMPLOYER_SET_FIELDS:
+                if field in request.data:
+                    request.data.pop(field)
+
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
-        
+
         return Response(serializer.data)
-    
+
+    #: Request keys only a manager or admin may change on a staff profile.
+    EMPLOYER_SET_FIELDS = ('pay_frequency', 'employmentType', 'employment_type')
+
+    # Deleting a profile cascades to the officer's SIA licence records.
+    manager_only_actions = ('destroy',)
+
     def perform_update(self, serializer):
         serializer.save(updated_at=timezone.now())
 
@@ -1631,7 +1650,50 @@ class StaffProfileViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(profile)
         return Response(serializer.data)
 
-class EmergencyContactViewSet(viewsets.ModelViewSet):
+class OwnProfileRowsMixin:
+    """Writes to rows hanging off a StaffProfile go to the right profile.
+
+    These ViewSets took `staff_profile` from the request body with no check, so
+    an officer could attach an emergency contact, an availability day or a
+    preferred venue to anyone's profile on the platform (AUDIT-2026-09-17,
+    Phase 2A). An officer writes to their own profile only; a manager or admin
+    to profiles of their own company's members.
+    """
+
+    def _check_profile_row(self, serializer):
+        profile = serializer.validated_data.get('staff_profile')
+        user = self.request.user
+        if profile is not None:
+            if user.role in ('admin', 'manager'):
+                company = resolve_request_company(self.request)
+                if company is None or not UserCompanyMembership.objects.filter(
+                    user_id=profile.user_id, company=company, is_active=True,
+                ).exists():
+                    raise serializers.ValidationError(
+                        {'staff_profile': 'That profile is not in your company.'}
+                    )
+            elif profile.user_id != user.id:
+                raise serializers.ValidationError(
+                    {'staff_profile': 'You can only change your own profile.'}
+                )
+        venue = serializer.validated_data.get('venue')
+        if venue is not None:
+            owner_id = profile.user_id if profile is not None else user.id
+            if not UserCompanyMembership.objects.filter(
+                user_id=owner_id, company_id=venue.company_id, is_active=True,
+            ).exists():
+                raise serializers.ValidationError({'venue': 'Venue is not in your company.'})
+
+    def perform_create(self, serializer):
+        self._check_profile_row(serializer)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._check_profile_row(serializer)
+        serializer.save()
+
+
+class EmergencyContactViewSet(OwnProfileRowsMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = EmergencyContact.objects.all()
     serializer_class = EmergencyContactSerializer
@@ -1891,7 +1953,7 @@ class SIALicenseViewSet(viewsets.ModelViewSet):
         """The single company in scope; see `resolve_request_company`."""
         return resolve_request_company(self.request)
 
-class StaffAvailabilityViewSet(viewsets.ModelViewSet):
+class StaffAvailabilityViewSet(OwnProfileRowsMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = StaffAvailability.objects.all()
     serializer_class = StaffAvailabilitySerializer
@@ -2167,7 +2229,10 @@ class VenueViewSet(viewsets.ModelViewSet):
                 'error': 'An internal error occurred while accepting terms'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class VenueTermsAcceptanceViewSet(viewsets.ModelViewSet):
+class VenueTermsAcceptanceViewSet(ManagerOnlyWritesMixin, viewsets.ModelViewSet):
+    # Officers create their own; rewriting or deleting one afterwards is a
+    # manager's job (an incident report or a terms acceptance is evidence).
+    manager_only_actions = ('update', 'partial_update', 'destroy')
     permission_classes = [IsAuthenticated]
     queryset = VenueTermsAcceptance.objects.all()
     serializer_class = VenueTermsAcceptanceSerializer
@@ -2182,11 +2247,17 @@ class VenueTermsAcceptanceViewSet(viewsets.ModelViewSet):
             return VenueTermsAcceptance.objects.none()
         return VenueTermsAcceptance.objects.filter(staff_user=user)
 
+    def perform_create(self, serializer):
+        # An acceptance is the caller's own. `staff_user` was writable, so an
+        # officer could record acceptance for a colleague — which is what
+        # unlocks that colleague's check-in (`Shift.can_start_shift`).
+        serializer.save(staff_user=self.request.user)
+
     def _get_user_company(self):
         """The single company in scope; see `resolve_request_company`."""
         return resolve_request_company(self.request)
 
-class PreferredVenueViewSet(viewsets.ModelViewSet):
+class PreferredVenueViewSet(OwnProfileRowsMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = PreferredVenue.objects.all()
     serializer_class = PreferredVenueSerializer
@@ -2205,7 +2276,10 @@ class PreferredVenueViewSet(viewsets.ModelViewSet):
         """The single company in scope; see `resolve_request_company`."""
         return resolve_request_company(self.request)
 
-class ShiftTemplateViewSet(viewsets.ModelViewSet):
+class ShiftTemplateViewSet(ManagerOnlyWritesMixin, viewsets.ModelViewSet):
+    # Templates stamp out shifts for the whole company; `apply` creates them
+    # for any staff. Scheduling is a manager operation.
+    manager_only_actions = ('create', 'update', 'partial_update', 'destroy', 'apply')
     permission_classes = [IsAuthenticated]
     queryset = ShiftTemplate.objects.all()
     serializer_class = ShiftTemplateSerializer
@@ -2219,7 +2293,21 @@ class ShiftTemplateViewSet(viewsets.ModelViewSet):
     def _get_user_company(self):
         """The single company in scope; see `resolve_request_company`."""
         return resolve_request_company(self.request)
-    
+
+    def _check_venue(self, serializer):
+        venue = serializer.validated_data.get('venue')
+        company = self._get_user_company()
+        if venue is not None and (company is None or venue.company_id != company.id):
+            raise serializers.ValidationError({'venue': 'Venue does not belong to the current company'})
+
+    def perform_create(self, serializer):
+        self._check_venue(serializer)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._check_venue(serializer)
+        serializer.save()
+
     @action(detail=True, methods=['post'])
     def apply(self, request, *args, **kwargs):
         """
@@ -2234,6 +2322,18 @@ class ShiftTemplateViewSet(viewsets.ModelViewSet):
         end_date = request.data.get('end_date')
         days_of_week = request.data.get('days_of_week', template.days_of_week)
         staff_ids = request.data.get('staff_ids', [])
+        # Only members of the template's company; other ids were accepted and
+        # got a shift at this company's venue.
+        if staff_ids:
+            members = set(UserCompanyMembership.objects.filter(
+                user_id__in=staff_ids, company_id=template.venue.company_id, is_active=True,
+            ).values_list('user_id', flat=True))
+            foreign = sorted({int(i) for i in staff_ids} - members)
+            if foreign:
+                return Response(
+                    {'detail': f'Staff {foreign} do not belong to this company'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         
         # Validation
         if not start_date or not end_date:
@@ -2403,7 +2503,10 @@ class CompanyScopedCheckMixin:
         return queryset.order_by('-timestamp')
 
 
-class FireExitCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
+class FireExitCheckViewSet(ManagerOnlyWritesMixin, CompanyScopedCheckMixin, viewsets.ModelViewSet):
+    # Officers record these checks; they may not rewrite or delete one after
+    # the fact — the record still names the original officer as performer.
+    manager_only_actions = ('update', 'partial_update', 'destroy')
     permission_classes = [IsAuthenticated]
     queryset = FireExitCheck.objects.all()
     serializer_class = FireExitCheckSerializer
@@ -2416,7 +2519,10 @@ class FireExitCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
         serializer.save(**self._server_side_check_fields(shift))
 
 
-class CapacityCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
+class CapacityCheckViewSet(ManagerOnlyWritesMixin, CompanyScopedCheckMixin, viewsets.ModelViewSet):
+    # Officers record these checks; they may not rewrite or delete one after
+    # the fact — the record still names the original officer as performer.
+    manager_only_actions = ('update', 'partial_update', 'destroy')
     permission_classes = [IsAuthenticated]
     queryset = CapacityCheck.objects.all()
     serializer_class = CapacityCheckSerializer
@@ -2499,11 +2605,15 @@ class CapacityCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
                 logger.warning(f"Failed to broadcast capacity_logged event: {e}")
 
 
-class CapacityCheckSlotMissViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
+class CapacityCheckSlotMissViewSet(ManagerOnlyWritesMixin, CompanyScopedCheckMixin, viewsets.ModelViewSet):
     """
     Read + acknowledge missed capacity-check slots. Filtering by shift_group
     follows the same convention as the other check ViewSets.
     """
+    # Misses are raised by the missed-check job and cleared through
+    # `acknowledge`, which stamps who and why. The default routes let an
+    # officer plant, move or silently clear them.
+    manager_only_actions = ('create', 'update', 'partial_update', 'destroy')
     permission_classes = [IsAuthenticated]
     queryset = CapacityCheckSlotMiss.objects.all()
     serializer_class = CapacityCheckSlotMissSerializer
@@ -2587,6 +2697,15 @@ class CapacityLogbookSignoffViewSet(viewsets.ModelViewSet):
         is_privileged = user.role in ('owner', 'admin', 'manager')
         if not (is_member or is_privileged):
             raise PermissionDenied("Only staff assigned to this shift_group can sign off the logbook.")
+
+        # The sign-off is for the venue these shifts are at. `venue` was never
+        # compared with the shift group, so a sign-off could land in another
+        # company's logbook list.
+        venue = serializer.validated_data.get('venue')
+        if venue is not None and not Shift.objects.filter(
+            shift_group=shift_group, venue=venue,
+        ).exists():
+            raise serializers.ValidationError({'venue': 'That venue is not where this shift group works.'})
 
         # Snapshot totals from current state.
         total_checks = CapacityCheck.objects.filter(shift_group=shift_group).count()
@@ -2838,7 +2957,10 @@ class CapacityLogbookSignoffViewSet(viewsets.ModelViewSet):
         return response
 
 
-class ToiletCheckViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSet):
+class ToiletCheckViewSet(ManagerOnlyWritesMixin, CompanyScopedCheckMixin, viewsets.ModelViewSet):
+    # Officers record these checks; they may not rewrite or delete one after
+    # the fact — the record still names the original officer as performer.
+    manager_only_actions = ('update', 'partial_update', 'destroy')
     permission_classes = [IsAuthenticated]
     queryset = ToiletCheck.objects.all()
     serializer_class = ToiletCheckSerializer
@@ -2875,8 +2997,46 @@ class ShiftExchangeViewSet(viewsets.ModelViewSet):
         return resolve_request_company(self.request)
     
     def perform_create(self, serializer):
-        """Set the requesting user to the current user"""
-        serializer.save(requesting_user=self.request.user)
+        """Offer one of your own shifts to a colleague in the same company.
+
+        Nothing here used to check that the requester owned the shift being
+        offered, or that the colleague worked for the same company. An officer
+        could offer someone else's shift — any company's — to an accomplice,
+        who accepted; with auto-approval on, the shift was reassigned.
+        """
+        user = self.request.user
+        shift = serializer.validated_data['original_shift']
+        target = serializer.validated_data['target_user']
+        target_shift = serializer.validated_data.get('target_shift')
+
+        if shift.staff_user_id != user.id:
+            raise serializers.ValidationError(
+                {'original_shift': 'You can only offer a shift assigned to you.'}
+            )
+        company_id = shift.venue.company_id
+        if not UserCompanyMembership.objects.filter(
+            user=target, company_id=company_id, is_active=True,
+        ).exists():
+            raise serializers.ValidationError(
+                {'target_user': 'You can only swap with someone in the same company.'}
+            )
+        if target_shift is not None and (
+            target_shift.staff_user_id != target.id
+            or target_shift.venue.company_id != company_id
+        ):
+            raise serializers.ValidationError(
+                {'target_shift': "That shift isn't assigned to the officer you're swapping with."}
+            )
+        serializer.save(requesting_user=user, status='pending')
+
+    # Swaps change state only through the actions below, each of which checks
+    # who may make the change. No client uses the default update or delete
+    # routes, which let a party PATCH a swap to `approved` or erase it.
+    def update(self, request, *args, **kwargs):
+        raise MethodNotAllowed(request.method)
+
+    def destroy(self, request, *args, **kwargs):
+        raise MethodNotAllowed(request.method)
     
     @action(detail=True, methods=['post'])
     def accept(self, request, pk=None):
@@ -3093,6 +3253,15 @@ class OpenShiftRequestViewSet(viewsets.ModelViewSet):
             # Catch validation errors from release_to_pool (e.g., shift already started)
             raise serializers.ValidationError(str(e))
     
+    # Releases change state only through claim / approve / reject / cancel.
+    # The default update and delete routes let anyone who could see a release
+    # PATCH it to approved/claimed or erase it; no client uses them.
+    def update(self, request, *args, **kwargs):
+        raise MethodNotAllowed(request.method)
+
+    def destroy(self, request, *args, **kwargs):
+        raise MethodNotAllowed(request.method)
+
     @action(detail=False, methods=['get'])
     def available(self, request):
         """Get all open shifts available for the current user to claim"""
@@ -3865,6 +4034,12 @@ def my_profile(request):
                         else:
                             # For staff users, remove immutable fields from request data
                             profile_data.pop(field)
+
+                # Employment category and pay frequency are the employer's to
+                # set — same rule as StaffProfileViewSet.update.
+                if request.user.role not in ('admin', 'manager'):
+                    for field in StaffProfileViewSet.EMPLOYER_SET_FIELDS:
+                        profile_data.pop(field, None)
 
                 # Update profile fields if any remain
                 if profile_data:
@@ -5295,10 +5470,14 @@ class ComplianceProfileViewSet(viewsets.ModelViewSet):
         })
 
 
-class ComplianceViolationViewSet(viewsets.ModelViewSet):
+class ComplianceViolationViewSet(ManagerOnlyWritesMixin, viewsets.ModelViewSet):
     """
     ViewSet for managing compliance violations with advanced filtering and resolution.
     """
+    # Violations are raised by the compliance engine or a manager and cleared
+    # through `resolve`. The default routes let an officer mark their own
+    # violation an approved exception with a forged approver, or delete it.
+    manager_only_actions = ('create', 'update', 'partial_update', 'destroy')
     serializer_class = ComplianceViolationSerializer
     permission_classes = [IsAuthenticated]
 
@@ -8790,9 +8969,13 @@ class ContractorUnavailabilityViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         """Only allow users to update their own unavailability"""
-        if self.get_object().staff_user != self.request.user and not self.request.user.is_superuser:
+        instance = self.get_object()
+        if instance.staff_user != self.request.user and not self.request.user.is_superuser:
             raise ValidationError("You can only update your own unavailability")
-        serializer.save()
+        # The owner check above reads the record before the save; `staff_user`
+        # stays what it was, or an officer could move a period onto a colleague
+        # and block that colleague's shifts.
+        serializer.save(staff_user=instance.staff_user)
 
     def perform_destroy(self, instance):
         """Only allow users to delete their own unavailability"""
@@ -9520,12 +9703,15 @@ class ClientInvoiceViewSet(viewsets.ModelViewSet):
         })
 
 
-class IncidentReportViewSet(viewsets.ModelViewSet):
+class IncidentReportViewSet(ManagerOnlyWritesMixin, viewsets.ModelViewSet):
     """
     ViewSet for incident report management.
     Staff can create and view their own reports.
     Managers/admins can view and resolve all reports for their company.
     """
+    # Officers create their own; rewriting or deleting one afterwards is a
+    # manager's job (an incident report or a terms acceptance is evidence).
+    manager_only_actions = ('update', 'partial_update', 'destroy')
     serializer_class = IncidentReportSerializer
     permission_classes = [IsAuthenticated]
 
@@ -9550,6 +9736,19 @@ class IncidentReportViewSet(viewsets.ModelViewSet):
         return resolve_request_company(request)
 
     def perform_create(self, serializer):
+        # The venue and shift must be the reporter's company's, and a shift the
+        # reporter's own unless they manage it. Unchecked, an officer could
+        # file an incident against another company's venue.
+        company = resolve_request_company(self.request)
+        venue = serializer.validated_data.get('venue')
+        shift = serializer.validated_data.get('shift')
+        if company is None or (venue is not None and venue.company_id != company.id):
+            raise serializers.ValidationError({'venue': 'Venue does not belong to your company.'})
+        if shift is not None:
+            if shift.venue.company_id != company.id:
+                raise serializers.ValidationError({'shift': 'Shift does not belong to your company.'})
+            if self.request.user.role not in ('manager', 'admin') and shift.staff_user_id != self.request.user.id:
+                raise serializers.ValidationError({'shift': 'You can only report against your own shift.'})
         serializer.save(reported_by=self.request.user)
 
     @action(detail=True, methods=['post'])

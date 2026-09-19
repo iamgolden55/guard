@@ -93,6 +93,8 @@ jobs:
           api/tests/test_p0_authz.py
           api/tests/test_p0_money.py
           api/tests/test_sia_assignment_warnings.py
+          api/tests/test_p2_exchange_authz.py
+          api/tests/test_p2_writes_authz.py
           api/tests/test_tenancy_ratchet.py
           shifts/test_shift_authz.py
           shifts/test_overnight_attendance.py

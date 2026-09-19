@@ -424,7 +424,8 @@ class VenueTermsAcceptanceSerializer(serializers.ModelSerializer):
     class Meta:
         model = VenueTermsAcceptance
         fields = '__all__'
-        read_only_fields = ('created_at',)
+        # Set from the request user in VenueTermsAcceptanceViewSet.perform_create.
+        read_only_fields = ('created_at', 'staff_user')
 
 class PreferredVenueSerializer(serializers.ModelSerializer):
     venue_details = VenueSerializer(source='venue', read_only=True)
@@ -1001,7 +1002,13 @@ class ShiftExchangeSerializer(serializers.ModelSerializer):
     class Meta:
         model = ShiftExchange
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at', 'requesting_user')
+        # Workflow state is set by the accept / approve / reject / cancel
+        # actions, which check who may move it. Writable here, a party to the
+        # swap could create or PATCH it straight to `approved`.
+        read_only_fields = (
+            'created_at', 'updated_at', 'requesting_user',
+            'status', 'manager_user', 'manager_notes', 'target_response',
+        )
 
 class OpenShiftRequestSerializer(serializers.ModelSerializer):
     original_shift_details = ShiftSerializer(source='original_shift', read_only=True)
@@ -1012,7 +1019,11 @@ class OpenShiftRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = OpenShiftRequest
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at', 'claim_time')
+        # Set by the claim / approve / reject / cancel actions only.
+        read_only_fields = (
+            'created_at', 'updated_at', 'claim_time',
+            'status', 'claimed_by', 'manager_user', 'manager_notes',
+        )
 
 class BankHolidaySerializer(serializers.ModelSerializer):
     """Serializer for BankHoliday model"""
@@ -3158,7 +3169,12 @@ class IncidentReportSerializer(serializers.ModelSerializer):
             'resolved', 'resolved_at', 'resolved_by', 'resolved_by_name',
             'created_at', 'updated_at',
         )
-        read_only_fields = ('reported_by', 'created_at', 'updated_at')
+        # Resolution is the manager-only `resolve` action's to set; writable
+        # here, an officer could PATCH their own report to resolved.
+        read_only_fields = (
+            'reported_by', 'created_at', 'updated_at',
+            'resolved', 'resolved_by', 'resolved_at',
+        )
 
     def get_reported_by_name(self, obj):
         return f"{obj.reported_by.first_name} {obj.reported_by.last_name}".strip() or obj.reported_by.username

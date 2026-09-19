@@ -73,7 +73,10 @@ class ProviderConnectionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'provider_name', 'provider_key', 'created_by_name', 'status', 
             'last_sync_at', 'error_message', 'created_at', 'updated_at',
-            'is_token_valid'
+            'is_token_valid',
+            # Company scope is derived from `created_by` (scoping.py); writable, it
+            # let a caller move a connection and its tokens into another company.
+            'created_by',
         ]
         extra_kwargs = {
             'access_token': {'write_only': True},
