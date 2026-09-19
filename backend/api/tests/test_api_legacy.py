@@ -2,7 +2,19 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
-from ..models import User, StaffProfile
+from ..models import User, StaffProfile, SecurityCompany, UserCompanyMembership
+
+
+def join_company(*users):
+    """Admins and managers see only their own company's users and profiles."""
+    company = SecurityCompany.objects.create(
+        name='Legacy Test Co', registration_number='LEGACY1'
+    )
+    for user in users:
+        UserCompanyMembership.objects.create(
+            user=user, company=company, role=user.role, is_active=True
+        )
+    return company
 import json
 
 class AuthenticationRedirectionTests(TestCase):
@@ -53,8 +65,9 @@ class AuthenticationRedirectionTests(TestCase):
         
         response_data = json.loads(response.content)
         self.assertEqual(response_data['user']['role'], 'admin')
-        self.assertIn('tokens', response_data)
-        self.assertIn('access', response_data['tokens'])
+        # Tokens are returned at the top level
+        self.assertIn('access', response_data)
+        self.assertIn('refresh', response_data)
         
     def test_manager_login_response(self):
         """Test manager login returns correct role in response"""
@@ -67,8 +80,8 @@ class AuthenticationRedirectionTests(TestCase):
         
         response_data = json.loads(response.content)
         self.assertEqual(response_data['user']['role'], 'manager')
-        self.assertIn('tokens', response_data)
-        self.assertIn('access', response_data['tokens'])
+        self.assertIn('access', response_data)
+        self.assertIn('refresh', response_data)
         
     def test_staff_login_response(self):
         """Test staff login returns correct role in response"""
@@ -81,8 +94,8 @@ class AuthenticationRedirectionTests(TestCase):
         
         response_data = json.loads(response.content)
         self.assertEqual(response_data['user']['role'], 'staff')
-        self.assertIn('tokens', response_data)
-        self.assertIn('access', response_data['tokens'])
+        self.assertIn('access', response_data)
+        self.assertIn('refresh', response_data)
         
     def test_invalid_login_credentials(self):
         """Test login with invalid credentials"""
@@ -141,6 +154,8 @@ class RoleBasedAccessTests(TestCase):
         self.staff_user.role = 'staff'
         self.staff_user.security_roles = ['ds', 'sg']  # Door Supervisor and Security Guard
         self.staff_user.save()
+
+        join_company(self.admin_user, self.manager_user, self.staff_user)
         
         # Setup API clients
         self.admin_client = APIClient()
@@ -253,6 +268,8 @@ class UserProfileUpdateTests(TestCase):
             country='United Kingdom',
             notes='Test notes'
         )
+
+        self.company = join_company(self.admin_user, self.staff_user)
         
         # Setup API clients
         self.admin_client = APIClient()
@@ -269,7 +286,8 @@ class UserProfileUpdateTests(TestCase):
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['phone_number'], '1234567890')
-        self.assertEqual(response.data['user'], self.staff_user.id)
+        # `user` is the nested UserSerializer representation
+        self.assertEqual(response.data['user']['id'], self.staff_user.id)
     
     def test_update_own_profile(self):
         """Test that a user can update their own profile"""
@@ -350,6 +368,9 @@ class UserProfileUpdateTests(TestCase):
             city='Other City',
             postal_code='OT3 3ST',
             country='United Kingdom'
+        )
+        UserCompanyMembership.objects.create(
+            user=other_user, company=self.company, role='staff', is_active=True
         )
         
         # Update first staff profile

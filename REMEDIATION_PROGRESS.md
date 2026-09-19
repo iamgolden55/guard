@@ -3,7 +3,7 @@
 Live tracker for fixing the 2026-09-17 engineering audit (`AUDIT-2026-09-17.md`).
 The audit says what is wrong. This file says what has been done about it, what is next, and what is waiting on you.
 
-**Last updated:** 2026-09-19 · **Current branch:** `fix/p2-authz` · **Now working on:** Phase 2B (trustworthy tests) and 2E (web honesty), in parallel
+**Last updated:** 2026-09-19 · **Current branch:** `fix/p2-authz` · **Now working on:** Phase 2C (the product bugs 2B surfaced, then money integrity)
 
 Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋 needs you · ❌ did not reproduce (audit corrected)
 
@@ -235,7 +235,7 @@ Batches, in order:
 | Batch | Scope | Status |
 | --- | --- | --- |
 | 2A | Remaining authorisation gaps: default write routes weaker than their own actions; drain the ratchet allowlist | ✅ |
-| 2B | Trustworthy tests: repair the fixture drift behind ~140 standing failures, then make the full suite a required CI check | ⏳ |
+| 2B | Trustworthy tests: repair the fixture drift behind ~140 standing failures, then make the full suite a required CI check | ✅ fixtures repaired (48 real failures left; full suite becomes required once they're fixed) |
 | 2C | Money integrity: `PROTECT` invoice lines, time adjustments and status history; backfill `payable_hours`; one definition of "outstanding"; Xero idempotency | ⏳ |
 | 2D | Would we know? A readiness health check, one beat scheduler, an alert when a payroll run is missing, startup checks for security settings, a backup/restore runbook | ⏳ |
 | 2E | Web honesty: fake payroll composition, dead bulk buttons, failures shown as "empty", admin role gate, company-scoped cache | ✅ |
@@ -294,6 +294,30 @@ Verified: `npm run build` clean (it runs `tsc`); biome unchanged at 337. There i
 | Checks: mobile `tsc` 246 → 155 errors (none new); Jest 58 → 61 passing | ✅ |
 
 **Note:** builds from before this one send no header, so the floor only applies from this build onwards. Getting everyone onto this build is still an EAS release plus asking officers to update.
+
+### 2B: trustworthy tests ✅ (`fix/p2-reliability`)
+
+A subagent repaired fixture drift in 12 test files, and **no product code**. Stale constructors (`Venue` without a company, removed `SecurityCompany` fields, `StaffProfile` required fields, `Shift(company=)`), renamed URLs, response shapes and a hard-coded 2024 were fixed.
+
+| | Before | After |
+| --- | --- | --- |
+| Full suite | 527 passed · 167 failed · 9 errors | **643 passed · 48 failed · 0 errors · 13 skipped** |
+
+Every other test file is identical. Assertions removed: 28 (each tied to a documented behaviour change). Added: 30.
+
+**The 48 remaining failures are all real.** They're now signal, not noise:
+
+| # | Finding | Severity | Plan |
+| --- | --- | --- | --- |
+| A | Leave permissions read a role field that doesn't exist, so tenant managers and admins get **403 on approvals, team overview, reports, settings and blackout periods** (19 tests) | High (functional) | 2C |
+| E1 | **Onboarding returns third-party credentials** (Deputy API key, payroll/accounting client secrets, Slack webhook) to any member via `step_data`; they're also stored in plain `configuration` | **High (security)** | 2C |
+| B | Regional compliance returns 500 on every call (missing manager method, plus three bugs behind it). Once fixed, **any officer could repoint shared compliance profiles** (same class as P0-E) | Medium + latent security | 2C: guard now; finish the feature in Phase 3 |
+| C | Compliance metrics endpoint crashes: its serializer lists 10 fields the model doesn't have | Medium | 2C |
+| D | Violation bulk-resolve and metrics recalculate are platform-staff only, so tenant admins get 403 | Low | decide |
+| E2/E3 | Regional-setup public holidays 500; registration numbers have no max-length check | Low | later |
+| F1–F3 | Recruitment conversion: a DB error on one licence fails the whole conversion; a second licence type is silently dropped; raw DB errors reach the client | Low–medium | later / decide |
+
+Also found: `regional-settings` create/update return "saved successfully" without saving anything.
 
 ---
 

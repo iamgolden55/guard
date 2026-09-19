@@ -2,6 +2,7 @@
 Comprehensive API tests for the onboarding system.
 Tests all endpoints, data validation, and quality assurance.
 """
+import copy
 import json
 import uuid
 from decimal import Decimal
@@ -33,13 +34,16 @@ class OnboardingAPITestCase(APITestCase):
         """Set up test data and authentication"""
         self.client = APIClient()
 
-        # Create test users
+        # Create test users. initiate_onboarding promotes a company's creator
+        # to role='admin', so an owner of an existing company carries it; a
+        # role='staff' member is treated as fully onboarded by get_progress.
         self.owner_user = User.objects.create_user(
             username='owner',
             email='owner@example.com',
             password='testpass123',
             first_name='John',
-            last_name='Owner'
+            last_name='Owner',
+            role='admin'
         )
 
         self.staff_user = User.objects.create_user(
@@ -80,7 +84,7 @@ class OnboardingAPITestCase(APITestCase):
         }
 
         self.valid_regional_setup = {
-            'operating_regions': ['London', 'Birmingham', 'Manchester'],
+            'operating_regions': ['England', 'London', 'Birmingham', 'Manchester'],
             'primary_jurisdiction': 'England',
             'regulatory_requirements': {
                 'london': {'sia_license_required': True, 'min_training_hours': 40},
@@ -119,11 +123,12 @@ class OnboardingAPITestCase(APITestCase):
             'venue_types': ['Corporate Office', 'Retail Store', 'Event Venue'],
             'gps_tracking_required': True,
             'default_pay_rates': {
-                'security_officer': {'hourly_rate': 12.50, 'currency': 'GBP'},
-                'supervisor': {'hourly_rate': 15.00, 'currency': 'GBP'},
-                'manager': {'hourly_rate': 20.00, 'currency': 'GBP'}
+                'security_officer': 12.50,
+                'supervisor': 15.00,
+                'manager': 20.00
             },
-            'payment_frequency': 'weekly'
+            'payment_frequency': 'weekly',
+            'required_licenses': ['SIA Door Supervisor']
         }
 
         self.valid_integrations = {
@@ -179,10 +184,12 @@ class OnboardingInitiationTest(OnboardingAPITestCase):
         self.assertTrue(membership.is_owner)
         self.assertEqual(membership.role, 'owner')
 
-        # Verify onboarding record was created
+        # Verify onboarding record was created. Creating the company completes
+        # step 1 (company info), so the wizard resumes at step 2.
         self.assertTrue(hasattr(company, 'onboarding'))
         onboarding = company.onboarding
-        self.assertEqual(onboarding.current_step, 1)
+        self.assertTrue(onboarding.company_info_completed)
+        self.assertEqual(onboarding.current_step, 2)
         self.assertFalse(onboarding.is_completed)
 
     def test_initiate_onboarding_invalid_company_data(self):
@@ -504,6 +511,7 @@ class OnboardingStaffConfigTest(OnboardingAPITestCase):
 
     def test_save_staff_config_success(self):
         """Test successfully saving staff configuration"""
+        capacity_before = self.company.staff_capacity
         url = reverse('onboarding-save-staff-config')
         response = self.client.put(url, self.valid_staff_config, format='json')
 
@@ -515,9 +523,10 @@ class OnboardingStaffConfigTest(OnboardingAPITestCase):
         self.assertTrue(self.onboarding.staff_setup_completed)
         self.assertEqual(self.onboarding.current_step, 4)
 
-        # Verify company capacity was updated
+        # Verify company capacity was updated; save_staff_config only ever
+        # raises staff_capacity to the expected count, never lowers it
         self.company.refresh_from_db()
-        self.assertEqual(self.company.staff_capacity, 25)
+        self.assertEqual(self.company.staff_capacity, max(capacity_before, 25))
 
     def test_save_staff_config_validation(self):
         """Test staff configuration validation"""
@@ -537,14 +546,15 @@ class OnboardingStaffConfigTest(OnboardingAPITestCase):
         """Test pay rates validation"""
         staff_config = self.valid_staff_config.copy()
         staff_config['default_pay_rates'] = {
-            'security_officer': {'hourly_rate': -5.00}  # Invalid negative rate
+            'security_officer': -5.00  # Invalid negative rate
         }
 
         url = reverse('onboarding-save-staff-config')
         response = self.client.put(url, staff_config, format='json')
 
-        # Should still succeed but with warnings or data cleaning
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # StaffConfigSerializer rejects a negative pay rate
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('default_pay_rates', response.data['errors'])
 
 
 class OnboardingIntegrationsTest(OnboardingAPITestCase):
@@ -743,6 +753,23 @@ class OnboardingDataQualityTest(OnboardingAPITestCase):
         super().setUp()
         self.authenticate_as_owner()
 
+    def _initiate_as_new_signup(self, company_data, label):
+        """POST initiate as a fresh signup. Once a user owns a company with
+        onboarding in progress, initiate returns that onboarding (200) without
+        validating the payload, so each case needs its own user."""
+        user = User.objects.create_user(
+            username=f'signup_{label}', email=f'signup_{label}@example.com',
+            password='testpass123'
+        )
+        self.client.force_authenticate(user=user)
+        url = reverse('onboarding-initiate-onboarding')
+        return self.client.post(url, company_data, format='json')
+
+    def _initiate_base_setup(self):
+        url = reverse('onboarding-initiate-onboarding')
+        response = self.client.post(url, self.valid_company_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
     def test_registration_number_formats(self):
         """Test various registration number formats"""
         test_cases = [
@@ -753,13 +780,12 @@ class OnboardingDataQualityTest(OnboardingAPITestCase):
             ('ABCDEF123456789012345', False),  # Too long
         ]
 
-        for reg_number, should_be_valid in test_cases:
+        for i, (reg_number, should_be_valid) in enumerate(test_cases):
             with self.subTest(reg_number=reg_number):
-                company_data = self.valid_company_data.copy()
+                company_data = copy.deepcopy(self.valid_company_data)
                 company_data['company']['registration_number'] = reg_number
 
-                url = reverse('onboarding-initiate-onboarding')
-                response = self.client.post(url, company_data, format='json')
+                response = self._initiate_as_new_signup(company_data, f'reg{i}')
 
                 if should_be_valid:
                     self.assertIn(response.status_code, [status.HTTP_201_CREATED, status.HTTP_200_OK])
@@ -779,13 +805,14 @@ class OnboardingDataQualityTest(OnboardingAPITestCase):
             ('', False),
         ]
 
-        for email, should_be_valid in email_test_cases:
+        for i, (email, should_be_valid) in enumerate(email_test_cases):
             with self.subTest(email=email):
-                company_data = self.valid_company_data.copy()
+                company_data = copy.deepcopy(self.valid_company_data)
                 company_data['company']['primary_contact_email'] = email
+                # registration_number is unique per company
+                company_data['company']['registration_number'] = f'TS{i:06d}'
 
-                url = reverse('onboarding-initiate-onboarding')
-                response = self.client.post(url, company_data, format='json')
+                response = self._initiate_as_new_signup(company_data, f'email{i}')
 
                 if should_be_valid:
                     self.assertIn(response.status_code, [status.HTTP_201_CREATED, status.HTTP_200_OK])
@@ -810,7 +837,7 @@ class OnboardingDataQualityTest(OnboardingAPITestCase):
     def test_staff_count_validation(self):
         """Test staff count validation"""
         # Create base setup
-        self.test_initiate_onboarding_success()
+        self._initiate_base_setup()
 
         staff_count_tests = [
             (1, True),  # Minimum valid
@@ -844,7 +871,7 @@ class OnboardingDataQualityTest(OnboardingAPITestCase):
         ]
 
         # Create base setup
-        self.test_initiate_onboarding_success()
+        self._initiate_base_setup()
 
         for invalid_json in invalid_json_cases:
             with self.subTest(json_data=invalid_json):
@@ -922,7 +949,7 @@ class OnboardingPermissionTest(OnboardingAPITestCase):
         response = self.client.get(url)
 
         # API response should not contain raw credentials
-        response_str = json.dumps(response.data)
+        response_str = response.content.decode()
         self.assertNotIn('test_deputy_api_key_123', response_str)
         self.assertNotIn('test_xero_secret', response_str)
 
@@ -971,8 +998,10 @@ class OnboardingIntegrationFlowTest(TransactionTestCase):
         company_id = response.data['onboarding']['company']
         company = SecurityCompany.objects.get(id=company_id)
 
-        # Step 2: Save company info
+        # Step 2: Save company info (CompanyInfoSerializer takes the full
+        # company record, not a partial update)
         company_info = {
+            **self.valid_company_data['company'],
             'trading_name': 'Flow Test Security',
             'tax_id': 'GB987654321',
             'timezone': 'Europe/London',
@@ -984,7 +1013,7 @@ class OnboardingIntegrationFlowTest(TransactionTestCase):
 
         # Step 3: Save regional setup
         regional_setup = {
-            'operating_regions': ['London', 'Manchester'],
+            'operating_regions': ['England', 'London', 'Manchester'],
             'primary_jurisdiction': 'England',
             'minimum_leave_entitlement': 28,
             'regulatory_requirements': {},
@@ -1001,8 +1030,10 @@ class OnboardingIntegrationFlowTest(TransactionTestCase):
             'expected_staff_count': 15,
             'staff_categories': ['Security Officer', 'Supervisor'],
             'shift_patterns': {},
+            'venue_types': ['Corporate Office'],
             'default_pay_rates': {},
-            'payment_frequency': 'weekly'
+            'payment_frequency': 'weekly',
+            'required_licenses': ['SIA Door Supervisor']
         }
         url = reverse('onboarding-save-staff-config')
         response = self.client.put(url, staff_config, format='json')
@@ -1060,7 +1091,7 @@ class OnboardingIntegrationFlowTest(TransactionTestCase):
 
         # Complete another step
         regional_setup = {
-            'operating_regions': ['Test Region'],
+            'operating_regions': ['Test Region', 'Test Jurisdiction'],
             'primary_jurisdiction': 'Test Jurisdiction',
             'minimum_leave_entitlement': 25,
             'regulatory_requirements': {'test': 'data'},

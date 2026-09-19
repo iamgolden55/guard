@@ -50,8 +50,8 @@ class RecruitmentConversionAPITest(APITestCase):
             name='Test Security Company',
             registration_number='TSC123456',
             country_code='GBR',
-            business_email='business@testsecurity.com',
-            business_phone='+44 20 1234 5678',
+            primary_contact_email='business@testsecurity.com',
+            primary_contact_phone='+44 20 1234 5678',
             is_active=True,
             created_by=self.admin_user
         )
@@ -83,6 +83,7 @@ class RecruitmentConversionAPITest(APITestCase):
             phone_number='+44 7987 654321',
             home_address='456 Test Avenue',
             postcode='TE2 2ST',
+            hours_per_week=40,
             employment_type=self.employment_type,
             status='approved',
             has_sia_licence=True,
@@ -110,7 +111,10 @@ class RecruitmentConversionAPITest(APITestCase):
         self.assertIn('message', response.data)
 
         # Verify success message
-        self.assertEqual(response.data['message'], 'Application converted to user account successfully')
+        self.assertEqual(
+            response.data['message'],
+            'Application converted to user account successfully. Welcome email sent.'
+        )
 
         # Verify user data in response
         user_data = response.data['user']
@@ -222,8 +226,8 @@ class RecruitmentConversionAPITest(APITestCase):
             name='Other Security Company',
             registration_number='OSC789012',
             country_code='GBR',
-            business_email='business@othersecurity.com',
-            business_phone='+44 20 9876 5432',
+            primary_contact_email='business@othersecurity.com',
+            primary_contact_phone='+44 20 9876 5432',
             is_active=True,
             created_by=self.admin_user
         )
@@ -277,7 +281,8 @@ class RecruitmentConversionAPITest(APITestCase):
             url = reverse('recruitmentapplication-convert-to-user', args=[self.application.id])
             response = self.client.post(url)
 
-            self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # The view maps IntegrityError to 409 (see the test name)
+            self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
             self.assertIn('error', response.data)
 
     def test_unexpected_error_returns_500_with_generic_message(self):
@@ -379,8 +384,8 @@ class RecruitmentConversionAPIMultiTenantTest(APITestCase):
             name='Company One Security',
             registration_number='COS123456',
             country_code='GBR',
-            business_email='business@company1.com',
-            business_phone='+44 20 1111 1111',
+            primary_contact_email='business@company1.com',
+            primary_contact_phone='+44 20 1111 1111',
             is_active=True,
             created_by=self.admin_user1
         )
@@ -414,8 +419,8 @@ class RecruitmentConversionAPIMultiTenantTest(APITestCase):
             name='Company Two Security',
             registration_number='CTS789012',
             country_code='GBR',
-            business_email='business@company2.com',
-            business_phone='+44 20 2222 2222',
+            primary_contact_email='business@company2.com',
+            primary_contact_phone='+44 20 2222 2222',
             is_active=True,
             created_by=self.admin_user2
         )
@@ -445,6 +450,7 @@ class RecruitmentConversionAPIMultiTenantTest(APITestCase):
             phone_number='+44 7111 111111',
             home_address='111 First Street',
             postcode='F1R 5T1',
+            hours_per_week=40,
             employment_type=self.employment_type1,
             status='approved'
         )
@@ -456,6 +462,7 @@ class RecruitmentConversionAPIMultiTenantTest(APITestCase):
             phone_number='+44 7222 222222',
             home_address='222 Second Street',
             postcode='S2C 0ND',
+            hours_per_week=40,
             employment_type=self.employment_type2,
             status='approved'
         )
@@ -553,8 +560,8 @@ class RecruitmentConversionAPIPerformanceTest(APITestCase):
             name='Test Security Company',
             registration_number='TSC123456',
             country_code='GBR',
-            business_email='business@testsecurity.com',
-            business_phone='+44 20 1234 5678',
+            primary_contact_email='business@testsecurity.com',
+            primary_contact_phone='+44 20 1234 5678',
             is_active=True,
             created_by=self.admin_user
         )
@@ -587,6 +594,7 @@ class RecruitmentConversionAPIPerformanceTest(APITestCase):
             phone_number='+44 7123 456789',
             home_address='123 Performance Street',
             postcode='PE1 1RF',
+            hours_per_week=40,
             employment_type=self.employment_type,
             status='approved'
         )
@@ -615,6 +623,7 @@ class RecruitmentConversionAPIPerformanceTest(APITestCase):
             phone_number='+44 7123 456789',
             home_address='123 Query Street',
             postcode='QU1 1RY',
+            hours_per_week=40,
             employment_type=self.employment_type,
             status='approved',
             has_sia_licence=True,

@@ -261,8 +261,9 @@ class EnhancedWorkingHoursRegulationTestCase(TestCase):
         self.assertIsNone(break_req_5h)
 
         # Test regulation without configured break requirements (fallback)
+        # country_code is at most 3 characters
         regulation = WorkingHoursRegulation.objects.create(
-            country_code='TEST',
+            country_code='TST',
             country_name='Test Country',
             standard_weekly_hours=Decimal('40.0'),
             standard_daily_hours=Decimal('8.0'),
@@ -291,7 +292,7 @@ class EnhancedWorkingHoursRegulationTestCase(TestCase):
 
         # Test regulation without night shift rules (defaults)
         regulation = WorkingHoursRegulation.objects.create(
-            country_code='TEST2',
+            country_code='TS2',
             country_name='Test Country 2',
             standard_weekly_hours=Decimal('40.0'),
             standard_daily_hours=Decimal('8.0'),

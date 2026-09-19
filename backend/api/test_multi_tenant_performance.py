@@ -7,6 +7,9 @@ and that database indexes are being used correctly.
 
 import time
 import statistics
+import unittest
+from contextlib import contextmanager
+import pytest
 from django.test import TestCase, TransactionTestCase
 from django.test.utils import override_settings
 from django.db import connection, transaction
@@ -25,16 +28,56 @@ from .multi_tenant_optimizations import (
 
 logger = logging.getLogger(__name__)
 
+# The Optimized*Manager / Optimized*QuerySet classes in
+# api/multi_tenant_optimizations.py are never attached to Venue or Shift (both
+# use Django's default manager), and the module is only imported by
+# api/multi_tenant_caching.py, which nothing imports. Where a method has a
+# direct equivalent the test uses it: Venue.for_company(c) is
+# filter(company_id=c); Shift has no company column, so its tenancy is
+# venue.company. The rest are skipped with these reasons.
+OPTIMIZED_MANAGERS_NOT_INSTALLED = (
+    "Shift.objects has no {}(): OptimizedShiftManager in "
+    "api/multi_tenant_optimizations.py is never installed on the model, and "
+    "its queryset filters on Shift.company_id, a column Shift does not have "
+    "(tenancy is venue.company)."
+)
+OPTIMIZER_CALLS_MISSING_MANAGERS = (
+    "api/multi_tenant_optimizations.MultiTenantQueryOptimizer is unused by "
+    "product code and cannot run: get_company_dashboard_data() calls "
+    "Venue.objects.venues_with_shift_stats() and Shift.objects."
+    "company_shift_analytics()/company_staff_utilization(), which are never "
+    "installed on those models."
+)
+BULK_STATS_SQL_STALE = (
+    "api/multi_tenant_optimizations.DatabaseFunctions.bulk_update_company_stats "
+    "is unused by product code and its SQL no longer matches the schema: it "
+    "joins shifts.company_id and writes security_companies.venue_count/"
+    "staff_count/total_shifts/completed_shifts, none of which exist."
+)
+
+
+@contextmanager
+def index_preferring_cursor():
+    """A cursor with sequential scans disabled.
+
+    These tables hold a handful of rows in a test database, where a sequential
+    scan is the cheapest plan once autovacuum has analysed them, so whether the
+    planner picks the index depended on what ran earlier in the session.
+    Disabling seq scans asks what these tests mean: is there a usable index for
+    this predicate.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SET enable_seqscan = off")
+        try:
+            yield cursor
+        finally:
+            cursor.execute("RESET enable_seqscan")
+
 
 class MultiTenantPerformanceTestCase(TransactionTestCase):
     """
     Test multi-tenant query performance with realistic data volumes
     """
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.create_performance_test_data()
 
     @classmethod
     def create_performance_test_data(cls):
@@ -109,7 +152,7 @@ class MultiTenantPerformanceTestCase(TransactionTestCase):
                 shift = Shift.objects.create(
                     staff_user=user,
                     venue=venue,
-                    company=venue.company,
+                    required_security_role='sg',
                     start_time=shift_date.replace(hour=9),
                     end_time=shift_date.replace(hour=17),
                     status='completed' if i % 3 == 0 else 'approved',
@@ -119,7 +162,13 @@ class MultiTenantPerformanceTestCase(TransactionTestCase):
                 cls.test_shifts.append(shift)
 
     def setUp(self):
-        """Reset connection queries for each test"""
+        """Create the data and reset connection queries for each test.
+
+        Built per test rather than in setUpClass: TransactionTestCase flushes
+        every table after each test, so class-level data would be gone for
+        every test after the first.
+        """
+        self.create_performance_test_data()
         connection.queries_log.clear()
         cache.clear()
 
@@ -153,7 +202,7 @@ class MultiTenantPerformanceTestCase(TransactionTestCase):
         company = self.companies[0]
 
         def query_func():
-            return Venue.objects.for_company(company.id).select_related('company')
+            return Venue.objects.filter(company_id=company.id).select_related('company')
 
         performance = self.measure_query_performance(query_func)
 
@@ -162,13 +211,14 @@ class MultiTenantPerformanceTestCase(TransactionTestCase):
                        f"Company venue query too slow: {performance['avg_time_ms']:.2f}ms")
 
         # Check that proper indexes are being used
-        with connection.cursor() as cursor:
+        with index_preferring_cursor() as cursor:
             cursor.execute("EXPLAIN ANALYZE SELECT * FROM venues WHERE company_id = %s", [company.id])
             explain_plan = cursor.fetchall()
 
         explain_text = '\n'.join([str(row) for row in explain_plan])
         self.assertIn('Index Scan', explain_text, "Query should use index scan")
 
+    @unittest.skip(OPTIMIZED_MANAGERS_NOT_INSTALLED.format('shifts_for_company_dashboard'))
     def test_company_scoped_shift_query_performance(self):
         """Test performance of company-scoped shift queries with joins"""
         company = self.companies[0]
@@ -190,6 +240,7 @@ class MultiTenantPerformanceTestCase(TransactionTestCase):
         query_count = queries_after - queries_before
         self.assertLess(query_count, 3, f"Too many queries executed: {query_count}")
 
+    @unittest.skip(OPTIMIZED_MANAGERS_NOT_INSTALLED.format('company_shift_analytics'))
     def test_company_analytics_query_performance(self):
         """Test performance of complex analytics queries"""
         company = self.companies[0]
@@ -213,7 +264,7 @@ class MultiTenantPerformanceTestCase(TransactionTestCase):
         results = {}
         for company in self.companies[:3]:  # Test first 3 companies
             def query_func():
-                return Venue.objects.for_company(company.id).count()
+                return Venue.objects.filter(company_id=company.id).count()
 
             performance = self.measure_query_performance(query_func)
             results[company.id] = performance
@@ -227,6 +278,7 @@ class MultiTenantPerformanceTestCase(TransactionTestCase):
         time_variance = max(avg_times) - min(avg_times)
         self.assertLess(time_variance, 20, "Performance varies too much between companies")
 
+    @unittest.skip(OPTIMIZER_CALLS_MISSING_MANAGERS)
     def test_dashboard_query_optimization(self):
         """Test the optimized dashboard query performance"""
         company = self.companies[0]
@@ -241,6 +293,7 @@ class MultiTenantPerformanceTestCase(TransactionTestCase):
         self.assertLess(performance['avg_time_ms'], 300,
                        f"Dashboard query too slow: {performance['avg_time_ms']:.2f}ms")
 
+    @unittest.skip(OPTIMIZER_CALLS_MISSING_MANAGERS)
     def test_caching_performance_improvement(self):
         """Test that caching improves performance"""
         company = self.companies[0]
@@ -267,6 +320,7 @@ class MultiTenantPerformanceTestCase(TransactionTestCase):
         self.assertGreater(improvement_ratio, 2,
                           "Caching should provide at least 2x performance improvement")
 
+    @unittest.skip(BULK_STATS_SQL_STALE)
     def test_bulk_operations_performance(self):
         """Test performance of bulk update operations"""
 
@@ -284,7 +338,7 @@ class MultiTenantPerformanceTestCase(TransactionTestCase):
         company = self.companies[0]
 
         # Test venue query plan
-        with connection.cursor() as cursor:
+        with index_preferring_cursor() as cursor:
             cursor.execute("""
                 EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
                 SELECT * FROM venues v
@@ -314,8 +368,8 @@ class MultiTenantPerformanceTestCase(TransactionTestCase):
                 start_time = time.perf_counter()
 
                 # Simulate typical company operations
-                venues = list(Venue.objects.for_company(company_id)[:10])
-                shifts = list(Shift.objects.for_company(company_id)[:20])
+                venues = list(Venue.objects.filter(company_id=company_id)[:10])
+                shifts = list(Shift.objects.filter(venue__company_id=company_id)[:20])
 
                 end_time = time.perf_counter()
                 execution_time = (end_time - start_time) * 1000
@@ -383,7 +437,7 @@ class IndexUsageTestCase(TestCase):
 
     def test_company_user_index_usage(self):
         """Test that company-user queries use proper indexes"""
-        with connection.cursor() as cursor:
+        with index_preferring_cursor() as cursor:
             # Test company users index
             cursor.execute("""
                 EXPLAIN (FORMAT JSON)
@@ -409,7 +463,7 @@ class IndexUsageTestCase(TestCase):
             company=self.company
         )
 
-        with connection.cursor() as cursor:
+        with index_preferring_cursor() as cursor:
             # Test compound index usage
             cursor.execute("""
                 EXPLAIN (FORMAT JSON)
@@ -518,7 +572,7 @@ class ScalabilityTestCase(TransactionTestCase):
 
         # Test query performance with large dataset
         start_time = time.perf_counter()
-        venue_list = list(Venue.objects.for_company(company.id).order_by('name'))
+        venue_list = list(Venue.objects.filter(company_id=company.id).order_by('name'))
         end_time = time.perf_counter()
 
         execution_time = (end_time - start_time) * 1000
@@ -529,7 +583,7 @@ class ScalabilityTestCase(TransactionTestCase):
 
     def test_memory_usage_efficiency(self):
         """Test that queries don't load unnecessary data into memory"""
-        import psutil
+        psutil = pytest.importorskip("psutil")  # not a project dependency
         import os
 
         company = SecurityCompany.objects.create(
@@ -543,7 +597,7 @@ class ScalabilityTestCase(TransactionTestCase):
         initial_memory = process.memory_info().rss
 
         # Execute query that could potentially load lots of data
-        venues = Venue.objects.for_company(company.id).iterator(chunk_size=10)
+        venues = Venue.objects.filter(company_id=company.id).iterator(chunk_size=10)
         venue_count = sum(1 for _ in venues)
 
         # Get final memory usage

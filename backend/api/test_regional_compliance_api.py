@@ -22,10 +22,17 @@ from rest_framework import status
 
 from .models import (
     WorkingHoursRegulation, ComplianceProfile, ComplianceViolation,
-    Venue, SIALicense, StaffProfile
+    Venue, SIALicense, StaffProfile, SecurityCompany
 )
 
 User = get_user_model()
+
+
+def _make_company():
+    # Venues belong to a company
+    return SecurityCompany.objects.create(
+        name='Regional Test Co', registration_number='REGTEST1'
+    )
 
 
 class RegionDetectionAPITest(APITestCase):
@@ -61,6 +68,7 @@ class RegionDetectionAPITest(APITestCase):
 
         # Create test venue
         self.venue = Venue.objects.create(
+            company=_make_company(),
             name='Test Venue London',
             address='123 Test Street',
             city='London',
@@ -158,7 +166,7 @@ class PresetApplicationAPITest(APITestCase):
 
         # Create compliance profile
         self.profile = ComplianceProfile.objects.create(
-            user=self.user,
+            name='Test Profile',
             working_hours_regulation=self.uk_regulation
         )
 
@@ -275,7 +283,7 @@ class RegulationComparisonAPITest(APITestCase):
 
     def test_compare_multiple_regions(self):
         """Test comparing regulations across multiple regions"""
-        url = reverse('compliance-regional-compare')
+        url = reverse('compliance-regional-compare-regulations')
         response = self.client.get(url, {
             'regions[]': ['UK', 'US', 'EU-FR'],
             'include_sia_requirements': 'true',
@@ -309,7 +317,7 @@ class RegulationComparisonAPITest(APITestCase):
 
     def test_compare_with_selective_includes(self):
         """Test comparison with selective feature inclusion"""
-        url = reverse('compliance-regional-compare')
+        url = reverse('compliance-regional-compare-regulations')
         response = self.client.get(url, {
             'regions[]': ['UK', 'US'],
             'include_sia_requirements': 'false',
@@ -329,7 +337,7 @@ class RegulationComparisonAPITest(APITestCase):
 
     def test_compare_insufficient_regions(self):
         """Test comparison with insufficient regions"""
-        url = reverse('compliance-regional-compare')
+        url = reverse('compliance-regional-compare-regulations')
         response = self.client.get(url, {
             'regions[]': ['UK']  # Only one region
         })
@@ -338,7 +346,7 @@ class RegulationComparisonAPITest(APITestCase):
 
     def test_compare_key_differences_detection(self):
         """Test that key differences are properly identified"""
-        url = reverse('compliance-regional-compare')
+        url = reverse('compliance-regional-compare-regulations')
         response = self.client.get(url, {
             'regions[]': ['UK', 'US', 'EU-FR']
         })
@@ -366,21 +374,26 @@ class ScheduleValidationAPITest(APITestCase):
         self.client.force_authenticate(user=self.user)
 
         # Create staff profile and SIA license
+        self.user.first_name = 'Test'
+        self.user.last_name = 'User'
+        self.user.save()
         self.staff_profile = StaffProfile.objects.create(
             user=self.user,
-            first_name='Test',
-            last_name='User',
             date_of_birth='1990-01-01',
-            phone_number='1234567890'
+            phone_number='1234567890',
+            street='1 Test Street',
+            city='London',
+            postal_code='SW1A 1AA',
+            country='United Kingdom'
         )
 
         self.sia_license = SIALicense.objects.create(
             staff_profile=self.staff_profile,
             license_number='TEST123456',
-            license_type='door_supervisor',
+            license_type='ds',
             issue_date=timezone.now().date(),
             expiry_date=timezone.now().date() + timezone.timedelta(days=365),
-            is_active=True
+            status='valid'
         )
 
         # Create regulation
@@ -399,7 +412,7 @@ class ScheduleValidationAPITest(APITestCase):
 
         # Create compliance profile
         self.profile = ComplianceProfile.objects.create(
-            user=self.user,
+            name='Test Profile',
             working_hours_regulation=self.uk_regulation
         )
 
@@ -554,7 +567,7 @@ class ScheduleValidationAPITest(APITestCase):
     def test_validate_missing_sia_license(self):
         """Test validation detects missing SIA license"""
         # Deactivate SIA license
-        self.sia_license.is_active = False
+        self.sia_license.status = 'expired'
         self.sia_license.save()
 
         url = reverse('compliance-regional-validate-schedule')
@@ -725,6 +738,7 @@ class RegionalComplianceIntegrationTest(APITestCase):
     def setup_test_venues(self):
         """Set up test venues in different regions"""
         self.london_venue = Venue.objects.create(
+            company=_make_company(),
             name='London Security Office',
             address='123 City Road',
             city='London',
@@ -738,7 +752,7 @@ class RegionalComplianceIntegrationTest(APITestCase):
     def setup_test_profiles(self):
         """Set up test compliance profiles"""
         self.profile = ComplianceProfile.objects.create(
-            user=self.user,
+            name='Test Profile',
             working_hours_regulation=self.uk_regulation
         )
 
@@ -805,7 +819,7 @@ class RegionalComplianceIntegrationTest(APITestCase):
         )
 
         # Compare UK vs US regulations
-        compare_url = reverse('compliance-regional-compare')
+        compare_url = reverse('compliance-regional-compare-regulations')
         response = self.client.get(compare_url, {
             'regions[]': ['UK', 'US'],
             'include_sia_requirements': 'true',

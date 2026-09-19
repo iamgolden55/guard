@@ -22,7 +22,7 @@ import json
 
 from .models import (
     WorkingHoursRegulation, ComplianceProfile, ComplianceViolation,
-    WorkingHoursMetrics, Venue, Shift
+    WorkingHoursMetrics, Venue, Shift, SecurityCompany, UserCompanyMembership
 )
 
 User = get_user_model()
@@ -90,8 +90,20 @@ class BaseComplianceTestCase(TestCase):
             is_active=True
         )
 
+        # Compliance reads are scoped to the requester's company, so every
+        # user needs an active membership of one.
+        self.company = SecurityCompany.objects.create(
+            name='Compliance Test Co', registration_number='COMPTEST1'
+        )
+        for user, role in ((self.admin_user, 'admin'), (self.manager_user, 'manager'),
+                           (self.staff_user, 'staff')):
+            UserCompanyMembership.objects.create(
+                user=user, company=self.company, role=role, is_active=True
+            )
+
         # Create test venue
         self.venue = Venue.objects.create(
+            company=self.company,
             name='Test Venue',
             address='123 Test Street, Test City',
             capacity=100,
@@ -106,7 +118,7 @@ class WorkingHoursRegulationAPITests(BaseComplianceTestCase):
     def test_list_regulations_authenticated(self):
         """Test listing regulations as authenticated user"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('workinghours regulation-list')
+        url = reverse('compliance-regulations-list')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -116,15 +128,21 @@ class WorkingHoursRegulationAPITests(BaseComplianceTestCase):
 
     def test_list_regulations_unauthenticated(self):
         """Test listing regulations without authentication"""
-        url = reverse('workinghours regulation-list')
+        url = reverse('compliance-regulations-list')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_create_regulation_admin(self):
         """Test creating regulation as admin"""
-        self.client.force_authenticate(user=self.admin_user)
-        url = reverse('workinghours regulation-list')
+        # Regulations are platform-wide, so writes are for platform staff
+        # (`is_staff`) only, not a tenant's role='admin'.
+        platform_admin = User.objects.create_user(
+            username='platform_admin_test', email='platform@test.com',
+            password='admin123', role='admin', is_staff=True
+        )
+        self.client.force_authenticate(user=platform_admin)
+        url = reverse('compliance-regulations-list')
         data = {
             'country_code': 'US',
             'country_name': 'United States',
@@ -147,7 +165,7 @@ class WorkingHoursRegulationAPITests(BaseComplianceTestCase):
     def test_create_regulation_staff_forbidden(self):
         """Test staff user cannot create regulation"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('workinghours regulation-list')
+        url = reverse('compliance-regulations-list')
         data = {'country_code': 'US', 'country_name': 'United States'}
 
         response = self.client.post(url, data)
@@ -156,7 +174,7 @@ class WorkingHoursRegulationAPITests(BaseComplianceTestCase):
     def test_get_countries_list(self):
         """Test getting list of available countries"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('workinghours regulation-countries')
+        url = reverse('compliance-regulations-countries')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -171,7 +189,7 @@ class ComplianceProfileAPITests(BaseComplianceTestCase):
     def test_list_profiles_admin(self):
         """Test admin can list all profiles"""
         self.client.force_authenticate(user=self.admin_user)
-        url = reverse('complianceprofile-list')
+        url = reverse('compliance-profiles-list')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -187,7 +205,7 @@ class ComplianceProfileAPITests(BaseComplianceTestCase):
         )
 
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('complianceprofile-list')
+        url = reverse('compliance-profiles-list')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -198,7 +216,7 @@ class ComplianceProfileAPITests(BaseComplianceTestCase):
     def test_get_active_profile(self):
         """Test getting currently active profile"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('complianceprofile-active')
+        url = reverse('compliance-profiles-active')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -215,17 +233,20 @@ class ComplianceProfileAPITests(BaseComplianceTestCase):
         )
 
         self.client.force_authenticate(user=self.admin_user)
-        url = reverse('complianceprofile-set-active', kwargs={'pk': profile2.pk})
+        url = reverse('compliance-profiles-set-active', kwargs={'pk': profile2.pk})
         response = self.client.post(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['status'], 'success')
 
-        # Check that profile2 is now active and profile1 is inactive
-        profile2.refresh_from_db()
+        # A tenant admin chooses the profile for their own company; the
+        # platform default (`is_active`) is left alone.
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.compliance_profile, profile2)
         self.compliance_profile.refresh_from_db()
-        self.assertTrue(profile2.is_active)
-        self.assertFalse(self.compliance_profile.is_active)
+        self.assertTrue(self.compliance_profile.is_active)
+        response = self.client.get(reverse('compliance-profiles-active'))
+        self.assertEqual(response.data['data']['name'], 'Alternative Profile')
 
 
 class ComplianceViolationAPITests(BaseComplianceTestCase):
@@ -236,8 +257,9 @@ class ComplianceViolationAPITests(BaseComplianceTestCase):
 
         # Create test shift
         self.shift = Shift.objects.create(
-            user=self.staff_user,
+            staff_user=self.staff_user,
             venue=self.venue,
+            required_security_role='sg',
             start_time=timezone.now() - timedelta(hours=10),
             end_time=timezone.now() - timedelta(hours=2),
             status='completed',
@@ -273,7 +295,7 @@ class ComplianceViolationAPITests(BaseComplianceTestCase):
     def test_list_violations_staff(self):
         """Test staff user can only see their own violations"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('complianceviolation-list')
+        url = reverse('compliance-violations-list')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -286,7 +308,7 @@ class ComplianceViolationAPITests(BaseComplianceTestCase):
     def test_list_violations_manager(self):
         """Test manager can see all violations"""
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('complianceviolation-list')
+        url = reverse('compliance-violations-list')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -296,7 +318,7 @@ class ComplianceViolationAPITests(BaseComplianceTestCase):
     def test_filter_violations_by_type(self):
         """Test filtering violations by type"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('complianceviolation-list')
+        url = reverse('compliance-violations-list')
         response = self.client.get(url, {'violation_type': 'daily_overtime'})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -308,7 +330,7 @@ class ComplianceViolationAPITests(BaseComplianceTestCase):
         self.client.force_authenticate(user=self.staff_user)
 
         # Test open violations
-        url = reverse('complianceviolation-list')
+        url = reverse('compliance-violations-list')
         response = self.client.get(url, {'status': 'open'})
         self.assertEqual(len(response.data['results']), 1)
 
@@ -319,7 +341,7 @@ class ComplianceViolationAPITests(BaseComplianceTestCase):
     def test_violation_summary_staff(self):
         """Test getting violation summary for staff user"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('complianceviolation-summary')
+        url = reverse('compliance-violations-summary')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -333,7 +355,7 @@ class ComplianceViolationAPITests(BaseComplianceTestCase):
     def test_violation_summary_manager(self):
         """Test getting violation summary for manager"""
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('complianceviolation-summary')
+        url = reverse('compliance-violations-summary')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -354,18 +376,18 @@ class ComplianceViolationAPITests(BaseComplianceTestCase):
         )
 
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('complianceviolation-pending')
+        url = reverse('compliance-violations-pending')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['status'], 'success')
-        self.assertEqual(len(response.data['data']), 1)
-        self.assertEqual(response.data['data'][0]['resolution_status'], 'pending_approval')
+        # Paginated, like the list route
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['resolution_status'], 'pending_approval')
 
     def test_pending_violations_staff_forbidden(self):
         """Test staff user cannot access pending violations"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('complianceviolation-pending')
+        url = reverse('compliance-violations-pending')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
@@ -373,7 +395,7 @@ class ComplianceViolationAPITests(BaseComplianceTestCase):
     def test_resolve_violation_manager(self):
         """Test manager can resolve violations"""
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('complianceviolation-resolve', kwargs={'pk': self.violation.pk})
+        url = reverse('compliance-violations-resolve', kwargs={'pk': self.violation.pk})
         data = {
             'resolution_notes': 'Approved due to emergency situation',
             'exception_granted': True,
@@ -393,7 +415,7 @@ class ComplianceViolationAPITests(BaseComplianceTestCase):
     def test_resolve_violation_staff_forbidden(self):
         """Test staff user cannot resolve violations"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('complianceviolation-resolve', kwargs={'pk': self.violation.pk})
+        url = reverse('compliance-violations-resolve', kwargs={'pk': self.violation.pk})
         data = {'resolution_notes': 'Self resolve attempt'}
 
         response = self.client.post(url, data)
@@ -412,7 +434,7 @@ class ComplianceViolationAPITests(BaseComplianceTestCase):
         )
 
         self.client.force_authenticate(user=self.admin_user)
-        url = reverse('complianceviolation-bulk-resolve')
+        url = reverse('compliance-violations-bulk-resolve')
         data = {
             'violation_ids': [self.violation.id, violation2.id],
             'resolution_notes': 'Bulk resolution for policy update',
@@ -436,7 +458,7 @@ class ComplianceReportAPITests(BaseComplianceTestCase):
     def test_compliance_dashboard_summary(self):
         """Test getting compliance dashboard summary"""
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('compliance-report-summary')
+        url = reverse('compliance-reports-summary')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -446,7 +468,7 @@ class ComplianceReportAPITests(BaseComplianceTestCase):
     def test_compliance_trends(self):
         """Test getting compliance violation trends"""
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('compliance-report-trends')
+        url = reverse('compliance-reports-trends')
         response = self.client.get(url, {'days': 30, 'group_by': 'day'})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -457,7 +479,7 @@ class ComplianceReportAPITests(BaseComplianceTestCase):
     def test_working_hours_report(self):
         """Test getting working hours report"""
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('compliance-report-working-hours')
+        url = reverse('compliance-reports-working-hours')
         response = self.client.get(url, {'period_type': 'weekly'})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -466,7 +488,7 @@ class ComplianceReportAPITests(BaseComplianceTestCase):
     def test_working_hours_report_user_specific(self):
         """Test getting working hours report for specific user"""
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('compliance-report-working-hours')
+        url = reverse('compliance-reports-working-hours')
         response = self.client.get(url, {
             'user_id': self.staff_user.id,
             'period_type': 'weekly'
@@ -520,7 +542,9 @@ class RealTimeComplianceTests(BaseComplianceTestCase):
         }
 
         response = self.client.post(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        # ComplianceCheckSerializer rejects an unknown user_id as a field error
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('user_id', response.data['errors'])
 
     def test_compliance_alerts(self):
         """Test getting compliance alerts"""
@@ -583,7 +607,7 @@ class WorkingHoursMetricsAPITests(BaseComplianceTestCase):
     def test_list_metrics_staff(self):
         """Test staff user can only see their own metrics"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('workinghours metrics-list')
+        url = reverse('compliance-metrics-list')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -606,7 +630,7 @@ class WorkingHoursMetricsAPITests(BaseComplianceTestCase):
         )
 
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('workinghours metrics-list')
+        url = reverse('compliance-metrics-list')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -615,7 +639,7 @@ class WorkingHoursMetricsAPITests(BaseComplianceTestCase):
     def test_filter_metrics_by_user(self):
         """Test filtering metrics by user (managers only)"""
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('workinghours metrics-list')
+        url = reverse('compliance-metrics-list')
         response = self.client.get(url, {'user_id': self.staff_user.id})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -638,7 +662,7 @@ class WorkingHoursMetricsAPITests(BaseComplianceTestCase):
         )
 
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('workinghours metrics-list')
+        url = reverse('compliance-metrics-list')
         response = self.client.get(url, {'period_type': 'monthly'})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -648,7 +672,7 @@ class WorkingHoursMetricsAPITests(BaseComplianceTestCase):
     def test_recalculate_metrics_admin(self):
         """Test admin can trigger metrics recalculation"""
         self.client.force_authenticate(user=self.admin_user)
-        url = reverse('workinghours metrics-recalculate')
+        url = reverse('compliance-metrics-recalculate')
         data = {'user_id': self.staff_user.id, 'period_type': 'weekly'}
 
         response = self.client.post(url, data)
@@ -659,7 +683,7 @@ class WorkingHoursMetricsAPITests(BaseComplianceTestCase):
     def test_recalculate_metrics_staff_forbidden(self):
         """Test staff user cannot trigger metrics recalculation"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('workinghours metrics-recalculate')
+        url = reverse('compliance-metrics-recalculate')
         data = {'user_id': self.staff_user.id}
 
         response = self.client.post(url, data)
@@ -672,7 +696,7 @@ class ComplianceAPIPerformanceTests(BaseComplianceTestCase):
     def test_violation_summary_caching(self):
         """Test that violation summaries are properly cached"""
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('complianceviolation-summary')
+        url = reverse('compliance-violations-summary')
 
         # First request - should not be cached
         response1 = self.client.get(url)
@@ -690,7 +714,7 @@ class ComplianceAPIPerformanceTests(BaseComplianceTestCase):
         import time
 
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('compliance-report-summary')
+        url = reverse('compliance-reports-summary')
 
         start_time = time.time()
         response = self.client.get(url)
@@ -739,19 +763,21 @@ class ComplianceAPIIntegrationTests(BaseComplianceTestCase):
             period_end=timezone.now(),
             description='Weekly hours exceeded 48 hour limit',
             threshold_exceeded=Decimal('8.0'),
-            system_generated=True
+            system_generated=True,
+            # `pending` lists only violations awaiting approval
+            resolution_status='pending_approval'
         )
 
         # Step 2: Manager checks pending violations
         self.client.force_authenticate(user=self.manager_user)
-        url = reverse('complianceviolation-pending')
+        url = reverse('compliance-violations-pending')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertGreater(len(response.data['data']), 0)
+        self.assertGreater(len(response.data['results']), 0)
 
         # Step 3: Manager resolves violation
-        url = reverse('complianceviolation-resolve', kwargs={'pk': violation.pk})
+        url = reverse('compliance-violations-resolve', kwargs={'pk': violation.pk})
         data = {
             'resolution_notes': 'Approved due to staff shortage',
             'exception_granted': True,
@@ -783,20 +809,18 @@ class ComplianceAPIIntegrationTests(BaseComplianceTestCase):
 
         # Admin activates new profile
         self.client.force_authenticate(user=self.admin_user)
-        url = reverse('complianceprofile-set-active', kwargs={'pk': new_profile.pk})
+        url = reverse('compliance-profiles-set-active', kwargs={'pk': new_profile.pk})
         response = self.client.post(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # Verify new profile is active
-        new_profile.refresh_from_db()
-        self.compliance_profile.refresh_from_db()
-        self.assertTrue(new_profile.is_active)
-        self.assertFalse(self.compliance_profile.is_active)
+        # Verify new profile is active for the company
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.compliance_profile, new_profile)
 
         # Verify staff can see new active profile
         self.client.force_authenticate(user=self.staff_user)
-        url = reverse('complianceprofile-active')
+        url = reverse('compliance-profiles-active')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
