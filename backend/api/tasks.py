@@ -2272,6 +2272,57 @@ def create_monthly_payroll_run() -> Dict[str, Any]:
     return _run_payroll_for_period(PayrollRun.for_calendar_month(anchor))
 
 
+def expected_payroll_periods(today):
+    """The runs that should exist by `today`: the last completed ISO week
+    (created Mondays 06:00 UTC) and, from the 1st, the last calendar month."""
+    from datetime import date
+    from api.models import PayrollRun
+
+    last_sunday = today - timedelta(days=today.weekday() + 1)
+    expected = [PayrollRun.for_iso_week(last_sunday)]
+    first_of_month = date(today.year, today.month, 1)
+    expected.append(PayrollRun.for_calendar_month(first_of_month - timedelta(days=1)))
+    return expected
+
+
+@shared_task
+def check_payroll_runs_exist() -> Dict[str, Any]:
+    """Alert when a payroll run that should exist doesn't.
+
+    The weekly and monthly runs are beat jobs: if beat is down, the worker is
+    down, or the task raised, nobody is paid and nothing says so. This checks
+    the result, not the job — every active company should have a run for the
+    last completed week and month — and logs an ERROR per gap, which Sentry
+    turns into an alert. Runs daily at 09:00 UTC, three hours after the
+    Monday / 1st-of-month runs are due.
+    """
+    from api.models import PayrollRun, SecurityCompany
+
+    today = timezone.localdate()
+    missing = []
+    for params in expected_payroll_periods(today):
+        # A company created after the period closed was never owed that run.
+        companies = SecurityCompany.objects.filter(
+            is_active=True, created_at__date__lte=params['period_end'],
+        )
+        have = set(
+            PayrollRun.objects.filter(
+                cycle=params['cycle'],
+                period_start=params['period_start'],
+                period_end=params['period_end'],
+            ).values_list('company_id', flat=True)
+        )
+        for company in companies:
+            if company.pk not in have:
+                missing.append({'company': company.name, 'run_code': params['run_code']})
+                logger.error(
+                    "Payroll run %s is missing for company %s (%s). The %s payroll job "
+                    "did not run or failed; nobody on it has been invoiced.",
+                    params['run_code'], company.name, company.pk, params['cycle'],
+                )
+    return {'checked_on': today.isoformat(), 'missing': missing}
+
+
 # ---------------------------------------------------------------------------
 # Capacity-check logbook: missed-slot detection
 # ---------------------------------------------------------------------------

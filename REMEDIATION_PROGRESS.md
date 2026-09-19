@@ -3,7 +3,7 @@
 Live tracker for fixing the 2026-09-17 engineering audit (`AUDIT-2026-09-17.md`).
 The audit says what is wrong. This file says what has been done about it, what is next, and what is waiting on you.
 
-**Last updated:** 2026-09-19 · **Current branch:** `fix/p2-authz` · **Now working on:** Phase 2C (the product bugs 2B surfaced, then money integrity)
+**Last updated:** 2026-09-19 · **Current branch:** `fix/p2-reliability` · **Now working on:** Phase 2F server side (minimum app version), then the Phase 2 report
 
 Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋 needs you · ❌ did not reproduce (audit corrected)
 
@@ -20,7 +20,7 @@ Status key: ✅ done and verified · 🟡 in progress · ⏳ not started · 🙋
 | 1D | Mobile check-in data loss | ✅ committed, no regressions |
 | 1E | SIA role↔licence, warn and record | ✅ committed, no regressions |
 | — | **Stop and report** after 1E | ✅ report below — waiting on your review |
-| 2 | Reliability (backups, alerts, PROTECT, pay basis, Xero, web honesty) | 🟡 in progress (2A) |
+| 2 | Reliability (backups, alerts, PROTECT, pay basis, Xero, web honesty) | 🟡 2A–2E done; 2F server gate next |
 | 3 | Product completion (no-show alerts, manager inbox, incident evidence) | ⏳ planned |
 | 4–5 | Scale, advanced | ⏳ planned |
 
@@ -30,20 +30,9 @@ The full phase plan, with the reasoning for its order, is in `~/.claude/plans/pa
 
 ## What's next, in order
 
-1. **1C: money** (branch `fix/p0-money`).
-   - Price client invoices at `Shift.bill_rate`. A line with no bill rate is held as a draft and can't be issued until a manager sets the rate from the invoice (decision D-A). Officer pay does not move.
-   - Route `force_complete` and `manual_checkout` through `record_attendance`, so the hours a manager types are the hours stored, junk and negative hours get a 400, and a locked invoice gets a 409.
-   - Facade `mark-paid`: staff invoices must be `approved` first, and client invoices must be issued first.
-   - Read-only report of historically under-billed client invoices (CSV only; it changes no data).
-2. **1D: mobile** (branch `fix/p0-mobile-checkin`).
-   - Delete the dead `CheckInFlowV2.tsx`.
-   - Make check-in queue on connectivity failure and show the server's reason on a 4xx, as check-out already does.
-   - Stop purging failed queue items at startup, and recover items stuck in `processing`.
-   - Add the missing `check_out_time` to queued check-outs.
-   - Let a flagged offline replay lift an *automatic* no-show into manager review.
-   - Get `tsc` running, and add Jest tests for `syncService`.
-3. **1E: SIA** (branch `fix/p0-sia-warn`). One role→licence mapping, evaluated on every assignment path. Warnings are returned to the manager and logged when overridden. The check-in alert extends to role mismatch.
-4. **Stop.** Report in the `full_fix.md` §6 format, with the test delta per file.
+1. **2F server side:** the API refuses app builds below a minimum with a clear "update required" (the mobile side already sends its build and shows the message).
+2. **Phase 2 report**, in the same format as the Phase 1 report, then stop for your review.
+3. Then Phase 3, starting with a no-show alert that reaches a manager.
 
 ---
 
@@ -236,8 +225,8 @@ Batches, in order:
 | --- | --- | --- |
 | 2A | Remaining authorisation gaps: default write routes weaker than their own actions; drain the ratchet allowlist | ✅ |
 | 2B | Trustworthy tests: repair the fixture drift behind ~140 standing failures, then make the full suite a required CI check | ✅ fixtures repaired (48 real failures left; full suite becomes required once they're fixed) |
-| 2C | Money integrity: `PROTECT` invoice lines, time adjustments and status history; backfill `payable_hours`; one definition of "outstanding"; Xero idempotency | ⏳ |
-| 2D | Would we know? A readiness health check, one beat scheduler, an alert when a payroll run is missing, startup checks for security settings, a backup/restore runbook | ⏳ |
+| 2C | Money integrity: `PROTECT` invoice lines, time adjustments and status history; backfill `payable_hours`; one definition of "outstanding"; Xero idempotency | ✅ |
+| 2D | Would we know? A readiness health check, one beat scheduler, an alert when a payroll run is missing, startup checks for security settings, a backup/restore runbook | ✅ code; 🙋 runbook needs your dashboard values |
 | 2E | Web honesty: fake payroll composition, dead bulk buttons, failures shown as "empty", admin role gate, company-scoped cache | ✅ |
 | 2F | Mobile minimum-version gate; remove dead code | 🟡 mobile side done; server gate after 2B |
 
@@ -332,6 +321,33 @@ Also found: `regional-settings` create/update return "saved successfully" withou
 
 Full suite: **48 → 22 failures**, all known and listed: 16 regional-compliance bugs (Phase 3), 3 onboarding, 3 recruitment.
 
+### 2C (part 2): money integrity ✅
+
+| Finding | Fix |
+| --- | --- |
+| **Deleting a shift, venue or officer silently deleted pay history.** A shift delete took its invoice line (the audit found 10 invoices, £1,304.80, claiming lines that no longer existed). One "Delete venue" click took every shift ever worked there, their invoice lines and the venue's client invoices, while the dialog promised "past shifts keep their record" | Those links now refuse the delete: invoice line → shift, time adjustment → shift, shift → venue and officer, staff invoice → officer, client invoice → venue. The API answers **409** saying what's in the way and what to do instead ("deactivate the venue", "cancel the shift"). An unworked shift or an unused venue still deletes. The migration changes no SQL, so it's instant to deploy. The venue dialog now tells the truth, and the web shows the server's reason |
+| **The nightly account purge failed every night** (`return result`, a NameError) | Returns `{anonymized, failed}` |
+| **`payable_hours` is empty on every shift before migration 0071**, so the "what would aligning overtime cost" report understates the change | `manage.py backfill_payable_hours` (dry run by default; fills empty rows only, via the same formula as `save()`; no signals, no status changes). Nothing reads the column while `OT_BASIS_ALIGNED` is off, so it moves no pay. The OT report now warns while rows are empty |
+| **Invoice "Outstanding" meant something different on each screen.** Pending and approved invoices were in no money total at all; the Outbox count covered a wider set than the Outstanding total beside it | One definition: **Outstanding = everything not yet paid** (draft, pending, approved, sent, overdue), the same set the Outbox lists and counts. For any officer, paid + outstanding on the web equals their earnings on the phone |
+| **Accounting webhook payments** marked any exported invoice paid (draft, rejected, unapproved), never set a paid date, and could be replayed indefinitely | Only an approved invoice is settled; anything else is logged for a manager. Paid date recorded, audit row written, payroll run totals refreshed. A replayed event is recorded as ignored and not applied again |
+| Duplicate-shift clean-up scripts would have crashed halfway on an invoiced duplicate | They skip and list shifts with pay records |
+
+**Found on the way:** the Xero webhook has never processed a payment. Its two signature checks read the same header as a hex and as a base64 HMAC, which can never both match, and it doesn't read Xero's real payload format. So nothing above has ever fired in production; it's made safe before anyone wires it up. Wiring it to Xero properly is a Phase 3 item.
+
+### 2D: would we know? ✅
+
+| Gap | Now |
+| --- | --- |
+| The only health check answered "healthy" whatever state Postgres and Redis were in | `/api/v1/health/` stays a plain liveness check for Render, so a Redis blip can't cause restart loops. New **`/api/v1/health/ready/`** checks Postgres and Redis and answers 503 if either is down. **Point an uptime monitor at it** |
+| If the payroll job didn't run, nobody was paid and nothing said so | A daily 09:00 UTC check that every active company has last week's and last month's payroll run; each gap logs an error, which Sentry turns into an alert |
+| Unsafe production settings went unnoticed | `manage.py check` (run by `migrate` in the Render build) now **fails the deploy if DEBUG is on in production** and warns in the build log when self-serve signup is open, Sentry isn't set, or document storage isn't durable |
+| Dev and prod ran different beat schedulers; a second beat schedule in `celery_app.py` was silently ignored | Database scheduler everywhere (settings + compose). The dead schedule was removed; its two report-clean-up jobs have never run (see "Waiting on you") |
+| No backup or restore procedure | `docs/runbooks/backup-and-restore.md` (needs your dashboard values) |
+
+Also found: `core/settings/production.py` is never loaded, because `core.settings` resolves to `settings.py`, so nothing in it applies in production. Sentry is initialised twice in `settings.py`, the first time with `send_default_pii=True`, which sends officers' emails and IPs to Sentry. Both are listed for clean-up, not changed.
+
+Full suite after 2C/2D: **684 passed, 22 failed** (the same 22 known failures, no regressions). The CI guard set is now 28 files, **375 passed**.
+
 ---
 
 ## Decisions in force
@@ -354,3 +370,7 @@ Full suite: **48 → 22 failures**, all known and listed: 16 regional-compliance
 - [ ] Run `docs/audit-2026-09-17-prod-checks.sql` against production and share the output (0.4)
 - [ ] Confirm the SIA role→licence mapping, including whether a door supervisor licence covers security guarding (1E)
 - [ ] After Phase 1: review, merge, deploy (backend → web → EAS build), and enable branch protection once CI has run
+- [ ] Point an uptime monitor (e.g. Better Stack, UptimeRobot) at `https://mead-security-api.onrender.com/api/v1/health/ready/` (2D)
+- [ ] After deploying 2C: run `manage.py backfill_payable_hours` (dry run), then `--apply`, then `report_ot_basis_delta --weeks 12`, and decide on `OT_BASIS_ALIGNED` (D-C)
+- [ ] Decide: enable the two report-clean-up jobs that have never run (they delete generated report files older than `REPORT_FILE_RETENTION_DAYS`, 7 days by default)
+- [ ] Decide: stop sending personal data to Sentry (`send_default_pii=True`)

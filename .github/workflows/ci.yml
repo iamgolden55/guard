@@ -95,6 +95,9 @@ jobs:
           api/tests/test_sia_assignment_warnings.py
           api/tests/test_p2_exchange_authz.py
           api/tests/test_p2_writes_authz.py
+          api/tests/test_p2_money_integrity.py
+          api/tests/test_p2_ops.py
+          finance_integrations/test_webhook_payments.py
           api/tests/test_tenancy_ratchet.py
           shifts/test_shift_authz.py
           shifts/test_overnight_attendance.py
