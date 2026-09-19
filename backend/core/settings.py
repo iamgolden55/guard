@@ -143,6 +143,10 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD', 'postgres'),
         'HOST': os.getenv('DB_HOST', 'localhost'),
         'PORT': os.getenv('DB_PORT', '5432'),
+        # Django derives the test DB name from NAME, so two concurrent pytest runs
+        # collide on the same test_<name> database. Set DJANGO_TEST_DB_NAME per run
+        # to isolate them. None keeps Django's default.
+        'TEST': {'NAME': os.getenv('DJANGO_TEST_DB_NAME')},
     }
 }
 

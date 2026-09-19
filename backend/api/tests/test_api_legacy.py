@@ -2,7 +2,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
-from .models import User, StaffProfile
+from ..models import User, StaffProfile
 import json
 
 class AuthenticationRedirectionTests(TestCase):

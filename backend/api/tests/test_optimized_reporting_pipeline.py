@@ -6,6 +6,12 @@ Comprehensive test suite for the complete async reporting pipeline with
 performance optimizations, monitoring, and production features.
 """
 
+import pytest
+
+# The modules under test import psutil, which is not a declared dependency. Skip
+# the file rather than letting one ImportError abort collection of the whole run.
+pytest.importorskip("psutil")
+
 import os
 import json
 import time

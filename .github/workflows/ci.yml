@@ -1,0 +1,188 @@
+name: CI
+
+# The merge gate. Render and Vercel auto-deploy from main, so this is the only
+# automated check between a merge and production. Required checks (set in branch
+# protection): backend-guards, frontend, mobile, secrets. backend-full is
+# informational until the standing failures are repaired (AUDIT-2026-09-17.md).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Mirrors the docker-compose `api` environment. Nothing here is a real secret.
+  DJANGO_SETTINGS_MODULE: core.settings
+  DJANGO_SECRET_KEY: ci-only-not-a-secret
+  DJANGO_DEBUG: "True"
+  DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,testserver
+  DB_HOST: localhost
+  DB_NAME: meadsecurity
+  DB_USER: meadsecurity
+  DB_PASSWORD: meadsecurity
+  DB_PORT: "5432"
+  REDIS_URL: redis://localhost:6379/0
+  CELERY_BROKER_URL: redis://localhost:6379/1
+  CELERY_RESULT_BACKEND: redis://localhost:6379/2
+  EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
+  DEFAULT_FROM_EMAIL: "Info <info@example.com>"
+  HR_FROM_EMAIL: "HR <hr@example.com>"
+  INFO_FROM_EMAIL: "Info <info@example.com>"
+  PAYMENT_FROM_EMAIL: "Payments <payment@example.com>"
+  FRONTEND_URL: http://localhost:3000
+
+jobs:
+  backend-guards:
+    name: backend-guards
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: meadsecurity
+          POSTGRES_USER: meadsecurity
+          POSTGRES_PASSWORD: meadsecurity
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U meadsecurity"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements/*.txt
+      - run: pip install -r requirements/dev.txt
+      - name: Throwaway encryption key
+        run: echo "FINANCE_ENCRYPTION_KEY=$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> "$GITHUB_ENV"
+      - name: No unmigrated model changes
+        run: python manage.py makemigrations --check --dry-run
+      # The regression guards for every security and money fix already made.
+      # All must pass. Add a file here when it guards a fix.
+      - name: Regression guards
+        run: >-
+          pytest -q
+          api/tests/test_tenant_isolation.py
+          api/tests/test_company_switching.py
+          api/tests/test_invoice_authz.py
+          api/tests/test_invoice_concurrency.py
+          api/tests/test_invoice_lock.py
+          api/tests/test_sia_authz.py
+          api/tests/test_sia_document_access.py
+          api/tests/test_sia_licence_documents.py
+          api/tests/test_venue_geofence_authz.py
+          api/tests/test_serializer_mass_assignment.py
+          api/tests/test_payroll_math.py
+          api/tests/test_ot_basis.py
+          api/tests/test_shift_audit_trail.py
+          api/tests/test_statutory_check_integrity.py
+          shifts/test_shift_authz.py
+          shifts/test_overnight_attendance.py
+          shifts/test_checkin_window.py
+          shifts/tests.py
+
+  backend-full:
+    name: backend-full (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: meadsecurity
+          POSTGRES_USER: meadsecurity
+          POSTGRES_PASSWORD: meadsecurity
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U meadsecurity"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements/*.txt
+      - run: pip install -r requirements/dev.txt
+      - name: Throwaway encryption key
+        run: echo "FINANCE_ENCRYPTION_KEY=$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> "$GITHUB_ENV"
+      - run: pytest -q --tb=line
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # `npm run build` is `tsc --noEmit && vite build`, so it type-checks too.
+      - run: npm run build
+      # Biome has a standing error count; report it without failing the job
+      # until it is burned down. `npm run lint` uses --write, so call biome directly.
+      - name: Biome (informational)
+        run: npx biome lint . || true
+
+  mobile:
+    name: mobile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm test -- --ci
+
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Scan only the commits this change introduces. Credentials already in
+      # history must be rotated at the provider; scanning cannot unpublish them.
+      - name: gitleaks
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          docker run --rm -v "$PWD:/repo" -w /repo zricethezav/gitleaks:v8.18.4 \
+            detect --source /repo --log-opts="$RANGE" --redact --verbose
