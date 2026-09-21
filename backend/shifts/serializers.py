@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.utils import timezone
 from api.models import Shift, Venue, User, ShiftExchange, OpenShiftRequest, ContractorUnavailability  # Import from api.models
+from api.utils import profile_photos
 from django.contrib.auth import get_user_model
 from api.utils.shift_validators import check_shift_overlap, check_exact_duplicate
 
@@ -371,8 +372,12 @@ class ShiftSerializer(serializers.ModelSerializer):
                 # Get profile image URL if available
                 profile_photo = None
                 if hasattr(shift.staff_user, 'profile') and shift.staff_user.profile:
-                    # Field is profile_image_url (a URL string), not profile_photo
-                    profile_photo = shift.staff_user.profile.profile_image_url or None
+                    # The column holds a storage key; sign it into a link the
+                    # app can load.
+                    profile_photo = profile_photos.signed_url(
+                        shift.staff_user.profile.profile_image_url,
+                        self.context.get('request'),
+                    )
 
                 coworkers.append({
                     'id': shift.staff_user.id,

@@ -3,6 +3,7 @@ import re
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .utils.shift_validators import check_shift_overlap
+from .utils import profile_photos
 from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
     StaffAvailability, Venue, VenueTermsAcceptance, PreferredVenue,
@@ -247,6 +248,12 @@ class StaffProfileSerializer(serializers.ModelSerializer):
     bank_details = BankDetailsSerializer(required=False, allow_null=True)  # FIXED: Allow updates
     sia_licenses = SIALicenseSerializer(many=True, read_only=True)
     availability = StaffAvailabilitySerializer(many=True, read_only=True)
+    # The column holds a storage key; what a client needs is a link it can load
+    # in an <img> with no Authorization header. Method fields, so it is also no
+    # longer writable — a client could otherwise point their own avatar at any
+    # key, including another officer's licence scan, and have the server sign it.
+    profile_image_url = serializers.SerializerMethodField()
+    profileImageUrl = serializers.SerializerMethodField()
 
     # Add security roles from User model for frontend compatibility
     security_roles = serializers.ReadOnlyField(source='user.security_roles')
@@ -296,6 +303,14 @@ class StaffProfileSerializer(serializers.ModelSerializer):
     def get_employment_type(self, obj):
         """Return employment type object for mobile compatibility (same as employment_type_details)"""
         return self.get_employment_type_details(obj)
+
+    def get_profile_image_url(self, obj):
+        return profile_photos.signed_url(
+            obj.profile_image_url, self.context.get('request'),
+        )
+
+    def get_profileImageUrl(self, obj):
+        return self.get_profile_image_url(obj)
 
     def update(self, instance, validated_data):
         """Handle nested bank_details updates with atomic transaction"""
@@ -356,7 +371,7 @@ class StaffProfileSerializer(serializers.ModelSerializer):
         model = StaffProfile
         fields = (
             'id', 'user', 'employment_type', 'employment_type_details', 'phone_number', 'date_of_birth', 'national_insurance_number',
-            'street', 'city', 'postal_code', 'country', 'profile_image_url', 'notes',
+            'street', 'city', 'postal_code', 'country', 'profile_image_url', 'profileImageUrl', 'notes',
             'password_last_changed', 'is_approved', 'pay_frequency', 'created_at', 'updated_at',
             'emergency_contacts', 'bank_details', 'sia_licenses', 'availability',
             'security_roles', 'securityRoles', 'siaLicenses', 'bankDetails', 'isApproved', 'employmentType', 'passwordLastChanged',

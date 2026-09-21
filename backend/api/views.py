@@ -3,7 +3,6 @@ import logging
 import re
 import uuid
 from decimal import Decimal
-from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -23,7 +22,7 @@ from rest_framework.exceptions import APIException, AuthenticationFailed, Valida
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from api.permissions import IsManagerOrAdmin, IsAdminRole
 from api.middleware.tenant_middleware import resolve_request_company
-from api.utils import sia_documents
+from api.utils import profile_photos, sia_documents
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -1169,7 +1168,9 @@ class UserViewSet(viewsets.ModelViewSet):
                 'last_name': member.last_name,
                 'role': member.role,
                 'security_roles': member.security_roles or [],
-                'profile_image_url': profile.profile_image_url if profile else None,
+                'profile_image_url': profile_photos.signed_url(
+                    profile.profile_image_url, request,
+                ) if profile else None,
                 'employment_type': employment_type_name,
                 'sia_license_types': sia_license_types,
                 'is_on_shift': active_shift is not None,
@@ -3812,6 +3813,20 @@ class SystemSettingsView(APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+def _own_photo_url(user, request):
+    """The signed link to a user's own profile photo, or None.
+
+    Read from the row rather than `user.profile`: the reverse relation can be a
+    cached instance loaded before the photo was written.
+    """
+    return profile_photos.signed_url(
+        StaffProfile.objects.filter(user=user)
+        .values_list('profile_image_url', flat=True).first(),
+        request,
+    )
+
+
 @api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def my_profile(request):
@@ -3826,7 +3841,7 @@ def my_profile(request):
             profile = StaffProfile.objects.get(user=request.user)
             # User has a staff profile, handle normally
             if request.method == 'GET':
-                serializer = StaffProfileSerializer(profile)
+                serializer = StaffProfileSerializer(profile, context={'request': request})
                 return Response(serializer.data)
             elif request.method == 'PATCH':
                 # List of fields that can't be updated by staff users
@@ -4010,7 +4025,7 @@ def my_profile(request):
                     'relationship': '',
                     'phoneNumber': ''
                 },
-                'profileImageUrl': None,
+                'profileImageUrl': _own_photo_url(user, request),
                 'availableDays': [],
                 'preferredVenues': [],
                 'notes': '',
@@ -4238,7 +4253,7 @@ def my_profile(request):
                     'relationship': '',
                     'phoneNumber': ''
                 },
-                'profileImageUrl': None,
+                'profileImageUrl': _own_photo_url(user, request),
                 'availableDays': [],
                 'preferredVenues': [],
                 'notes': '',
@@ -4518,15 +4533,6 @@ class ProfilePhotoUploadView(APIView):
             return True
         return False
 
-    def sanitize_filename(self, filename):
-        """Sanitize filename for safe storage."""
-        name, ext = os.path.splitext(filename)
-        name = name.replace(' ', '_')
-        name = re.sub(r'[^\w\-.]', '_', name)
-        name = re.sub(r'_+', '_', name)
-        name = name.strip('_')
-        return f"{name}{ext}"
-
     def post(self, request, format=None):
         logger = logging.getLogger(__name__)
 
@@ -4574,47 +4580,27 @@ class ProfilePhotoUploadView(APIView):
                 }
             )
 
-            # Generate unique filename to avoid conflicts
-            ext = os.path.splitext(photo.name)[1].lower()
-            unique_filename = f"user_{request.user.id}_{uuid.uuid4().hex[:8]}{ext}"
-            sanitized_filename = self.sanitize_filename(unique_filename)
+            # The row holds the storage key. It used to hold a URL built from
+            # MEDIA_URL, which production does not serve — every photo uploaded
+            # that way was unreachable, whatever the app did with it. Readers
+            # sign the key on the way out instead.
+            old_key = profile_photos.storage_key(profile.profile_image_url)
+            key = profile_photos.store(
+                photo, request.user.id, profile_photos.extension_for(photo.name),
+            )
 
-            # Save to profile_photos directory
-            upload_dir = 'profile_photos/'
-            file_path = os.path.join(upload_dir, sanitized_filename)
-            
-            # Save the file
-            path = default_storage.save(file_path, ContentFile(photo.read()))
-            
-            # Build the URL
-            encoded_path = quote(path, safe='/')
-            if settings.MEDIA_URL.startswith('http'):
-                file_url = settings.MEDIA_URL + encoded_path
-            else:
-                scheme = request.scheme
-                host = request.get_host()
-                file_url = f"{scheme}://{host}{settings.MEDIA_URL}{encoded_path}"
-
-            # Update the staff profile with the new photo URL
-            old_photo_url = profile.profile_image_url
-            profile.profile_image_url = file_url
+            profile.profile_image_url = key
             profile.save(update_fields=['profile_image_url', 'updated_at'])
 
-            logger.info(f"Profile photo uploaded for user {request.user.id}: {file_url}")
+            logger.info(f"Profile photo uploaded for user {request.user.id}: {key}")
 
-            # Optionally delete old photo file if it exists in our storage
-            if old_photo_url and 'profile_photos/' in old_photo_url:
-                try:
-                    old_path = old_photo_url.split('profile_photos/')[-1]
-                    old_file_path = f"profile_photos/{old_path}"
-                    if default_storage.exists(old_file_path):
-                        default_storage.delete(old_file_path)
-                        logger.info(f"Deleted old profile photo: {old_file_path}")
-                except Exception as e:
-                    logger.warning(f"Failed to delete old profile photo: {e}")
+            if old_key and old_key != key:
+                profile_photos.delete_quietly(old_key)
 
+            file_url = profile_photos.signed_url(key, request)
             return Response({
                 'url': file_url,
+                'profile_image_url': file_url,
                 'message': 'Profile photo uploaded successfully'
             }, status=status.HTTP_201_CREATED)
 

@@ -213,7 +213,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-MEDIA_URL = 'media/'
+# Leading slash matters: the profile-photo view used to build `f'{scheme}://{host}{MEDIA_URL}{path}'`,
+# which without it produced `https://…onrender.commedia/profile_photos/…`.
+MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Uploaded files.
@@ -251,6 +253,13 @@ STORAGES = {
             'default_acl': None,
             'file_overwrite': False,
             'location': os.getenv('R2_LOCATION', ''),
+            # Profile photos are handed out as signed links, because an
+            # <img> sends no Authorization header. Seven days is the
+            # SigV4 maximum; the app refetches the profile on launch, so
+            # a link is replaced long before it lapses. Licence scans
+            # never use this — they are streamed through an
+            # authenticated view instead.
+            'querystring_expire': 7 * 24 * 60 * 60,
         },
     } if USE_R2_STORAGE else {
         'BACKEND': 'django.core.files.storage.FileSystemStorage',
