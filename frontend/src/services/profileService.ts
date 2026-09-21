@@ -243,11 +243,22 @@ class ProfileService {
    * Upload a profile image
    */
   async uploadProfileImage(imageFile: File): Promise<{ imageUrl: string }> {
+    // Four things were wrong here and the photo never left the browser:
+    // `/profiles/me/image` is not a route, the field is `photo`, the default
+    // JSON content type makes axios stringify the FormData and drop the file,
+    // and the response key is `url`.
     const formData = new FormData();
-    formData.append('profile_image', imageFile);
+    formData.append('photo', imageFile);
 
-    const response = await api.post<{ imageUrl: string }>('/api/v1/profiles/me/image', formData);
-    return response.data;
+    const response = await api.post<{ url: string; profile_image_url: string }>(
+      '/api/v1/staff/profile/upload-photo/',
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60_000,
+      },
+    );
+    return { imageUrl: response.data.url ?? response.data.profile_image_url };
   }
 
   /**
