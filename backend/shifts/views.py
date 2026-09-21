@@ -5,6 +5,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from api.models import Shift  # Import from api.models instead
+from api.utils import profile_photos
 from .serializers import (
     ShiftSerializer,
     ShiftDetailSerializer,
@@ -2306,7 +2307,9 @@ class ShiftViewSet(viewsets.ModelViewSet):
                     'id': f'staff_{u.id}',
                     'title': f"{u.first_name} {u.last_name}".strip() or u.username,
                     'role': role_display,
-                    'avatar': getattr(getattr(u, 'profile', None), 'profile_image_url', None) or '',
+                    'avatar': profile_photos.signed_url(
+                        getattr(getattr(u, 'profile', None), 'profile_image_url', None), request,
+                    ) or '',
                     'qualifications': qualifications,
                     'weeklyHours': float(weekly_hours),
                     'type': 'staff',

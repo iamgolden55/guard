@@ -8,7 +8,7 @@ from django.dispatch import receiver
 from django.db import transaction
 from datetime import timedelta
 from django.utils import timezone
-from .models import SecurityCompany, Shift, OpenShiftRequest, ShiftExchange, AuditLog, ShiftStatusHistory, Notification, SIALicense
+from .models import SecurityCompany, Shift, OpenShiftRequest, ShiftExchange, AuditLog, ShiftStatusHistory, Notification, SIALicense, StaffProfile
 from .services import push_notification_service
 from .services.shift_notifications import notify_shift_assigned
 import logging
@@ -1270,3 +1270,18 @@ def delete_sia_licence_document(sender, instance, **kwargs):
     key = sia_documents.key_for_licence(instance)
     if key:
         transaction.on_commit(lambda: sia_documents.delete_quietly(key))
+
+
+@receiver(pre_delete, sender=StaffProfile)
+def delete_staff_profile_photo(sender, instance, **kwargs):
+    """Remove an officer's photo from storage when their profile goes.
+
+    Erasing an account (`hard_delete_expired_accounts`) deletes the profile;
+    without this the photo stayed in the bucket, which is exactly the data the
+    erasure was meant to remove.
+    """
+    from .utils import profile_photos
+
+    key = profile_photos.storage_key(instance.profile_image_url)
+    if key:
+        transaction.on_commit(lambda: profile_photos.delete_quietly(key))
