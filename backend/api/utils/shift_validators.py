@@ -374,35 +374,11 @@ def validate_shift_warnings(staff_user, start_time, end_time, venue=None, requir
     except ImportError:
         pass
 
-    # 6. Qualification check
+    # 6. Qualification check — one mapping for the whole codebase, which also
+    # flags roles with no known licence instead of skipping them silently.
     if required_role:
-        # Map shift role to SIA license type
-        role_to_license = {
-            'ds': 'ds', 'sg': 'sg', 'cctv': 'cctv', 'cp': 'cp', 'k9': 'k9',
-        }
-        license_type = role_to_license.get(required_role)
-        if license_type:
-            from api.models import StaffProfile
-            try:
-                profile = StaffProfile.objects.get(user_id=user_id)
-                valid_license = SIALicense.objects.filter(
-                    staff_profile=profile,
-                    license_type=license_type,
-                    status='valid',
-                    expiry_date__gte=shift_date,
-                ).exists()
-                if not valid_license:
-                    warnings.append({
-                        'type': 'missing_qualification',
-                        'message': f"Staff lacks valid {dict(SIALicense.LICENSE_TYPE_CHOICES).get(license_type, license_type)} license",
-                        'severity': 'warning'
-                    })
-            except StaffProfile.DoesNotExist:
-                warnings.append({
-                    'type': 'no_profile',
-                    'message': "Staff has no profile — cannot verify qualifications",
-                    'severity': 'info'
-                })
+        from api.utils.licence_requirements import licence_warnings
+        warnings.extend(licence_warnings(staff_user, required_role, shift_date))
 
     return {
         'valid': len(errors) == 0,

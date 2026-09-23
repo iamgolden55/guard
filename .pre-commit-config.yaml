@@ -1,0 +1,8 @@
+# Blocks a commit that contains a credential. Install once per clone:
+#   pip install pre-commit && pre-commit install
+# CI runs the same scanner on every PR (.github/workflows/ci.yml, job `secrets`).
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks

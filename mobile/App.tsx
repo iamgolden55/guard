@@ -33,7 +33,6 @@ import { useFonts } from './src/hooks/useFonts';
 import { useNotifications } from './src/hooks/useNotifications';
 
 // Sync Service
-import { syncService } from './src/services/syncService';
 
 // Logger with Sentry
 import { logger } from './src/utils/logger';
@@ -61,20 +60,10 @@ function AppContent() {
   // Initialize notifications
   useNotifications();
 
-  // Clear old failed sync items on app startup
-  useEffect(() => {
-    const clearOldFailedItems = async () => {
-      try {
-        console.log('[App] Clearing old failed sync items...');
-        await syncService.clearFailedItems();
-        console.log('[App] Old failed sync items cleared successfully');
-      } catch (error) {
-        console.error('[App] Error clearing failed sync items:', error);
-      }
-    };
-
-    clearOldFailedItems();
-  }, []);
+  // Failed sync items are no longer purged at startup. A failed check-in or
+  // check-out is the only record that the officer tried; deleting it on every
+  // launch erased the evidence a manager needs to pay a worked shift
+  // (AUDIT-2026-09-17 MOB-2).
 
   // While the launch animation is showing, keep the root dark so the native
   // Expo splash blends into LaunchScreenV2's canvas without a white flash.

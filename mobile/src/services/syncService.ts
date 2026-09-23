@@ -59,7 +59,35 @@ class SyncService {
       return;
     }
     this.initialized = true;
+    void this.recoverInterruptedItems();
     this.setupNetworkListener();
+  }
+
+  /**
+   * Put items left in `processing` back in the queue.
+   *
+   * An item is marked `processing` just before its request is sent. If the
+   * app is killed before the reply, it stayed `processing` forever — never
+   * retried, never counted, never reported. Replaying it is safe: the server
+   * answers a duplicate check-in or check-out with an `already_*` code, which
+   * `isAlreadyCompletedError` treats as done.
+   */
+  async recoverInterruptedItems(): Promise<number> {
+    try {
+      const queue = await database.getSyncQueue();
+      const stranded = queue.filter((item) => item.status === 'processing');
+      for (const item of stranded) {
+        await database.updateSyncQueueItem(item.id, { status: 'pending' });
+      }
+      if (stranded.length > 0) {
+        logger.info('[SyncService] Re-queued interrupted items', { count: stranded.length });
+        this.notifyListeners();
+      }
+      return stranded.length;
+    } catch (error) {
+      logger.error('[SyncService] Could not recover interrupted items', { error });
+      return 0;
+    }
   }
 
   /**
@@ -421,7 +449,11 @@ class SyncService {
   }
 
   /**
-   * Clear failed items from queue
+   * Clear failed items from queue.
+   *
+   * Deliberately not called at startup any more: a failed attendance item is
+   * the only record that an officer tried to check in or out, and deleting it
+   * on launch erased the evidence. Keep this for an explicit user action.
    */
   async clearFailedItems() {
     const queue = await database.getSyncQueue();

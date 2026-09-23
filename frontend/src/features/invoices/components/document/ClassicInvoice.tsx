@@ -252,7 +252,11 @@ export function ClassicInvoice({ inv, accent }: { inv: InvoiceRecord; accent: Ac
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
-                {money(it.rate)}
+                {it.needsRate ? (
+                  <span style={{ color: "#c50f1f", fontWeight: 600 }}>Rate needed</span>
+                ) : (
+                  money(it.rate)
+                )}
               </td>
               <td
                 style={{

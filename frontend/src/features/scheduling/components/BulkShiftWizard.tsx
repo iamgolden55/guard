@@ -2127,7 +2127,7 @@ function SlotChipEditor({
             cursor: "pointer",
             font: "inherit",
           }}
-          title={!edited ? slot.reason : undefined}
+          title={!edited ? (slot.reason ?? slot.licence_warning) : undefined}
         >
           <span aria-hidden>{slotSymbol(effectiveStatus)}</span>
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -2136,6 +2136,11 @@ function SlotChipEditor({
           {!edited && slot.status === "conflict" && slot.reason && (
             <span style={{ fontStyle: "italic", fontWeight: 400, opacity: 0.8 }}>
               · {slot.reason}
+            </span>
+          )}
+          {!edited && slot.status === "ok" && slot.licence_warning && (
+            <span style={{ fontStyle: "italic", fontWeight: 400, opacity: 0.8 }}>
+              · licence check
             </span>
           )}
         </button>
