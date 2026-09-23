@@ -288,6 +288,30 @@ class IsManagerOrAdmin(BasePermission):
         return getattr(user, 'role', None) in ('admin', 'manager')
 
 
+class ManagerOnlyWritesMixin:
+    """ViewSet mixin: named write actions need a manager or admin.
+
+    Reads, and any action not named, keep the ViewSet's own permissions. Name
+    the default verbs an officer must not use — `update`/`partial_update`/
+    `destroy` on a record they may create but not rewrite (a statutory check),
+    or `create` as well on one they should not originate (a compliance
+    violation). Put it first in the bases so its `get_permissions` runs.
+
+    Found in bulk by walking every ViewSet as an officer (AUDIT-2026-09-17,
+    Phase 2A): 17 let an officer rewrite or delete records that carry pay,
+    approval or statutory evidence, because only a custom action like
+    `resolve` checked the role.
+    """
+
+    manager_only_actions = IsManagerOrAdmin.WRITE_ACTIONS
+
+    def get_permissions(self):
+        permissions = super().get_permissions()
+        if getattr(self, 'action', None) in self.manager_only_actions:
+            permissions = [*permissions, IsManagerOrAdmin()]
+        return permissions
+
+
 class IsAdminRole(BasePermission):
     """Write access for admins only.
 

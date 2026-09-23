@@ -196,6 +196,9 @@ export function useComplianceData({
       metricsQuery.isLoading ||
       profilesQuery.isLoading,
     isViolationsLoading: violationsQuery.isLoading,
+    // Separate from `error` so the violations panels can refuse to show an
+    // empty list as "no violations" when the list simply failed to load.
+    isViolationsError: violationsQuery.isError,
     isMetricsLoading: metricsQuery.isLoading,
     isProfilesLoading: profilesQuery.isLoading,
     isDashboardLoading: dashboardQuery.isLoading,

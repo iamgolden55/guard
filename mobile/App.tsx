@@ -8,7 +8,7 @@ import './globals';
 
 import React, { useEffect, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet } from 'react-native';
+import { Alert, View, StyleSheet } from 'react-native';
 import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -36,6 +36,11 @@ import { useNotifications } from './src/hooks/useNotifications';
 
 // Logger with Sentry
 import { logger } from './src/utils/logger';
+import { installAppVersionOnAxios, onUpdateRequired } from './src/utils/appVersion';
+
+// Every request says which build is calling, so the server can refuse builds
+// with known defects instead of letting them run until the officer updates.
+installAppVersionOnAxios();
 
 // Animated Splash — V2 dark premium (Breathing horizon). The original
 // Lottie-based `AnimatedSplash` still lives at src/components/AnimatedSplash
@@ -59,6 +64,23 @@ function AppContent() {
 
   // Initialize notifications
   useNotifications();
+
+  // The server answers 426 when this build is below its supported minimum.
+  // Say so once, plainly, rather than letting every screen fail in its own way.
+  useEffect(() => {
+    let shown = false;
+    return onUpdateRequired(() => {
+      if (shown) return;
+      shown = true;
+      Alert.alert(
+        'Update required',
+        'This version of the Mead Security app is no longer supported. Install the latest ' +
+          'version to keep checking in and out — your shifts and pay depend on it.',
+        [{ text: 'OK' }],
+        { cancelable: false },
+      );
+    });
+  }, []);
 
   // Failed sync items are no longer purged at startup. A failed check-in or
   // check-out is the only record that the officer tried; deleting it on every

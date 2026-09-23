@@ -149,7 +149,13 @@ export function IntegrationsHeader({
           </div>
         )}
 
-        <Button variant="secondary" leading={<Icon name="external" size={14} />}>
+        {/* Had no handler and there is no marketplace to open. */}
+        <Button
+          variant="secondary"
+          leading={<Icon name="external" size={14} />}
+          disabled
+          title="Not available yet."
+        >
           Browse marketplace
         </Button>
       </div>

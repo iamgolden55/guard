@@ -204,7 +204,10 @@ export function InvLeftPane({
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-          <span style={{ fontSize: 11, color: tokens.color.ink600, fontWeight: 600 }}>
+          <span
+            style={{ fontSize: 11, color: tokens.color.ink600, fontWeight: 600 }}
+            title="Everything not yet paid: draft, pending, approved, sent and overdue"
+          >
             Outstanding
           </span>
           <span

@@ -17,14 +17,42 @@ from django.test import TestCase
 from decimal import Decimal
 from datetime import date, timedelta
 import json
+import unittest
 
 from .models import (
     LeaveType, LeavePolicy, LeaveEntitlement, LeaveRequest,
     BlackoutPeriod, LeaveBalance
 )
-from api.models import EmploymentType, StaffProfile, Venue
+from api.models import (
+    EmploymentType, StaffProfile, Venue, SecurityCompany, UserCompanyMembership
+)
 
 User = get_user_model()
+
+
+def _join_company(*users):
+    """Leave data is scoped to the requester's company, so put every test
+    user in one."""
+    company = SecurityCompany.objects.create(
+        name='Leave Test Co', registration_number='LEAVETEST1'
+    )
+    for user in users:
+        UserCompanyMembership.objects.create(
+            user=user, company=company, role=user.role, is_active=True
+        )
+    return company
+
+
+def _staff_profile_fields():
+    # StaffProfile's required personal details; pay lives on the shift now
+    return dict(
+        phone_number='07700900000',
+        date_of_birth=date(1990, 1, 1),
+        street='1 Test Street',
+        city='London',
+        postal_code='SW1A 1AA',
+        country='United Kingdom',
+    )
 
 
 class TeamOverviewAPITestCase(APITestCase):
@@ -54,6 +82,8 @@ class TeamOverviewAPITestCase(APITestCase):
             role='staff'
         )
 
+        self.company = _join_company(self.admin_user, self.manager_user, self.staff_user)
+
         # Create employment type
         self.employment_type = EmploymentType.objects.create(
             name='Full-time',
@@ -65,7 +95,7 @@ class TeamOverviewAPITestCase(APITestCase):
             StaffProfile.objects.create(
                 user=user,
                 employment_type=self.employment_type,
-                hourly_rate=Decimal('25.00')
+                **_staff_profile_fields()
             )
 
         # Create leave type and policy
@@ -201,6 +231,8 @@ class LeaveReportsAPITestCase(APITestCase):
             role='staff'
         )
 
+        self.company = _join_company(self.admin_user, self.manager_user, self.staff_user)
+
         self.client = APIClient()
 
     def test_reports_list_admin(self):
@@ -265,11 +297,21 @@ class LeaveSettingsAPITestCase(APITestCase):
 
     def setUp(self):
         """Set up test data"""
+        # Leave system settings (SystemConfig) are shared by every company, so
+        # changing them is a platform-staff job: a company admin editing them
+        # would change accruals and notifications for all tenants.
         self.admin_user = User.objects.create_user(
             username='admin',
             email='admin@test.com',
             password='testpass123',
-            role='admin'
+            role='admin',
+            is_staff=True,
+        )
+        self.tenant_admin = User.objects.create_user(
+            username='tenant_admin',
+            email='tenant_admin@test.com',
+            password='testpass123',
+            role='admin',
         )
 
         self.manager_user = User.objects.create_user(
@@ -279,7 +321,15 @@ class LeaveSettingsAPITestCase(APITestCase):
             role='manager'
         )
 
+        self.company = _join_company(self.admin_user, self.manager_user, self.tenant_admin)
+
         self.client = APIClient()
+
+    def test_a_company_admin_cannot_change_platform_leave_settings(self):
+        self.client.force_authenticate(user=self.tenant_admin)
+        url = reverse('leave_management:leave-settings-system-config')
+        response = self.client.put(url, {'accrual_settings': {'x': 1}}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_settings_overview_admin(self):
         """Test settings overview as admin"""
@@ -340,18 +390,31 @@ class BlackoutPeriodsAPITestCase(APITestCase):
 
     def setUp(self):
         """Set up test data"""
+        # Blackout periods have no company of their own (a null venue applies to
+        # everyone), so managing them is platform staff only until they are
+        # scoped by venue__company.
         self.admin_user = User.objects.create_user(
             username='admin',
             email='admin@test.com',
             password='testpass123',
-            role='admin'
+            role='admin',
+            is_staff=True,
         )
+        self.tenant_admin = User.objects.create_user(
+            username='tenant_admin',
+            email='tenant_admin@test.com',
+            password='testpass123',
+            role='admin',
+        )
+
+        self.company = _join_company(self.admin_user, self.tenant_admin)
 
         # Create venue for testing
         self.venue = Venue.objects.create(
+            company=self.company,
             name='Test Venue',
             address='123 Test St',
-            postcode='12345',
+            postal_code='12345',
             capacity=100
         )
 
@@ -374,6 +437,13 @@ class BlackoutPeriodsAPITestCase(APITestCase):
 
         self.client = APIClient()
 
+    def test_a_company_admin_cannot_create_global_blackout_periods(self):
+        self.client.force_authenticate(user=self.tenant_admin)
+        response = self.client.post(
+            reverse('leave_management:blackout-periods-list'), {}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_blackout_periods_list(self):
         """Test blackout periods list"""
         self.client.force_authenticate(user=self.admin_user)
@@ -382,7 +452,7 @@ class BlackoutPeriodsAPITestCase(APITestCase):
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('blackout_periods', response.data)
+        self.assertIn('results', response.data)
         self.assertIn('summary', response.data)
 
     def test_blackout_periods_create(self):
@@ -492,6 +562,8 @@ class EnhancedLeaveRequestAPITestCase(APITestCase):
             role='staff'
         )
 
+        self.company = _join_company(self.admin_user, self.manager_user, self.staff_user)
+
         # Create employment type
         self.employment_type = EmploymentType.objects.create(
             name='Full-time',
@@ -503,7 +575,7 @@ class EnhancedLeaveRequestAPITestCase(APITestCase):
             StaffProfile.objects.create(
                 user=user,
                 employment_type=self.employment_type,
-                hourly_rate=Decimal('25.00')
+                **_staff_profile_fields()
             )
 
         # Create leave type and policy
@@ -540,7 +612,7 @@ class EnhancedLeaveRequestAPITestCase(APITestCase):
         url = reverse('leave_management:leave-requests-list')
 
         data = {
-            'leave_type': self.leave_type.id,
+            'leave_type_id': self.leave_type.id,
             'start_date': (date.today() + timedelta(days=7)).strftime('%Y-%m-%d'),
             'end_date': (date.today() + timedelta(days=7)).strftime('%Y-%m-%d'),
             'days_requested': '1.0',
@@ -560,6 +632,12 @@ class EnhancedLeaveRequestAPITestCase(APITestCase):
         self.assertEqual(leave_request.staff_user, self.staff_user)
         self.assertEqual(leave_request.status, 'pending')
 
+    @unittest.skip(
+        "The hard 'Insufficient leave balance' 400 was deliberately removed from "
+        "LeaveRequestViewSet.create (leave_management/views.py, 'Check leave "
+        "balance' block): an over-balance request is now accepted as pending and "
+        "logged for the manager to decide, matching the mobile 'Submit anyway' flow."
+    )
     def test_create_leave_request_insufficient_balance(self):
         """Test creating leave request with insufficient balance"""
         # Reduce balance to test insufficient balance scenario
@@ -570,7 +648,7 @@ class EnhancedLeaveRequestAPITestCase(APITestCase):
         url = reverse('leave_management:leave-requests-list')
 
         data = {
-            'leave_type': self.leave_type.id,
+            'leave_type_id': self.leave_type.id,
             'start_date': (date.today() + timedelta(days=7)).strftime('%Y-%m-%d'),
             'end_date': (date.today() + timedelta(days=9)).strftime('%Y-%m-%d'),
             'days_requested': '3.0',
@@ -676,7 +754,7 @@ class EnhancedLeaveRequestAPITestCase(APITestCase):
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
+        self.assertEqual(len(response.data['results']), 2)
 
     def test_pending_approvals_manager(self):
         """Test getting pending approvals as manager"""

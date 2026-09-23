@@ -15,6 +15,16 @@ from api.models import (
 User = get_user_model()
 
 
+def make_staff_profile(user, is_approved):
+    # StaffProfile's required personal details
+    return StaffProfile.objects.create(
+        user=user, is_approved=is_approved,
+        phone_number='07700900000', date_of_birth='1990-01-01',
+        street='1 Test Street', city='London', postal_code='SW1A 1AA',
+        country='United Kingdom',
+    )
+
+
 class UserViewSetEligibleStaffTests(APITestCase):
     """Test cases for /api/v1/users/eligible-for-transfer/ endpoint"""
 
@@ -81,10 +91,10 @@ class UserViewSetEligibleStaffTests(APITestCase):
         )
 
         # Create staff profiles
-        StaffProfile.objects.create(user=self.james, is_approved=True)
-        StaffProfile.objects.create(user=self.john, is_approved=True)
-        StaffProfile.objects.create(user=self.mary, is_approved=False)  # Not approved
-        StaffProfile.objects.create(user=self.bob, is_approved=True)
+        make_staff_profile(self.james, True)
+        make_staff_profile(self.john, True)
+        make_staff_profile(self.mary, False)  # Not approved
+        make_staff_profile(self.bob, True)
 
     def test_staff_can_see_company_colleagues(self):
         """Staff user should see approved colleagues from same company"""
@@ -167,7 +177,7 @@ class UserViewSetEligibleStaffTests(APITestCase):
         UserCompanyMembership.objects.create(
             user=solo_user, company=company_c, role='staff', is_active=True
         )
-        StaffProfile.objects.create(user=solo_user, is_approved=True)
+        make_staff_profile(solo_user, True)
 
         self.client.force_authenticate(user=solo_user)
         response = self.client.get('/api/v1/users/eligible-for-transfer/')
@@ -186,6 +196,7 @@ class UserViewSetEligibleStaffTests(APITestCase):
             name="Test Venue",
             company=self.company_a,
             address="123 Test St",
+            capacity=100,
             latitude=51.5074,
             longitude=-0.1278
         )
@@ -252,6 +263,7 @@ class UserViewSetEligibleStaffTests(APITestCase):
             name="Test Venue",
             company=self.company_a,
             address="123 Test St",
+            capacity=100,
             latitude=51.5074,
             longitude=-0.1278
         )

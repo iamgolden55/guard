@@ -64,33 +64,12 @@ app.conf.update(
     timezone=settings.TIME_ZONE,
     enable_utc=True,
 
-    # Beat schedule for periodic tasks
-    beat_schedule={
-        'cleanup-old-reports': {
-            'task': 'api.tasks.cleanup_old_report_files',
-            'schedule': 24.0 * 60 * 60,  # Run daily
-            'options': {'queue': 'cleanup'}
-        },
-        'cleanup-expired-report-jobs': {
-            'task': 'api.tasks.cleanup_expired_report_jobs',
-            'schedule': 6.0 * 60 * 60,  # Run every 6 hours
-            'options': {'queue': 'cleanup'}
-        },
-        # NOTE: Periodic shift notification tasks disabled to prevent duplicates.
-        # Primary scheduled tasks (schedule_shift_reminders) handle all reminders.
-        # These backup tasks were causing duplicate notifications with -1 minute offset.
-        # See: thoughts/shared/research/2025-01-25-duplicate-shift-notifications.md
-        # 'check-shift-reminders': {
-        #     'task': 'api.tasks.check_shift_reminders',
-        #     'schedule': 60.0,  # Every minute
-        #     'options': {'queue': 'notifications'}
-        # },
-        # 'check-missed-checkins': {
-        #     'task': 'api.tasks.check_missed_checkins',
-        #     'schedule': 60.0,  # Every minute
-        #     'options': {'queue': 'notifications'}
-        # },
-    },
+    # There is deliberately no `beat_schedule` here. One used to sit here with
+    # two report-cleanup jobs, and was silently discarded: the schedule Celery
+    # actually runs is CELERY_BEAT_SCHEDULE in core/settings.py. Those two jobs
+    # (cleanup_old_report_files, cleanup_expired_report_jobs) have therefore
+    # never run; enabling them deletes generated report files, so it is a
+    # decision, tracked in REMEDIATION_PROGRESS.md.
 )
 
 

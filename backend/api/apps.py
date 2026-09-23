@@ -11,6 +11,7 @@ class ApiConfig(AppConfig):
     def ready(self):
         """Import signals when app is ready"""
         import api.signals  # noqa: F401
+        import api.checks  # noqa: F401  (registers the production settings checks)
 
         # Logged here rather than in settings, where logging isn't configured yet.
         if not settings.MEDIA_STORAGE_IS_DURABLE:

@@ -276,6 +276,7 @@ export default function CompliancePage() {
           dashboard={data.dashboard}
           recentViolations={data.violations}
           isLoading={data.isDashboardLoading || data.isViolationsLoading}
+          loadFailed={data.isViolationsError}
           onSelectViolation={openDrawer}
         />
       )}
@@ -284,13 +285,19 @@ export default function CompliancePage() {
         <ViolationsView
           violations={visibleViolations}
           isLoading={data.isViolationsLoading}
+          // A failed load is not an empty list. On a compliance screen,
+          // "No violations on file" after an error reads as an all-clear.
           emptyTitle={
-            search ? "No matching violations" : "No violations on file"
+            data.isViolationsError
+              ? "Couldn't load violations"
+              : search ? "No matching violations" : "No violations on file"
           }
           emptyHint={
-            search
-              ? "Try a different name, email, or violation type."
-              : "Compliance breaches will appear here as they're detected."
+            data.isViolationsError
+              ? "This is not an all-clear. Refresh the page or try again shortly."
+              : search
+                ? "Try a different name, email, or violation type."
+                : "Compliance breaches will appear here as they're detected."
           }
           onSelect={openDrawer}
         />

@@ -464,6 +464,14 @@ class InvoiceStatsSerializer(serializers.Serializer):
     buckets = serializers.DictField()
 
 
+#: "Outstanding" is everything not yet paid: the set the web Outbox lists and
+#: counts. For one officer, paid + outstanding here equals the earnings the
+#: mobile app shows (`InvoiceViewSet.stats`). It used to be sent + overdue
+#: only, beside an Outbox count over a wider set, with pending and approved
+#: invoices in no money total at all.
+OUTSTANDING_STATUSES = ('draft', 'pending', 'approved', 'sent', 'overdue')
+
+
 def compute_stats_for_queryset(qs, kind):
     """Aggregate `counts`/`totals`/`buckets` for a billing queryset.
 
@@ -471,9 +479,10 @@ def compute_stats_for_queryset(qs, kind):
     `total_amount`/`status`/`due_date` being present on both.
     """
     today = timezone.localdate()
-    counts = {'total': 0, 'draft': 0, 'sent': 0, 'pending': 0, 'overdue': 0,
-              'paid': 0, 'rejected': 0, 'resolved': 0}
-    totals = {'sent': 0.0, 'overdue': 0.0, 'paid': 0.0, 'draft': 0.0, 'outstanding': 0.0}
+    counts = {'total': 0, 'draft': 0, 'sent': 0, 'pending': 0, 'approved': 0,
+              'overdue': 0, 'paid': 0, 'rejected': 0, 'resolved': 0}
+    totals = {'sent': 0.0, 'overdue': 0.0, 'paid': 0.0, 'draft': 0.0,
+              'pending': 0.0, 'approved': 0.0, 'outstanding': 0.0}
     buckets = {'0-30': 0.0, '31-60': 0.0, '61-90': 0.0, '90+': 0.0}
 
     for inv in qs:
@@ -490,7 +499,7 @@ def compute_stats_for_queryset(qs, kind):
             counts[derived_status] = counts.get(derived_status, 0) + 1
         if derived_status in totals:
             totals[derived_status] += amt
-        if derived_status in ('sent', 'overdue'):
+        if derived_status in OUTSTANDING_STATUSES:
             totals['outstanding'] += amt
         if derived_status == 'overdue' and inv.due_date:
             days_late = (today - inv.due_date).days

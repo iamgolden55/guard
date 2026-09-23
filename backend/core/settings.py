@@ -86,6 +86,9 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Serve static files in production
     'corsheaders.middleware.CorsMiddleware',
+    # 426 for mobile builds below MIN_APP_BUILD; before auth, so a refused
+    # build does no work at all.
+    'api.middleware.app_version.MinimumAppBuildMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -444,6 +447,8 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
+    # A delete refused to protect pay history answers 409, not 500.
+    'EXCEPTION_HANDLER': 'api.exception_handlers.exception_handler',
 }
 
 # JWT settings
@@ -617,6 +622,20 @@ REGISTRATION_REQUIRES_INVITE = (
     os.getenv('REGISTRATION_REQUIRES_INVITE', 'False') == 'True'
 )
 
+# Oldest mobile build the API still serves, per platform (the app's
+# `ios.buildNumber` / `android.versionCode`). Below it, requests get 426 and the
+# app shows "Update required". 0 (the default) refuses nothing. Raise it only
+# once the fixed build is in the stores: see api/middleware/app_version.py.
+MIN_APP_BUILD = {
+    'ios': int(os.getenv('MIN_APP_BUILD_IOS', '0') or 0),
+    'android': int(os.getenv('MIN_APP_BUILD_ANDROID', '0') or 0),
+}
+
+# One scheduler everywhere. Render's beat service passes this explicitly; local
+# compose used Celery's file-based default, so dev and prod kept different
+# schedules and last-run records.
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
 CELERY_BEAT_SCHEDULE = {
     'update-expired-sia-licenses': {
         'task': 'api.tasks.update_expired_sia_licenses',
@@ -649,6 +668,12 @@ CELERY_BEAT_SCHEDULE = {
         # 1st of each month at 06:00 UTC — generates the previous calendar
         # month's run for officers whose pay_frequency='monthly'.
         'schedule': crontab(day_of_month=1, hour=6, minute=0),
+    },
+    'check-payroll-runs-exist': {
+        'task': 'api.tasks.check_payroll_runs_exist',
+        # Daily, three hours after the weekly/monthly runs are due. Logs an
+        # ERROR (so Sentry alerts) for each company missing an expected run.
+        'schedule': crontab(hour=9, minute=0),
     },
     'flag-missed-capacity-checks': {
         'task': 'api.tasks.flag_missed_capacity_checks',

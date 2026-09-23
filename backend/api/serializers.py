@@ -439,7 +439,8 @@ class VenueTermsAcceptanceSerializer(serializers.ModelSerializer):
     class Meta:
         model = VenueTermsAcceptance
         fields = '__all__'
-        read_only_fields = ('created_at',)
+        # Set from the request user in VenueTermsAcceptanceViewSet.perform_create.
+        read_only_fields = ('created_at', 'staff_user')
 
 class PreferredVenueSerializer(serializers.ModelSerializer):
     venue_details = VenueSerializer(source='venue', read_only=True)
@@ -1016,7 +1017,13 @@ class ShiftExchangeSerializer(serializers.ModelSerializer):
     class Meta:
         model = ShiftExchange
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at', 'requesting_user')
+        # Workflow state is set by the accept / approve / reject / cancel
+        # actions, which check who may move it. Writable here, a party to the
+        # swap could create or PATCH it straight to `approved`.
+        read_only_fields = (
+            'created_at', 'updated_at', 'requesting_user',
+            'status', 'manager_user', 'manager_notes', 'target_response',
+        )
 
 class OpenShiftRequestSerializer(serializers.ModelSerializer):
     original_shift_details = ShiftSerializer(source='original_shift', read_only=True)
@@ -1027,7 +1034,11 @@ class OpenShiftRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = OpenShiftRequest
         fields = '__all__'
-        read_only_fields = ('created_at', 'updated_at', 'claim_time')
+        # Set by the claim / approve / reject / cancel actions only.
+        read_only_fields = (
+            'created_at', 'updated_at', 'claim_time',
+            'status', 'claimed_by', 'manager_user', 'manager_notes',
+        )
 
 class BankHolidaySerializer(serializers.ModelSerializer):
     """Serializer for BankHoliday model"""
@@ -1672,6 +1683,19 @@ class WorkingHoursMetricsSerializer(serializers.ModelSerializer):
     period_type_display = serializers.CharField(source='get_period_type_display', read_only=True)
     overtime_percentage = serializers.SerializerMethodField()
     completion_rate = serializers.SerializerMethodField()
+    # The field list named ten columns the model does not have, so DRF raised
+    # ImproperlyConfigured and GET /compliance/metrics/ was a 500 whenever a
+    # company had any metrics row. The names with a real equivalent keep their
+    # key; the rest (no_show_shifts, late_arrivals, early_departures,
+    # longest/shortest_shift_hours, penalty_cost) never had data and are gone.
+    average_shift_length = serializers.DecimalField(
+        source='average_shift_duration', max_digits=5, decimal_places=2, read_only=True,
+    )
+    overtime_cost = serializers.DecimalField(
+        source='estimated_overtime_pay', max_digits=10, decimal_places=2, read_only=True,
+    )
+    created_at = serializers.DateTimeField(source='calculated_at', read_only=True)
+    updated_at = serializers.DateTimeField(source='last_updated', read_only=True)
 
     class Meta:
         model = WorkingHoursMetrics
@@ -1679,10 +1703,9 @@ class WorkingHoursMetricsSerializer(serializers.ModelSerializer):
             'id', 'user', 'user_data', 'period_type', 'period_type_display',
             'period_start', 'period_end', 'total_hours_worked', 'regular_hours',
             'overtime_hours', 'break_hours', 'total_shifts', 'completed_shifts',
-            'cancelled_shifts', 'no_show_shifts', 'late_arrivals', 'early_departures',
-            'average_shift_length', 'longest_shift_hours', 'shortest_shift_hours',
+            'cancelled_shifts', 'average_shift_length',
             'violation_count', 'warning_count', 'compliance_score',
-            'overtime_cost', 'penalty_cost', 'overtime_percentage', 'completion_rate',
+            'overtime_cost', 'overtime_percentage', 'completion_rate',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
@@ -2365,6 +2388,33 @@ class UserCompanyMembershipSerializer(serializers.ModelSerializer):
         return obj.is_invitation_valid()
 
 
+_SECRET_KEY = __import__('re').compile(r'(key|secret|token|password|webhook)', __import__('re').I)
+REDACTED = '[redacted]'
+
+
+def redact_secrets(value):
+    """Replace credential values in a JSON-ish structure with a placeholder.
+
+    Onboarding stored the raw integrations payload — Deputy API key, payroll
+    and accounting client secrets, a Slack webhook — in `step_data`, and every
+    onboarding response returned it to any member (AUDIT-2026-09-17, 2B/E1).
+    Rows already written that way stay in the database (D-D: no rewrites), so
+    output is redacted regardless of what is stored.
+    """
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            if isinstance(k, str) and (k.endswith('_credentials') or _SECRET_KEY.search(k)) and v:
+                out[k] = REDACTED
+            else:
+                out[k] = redact_secrets(v)
+        return out
+    if isinstance(value, list):
+        return [redact_secrets(v) for v in value]
+    return value
+
+
+
 class CompanyOnboardingSerializer(serializers.ModelSerializer):
     """
     Serializer for company onboarding progress tracking.
@@ -2375,6 +2425,12 @@ class CompanyOnboardingSerializer(serializers.ModelSerializer):
     next_step = serializers.SerializerMethodField()
     company_name = serializers.CharField(source='company.name', read_only=True)
     time_spent_display = serializers.SerializerMethodField()
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if 'step_data' in data:
+            data['step_data'] = redact_secrets(data['step_data'])
+        return data
 
     class Meta:
         model = CompanyOnboarding
@@ -2784,6 +2840,12 @@ class CompanyIntegrationSerializer(serializers.ModelSerializer):
     health_status_display = serializers.CharField(source='get_health_status_display', read_only=True)
     last_sync_display = serializers.SerializerMethodField()
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if 'configuration' in data:
+            data['configuration'] = redact_secrets(data['configuration'])
+        return data
+
     class Meta:
         model = CompanyIntegration
         fields = [
@@ -3173,7 +3235,12 @@ class IncidentReportSerializer(serializers.ModelSerializer):
             'resolved', 'resolved_at', 'resolved_by', 'resolved_by_name',
             'created_at', 'updated_at',
         )
-        read_only_fields = ('reported_by', 'created_at', 'updated_at')
+        # Resolution is the manager-only `resolve` action's to set; writable
+        # here, an officer could PATCH their own report to resolved.
+        read_only_fields = (
+            'reported_by', 'created_at', 'updated_at',
+            'resolved', 'resolved_by', 'resolved_at',
+        )
 
     def get_reported_by_name(self, obj):
         return f"{obj.reported_by.first_name} {obj.reported_by.last_name}".strip() or obj.reported_by.username

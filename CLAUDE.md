@@ -40,7 +40,7 @@ docker compose build api     # rebuild after dependency changes
 | db            | localhost:5432        | Postgres 16                         |
 | redis         | localhost:6379        | Redis 7 (channel layer + Celery)    |
 | celery-worker | —                     | Celery worker                       |
-| celery-beat   | —                     | Celery beat (file scheduler here; Render uses DatabaseScheduler) |
+| celery-beat   | —                     | Celery beat (DatabaseScheduler, same as Render) |
 | flower        | http://localhost:5555 | Celery monitor (basic auth)         |
 | mailhog       | http://localhost:8025 | Captures all outbound email         |
 
@@ -64,7 +64,7 @@ docker compose exec api pytest api/tests/test_payroll_math.py      # single file
 docker compose exec api pytest -k test_name                        # single test
 ```
 - **Concurrent runs collide on one test database** (`test_<DB_NAME>`). Give each its own with `docker compose exec -T -e DJANGO_TEST_DB_NAME=test_<label> api pytest …`.
-- **Standing failures: 170 failed + 9 errors of 609** (baseline 2026-09-19, isolated DB). Six files hold most of them: `api/test_compliance_api.py` (40), `api/test_regional_compliance_api.py` (22), `api/tests/test_recruitment_conversion.py` (21), `api/tests/test_recruitment_api.py` (19), `api/test_onboarding_api.py` (15), `leave_management/test_new_endpoints.py` (23). Most are fixture drift (`Venue` without `company`, `business_email=`, NOT NULL `date_of_birth`), not product bugs. Compare **per-file** counts against a baseline of the *same files* on the pre-change commit — never totals.
+- **Standing failures: 22** (2026-09-19, end of Phase 2; was 170 + 9 errors): 16 regional compliance, 3 onboarding, 3 recruitment conversion. Every one is a real product bug, listed in `REMEDIATION_PROGRESS.md` — signal, not noise. Compare **per-file** counts against a baseline of the *same files* on the pre-change commit — never totals.
 - **The regression guards are all green** and are the CI gate (`.github/workflows/ci.yml`, job `backend-guards`): the tenant-isolation, company-switching, invoice authz/concurrency/lock, SIA, geofence, mass-assignment, payroll-math, OT-basis, audit-trail, statutory-check files in `api/tests/`, plus `shifts/test_shift_authz.py`, `shifts/test_overnight_attendance.py`, `shifts/test_checkin_window.py` and `shifts/tests.py`. A new security or money fix adds its test file to that list.
 
 ### Frontend
@@ -105,7 +105,7 @@ backend/
 
 **Models are centralised in `api/models.py`.** `shifts/models.py` is three lines that re-export `Shift` and `ShiftStatusHistory` from `api.models` to keep the Django app structure valid. Add shift/attendance/venue/user/invoice models to `api/models.py` and migrate the `api` app — *not* `shifts`. `leave_management` and `finance_integrations` do own their models.
 
-Routing, all under `/api/v1/`: `api.urls` at the root, plus `shifts/`, `finance/`, `leave/`, and `health/` (Render health check). `/swagger/`, `/redoc/`, `/sentry-debug/` are DEBUG-only.
+Routing, all under `/api/v1/`: `api.urls` at the root, plus `shifts/`, `finance/`, `leave/`, `health/` (liveness, Render's health check — must not touch Postgres/Redis) and `health/ready/` (readiness, 503 when Postgres or Redis is down). A delete blocked by a `PROTECT` foreign key returns 409 via `api/exception_handlers.py`; pay-history FKs (invoice lines, time adjustments, shift → venue/officer, invoices) are `PROTECT` on purpose. `/swagger/`, `/redoc/`, `/sentry-debug/` are DEBUG-only.
 
 ### Multi-tenancy — the highest-severity bug class here
 `SecurityCompany` + `UserCompanyMembership` scope everything. `TenantMiddleware` reads `X-Company-ID` (header), then `company_id` (URL param), then the user's primary company, and sets `request.current_company` / `request.company_id`.
@@ -120,7 +120,7 @@ Routing, all under `/api/v1/`: `api.urls` at the root, plus `shifts/`, `finance/
 ### Other cross-cutting backend facts
 - `AUTH_USER_MODEL = 'api.User'` (custom user, `StaffProfile` one-to-one).
 - **Auth**: SimpleJWT access + refresh, with refresh also accepted via httpOnly cookie (`CookieTokenRefreshView`). Social auth (Apple, Google) in `api/social_auth.py`. WebSocket JWT auth in `api/middleware/websocket_auth.py`.
-- **Celery**: Redis broker on db 1, results on db 2; scheduled jobs in `CELERY_BEAT_SCHEDULE` (`core/settings.py`; a second `beat_schedule` dict in `core/celery_app.py` is silently discarded by `config_from_object`) — auto-checkouts and missed capacity checks every 5 min, attendance exceptions every 15 min, weekly/monthly payroll runs, leave accruals, SIA licence expiry.
+- **Celery**: Redis broker on db 1, results on db 2; scheduled jobs in `CELERY_BEAT_SCHEDULE` (`core/settings.py` — the only schedule; don't add a `beat_schedule` in `core/celery_app.py`, it is silently discarded) — auto-checkouts and missed capacity checks every 5 min, attendance exceptions every 15 min, weekly/monthly payroll runs, leave accruals, SIA licence expiry.
 - **Deploy**: `backend/build.sh` runs collectstatic, then waits up to 180s for Postgres, then migrates. Migrations live in the build **on purpose** — Render silently drops `preDeployCommand` for this service, and a sleeping DB used to abort the build and 502 the API. Don't "fix" this by moving them.
 - **Observability**: Sentry when `SENTRY_DSN` is set; PostHog env vars drive client analytics. Use the Sentry MCP tools for issue triage.
 - `render.yaml` has drifted from the live Render services — treat the dashboard as authoritative for IDs and plans.

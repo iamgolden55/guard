@@ -37,6 +37,8 @@ export interface ApprovalQueueProps {
   onReject: (request: PendingLeaveRequest, reason: string) => Promise<void>;
   processingId: number | null;
   isLoading: boolean;
+  /** The pending-requests query failed. */
+  loadFailed?: boolean;
 }
 
 export function ApprovalQueue({
@@ -45,9 +47,18 @@ export function ApprovalQueue({
   onReject,
   processingId,
   isLoading,
+  loadFailed = false,
 }: ApprovalQueueProps) {
   if (isLoading) {
     return <Empty message="Loading approval queue…" />;
+  }
+  if (loadFailed) {
+    return (
+      <Empty
+        message="Couldn't load the approval queue"
+        hint="Requests may be waiting for you. Refresh the page; if this persists, contact support."
+      />
+    );
   }
   if (requests.length === 0) {
     return (

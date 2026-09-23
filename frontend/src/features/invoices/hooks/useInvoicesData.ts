@@ -17,8 +17,8 @@ const STATS_KEY = (kind: InvoiceKind) => ["billing", "stats", kind] as const;
 const PROVIDERS_KEY = ["billing", "providers"] as const;
 
 const EMPTY_STATS: InvoiceStats = {
-  counts: { total: 0, draft: 0, sent: 0, pending: 0, overdue: 0, paid: 0, rejected: 0, resolved: 0 },
-  totals: { sent: 0, overdue: 0, paid: 0, draft: 0, outstanding: 0 },
+  counts: { total: 0, draft: 0, sent: 0, pending: 0, approved: 0, overdue: 0, paid: 0, rejected: 0, resolved: 0 },
+  totals: { sent: 0, overdue: 0, paid: 0, draft: 0, pending: 0, approved: 0, outstanding: 0 },
   buckets: { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 },
 };
 

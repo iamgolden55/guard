@@ -23,6 +23,10 @@ import {
 
 const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === "1";
 
+// Demo data for VITE_USE_MOCKS only. It used to be shown whenever the live
+// query had no data — loading, failed, or no run — so the sign-off screen
+// displayed £84,210 of made-up money as though it were the run
+// (AUDIT-2026-09-17, web). Live mode now says what is actually happening.
 const COMPOSITION_FALLBACK: { label: string; value: number; tone: string }[] = [
   { label: "Base shift hours", value: 58940, tone: tokens.color.ink900 },
   { label: "Overtime · 1.5×", value: 10820, tone: tokens.color.warn },
@@ -45,9 +49,39 @@ export interface CompositionCardProps {
   runCode?: string | null;
 }
 
+/** What a right-rail card shows instead of figures it doesn't have. */
+function RailStatus({ title, subtitle, message, tone }: {
+  title: string;
+  subtitle: string;
+  message: string;
+  tone?: string;
+}) {
+  return (
+    <Card padding={20}>
+      <SectionHeader title={title} subtitle={subtitle} />
+      <div style={{ fontSize: 12.5, color: tone ?? tokens.color.ink500 }}>{message}</div>
+    </Card>
+  );
+}
+
 export function CompositionCard({ runCode }: CompositionCardProps = {}) {
   const { palette } = useAccent();
   const compositionQuery = useRunComposition(USE_MOCKS ? null : runCode);
+  if (!USE_MOCKS && !compositionQuery.data) {
+    const message = compositionQuery.isError
+      ? "Couldn't load the run composition. Refresh before signing off."
+      : compositionQuery.isFetching
+        ? "Loading run composition…"
+        : "No payroll run selected.";
+    return (
+      <RailStatus
+        title="Run composition"
+        subtitle="Gross by InvoiceItem type"
+        message={message}
+        tone={compositionQuery.isError ? tokens.color.dangerInk : undefined}
+      />
+    );
+  }
   const items = USE_MOCKS || !compositionQuery.data
     ? COMPOSITION_FALLBACK
     : COMPOSITION_LABELS.map((m) => ({
@@ -143,6 +177,24 @@ export interface SiaHoldsCardProps {
 
 export function SiaHoldsCard({ runCode }: SiaHoldsCardProps = {}) {
   const siaQuery = useRunSiaHolds(USE_MOCKS ? null : runCode);
+  // "No SIA issues this run" is a compliance claim. Make it only when the
+  // licences were actually checked — not while loading, and not on a failure.
+  if (!USE_MOCKS && !siaQuery.data) {
+    return (
+      <RailStatus
+        title="SIA licence holds"
+        subtitle="Blocks new shifts · flag on payslip"
+        message={
+          siaQuery.isError
+            ? "Couldn't check SIA licences for this run. Don't sign off until this loads."
+            : siaQuery.isFetching
+              ? "Checking SIA licences…"
+              : "No payroll run selected."
+        }
+        tone={siaQuery.isError ? tokens.color.dangerInk : undefined}
+      />
+    );
+  }
   const sourceList: Officer[] = USE_MOCKS ? OFFICERS : (siaQuery.data ?? []);
   const flagged = sourceList.filter((o) => o.sia.expired || o.sia.expiresInDays <= 30);
   return (

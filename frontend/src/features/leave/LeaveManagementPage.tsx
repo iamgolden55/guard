@@ -158,6 +158,7 @@ export default function LeaveManagementPage() {
                 onCancel={handleCancel}
                 cancellingId={cancellingId}
                 isLoading={data.isLoading}
+                loadFailed={data.isMyRequestsError}
               />
             )}
 
@@ -168,6 +169,7 @@ export default function LeaveManagementPage() {
                 onReject={handleReject}
                 processingId={processingId}
                 isLoading={data.isPendingLoading}
+                loadFailed={data.isPendingError}
               />
             )}
 
