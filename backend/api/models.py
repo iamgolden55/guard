@@ -2191,6 +2191,11 @@ class Shift(models.Model):
             record['mocked'] = bool(mocked)
         return record
 
+    #: Written into `notes` by `api.tasks.detect_attendance_exceptions`. Its
+    #: presence is how `check_in` tells an automatic no-show from one a
+    #: manager recorded.
+    AUTO_NO_SHOW_MARKER = '[Auto] No-show detected'
+
     def check_in(self, latitude, longitude, signature=None, photo=None,
                  accuracy=None, mocked=None, occurred_at=None,
                  offline_replay=False):
@@ -2267,7 +2272,26 @@ class Shift(models.Model):
         can_start, message = self.can_start_shift()
         if not can_start:
             raise ValueError(message)
-            
+
+        # An offline check-in replaying after the no-show job has run. The
+        # officer pressed check-in on a phone with no signal; 30 minutes later
+        # `detect_attendance_exceptions` flipped the shift to no_show, and this
+        # method then refused the replay — a worked shift became an unpaid
+        # no-show (AUDIT-2026-09-17 P0-B). Lift it, but only a no-show the
+        # automatic job set, only when the officer's recorded time is inside
+        # the shift, and always into manager review: nothing here approves or
+        # pays anything. A no-show a manager recorded is never lifted.
+        if (offline_replay and self.status == 'no_show'
+                and self.AUTO_NO_SHOW_MARKER in (self.notes or '')
+                and occurred_at
+                and self.start_time - timedelta(minutes=15) <= occurred_at <= self.end_time):
+            self.status = 'scheduled'
+            self.needs_attendance_review = True
+            self.notes = (self.notes or '') + (
+                f"\n[Auto] No-show lifted: offline check-in replayed, recorded by the "
+                f"device at {occurred_at.isoformat()}. Needs manager review."
+            )
+
         if self.status not in ['active', 'scheduled']:
             raise ValueError("Shift must be active or scheduled to check in")
         
@@ -7491,7 +7515,7 @@ class ClientInvoice(models.Model):
 
         Pulls every approved shift at the venue with recorded actual hours
         in the period and turns each into a ClientInvoiceItem priced at the
-        shift's effective hourly rate. Returns the new draft.
+        shift's bill rate. Returns the new draft.
 
         Idempotent guard: if a draft already exists for the same
         (venue, start_date, end_date), it is returned instead of being
@@ -7546,7 +7570,16 @@ class ClientInvoice(models.Model):
         )
 
         for shift in shifts:
-            rate = shift.get_effective_hourly_rate() or Decimal('0')
+            # Clients are billed at the shift's bill rate. This used
+            # `get_effective_hourly_rate()` — the officer's *pay* rate — so every
+            # client invoice was priced at cost (AUDIT-2026-09-17 P0-D: 1.45%
+            # realised margin against 25% intended). A shift with no bill rate
+            # is not guessed at: the line is priced at 0 and flagged, and the
+            # invoice cannot be issued until a manager sets the rate.
+            rate = shift.bill_rate
+            needs_rate = rate is None or rate <= 0
+            if needs_rate:
+                rate = Decimal('0')
             hours = Decimal(str(shift.actual_hours_worked or 0))
             staff_label = ''
             if shift.staff_user:
@@ -7568,10 +7601,14 @@ class ClientInvoice(models.Model):
                 date=shift.start_time.date(),
                 hours=hours,
                 rate=rate,
+                needs_rate=needs_rate,
             )
 
         invoice.calculate_totals()
         return invoice
+
+    def lines_needing_rate(self):
+        return self.line_items.filter(needs_rate=True)
 
 
 class ClientInvoiceItem(models.Model):
@@ -7593,6 +7630,13 @@ class ClientInvoiceItem(models.Model):
         help_text="Client billing rate per hour (distinct from staff pay rate)"
     )
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    needs_rate = models.BooleanField(
+        default=False,
+        help_text=(
+            "The source shift had no bill rate, so this line is priced at 0 "
+            "and the invoice cannot be issued until a manager sets one."
+        ),
+    )
 
     class Meta:
         db_table = 'client_invoice_items'

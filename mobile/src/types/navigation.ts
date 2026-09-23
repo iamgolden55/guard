@@ -30,17 +30,6 @@ export type MainStackParamList = {
   EditShift: { shiftId: number };
   AvailableShifts: undefined;
   ShiftExchanges: undefined;
-  CheckInFlow: {
-    shiftId: number;
-    venueId: number;
-    venueName: string;
-    venueLatitude: number;
-    venueLongitude: number;
-    /** The venue's geofence radius in metres; the server's own threshold. */
-    venueCheckRadius?: number;
-    requiresTerms?: boolean;
-    venueTerms?: string;
-  };
   VenueTerms: {
     venueId: number;
     venueName: string;

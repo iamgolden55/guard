@@ -96,6 +96,9 @@ export interface BulkCreatePreviewSlot {
   staff_user: number | null;
   status: BulkCreateSlotStatus;
   reason?: string;
+  /** Set on an assignable slot whose officer's SIA licence doesn't cover the
+   * role. It does not block the slot; the manager decides. */
+  licence_warning?: string;
 }
 
 export interface BulkCreatePreviewShift {

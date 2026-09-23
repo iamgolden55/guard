@@ -19,7 +19,6 @@ import { TeamMemberProfileScreenV2 as TeamMemberProfileScreen } from '../screens
 
 // Shift Screens
 import {
-  CheckInFlowV2 as CheckInFlowScreen,
   ShiftDetailsScreenV2 as ShiftDetailsScreen,
   AvailableShiftsScreenV2 as UberAvailableShiftsScreen,
   ShiftExchangesScreenV2 as UberShiftExchangesScreen,
@@ -80,7 +79,6 @@ export const MainNavigator = () => {
         {/* Modal Screens */}
         <Stack.Group screenOptions={{ presentation: 'modal' }}>
           <Stack.Screen name="ShiftDetails" component={ShiftDetailsScreen} />
-          <Stack.Screen name="CheckInFlow" component={CheckInFlowScreen} />
           <Stack.Screen name="AvailableShifts" component={UberAvailableShiftsScreen} />
           <Stack.Screen name="ShiftExchanges" component={UberShiftExchangesScreen} />
           <Stack.Screen

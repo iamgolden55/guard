@@ -40,7 +40,7 @@ docker compose build api     # rebuild after dependency changes
 | db            | localhost:5432        | Postgres 16                         |
 | redis         | localhost:6379        | Redis 7 (channel layer + Celery)    |
 | celery-worker | —                     | Celery worker                       |
-| celery-beat   | —                     | Celery beat (DatabaseScheduler)     |
+| celery-beat   | —                     | Celery beat (file scheduler here; Render uses DatabaseScheduler) |
 | flower        | http://localhost:5555 | Celery monitor (basic auth)         |
 | mailhog       | http://localhost:8025 | Captures all outbound email         |
 
@@ -57,16 +57,15 @@ docker compose exec web npm run lint
 ## Tests
 
 ### Backend
-There is **no `pytest.ini`, `conftest.py`, or `pyproject.toml`** — pytest-django works only because `DJANGO_SETTINGS_MODULE=core.settings` is set in the container environment. Consequences:
-
-- **Never run a bare `pytest` from `backend/`.** It collects the ~24 legacy `backend/test_*.py` files, which are standalone scripts that call `django.setup()` and hit the dev database at import time — not real tests. Always scope to a path:
-  ```bash
-  docker compose exec api pytest api/tests/ shifts/ shifts/tests.py leave_management/ -q
-  docker compose exec api pytest api/tests/test_payroll_math.py     # single file
-  docker compose exec api pytest -k test_name                        # single test
-  ```
-- **`shifts/tests.py` must be named explicitly.** pytest's default `python_files` patterns (`test_*.py`, `*_test.py`) don't match the bare name `tests.py`, so `pytest shifts/` silently skips the largest suite in that app (bulk-create, digest, manual check-in). Same trap applies to `api/tests.py`, `leave_management/tests.py`, `finance_integrations/tests.py`.
-- **~51 tests fail on a clean checkout**, concentrated in `api/test_compliance_api.py`, `api/test_regional_compliance_api.py`, `api/tests/test_recruitment_api.py`, `api/tests/test_recruitment_conversion.py`, `api/test_onboarding_api.py`, `api/tests/test_views.py`, `api/test_multi_tenant_performance.py`. `api/tests/test_optimized_reporting_pipeline.py` errors at import (`psutil` missing). Before concluding a change broke something, baseline the *same files* on the pre-change commit and compare per-file counts, not totals.
+`backend/pytest.ini` sets the settings module, collects `tests.py`, `test_*.py` and `tests_*.py`, and restricts collection to the four Django apps — the ~24 loose `backend/test_*.py` files are standalone scripts that hit the dev DB at import time and are deliberately excluded. A bare `pytest` is now correct:
+```bash
+docker compose exec api pytest                                     # everything (~7 min)
+docker compose exec api pytest api/tests/test_payroll_math.py      # single file
+docker compose exec api pytest -k test_name                        # single test
+```
+- **Concurrent runs collide on one test database** (`test_<DB_NAME>`). Give each its own with `docker compose exec -T -e DJANGO_TEST_DB_NAME=test_<label> api pytest …`.
+- **Standing failures: 170 failed + 9 errors of 609** (baseline 2026-09-19, isolated DB). Six files hold most of them: `api/test_compliance_api.py` (40), `api/test_regional_compliance_api.py` (22), `api/tests/test_recruitment_conversion.py` (21), `api/tests/test_recruitment_api.py` (19), `api/test_onboarding_api.py` (15), `leave_management/test_new_endpoints.py` (23). Most are fixture drift (`Venue` without `company`, `business_email=`, NOT NULL `date_of_birth`), not product bugs. Compare **per-file** counts against a baseline of the *same files* on the pre-change commit — never totals.
+- **The regression guards are all green** and are the CI gate (`.github/workflows/ci.yml`, job `backend-guards`): the tenant-isolation, company-switching, invoice authz/concurrency/lock, SIA, geofence, mass-assignment, payroll-math, OT-basis, audit-trail, statutory-check files in `api/tests/`, plus `shifts/test_shift_authz.py`, `shifts/test_overnight_attendance.py`, `shifts/test_checkin_window.py` and `shifts/tests.py`. A new security or money fix adds its test file to that list.
 
 ### Frontend
 **No test suite and no `npm test` script.** (`docker/README.md` still advertises `docker compose exec web npm test` — that's stale.) Don't claim frontend test coverage. Verification is `npm run lint` (biome + `tsc --noEmit`) and `npm run build`.
@@ -111,17 +110,17 @@ Routing, all under `/api/v1/`: `api.urls` at the root, plus `shifts/`, `finance/
 ### Multi-tenancy — the highest-severity bug class here
 `SecurityCompany` + `UserCompanyMembership` scope everything. `TenantMiddleware` reads `X-Company-ID` (header), then `company_id` (URL param), then the user's primary company, and sets `request.current_company` / `request.company_id`.
 
-**But the middleware sits after `AuthenticationMiddleware` and before DRF authenticates**, so on a JWT request `request.user` is usually anonymous at middleware time and `request.current_company` ends up `None`. Every view therefore resolves the company itself with a two-step helper — prefer the middleware value, fall back to the user's active membership:
+**But the middleware sits after `AuthenticationMiddleware` and before DRF authenticates**, so on a JWT request `request.user` is usually anonymous at middleware time and `request.current_company` ends up `None`. Tenancy is therefore enforced inside each view, through one resolver:
 
-- `api/views.py:635` `get_user_company(self, request)` — redefined per-ViewSet (also at `:1728`, `:2942`); copy the nearest one rather than inventing a new resolution path.
-- `api/views_billing.py:58` `_current_company(request)` — module-level equivalent.
+- `api/middleware/tenant_middleware.py` `resolve_request_company(request)` — reads and validates `X-Company-ID` (403 via `CompanyAccessDenied` for a company the user isn't in), else the user's active membership; cached per request. Returns `None` when nothing resolves.
+- The per-ViewSet `get_user_company(self, request)` methods in `api/views.py` and `_current_company(request)` in `api/views_billing.py` are thin delegates to it — call the resolver directly in new code.
 
-New querysets must go through one of these and filter by the resolved company. Never trust `request.current_company` alone, and never write an unscoped queryset in `api/`, `shifts/`, `leave_management/`, or `finance_integrations/`.
+**`None` means empty, never unfiltered.** Write `if not company: return Model.objects.none()` — `finance_integrations/scoping.py` is the reference. The shape `if company: qs = qs.filter(...)` with no `else` returns every tenant's rows to a membership-less account and has caused P0s (`AUDIT-2026-09-17.md`). Never trust `request.current_company` alone, and never write an unscoped queryset in `api/`, `shifts/`, `leave_management/`, or `finance_integrations/`. Only 12 of ~95 models carry a `company` FK, so most scoping is a join (`venue__company`, `staff_user__company_memberships__company`).
 
 ### Other cross-cutting backend facts
 - `AUTH_USER_MODEL = 'api.User'` (custom user, `StaffProfile` one-to-one).
 - **Auth**: SimpleJWT access + refresh, with refresh also accepted via httpOnly cookie (`CookieTokenRefreshView`). Social auth (Apple, Google) in `api/social_auth.py`. WebSocket JWT auth in `api/middleware/websocket_auth.py`.
-- **Celery**: Redis broker on db 1, results on db 2; scheduled jobs in `CELERY_BEAT_SCHEDULE` (`core/settings.py`) — auto-checkouts and missed capacity checks every 5 min, attendance exceptions every 15 min, weekly/monthly payroll runs, leave accruals, SIA licence expiry.
+- **Celery**: Redis broker on db 1, results on db 2; scheduled jobs in `CELERY_BEAT_SCHEDULE` (`core/settings.py`; a second `beat_schedule` dict in `core/celery_app.py` is silently discarded by `config_from_object`) — auto-checkouts and missed capacity checks every 5 min, attendance exceptions every 15 min, weekly/monthly payroll runs, leave accruals, SIA licence expiry.
 - **Deploy**: `backend/build.sh` runs collectstatic, then waits up to 180s for Postgres, then migrates. Migrations live in the build **on purpose** — Render silently drops `preDeployCommand` for this service, and a sleeping DB used to abort the build and 502 the API. Don't "fix" this by moving them.
 - **Observability**: Sentry when `SENTRY_DSN` is set; PostHog env vars drive client analytics. Use the Sentry MCP tools for issue triage.
 - `render.yaml` has drifted from the live Render services — treat the dashboard as authoritative for IDs and plans.

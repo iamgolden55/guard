@@ -377,7 +377,11 @@ class StaffProfileSerializer(serializers.ModelSerializer):
             'security_roles', 'securityRoles', 'siaLicenses', 'bankDetails', 'isApproved', 'employmentType', 'passwordLastChanged',
             'firstName', 'lastName', 'email', 'username', 'role'
         )
-        read_only_fields = ('created_at', 'updated_at', 'password_last_changed', 'passwordLastChanged', 'security_roles', 'securityRoles', 'siaLicenses', 'bankDetails', 'isApproved', 'firstName', 'lastName', 'email', 'username', 'role')
+        # `is_approved` is vetting sign-off and belongs to StaffProfileViewSet.approve.
+        # Only its camelCase alias used to be listed here, which is already a
+        # ReadOnlyField — so the real field stayed writable and an officer could
+        # PATCH their own profile to approved (AUDIT-2026-09-17 ENG-006).
+        read_only_fields = ('created_at', 'updated_at', 'password_last_changed', 'passwordLastChanged', 'security_roles', 'securityRoles', 'siaLicenses', 'bankDetails', 'is_approved', 'isApproved', 'firstName', 'lastName', 'email', 'username', 'role')
 
 class VenueSerializer(serializers.ModelSerializer):
     class Meta:
@@ -1498,6 +1502,15 @@ class ComplianceProfileSerializer(serializers.ModelSerializer):
         read_only=True, source='get_max_consecutive_days'
     )
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # ComplianceProfileViewSet supplies the profile in force for the
+        # requesting company, so `is_active` means "active for you" rather
+        # than the platform default flag.
+        if 'active_profile_id' in self.context:
+            data['is_active'] = instance.pk == self.context['active_profile_id']
+        return data
+
     class Meta:
         model = ComplianceProfile
         fields = [
@@ -1561,8 +1574,10 @@ class ComplianceViolationSerializer(serializers.ModelSerializer):
     violation_type_display = serializers.CharField(source='get_violation_type_display', read_only=True)
     severity_display = serializers.CharField(source='get_severity_display', read_only=True)
     resolution_status_display = serializers.CharField(source='get_resolution_status_display', read_only=True)
-    duration_hours = serializers.DecimalField(max_digits=6, decimal_places=2, read_only=True, source='duration_hours')
-    is_resolved = serializers.BooleanField(read_only=True, source='is_resolved')
+    # `source='duration_hours'` repeated the field name, which DRF rejects with an
+    # AssertionError at bind time — every request to the violations endpoint failed.
+    duration_hours = serializers.DecimalField(max_digits=6, decimal_places=2, read_only=True)
+    is_resolved = serializers.BooleanField(read_only=True)
     resolved_by_name = serializers.CharField(source='resolved_by.get_full_name', read_only=True)
     approved_by_name = serializers.CharField(source='approved_by.get_full_name', read_only=True)
 

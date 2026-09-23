@@ -387,6 +387,9 @@ class ReportGenerator:
     @staticmethod
     def _add_limit_to_query(query: str, limit: int) -> str:
         """Add LIMIT clause to SQL query for preview"""
+        # Interpolated, not parameterised — so refuse anything but an int here
+        # too, whatever the caller did.
+        limit = int(limit)
         query = query.strip()
 
         # Remove trailing semicolon if present

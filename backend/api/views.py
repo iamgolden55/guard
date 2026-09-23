@@ -2377,10 +2377,13 @@ class CompanyScopedCheckMixin:
 
     def _get_company_scoped_queryset(self, base_queryset):
         """Apply company scoping then shift/shift_group filtering."""
-        # SECURITY: Scope to company first
+        # SECURITY: Scope to company first. No company, no rows: the old
+        # `if company:` with no else handed every tenant's statutory checks to
+        # an account with no membership (AUDIT-2026-09-17, tenancy ratchet).
         company = _resolve_request_company(self.request)
-        if company:
-            base_queryset = base_queryset.filter(shift__venue__company=company)
+        if not company:
+            return base_queryset.none()
+        base_queryset = base_queryset.filter(shift__venue__company=company)
 
         queryset = base_queryset.select_related('performed_by')
         shift_id = self.request.query_params.get('shift', None)
@@ -2510,9 +2513,9 @@ class CapacityCheckSlotMissViewSet(CompanyScopedCheckMixin, viewsets.ModelViewSe
     def get_queryset(self):
         # Misses are scoped via venue.company (no shift FK on this model).
         company = _resolve_request_company(self.request)
-        qs = CapacityCheckSlotMiss.objects.all().select_related('venue', 'acknowledged_by')
-        if company:
-            qs = qs.filter(venue__company=company)
+        if not company:
+            return CapacityCheckSlotMiss.objects.none()
+        qs = CapacityCheckSlotMiss.objects.filter(venue__company=company).select_related('venue', 'acknowledged_by')
         shift_group = self.request.query_params.get('shift_group')
         if shift_group:
             qs = qs.filter(shift_group=shift_group)
@@ -2552,9 +2555,9 @@ class CapacityLogbookSignoffViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         company = _resolve_request_company(self.request)
-        qs = CapacityLogbookSignoff.objects.all().select_related('venue', 'closed_by_staff')
-        if company:
-            qs = qs.filter(venue__company=company)
+        if not company:
+            return CapacityLogbookSignoff.objects.none()
+        qs = CapacityLogbookSignoff.objects.filter(venue__company=company).select_related('venue', 'closed_by_staff')
         shift_group = self.request.query_params.get('shift_group')
         if shift_group:
             qs = qs.filter(shift_group=shift_group)
@@ -4268,11 +4271,16 @@ def my_profile(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def update_my_user(request):
-    user = request.user
-    if 'security_roles' in request.data:
-        user.security_roles = request.data['security_roles']
-        user.save()
-    serializer = UserSerializer(user)
+    """Return the caller's user record.
+
+    This used to assign `security_roles` straight from the request body,
+    bypassing `UserSerializer`, which makes the field read-only for exactly
+    this reason: an officer could self-qualify as a dog handler or close
+    protection officer (AUDIT-2026-09-17 ENG-006). Security roles are granted
+    by a manager or admin through the user endpoints, where the change is
+    gated and audited.
+    """
+    serializer = UserSerializer(request.user)
     return Response(serializer.data)
 
 
@@ -5047,17 +5055,52 @@ class CompliancePermissions:
         if not requesting_user.is_authenticated:
             return False
 
-        # Admin can view all
-        if requesting_user.role == 'admin':
+        if requesting_user.id == target_user.id:
             return True
 
-        # Manager can view staff they manage
-        if requesting_user.role == 'manager':
-            # TODO: Implement manager-staff relationship check
-            return True
+        # Admins and managers see people in a company they both belong to —
+        # never "anyone on the platform", which is what a bare role check gave.
+        if requesting_user.role in ('admin', 'manager'):
+            shared = UserCompanyMembership.objects.filter(
+                user=target_user, is_active=True,
+                company__in=UserCompanyMembership.objects.filter(
+                    user=requesting_user, is_active=True,
+                ).values('company'),
+            )
+            return shared.exists()
 
-        # Staff can only view their own data
-        return requesting_user.id == target_user.id
+        return False
+
+
+def _compliance_members(company):
+    return UserCompanyMembership.objects.filter(company=company, is_active=True).values('user_id')
+
+
+def scoped_violations(request, queryset=None):
+    """Violations belonging to the company in scope; empty when none resolves.
+
+    ComplianceViolation has no company column (AUDIT-2026-09-17 P0-E), so
+    ownership is the shift's venue when there is a shift, and the officer's
+    membership otherwise. Keying on the venue first means a violation at
+    company B's venue stays B's even when the officer also works for A.
+    """
+    queryset = ComplianceViolation.objects.all() if queryset is None else queryset
+    company = resolve_request_company(request)
+    if not company:
+        return queryset.none()
+    return queryset.filter(
+        Q(shift__venue__company=company)
+        | Q(shift__isnull=True, user_id__in=_compliance_members(company))
+    )
+
+
+def scoped_working_hours_metrics(request, queryset=None):
+    """Working-hours metrics for members of the company in scope; empty when none resolves."""
+    queryset = WorkingHoursMetrics.objects.all() if queryset is None else queryset
+    company = resolve_request_company(request)
+    if not company:
+        return queryset.none()
+    return queryset.filter(user_id__in=_compliance_members(company))
 
 
 class WorkingHoursRegulationViewSet(viewsets.ModelViewSet):
@@ -5069,8 +5112,14 @@ class WorkingHoursRegulationViewSet(viewsets.ModelViewSet):
     serializer_class = WorkingHoursRegulationSerializer
 
     def get_permissions(self):
-        """Set permissions based on action"""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        """Set permissions based on action.
+
+        Every write is platform staff only. `activate`/`deactivate` carried
+        `permission_classes=[IsAdminUser]` on their decorators, but this
+        override builds its own list, so those never applied and any account
+        could switch a country's regulation off for every tenant.
+        """
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'activate', 'deactivate']:
             permission_classes = [IsAdminUser]
         else:
             permission_classes = [IsAuthenticated]
@@ -5146,10 +5195,29 @@ class ComplianceProfileViewSet(viewsets.ModelViewSet):
             # Non-admin users can only see active profiles
             return ComplianceProfile.objects.filter(is_active=True).select_related('working_hours_regulation')
 
+    def _active_profile_for(self, request):
+        """The profile in force for the company in scope.
+
+        A company that has chosen a profile gets its own choice; otherwise the
+        platform default (the one profile flagged `is_active`).
+        """
+        company = resolve_request_company(request)
+        if company and company.compliance_profile_id:
+            return company.compliance_profile
+        return ComplianceProfile.objects.get_active_profile()
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        active = self._active_profile_for(self.request)
+        # The Compliance page marks the active profile from each row's
+        # `is_active`, so that flag answers "active for this company".
+        context['active_profile_id'] = active.pk if active else None
+        return context
+
     @action(detail=False, methods=['get'])
     def active(self, request):
         """Get the currently active compliance profile"""
-        active_profile = ComplianceProfile.objects.get_active_profile()
+        active_profile = self._active_profile_for(request)
 
         if not active_profile:
             return Response({
@@ -5163,23 +5231,53 @@ class ComplianceProfileViewSet(viewsets.ModelViewSet):
             'data': serializer.data
         })
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    @action(detail=True, methods=['post'])
     def set_active(self, request, pk=None):
-        """Set this profile as the active one"""
-        # Deactivate all profiles
-        ComplianceProfile.objects.all().update(is_active=False)
+        """Choose this profile for the admin's own company.
 
-        # Activate this profile
+        This used to run `ComplianceProfile.objects.all().update(is_active=False)`
+        and flip the chosen row on — a platform-wide write. The action-level
+        `permission_classes=[IsAdminUser]` it carried never applied, because
+        `get_permissions()` above builds its own list, so any authenticated
+        account could switch every tenant's working-time rules
+        (AUDIT-2026-09-17 P0-E). A tenant admin now sets
+        `SecurityCompany.compliance_profile`; only platform staff acting outside
+        a company move the platform default.
+        """
+        user = request.user
+        is_platform_staff = bool(user.is_staff or user.is_superuser)
+        if not (CompliancePermissions.is_admin(user) or is_platform_staff):
+            return Response({
+                'status': 'error',
+                'message': 'Only admins can change the active compliance profile',
+            }, status=status.HTTP_403_FORBIDDEN)
+
         profile = self.get_object()
-        profile.is_active = True
-        profile.save()
+        company = resolve_request_company(request)
 
-        # Clear cache
+        if company is not None:
+            company.compliance_profile = profile
+            company.save(update_fields=['compliance_profile'])
+            return Response({
+                'status': 'success',
+                'message': f'Profile "{profile.name}" is now active for {company.name}'
+            })
+
+        if not is_platform_staff:
+            return Response({
+                'status': 'error',
+                'message': 'No company in context',
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Platform default, for companies that have not chosen one.
+        with transaction.atomic():
+            ComplianceProfile.objects.exclude(pk=profile.pk).update(is_active=False)
+            profile.is_active = True
+            profile.save(update_fields=['is_active'])
         cache.delete('compliance_settings')
-
         return Response({
             'status': 'success',
-            'message': f'Profile "{profile.name}" is now active'
+            'message': f'Profile "{profile.name}" is now the platform default'
         })
 
 
@@ -5192,9 +5290,9 @@ class ComplianceViolationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Get queryset with optimized joins and filters"""
-        queryset = ComplianceViolation.objects.select_related(
+        queryset = scoped_violations(self.request, ComplianceViolation.objects.select_related(
             'user', 'shift__venue', 'resolved_by', 'approved_by'
-        )
+        ))
 
         # Filter based on user permissions
         user = self.request.user
@@ -5249,7 +5347,8 @@ class ComplianceViolationViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def summary(self, request):
         """Get violation summary statistics"""
-        cache_key = f"violation_summary_{request.user.id}"
+        company = resolve_request_company(request)
+        cache_key = f"violation_summary_{request.user.id}_{company.pk if company else 'none'}"
 
         # Try to get from cache
         summary = cache.get(cache_key)
@@ -5258,7 +5357,24 @@ class ComplianceViolationViewSet(viewsets.ModelViewSet):
 
         # Calculate summary using optimized manager methods
         if CompliancePermissions.is_manager_or_admin(request.user):
-            summary_data = ComplianceViolation.objects.dashboard_summary()
+            # The same figures as `ComplianceViolationManager.dashboard_summary`,
+            # over this company's violations rather than the whole platform's.
+            from datetime import timedelta
+            summary_data = scoped_violations(request).filter(
+                created_at__gte=timezone.now() - timedelta(days=7),
+                resolution_status__in=['open', 'investigating', 'pending_approval'],
+            ).aggregate(
+                total_violations=Count('id'),
+                critical_count=Count('id', filter=Q(severity='critical')),
+                major_count=Count('id', filter=Q(severity='major')),
+                minor_count=Count('id', filter=Q(severity='minor')),
+                warning_count=Count('id', filter=Q(severity='warning')),
+                overtime_violations=Count('id', filter=Q(
+                    violation_type__in=['daily_overtime', 'weekly_overtime', 'unauthorized_overtime']
+                )),
+                rest_violations=Count('id', filter=Q(violation_type='insufficient_rest')),
+                location_violations=Count('id', filter=Q(violation_type='location_violation')),
+            )
         else:
             # For staff users, get their own violations only
             summary_data = ComplianceViolation.objects.filter(user=request.user).aggregate(
@@ -5359,7 +5475,7 @@ class ComplianceViolationViewSet(viewsets.ModelViewSet):
         exception_reason = serializer.validated_data.get('exception_reason', '')
 
         # Get violations to resolve
-        violations = ComplianceViolation.objects.filter(
+        violations = scoped_violations(request).filter(
             id__in=violation_ids,
             resolution_status__in=['open', 'investigating', 'pending_approval']
         )
@@ -5410,7 +5526,7 @@ class ComplianceReportViewSet(viewsets.ViewSet):
             period_start = now - timedelta(days=period_days)
 
             # Get violations for this period
-            violations = ComplianceViolation.objects.filter(created_at__gte=period_start)
+            violations = scoped_violations(request).filter(created_at__gte=period_start)
 
             total_violations = violations.count()
             critical_violations = violations.filter(severity='critical').count()
@@ -5584,7 +5700,9 @@ class WorkingHoursMetricsViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         """Get metrics based on user permissions"""
-        queryset = WorkingHoursMetrics.objects.select_related('user')
+        queryset = scoped_working_hours_metrics(
+            self.request, WorkingHoursMetrics.objects.select_related('user')
+        )
 
         # Filter based on permissions
         if not CompliancePermissions.is_manager_or_admin(self.request.user):
@@ -5684,7 +5802,7 @@ def compliance_alerts(request):
 
         if CompliancePermissions.is_manager_or_admin(user):
             # Managers get system-wide alerts
-            critical_violations = ComplianceViolation.objects.filter(
+            critical_violations = scoped_violations(request).filter(
                 severity='critical',
                 resolution_status__in=['open', 'investigating']
             ).count()
@@ -6595,9 +6713,15 @@ class ReportTemplateViewSet(viewsets.ModelViewSet):
     serializer_class = ReportTemplateSerializer
     permission_classes = [IsAuthenticated]
 
+    #: Actions that run the template's stored SQL. That SQL is written by
+    #: platform staff and carries no company predicate, so running it as a
+    #: tenant user reads every tenant's rows (AUDIT-2026-09-17 S-3). Platform
+    #: staff only, until templates are parameterised by company.
+    SQL_EXECUTING_ACTIONS = ('test_query', 'preview', 'validate')
+
     def get_permissions(self):
-        """Restrict create/update/delete to admin users only"""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        """Restrict create/update/delete and SQL execution to platform staff."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy', *self.SQL_EXECUTING_ACTIONS]:
             return [IsAuthenticated(), IsAdminUser()]
         return [IsAuthenticated()]
 
@@ -6686,8 +6810,20 @@ class ReportTemplateViewSet(viewsets.ModelViewSet):
 
             parameters['user'] = request.user
 
-            # Get preview limit from request
-            limit = request.data.get('limit', 100)
+            # `limit` is interpolated into the SQL by `_add_limit_to_query`, so it
+            # must be a plain integer before it gets anywhere near a query.
+            try:
+                limit = int(request.data.get('limit', 100))
+            except (TypeError, ValueError):
+                return Response({
+                    'status': 'error',
+                    'message': 'limit must be an integer',
+                }, status=status.HTTP_400_BAD_REQUEST)
+            if not 1 <= limit <= 1000:
+                return Response({
+                    'status': 'error',
+                    'message': 'limit must be between 1 and 1000',
+                }, status=status.HTTP_400_BAD_REQUEST)
 
             preview_data = ReportGenerator.generate_preview(
                 template,
@@ -6746,9 +6882,17 @@ class ReportJobViewSet(viewsets.ModelViewSet):
         user = self.request.user
         queryset = super().get_queryset()
 
-        # Admin can see all jobs, users can only see their own jobs
+        # Admins see their company's jobs; everyone else sees their own. "Admin
+        # sees all" was every tenant's jobs — and their downloadable files.
         if hasattr(user, 'role') and user.role == 'admin':
-            filtered_queryset = queryset
+            company = resolve_request_company(self.request)
+            if company:
+                filtered_queryset = queryset.filter(
+                    requested_by__company_memberships__company=company,
+                    requested_by__company_memberships__is_active=True,
+                ).distinct()
+            else:
+                filtered_queryset = queryset.filter(requested_by=user)
         else:
             filtered_queryset = queryset.filter(requested_by=user)
 
@@ -7647,6 +7791,8 @@ class OnboardingViewSet(viewsets.ViewSet):
         Override permissions for specific actions.
         initiate_onboarding and get_progress only require IsAuthenticated since they handle
         users who don't have company memberships yet during the onboarding process.
+        That is a statement about *new signups*, so initiate_onboarding itself
+        refuses anyone who is already a non-owner member of a company.
         All other actions require IsCompanyOwnerOrAdmin.
         """
         if self.action in ['initiate_onboarding', 'get_progress']:
@@ -7672,6 +7818,16 @@ class OnboardingViewSet(viewsets.ViewSet):
         POST /api/v1/onboarding/initiate/
         Start the onboarding process for a new company.
         """
+        # An officer or manager of an existing company is not a new signup.
+        # Without this, any officer with a valid token created a tenant company,
+        # became its owner, and was promoted to role='admin' — the highest
+        # privilege in the model (AUDIT-2026-09-17 P0-G).
+        if request.user.company_memberships.filter(is_active=True, is_owner=False).exists():
+            return Response({
+                'status': 'error',
+                'message': 'You already belong to a company. Ask its owner to set up a new company.',
+            }, status=status.HTTP_403_FORBIDDEN)
+
         try:
             # Check if user already has a company with incomplete onboarding
             existing_membership = request.user.company_memberships.filter(
@@ -7757,8 +7913,11 @@ class OnboardingViewSet(viewsets.ViewSet):
         Get current onboarding progress.
         For staff users, onboarding is automatically considered complete.
         """
-        # Staff users don't need onboarding - they join existing companies
-        if request.user.role == 'staff':
+        # Staff who belong to a company joined an existing one and need no
+        # onboarding. A staff-role account with no membership is a signup that
+        # has not created its company yet, so it falls through to the 404 below
+        # rather than being told it is fully onboarded.
+        if request.user.role == 'staff' and request.user.company_memberships.filter(is_active=True).exists():
             return Response({
                 'status': 'success',
                 'onboarding': {
@@ -9248,6 +9407,13 @@ class ClientInvoiceViewSet(viewsets.ModelViewSet):
             return Response(
                 {'error': f'Cannot send invoice with status "{invoice.status}". Only draft invoices can be sent.'},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+        missing = invoice.lines_needing_rate().count()
+        if missing:
+            return Response(
+                {'error': f'{missing} line(s) have no client bill rate. Set the rate on each before sending.',
+                 'code': 'bill_rate_missing'},
+                status=status.HTTP_409_CONFLICT
             )
 
         today = timezone.now().date()

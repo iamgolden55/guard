@@ -221,6 +221,14 @@ class ClientInvoiceItemSerializer(serializers.Serializer):
     hours = serializers.FloatField()
     rate = serializers.FloatField()
     amount = serializers.FloatField(source='total')
+    # The invoice document edits a shift-backed line's rate in place, and marks
+    # lines still waiting for a client bill rate.
+    shiftId = serializers.IntegerField(source='shift_id', allow_null=True)
+    type = serializers.SerializerMethodField()
+    needsRate = serializers.BooleanField(source='needs_rate')
+
+    def get_type(self, obj):
+        return 'shift' if obj.shift_id else 'manual'
 
     def get_venue(self, obj):
         if obj.shift and obj.shift.venue:
@@ -797,8 +805,9 @@ class FinanceProviderSerializer(serializers.Serializer):
         return PROVIDER_COLORS.get(obj.provider_key, '#999999')
 
     def get_connected(self, obj):
-        # `connections` is the related_name on ProviderConnection
-        return obj.connections.filter(status='connected').exists()
+        # Supplied by the view, scoped to the requesting company. Without it the
+        # answer is "no" — never "some tenant has connected this provider".
+        return obj.pk in self.context.get('connected_provider_ids', ())
 
     def get_default(self, obj):
         return obj.provider_key == 'xero'

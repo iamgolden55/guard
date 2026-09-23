@@ -94,6 +94,25 @@ function reducer(state: Shift[], action: Action): Shift[] {
 // ============================================================
 export type ToastTone = "info" | "success" | "warning" | "danger";
 
+/**
+ * SIA licence warnings the server attaches to a created or updated shift.
+ *
+ * Assigning an officer whose licence does not cover the shift's role is
+ * allowed but flagged (and recorded server-side). The server is the authority
+ * here; `lib/violations.ts` only knows what the browser has loaded.
+ */
+function licenceWarningsFrom(data: unknown): string[] {
+  const rows = Array.isArray(data) ? data : [data];
+  const messages = new Set<string>();
+  for (const row of rows) {
+    const warnings = (row as { licence_warnings?: { message?: string }[] } | null)
+      ?.licence_warnings;
+    if (!Array.isArray(warnings)) continue;
+    for (const w of warnings) if (w?.message) messages.add(w.message);
+  }
+  return [...messages];
+}
+
 export interface SchedulingToast {
   id: number;
   tone: ToastTone;
@@ -309,6 +328,12 @@ export function SchedulingProvider({
         status: "scheduled",
       });
     },
+    onSuccess: (data) => {
+      const warnings = licenceWarningsFrom(data);
+      if (warnings.length > 0) {
+        showToast({ tone: "warning", title: "Assigned — check the licence", body: warnings.join(" ") });
+      }
+    },
     onMutate: ({ shiftId, officerId }) => {
       const prev = shiftsRef.current;
       dispatch({ type: "assign", shiftId, officerId });
@@ -383,6 +408,12 @@ export function SchedulingProvider({
       // No `is_published`: moving a published shift keeps it published.
       return schedulerService.updateShift(Number(shiftId), body);
     },
+    onSuccess: (data) => {
+      const warnings = licenceWarningsFrom(data);
+      if (warnings.length > 0) {
+        showToast({ tone: "warning", title: "Moved — check the licence", body: warnings.join(" ") });
+      }
+    },
     onMutate: ({ shiftId, patch }) => {
       const prev = shiftsRef.current;
       dispatch({ type: "move", shiftId, patch });
@@ -438,8 +469,18 @@ export function SchedulingProvider({
       );
       return results;
     },
-    onSuccess: (_data, vars) => {
+    onSuccess: (data, vars) => {
       const count = Math.max(1, vars.officersNeeded ?? 1);
+      const warnings = licenceWarningsFrom(data);
+      if (warnings.length > 0) {
+        showToast({
+          tone: "warning",
+          title: count === 1 ? "Shift created — check the licence" : `${count} shifts created — check the licence`,
+          body: warnings.join(" "),
+        });
+        invalidateShifts();
+        return;
+      }
       showToast({
         tone: "success",
         title: count === 1 ? "Shift created" : `${count} shifts created`,
@@ -487,7 +528,7 @@ export function SchedulingProvider({
       }
 
       // PATCH the edited row first.
-      await schedulerService.updateShift(
+      const updated = await schedulerService.updateShift(
         Number(id),
         baseBody as unknown as CreateShiftParams,
       );
@@ -510,8 +551,15 @@ export function SchedulingProvider({
           ),
         );
       }
+      return updated;
     },
-    onSuccess: (_data, vars) => {
+    onSuccess: (data, vars) => {
+      const warnings = licenceWarningsFrom(data);
+      if (warnings.length > 0) {
+        showToast({ tone: "warning", title: "Shift updated — check the licence", body: warnings.join(" ") });
+        invalidateShifts();
+        return;
+      }
       const extra = Math.max(0, (vars.input.officersNeeded ?? 1) - 1);
       showToast({
         tone: "success",

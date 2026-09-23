@@ -39,6 +39,9 @@ export interface InvoiceItem {
    * Only base-rate 'shift' lines are inline-editable; overtime tiers derive
    * from the base rate so editing them directly would be misleading. */
   type?: string;
+  /** Client invoices only: the shift had no bill rate, so the line is priced
+   * at £0 and the invoice cannot be issued until a rate is set. */
+  needsRate?: boolean;
 }
 
 export interface InvoiceHistoryEntry {
