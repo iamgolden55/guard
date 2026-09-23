@@ -84,6 +84,7 @@ jobs:
           api/tests/test_sia_authz.py
           api/tests/test_sia_document_access.py
           api/tests/test_sia_licence_documents.py
+          api/tests/test_profile_photos.py
           api/tests/test_venue_geofence_authz.py
           api/tests/test_serializer_mass_assignment.py
           api/tests/test_payroll_math.py

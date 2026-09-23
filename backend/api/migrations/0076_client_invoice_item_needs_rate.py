@@ -6,7 +6,9 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0074_capacity_check_in_out"),
+        # Renumbered from 0075 on the merge to main: 0075 was taken by the
+        # profile-photo keys migration, and two leaves abort the Render build.
+        ("api", "0075_profile_photo_storage_keys"),
     ]
 
     operations = [
