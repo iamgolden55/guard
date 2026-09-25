@@ -1715,8 +1715,10 @@ class Shift(models.Model):
         ('no_show', 'No Show'),
     )
 
-    staff_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shifts', null=True, blank=True)
-    venue = models.ForeignKey(Venue, on_delete=models.CASCADE, related_name='shifts')
+    # PROTECT, not CASCADE: a worked shift is pay history. Deleting the officer
+    # or venue must not take it (and its invoice lines) with them.
+    staff_user = models.ForeignKey(User, on_delete=models.PROTECT, related_name='shifts', null=True, blank=True)
+    venue = models.ForeignKey(Venue, on_delete=models.PROTECT, related_name='shifts')
     template = models.ForeignKey(ShiftTemplate, on_delete=models.SET_NULL, null=True, blank=True, related_name='generated_shifts')
     shift_group = models.CharField(max_length=50, null=True, blank=True, help_text="Groups multiple staff shifts for the same venue/time")
     start_time = models.DateTimeField()
@@ -2930,7 +2932,7 @@ class TimeAdjustment(models.Model):
     manager digital signature and reason.
     """
 
-    shift = models.ForeignKey(Shift, on_delete=models.CASCADE, related_name='time_adjustments')
+    shift = models.ForeignKey(Shift, on_delete=models.PROTECT, related_name='time_adjustments')
 
     # Original times (copied from shift at time of adjustment)
     original_check_in_time = models.DateTimeField(null=True, blank=True, help_text="Original check-in time before adjustment")
@@ -3501,7 +3503,7 @@ class Invoice(models.Model):
         ('admin', 'Admin Generated'),
     )
 
-    staff_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='invoices')
+    staff_user = models.ForeignKey(User, on_delete=models.PROTECT, related_name='invoices')
     invoice_number = models.CharField(
         max_length=50, unique=True, null=True, blank=True,
         help_text="Display invoice number, e.g. PAY-2026-00481"
@@ -4118,7 +4120,7 @@ class InvoiceItem(models.Model):
     # Shift reference (required for shift items, null for leave items)
     shift = models.ForeignKey(
         Shift,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name='invoice_items',
         null=True,
         blank=True,
@@ -7416,7 +7418,7 @@ class ClientInvoice(models.Model):
     )
     venue = models.ForeignKey(
         Venue,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name='client_invoices',
         help_text="Venue/client being billed"
     )

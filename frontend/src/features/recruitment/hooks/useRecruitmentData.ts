@@ -199,6 +199,7 @@ export function useRecruitmentData({ filters }: UseRecruitmentDataOptions) {
     stats: statsQuery.data ?? normalizeStats(undefined),
     companySlug: companySlugQuery.data ?? null,
     isLoading: applicationsQuery.isLoading,
+    isError: applicationsQuery.isError,
     isStatsLoading: statsQuery.isLoading,
     approveApplication,
     rejectApplication,

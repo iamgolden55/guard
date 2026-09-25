@@ -112,39 +112,41 @@ export function TimesheetsView({
         />
         <div style={{ flex: 1 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 0 14px" }}>
-          <Button variant="secondary" size="sm" leading={<Icon name="filter" size={12} />}>
+          {/* Had no handler: clicking did nothing. Shown as unavailable rather
+              than removed so the layout stays put until filtering ships. */}
+          <Button
+            variant="secondary"
+            size="sm"
+            leading={<Icon name="filter" size={12} />}
+            disabled
+            title="Filtering isn't available yet."
+          >
             Filter
           </Button>
           {(() => {
             // A row is approvable only if it's "ready" (no blockers, no
             // late/early flags, no in-progress shifts). Auto-approve handles
             // the happy path; the bulk button is for the leftover edge cases.
+            //
+            // This button had no click handler: it computed an elaborate
+            // enabled state and then did nothing (AUDIT-2026-09-17, web).
+            // Approving needs a manager signature per shift, so bulk approval
+            // is a feature to build, not a wire to connect. Until then it says
+            // so instead of looking like it works.
             const selectedRows = rows.filter((r) => selected.has(r.oid));
             const approvableSelected = selectedRows.filter((r) => r.status === "ready").length;
-            const noneReady = selected.size > 0 && approvableSelected === 0;
-            const empty = selected.size === 0;
             return (
               <Button
                 variant="primary"
                 size="sm"
                 accent={palette}
-                leading={
-                  <Icon name={empty || noneReady ? "lock" : "check"} size={12} />
-                }
-                disabled={empty || noneReady}
-                title={
-                  empty
-                    ? "Tick rows to bulk-approve"
-                    : noneReady
-                      ? "Selected rows aren't ready — shifts must be checked out and free of blockers. Auto-approve handles clean check-outs automatically."
-                      : undefined
-                }
+                leading={<Icon name="lock" size={12} />}
+                disabled
+                title="Bulk approval isn't available yet. Open a shift to approve it; clean check-outs approve automatically."
               >
-                {empty
-                  ? "Select rows to approve"
-                  : noneReady
-                    ? `${selected.size} selected · awaiting check-out`
-                    : `Approve ${approvableSelected} selected`}
+                {approvableSelected > 0
+                  ? `${approvableSelected} ready · approve individually`
+                  : "Bulk approval coming soon"}
               </Button>
             );
           })()}
@@ -376,14 +378,11 @@ export function TimesheetsView({
         >
           <Icon name="info" size={18} />
           <div style={{ flex: 1, fontSize: 13, color: tokens.color.ink600, lineHeight: 1.5 }}>
-            <strong style={{ color: tokens.color.ink900 }}>Approval modes:</strong> click any
-            row to approve a single shift, tick checkboxes to approve per-officer-per-week, or
-            use the filter chips above to bulk-approve a filtered set. Blocked rows must have
-            exceptions resolved first.
+            <strong style={{ color: tokens.color.ink900 }}>Approving:</strong> shifts that
+            check out cleanly approve automatically. Open a shift to approve it by hand.
+            Blocked rows must have their exceptions resolved first. Bulk approval is not
+            available yet.
           </div>
-          <Button variant="ghost" size="sm">
-            Learn more
-          </Button>
         </div>
       </div>
     </div>

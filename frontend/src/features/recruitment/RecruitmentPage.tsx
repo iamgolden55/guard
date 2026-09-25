@@ -275,8 +275,9 @@ export default function RecruitmentPage() {
       <ApplicationsView
         applications={visibleApplications}
         isLoading={data.isLoading}
-        emptyTitle={emptyCopy[view].title}
-        emptyHint={emptyCopy[view].hint}
+        // A failed load is not "no applications yet".
+        emptyTitle={data.isError ? "Couldn't load applications" : emptyCopy[view].title}
+        emptyHint={data.isError ? "Refresh the page. Candidates may be waiting." : emptyCopy[view].hint}
         onSelect={openDrawer}
       />
 

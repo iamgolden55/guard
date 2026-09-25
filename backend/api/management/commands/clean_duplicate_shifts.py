@@ -16,6 +16,7 @@ Usage:
 """
 
 from django.core.management.base import BaseCommand
+from django.db.models import ProtectedError
 from django.db.models import Count, Min, Q
 from django.utils import timezone
 from api.models import Shift, User, Venue
@@ -98,6 +99,9 @@ class Command(BaseCommand):
             # Handle exact duplicates
             deleted_count = 0
             cancelled_count = 0
+            # A duplicate that was worked and invoiced is pay history: the
+            # database refuses to delete it, and it's reported for a person.
+            kept_ids = []
 
             for dup in exact_duplicates:
                 shifts_to_remove = Shift.objects.filter(
@@ -108,8 +112,12 @@ class Command(BaseCommand):
                     count = shifts_to_remove.update(status='cancelled')
                     cancelled_count += count
                 else:
-                    count, _ = shifts_to_remove.delete()
-                    deleted_count += count
+                    for shift in shifts_to_remove:
+                        try:
+                            shift.delete()
+                            deleted_count += 1
+                        except ProtectedError:
+                            kept_ids.append(shift.id)
 
             # For overlapping shifts, we cancel/delete the newer ones
             for overlap in overlapping_shifts:
@@ -120,13 +128,21 @@ class Command(BaseCommand):
                         newer_shift.save()
                         cancelled_count += 1
                     else:
-                        newer_shift.delete()
-                        deleted_count += 1
+                        try:
+                            newer_shift.delete()
+                            deleted_count += 1
+                        except ProtectedError:
+                            kept_ids.append(newer_shift.id)
 
             if cancel_mode:
                 self.stdout.write(self.style.SUCCESS(f'\nCancelled {cancelled_count} shifts'))
             else:
                 self.stdout.write(self.style.SUCCESS(f'\nDeleted {deleted_count} shifts'))
+                if kept_ids:
+                    self.stdout.write(self.style.WARNING(
+                        f'Kept {len(kept_ids)} shifts that have invoice lines or time '
+                        f'adjustments (resolve by hand, or use --cancel): {kept_ids}'
+                    ))
 
             logger.info(
                 f"clean_duplicate_shifts: Processed {total_issues} issues. "

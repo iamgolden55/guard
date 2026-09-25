@@ -30,6 +30,7 @@ from api.models import (
     SecurityCompany,
     Shift,
     StaffProfile,
+    TimeAdjustment,
     UserCompanyMembership,
     Venue,
 )
@@ -184,6 +185,8 @@ class Command(BaseCommand):
             staff_user_id__in=staff_user_ids
         ).delete()
         runs_deleted = PayrollRun.objects.filter(company=company).delete()
+        # Time adjustments protect their shift; they go with it here.
+        TimeAdjustment.objects.filter(shift__venue__company=company).delete()
         shifts_deleted = Shift.objects.filter(venue__company=company).delete()
 
         backup['deleted_counts'] = {

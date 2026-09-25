@@ -603,11 +603,13 @@ class LeaveBalanceServiceTest(TestCase):
             accrual_rate=Decimal('0.83')
         )
 
-        # Create entitlements
+        # Create entitlements. The eligibility and projection services read the
+        # current year's entitlement, so the fixture must be for this year.
+        self.year = timezone.now().year
         LeaveEntitlement.objects.create(
             user=self.user,
             policy=self.annual_policy,
-            year=2024,
+            year=self.year,
             annual_entitlement=Decimal('20'),
             accrued_to_date=Decimal('10'),
             used_to_date=Decimal('5')
@@ -616,7 +618,7 @@ class LeaveBalanceServiceTest(TestCase):
         LeaveEntitlement.objects.create(
             user=self.user,
             policy=self.sick_policy,
-            year=2024,
+            year=self.year,
             annual_entitlement=Decimal('10'),
             accrued_to_date=Decimal('5'),
             used_to_date=Decimal('2')
@@ -624,9 +626,9 @@ class LeaveBalanceServiceTest(TestCase):
 
     def test_user_leave_summary(self):
         """Test getting comprehensive leave summary for user"""
-        summary = LeaveBalanceService.get_user_leave_summary(self.user, 2024)
+        summary = LeaveBalanceService.get_user_leave_summary(self.user, self.year)
 
-        self.assertEqual(summary['year'], 2024)
+        self.assertEqual(summary['year'], self.year)
         self.assertIn('Annual Leave', summary['leave_types'])
         self.assertIn('Sick Leave', summary['leave_types'])
 
@@ -772,17 +774,20 @@ class LeaveManagementIntegrationTest(TransactionTestCase):
         # Initialize the system
         LeavePolicyService.create_default_leave_types()
         LeavePolicyService.create_standard_policies()
-        LeavePolicyService.initialize_user_entitlements(self.user, 2024)
+        # Eligibility reads the current year's entitlement, so run the
+        # lifecycle in the current year rather than a fixed one.
+        self.year = timezone.now().year
+        LeavePolicyService.initialize_user_entitlements(self.user, self.year)
 
     def test_complete_leave_lifecycle(self):
         """Test complete leave management lifecycle"""
         # 1. Process monthly accruals for 3 months
         for month in range(3):
-            reference_date = date(2024, month + 1, 15)
+            reference_date = date(self.year, month + 1, 15)
             LeaveAccrualService.process_monthly_accruals(reference_date)
 
         # 2. Check user's leave summary
-        summary = LeaveBalanceService.get_user_leave_summary(self.user, 2024)
+        summary = LeaveBalanceService.get_user_leave_summary(self.user, self.year)
 
         # Should have accrued some leave
         annual_balance = summary['leave_types']['Annual Leave']['current_balance']
@@ -806,7 +811,7 @@ class LeaveManagementIntegrationTest(TransactionTestCase):
         annual_entitlement = LeaveEntitlement.objects.get(
             user=self.user,
             policy__leave_type__code='AL',
-            year=2024
+            year=self.year
         )
 
         original_balance = annual_entitlement.current_balance
@@ -819,16 +824,16 @@ class LeaveManagementIntegrationTest(TransactionTestCase):
         )
 
         # 5. Process year-end carryover
-        results = LeaveCarryoverService.process_year_end_carryovers(2024)
+        results = LeaveCarryoverService.process_year_end_carryovers(self.year)
         self.assertGreaterEqual(results['processed_count'], 1)
 
-        # 6. Verify 2025 entitlements were created with carryover
-        entitlement_2025 = LeaveEntitlement.objects.get(
+        # 6. Verify next year's entitlements were created with carryover
+        entitlement_next = LeaveEntitlement.objects.get(
             user=self.user,
             policy__leave_type__code='AL',
-            year=2025
+            year=self.year + 1
         )
-        self.assertGreaterEqual(entitlement_2025.carried_over, Decimal('0'))
+        self.assertGreaterEqual(entitlement_next.carried_over, Decimal('0'))
 
     def test_system_error_handling(self):
         """Test system behavior with edge cases and errors"""

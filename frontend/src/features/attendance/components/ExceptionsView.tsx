@@ -79,7 +79,14 @@ export function ExceptionsView({ onSelect }: ExceptionsViewProps) {
           />
         ))}
         <div style={{ flex: 1 }} />
-        <Button variant="secondary" size="sm" leading={<Icon name="check" size={13} />}>
+        {/* Had no handler. See TimesheetsView for why bulk approval isn't wired. */}
+        <Button
+          variant="secondary"
+          size="sm"
+          leading={<Icon name="lock" size={13} />}
+          disabled
+          title="Bulk approval isn't available yet. Resolve each exception from its row."
+        >
           Bulk approve
         </Button>
       </div>

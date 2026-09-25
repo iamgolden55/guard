@@ -587,9 +587,11 @@ export function SchedulingProvider({
         dispatch({ type: "set", shifts: prev.filter((s) => s.id !== id) });
         return { prev };
       },
-      onError: (_err, _id, ctx) => {
+      onError: (err, _id, ctx) => {
         if (ctx?.prev) dispatch({ type: "set", shifts: ctx.prev });
-        showToast({ tone: "danger", title: "Couldn't delete shift" });
+        // 409 when the shift is on an invoice or has a signed time adjustment.
+        const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+        showToast({ tone: "danger", title: "Couldn't delete shift", body: detail });
       },
       onSuccess: () => {
         showToast({ tone: "success", title: "Shift deleted" });

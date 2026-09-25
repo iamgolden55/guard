@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status, permissions, filters, renderers
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
@@ -40,7 +41,7 @@ from .serializers import (
 from .permissions import (
     LeaveTypePermission, LeavePolicyPermission, LeaveEntitlementPermission,
     LeaveBalancePermission, AdminOnlyPermission, ManagerOrAdminPermission,
-    ReadOnlyForStaffMixin
+    PlatformAdminPermission, ReadOnlyForStaffMixin
 )
 from .services import LeaveBalanceService, LeaveAccrualService
 from api.middleware.tenant_middleware import resolve_request_company
@@ -223,7 +224,7 @@ class LeaveTypeViewSet(ReadOnlyForStaffMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(active_types, many=True)
         return Response(serializer.data)
 
-    @action(detail=True, methods=['post'], permission_classes=[AdminOnlyPermission])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, PlatformAdminPermission])
     def toggle_active(self, request, pk=None):
         """Toggle active status of a leave type"""
         leave_type = self.get_object()
@@ -336,7 +337,7 @@ class LeavePolicyViewSet(ReadOnlyForStaffMixin, viewsets.ModelViewSet):
         serializer = LeavePolicyListSerializer(policies, many=True)
         return Response(serializer.data)
 
-    @action(detail=True, methods=['post'], permission_classes=[AdminOnlyPermission])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, PlatformAdminPermission])
     def duplicate(self, request, pk=None):
         """Duplicate a leave policy with modifications"""
         source_policy = self.get_object()
@@ -373,7 +374,7 @@ class LeavePolicyViewSet(ReadOnlyForStaffMixin, viewsets.ModelViewSet):
             'policy': serializer.data
         }, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['post'], permission_classes=[AdminOnlyPermission])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, PlatformAdminPermission])
     def toggle_active(self, request, pk=None):
         """Toggle active status of a leave policy"""
         policy = self.get_object()
@@ -386,7 +387,7 @@ class LeavePolicyViewSet(ReadOnlyForStaffMixin, viewsets.ModelViewSet):
             'policy': serializer.data
         })
 
-    @action(detail=True, methods=['get'], permission_classes=[ManagerOrAdminPermission])
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, PlatformAdminPermission])
     def preview_impact(self, request, pk=None):
         """Preview the impact of policy changes"""
         policy = self.get_object()
@@ -438,7 +439,12 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
 
         permission_checker = LeaveBalancePermission()
-        return permission_checker.filter_queryset_for_user(queryset, user)
+        # Managers and admins see their company's balances. The permission's
+        # own filter returned the whole table to them — invisible while the
+        # role lookup treated every tenant manager as staff.
+        if permission_checker.is_manager(user):
+            return queryset.filter(user_id__in=company_user_ids_for_request(self.request))
+        return queryset.filter(user=user)
 
     @action(detail=False, methods=['get'])
     def summary(self, request):
@@ -455,7 +461,10 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
                     status=status.HTTP_403_FORBIDDEN
                 )
             try:
-                target_user = User.objects.get(id=user_id)
+                # Only someone in the manager's own company.
+                target_user = User.objects.get(
+                    id=user_id, id__in=company_user_ids_for_request(request),
+                )
             except User.DoesNotExist:
                 return Response(
                     {'error': 'User not found'},
@@ -481,7 +490,7 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
 
         return Response(balances)
 
-    @action(detail=False, methods=['post'], permission_classes=[AdminOnlyPermission])
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, PlatformAdminPermission])
     def recalculate_all(self, request):
         """Recalculate all leave balances for current year"""
         year = request.data.get('year', timezone.now().year)
@@ -946,6 +955,29 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                 else 'Your request has been saved as draft'
             )
         }, status=status.HTTP_201_CREATED, headers=headers)
+
+    #: Statuses in which the requesting officer may still change or delete a
+    #: request. Once decided it is paid leave (Invoice.generate_for_staff_period
+    #: pays every approved day); an officer could previously PATCH `end_date`
+    #: on approved leave and be paid for the extra days.
+    STAFF_EDITABLE_STATUSES = ('draft', 'pending')
+
+    def _check_staff_may_change(self, leave_request):
+        user = self.request.user
+        if user.role in ('manager', 'admin') or user.is_staff or user.is_superuser:
+            return
+        if leave_request.status not in self.STAFF_EDITABLE_STATUSES:
+            raise PermissionDenied(
+                f"This request is {leave_request.status}; ask your manager to change it."
+            )
+
+    def perform_update(self, serializer):
+        self._check_staff_may_change(serializer.instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._check_staff_may_change(instance)
+        instance.delete()
 
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
@@ -1608,23 +1640,15 @@ class LeaveReportsViewSet(viewsets.ReadOnlyModelViewSet):
         report_type = request.query_params.get('type', 'analytics')
         year = int(request.query_params.get('year', timezone.now().year))
 
+        # Reuse the report endpoints with this same request — it already carries
+        # the query params and user. Building a bare `request._request.__class__()`
+        # raised TypeError (WSGIRequest needs an environ), so every analytics and
+        # usage export returned 500.
         if report_type == 'analytics':
-            # Get analytics data
-            analytics_request = request._request.__class__()
-            analytics_request.query_params = request.query_params
-            analytics_request.user = request.user
-
-            # Reuse analytics endpoint
-            analytics_response = self.analytics(analytics_request)
-            data = analytics_response.data
+            data = self.analytics(request).data
 
         elif report_type == 'usage_summary':
-            usage_request = request._request.__class__()
-            usage_request.query_params = request.query_params
-            usage_request.user = request.user
-
-            usage_response = self.usage_summary(usage_request)
-            data = usage_response.data
+            data = self.usage_summary(request).data
 
         else:
             return Response({
@@ -2231,7 +2255,7 @@ class LeaveSettingsViewSet(viewsets.ViewSet):
     Handles system-wide leave settings and blackout periods
     This ViewSet doesn't work with a model, so it uses ViewSet instead of ModelViewSet
     """
-    permission_classes = [IsAuthenticated, AdminOnlyPermission]
+    permission_classes = [IsAuthenticated, PlatformAdminPermission]
 
     def list(self, request):
         """Get leave system settings overview"""
@@ -2261,7 +2285,7 @@ class LeaveSettingsViewSet(viewsets.ViewSet):
 
         return Response(settings)
 
-    @action(detail=False, methods=['get', 'put'], permission_classes=[AdminOnlyPermission])
+    @action(detail=False, methods=['get', 'put'], permission_classes=[IsAuthenticated, PlatformAdminPermission])
     def system_config(self, request):
         """Get or update system-wide leave configuration"""
         from .models import SystemConfig
@@ -2327,7 +2351,7 @@ class LeaveSettingsViewSet(viewsets.ViewSet):
                 'updated_at': timezone.now().isoformat()
             })
 
-    @action(detail=False, methods=['get', 'put'], permission_classes=[AdminOnlyPermission])
+    @action(detail=False, methods=['get', 'put'], permission_classes=[IsAuthenticated, PlatformAdminPermission])
     def notifications(self, request):
         """Get or update notification settings"""
         from .models import SystemConfig
@@ -2368,7 +2392,7 @@ class LeaveSettingsViewSet(viewsets.ViewSet):
                 'updated_at': timezone.now().isoformat()
             })
 
-    @action(detail=False, methods=['get'], permission_classes=[AdminOnlyPermission])
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, PlatformAdminPermission])
     def system_health(self, request):
         """Get system health and diagnostic information"""
         from .models import SystemConfig, LeaveRequest
@@ -2435,7 +2459,7 @@ class BlackoutPeriodsViewSet(viewsets.ModelViewSet):
     """
     queryset = BlackoutPeriod.objects.select_related('venue').prefetch_related('leave_types')
     serializer_class = BlackoutPeriodSerializer
-    permission_classes = [IsAuthenticated, AdminOnlyPermission]
+    permission_classes = [IsAuthenticated, PlatformAdminPermission]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['is_active', 'restriction_level', 'venue']
     search_fields = ['name', 'description']

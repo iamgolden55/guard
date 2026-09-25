@@ -497,45 +497,31 @@ class FinanceIntegrationService:
         
         return provider_employee_id
     
+    #: Statuses a payment may settle: the same rule as marking an invoice paid
+    #: by hand (`BillingInvoiceFacadeViewSet.PAYABLE_STATUSES['staff']`).
+    PAYABLE_STATUSES = ('approved',)
+
     def sync_payment_status(self, webhook_data: Dict[str, Any]) -> None:
         """
         Process webhook data to update payment status
-        
+
         Args:
             webhook_data: Webhook payload data
         """
         try:
-            # This would be provider-specific implementation
-            # For now, we'll implement a generic approach
-            
             event_type = webhook_data.get('eventType', '')
-            
-            if 'invoice' in event_type.lower() and 'paid' in event_type.lower():
-                invoice_id = webhook_data.get('resourceId')
-                
-                if invoice_id:
-                    # Find the export record
-                    export_record = InvoiceExport.objects.filter(
-                        connection=self.connection,
-                        provider_invoice_id=invoice_id
-                    ).first()
-                    
-                    if export_record:
-                        # Update local invoice status
-                        local_invoice = export_record.local_invoice
-                        if local_invoice.status != 'paid':
-                            local_invoice.status = 'paid'
-                            local_invoice.save()
-                            
-                            # Log the update
-                            SyncLog.objects.create(
-                                connection=self.connection,
-                                operation='import_payment',
-                                level='success',
-                                message=f'Invoice #{local_invoice.id} marked as paid via webhook',
-                                metadata=webhook_data
-                            )
-        
+            if not ('invoice' in event_type.lower() and 'paid' in event_type.lower()):
+                return
+            invoice_id = webhook_data.get('resourceId')
+            if not invoice_id:
+                return
+            export_record = InvoiceExport.objects.filter(
+                connection=self.connection,
+                provider_invoice_id=invoice_id
+            ).first()
+            if export_record:
+                self._record_payment(export_record.local_invoice_id, webhook_data)
+
         except Exception as e:
             # Log error but don't raise - webhooks should not fail
             SyncLog.objects.create(
@@ -545,6 +531,74 @@ class FinanceIntegrationService:
                 message=f'Webhook processing failed: {str(e)}',
                 metadata=webhook_data
             )
+
+    def _record_payment(self, invoice_pk, webhook_data: Dict[str, Any]) -> None:
+        """Settle an approved invoice from a provider's payment event.
+
+        A payment against an invoice nobody approved (draft, pending,
+        rejected) is recorded for a person to look at, never applied: this
+        path used to mark any exported invoice paid, skipping the approval
+        the manual route enforces, and left `paid_date` empty.
+        """
+        from django.db import transaction
+        from api.models import AuditLog
+
+        with transaction.atomic():
+            invoice = Invoice.objects.select_for_update().get(pk=invoice_pk)
+            if invoice.status == 'paid':
+                return
+            if invoice.status not in self.PAYABLE_STATUSES:
+                SyncLog.objects.create(
+                    connection=self.connection,
+                    operation='import_payment',
+                    level='warning',
+                    message=(
+                        f"Payment received for invoice #{invoice.pk}, which is "
+                        f"'{invoice.status}' here and not approved. Not marked paid; "
+                        "a manager needs to review it."
+                    ),
+                    metadata=webhook_data,
+                )
+                return
+            invoice.status = 'paid'
+            invoice.paid_date = _payment_date(webhook_data)
+            invoice.save(update_fields=['status', 'paid_date', 'updated_at'])
+            AuditLog.objects.create(
+                user=None,
+                action='invoice_paid',
+                resource_type='Invoice',
+                resource_id=str(invoice.pk),
+                details={
+                    'amount': float(invoice.total_amount or 0),
+                    'paid_date': invoice.paid_date.isoformat(),
+                    'source': self.connection.provider.provider_key,
+                    'provider_invoice_id': webhook_data.get('resourceId'),
+                },
+            )
+            SyncLog.objects.create(
+                connection=self.connection,
+                operation='import_payment',
+                level='success',
+                message=f'Invoice #{invoice.pk} marked as paid via webhook',
+                metadata=webhook_data
+            )
+            run = getattr(invoice, 'payroll_run', None)
+            if run is not None:
+                run.recompute_totals()
+                run.update_status_from_invoices()
+
+
+def _payment_date(webhook_data: Dict[str, Any]):
+    """The payment date the provider reports, or today."""
+    from datetime import date
+
+    raw = webhook_data.get('paidDate') or webhook_data.get('paymentDate')
+    if raw:
+        try:
+            return date.fromisoformat(str(raw)[:10])
+        except ValueError:
+            pass
+    return timezone.localdate()
 
 
 class ConnectionSetupService:

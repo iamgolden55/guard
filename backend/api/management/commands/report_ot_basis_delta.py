@@ -83,6 +83,21 @@ class Command(BaseCommand):
             )
             return
 
+        # With the flag on, the accumulator sums `payable_hours`; a NULL adds
+        # nothing, so any row still NULL (written before migration 0071)
+        # makes the aligned figure too low.
+        unfilled = Shift.objects.filter(
+            staff_user__isnull=False,
+            start_time__gte=cutoff - timedelta(days=7),
+            payable_hours__isnull=True,
+        ).count()
+        if unfilled:
+            self.stdout.write(self.style.WARNING(
+                f"{unfilled} shifts in this window have no payable_hours, so the aligned "
+                "figure below is understated. Run `manage.py backfill_payable_hours "
+                "--apply` first."
+            ))
+
         # Both passes run over the same rows, changing only which column the
         # accumulator sums. Each is a pure read — `calculate_payment` writes
         # nothing.

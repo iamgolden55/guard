@@ -20,15 +20,23 @@ class LeaveManagementBasePermission(BasePermission):
         return True
 
     def get_user_role(self, user):
-        """Get user role from profile"""
-        if not hasattr(user, 'profile') or not user.profile:
-            return 'staff'
+        """The user's application role (`User.role`).
 
-        return getattr(user.profile, 'role', 'staff').lower()
+        This read `user.profile.role`. `user.profile` is the StaffProfile, which
+        has no `role` field, so every user came back as 'staff' and only
+        Django's is_staff/is_superuser passed the manager and admin checks. No
+        tenant manager could approve leave; the web queue then told them
+        "You're all caught up" (AUDIT-2026-09-17, 2B/2C).
+        """
+        return (getattr(user, 'role', None) or 'staff').lower()
+
+    def is_platform_admin(self, user):
+        """Platform staff — for configuration shared by every company."""
+        return bool(user.is_superuser or user.is_staff)
 
     def is_admin(self, user):
-        """Check if user is admin"""
-        return user.is_superuser or user.is_staff or self.get_user_role(user) == 'admin'
+        """Check if user is admin (a company admin, or platform staff)"""
+        return self.is_platform_admin(user) or self.get_user_role(user) == 'admin'
 
     def is_manager(self, user):
         """Check if user is manager or above"""
@@ -56,8 +64,11 @@ class LeaveTypePermission(LeaveManagementBasePermission):
         if request.method in SAFE_METHODS:
             return True
 
-        # Write permissions only for admins
-        return self.is_admin(request.user)
+        # Leave types and policies are shared by every company (no company
+        # column), so a company admin editing one changes it for all of them.
+        # Writes stay with platform staff — what the broken role lookup
+        # enforced by accident, now stated.
+        return self.is_platform_admin(request.user)
 
     def has_object_permission(self, request, view, obj):
         """Object-level permissions for leave types"""
@@ -65,8 +76,11 @@ class LeaveTypePermission(LeaveManagementBasePermission):
         if request.method in SAFE_METHODS:
             return True
 
-        # Write permissions only for admins
-        return self.is_admin(request.user)
+        # Leave types and policies are shared by every company (no company
+        # column), so a company admin editing one changes it for all of them.
+        # Writes stay with platform staff — what the broken role lookup
+        # enforced by accident, now stated.
+        return self.is_platform_admin(request.user)
 
 
 class LeavePolicyPermission(LeaveManagementBasePermission):
@@ -85,8 +99,11 @@ class LeavePolicyPermission(LeaveManagementBasePermission):
         if request.method in SAFE_METHODS:
             return True
 
-        # Write permissions only for admins
-        return self.is_admin(request.user)
+        # Leave types and policies are shared by every company (no company
+        # column), so a company admin editing one changes it for all of them.
+        # Writes stay with platform staff — what the broken role lookup
+        # enforced by accident, now stated.
+        return self.is_platform_admin(request.user)
 
     def has_object_permission(self, request, view, obj):
         """Object-level permissions for leave policies"""
@@ -94,8 +111,11 @@ class LeavePolicyPermission(LeaveManagementBasePermission):
         if request.method in SAFE_METHODS:
             return True
 
-        # Write permissions only for admins
-        return self.is_admin(request.user)
+        # Leave types and policies are shared by every company (no company
+        # column), so a company admin editing one changes it for all of them.
+        # Writes stay with platform staff — what the broken role lookup
+        # enforced by accident, now stated.
+        return self.is_platform_admin(request.user)
 
 
 class LeaveEntitlementPermission(LeaveManagementBasePermission):
@@ -237,6 +257,16 @@ class IsOwnerOrManagerOrAdmin(LeaveManagementBasePermission):
         return False
 
 
+class PlatformAdminPermission(LeaveManagementBasePermission):
+    """Platform staff only: for leave configuration no company owns
+    (SystemConfig, global blackout periods, leave types and policies)."""
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        return self.is_platform_admin(request.user)
+
+
 class AdminOnlyPermission(LeaveManagementBasePermission):
     """Permission that only allows admin users"""
 
@@ -271,7 +301,9 @@ class ReadOnlyForStaffMixin:
             # If staff user and non-safe method, deny
             if (base_permission.is_staff_user(self.request.user) and
                 self.request.method not in SAFE_METHODS):
-                permission_classes = [permissions.IsAuthenticated]
+                # Instances, not classes: DRF calls `has_permission` on each, and
+                # the bare class here turned every refused write into a 500.
+                permission_classes = [permissions.IsAuthenticated()]
                 # Add a custom permission that always returns False for write operations
                 class DenyWritePermission(BasePermission):
                     def has_permission(self, request, view):

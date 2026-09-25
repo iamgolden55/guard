@@ -60,10 +60,11 @@ export function InvoicesHeader({
 
   const tabCount = (id: InvoicesTab) => {
     if (id === "outbox") {
-      // Active work — anything still pending action.
+      // Active work — anything not yet paid. Same set as totals.outstanding.
       return (
         stats.counts.draft +
         stats.counts.pending +
+        stats.counts.approved +
         stats.counts.sent +
         stats.counts.overdue
       );

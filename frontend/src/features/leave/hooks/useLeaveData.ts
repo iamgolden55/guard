@@ -228,6 +228,10 @@ export function useLeaveData({
       leaveTypesQuery.isLoading,
     isCalendarLoading: calendarQuery.isLoading,
     isPendingLoading: pendingQuery.isLoading,
+    // A failed list is not an empty one: the approval queue used to say
+    // "You're all caught up" when it had been refused with a 403.
+    isPendingError: pendingQuery.isError,
+    isMyRequestsError: myRequestsQuery.isError,
     submitRequest,
     cancelRequest,
     processRequest,

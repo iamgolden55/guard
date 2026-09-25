@@ -5,6 +5,7 @@ import onboardingService from '../services/onboardingService';
 import companyService from '../services/companyService';
 import api from '../services/api';
 import { logger } from '../lib/logger';
+import { queryClient } from '../lib/queryClient';
 
 // Define the context value structure
 interface AuthContextValue {
@@ -490,6 +491,13 @@ function AuthProvider({ children }: { children: ReactNode }) {
       // Set refs earlier and prevent validation effect immediately
       onboardingFetchedRef.current = true; // Prevent validation effect immediately
 
+      // Nothing cached for a previous user survives into this session. The
+      // query cache holds pages for up to ten minutes and none of its keys
+      // carry a user or company, so on a shared machine the next person would
+      // see the last person's rota, invoices and staff — possibly another
+      // company's — until each query happened to refetch.
+      queryClient.clear();
+
       // Sprint 3: CRITICAL - Set ALL state in ONE update (no tokens in state)
       setAuthState(prev => ({
         ...prev,
@@ -551,6 +559,9 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
     // Sprint 3: Call backend to clear httpOnly cookies (now async)
     await authService.logout();
+
+    // Drop every cached query: see the note in `login`.
+    queryClient.clear();
 
     // Sprint 3: Clear state (no tokens, they're in httpOnly cookies)
     setAuthState({

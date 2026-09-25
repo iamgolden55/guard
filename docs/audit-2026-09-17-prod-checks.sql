@@ -137,3 +137,24 @@ LEFT JOIN invoice_items it ON it.invoice_id = i.id
 WHERE i.superseded_by_id IS NULL
 GROUP BY i.id, i.invoice_number, i.total_amount
 HAVING i.total_amount <> COALESCE(SUM(it.amount), 0);
+
+-- ---------------------------------------------------------------------------
+-- (e) Third-party credentials exposed by onboarding (Phase 2C, E1).
+-- Until 2026-09-19, onboarding kept the raw integrations payload in step_data
+-- (returned to any company member) and Deputy's API key in plain
+-- configuration. Any company listed here: ROTATE those credentials at the
+-- provider (Deputy, payroll/accounting system, Slack webhook).
+-- ---------------------------------------------------------------------------
+\echo '== (e1) Onboarding rows holding raw integration credentials =='
+SELECT company_id, updated_at
+FROM company_onboarding
+WHERE step_data ? 'integrations'
+  -- a credential-like key whose value is a non-empty string or a non-empty object
+  -- (the fix writes "[redacted]" instead)
+  AND (step_data->'integrations')::text ~* '"[a-z_]*(api_key|_credentials|secret|token|webhook)[a-z_]*": ("[^"\[]|\{"[a-z])'
+ORDER BY updated_at DESC;
+
+\echo '== (e2) Integrations with credentials in the readable configuration field =='
+SELECT company_id, integration_type, updated_at
+FROM company_integrations
+WHERE configuration::text ~* '(api_key|secret|token|password|webhook)';
