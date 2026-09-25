@@ -155,8 +155,27 @@ class ProfilePhotoTests(APITestCase):
         response = self.client.get("/api/v1/profiles/me")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        url = response.data.get("profileImageUrl")
-        self.assertTrue(url and url.startswith("http"), f"got {url!r}")
+        # Both spellings: the staff app reads `profile_image_url` from a payload
+        # with a `user` object, which the admin branch is. With only the
+        # camelCase key an admin's own Profile tab showed initials.
+        for field in ("profile_image_url", "profileImageUrl"):
+            url = response.data.get(field)
+            self.assertTrue(url and url.startswith("http"), f"{field}: {url!r}")
+
+    def test_an_admin_editing_their_profile_keeps_their_photo(self):
+        """The admin PATCH response is what the app stores after a save."""
+        self._profile(self.admin)
+        self.client.force_authenticate(user=self.admin)
+        self._upload()
+
+        response = self.client.patch(
+            "/api/v1/profiles/me", {"firstName": "Dan"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        for field in ("profile_image_url", "profileImageUrl"):
+            url = response.data.get(field)
+            self.assertTrue(url and url.startswith("http"), f"{field}: {url!r}")
 
     def test_a_profile_with_no_photo_reports_none(self):
         self.client.force_authenticate(user=self.officer)

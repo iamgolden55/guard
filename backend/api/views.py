@@ -4174,6 +4174,11 @@ def my_profile(request):
             except Exception:
                 pass
 
+            # Both spellings, as StaffProfileSerializer sends: the staff app reads
+            # `profile_image_url` from any payload with a `user` object, so with
+            # only the camelCase key an admin's own photo never showed there.
+            photo_url = _own_photo_url(user, request)
+
             # Create a profile response for admin users with company contact info
             admin_profile_data = {
                 'id': user.id,
@@ -4203,7 +4208,8 @@ def my_profile(request):
                     'relationship': '',
                     'phoneNumber': ''
                 },
-                'profileImageUrl': _own_photo_url(user, request),
+                'profileImageUrl': photo_url,
+                'profile_image_url': photo_url,
                 'availableDays': [],
                 'preferredVenues': [],
                 'notes': '',
@@ -4403,6 +4409,9 @@ def my_profile(request):
             except Exception:
                 pass
 
+            # Both spellings, as in the GET branch above.
+            photo_url = _own_photo_url(user, request)
+
             updated_profile_data = {
                 'id': user.id,
                 'user': {
@@ -4431,7 +4440,8 @@ def my_profile(request):
                     'relationship': '',
                     'phoneNumber': ''
                 },
-                'profileImageUrl': _own_photo_url(user, request),
+                'profileImageUrl': photo_url,
+                'profile_image_url': photo_url,
                 'availableDays': [],
                 'preferredVenues': [],
                 'notes': '',
