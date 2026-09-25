@@ -12,6 +12,27 @@ import { tokens } from "../../../design-system/tokens";
 import type { Shift } from "../data/mocks";
 import { useScheduling, type ShiftFormInput } from "../state/SchedulingState";
 import settingsService, { type SystemSettings } from "../../../services/settingsService";
+import { resolveShiftRange } from "../../../lib/shiftTime";
+
+/** "Ends next day — Fri 26 Sep, 01:00 · 7h", "8h 30m", or null if incomplete. */
+function describeShiftSpan(date: string, start: string, end: string): string | null {
+  if (!date || !start || !end) return null;
+  const range = resolveShiftRange(date, start, end);
+  const mins = Math.round((range.end.getTime() - range.start.getTime()) / 60000);
+  if (!Number.isFinite(mins) || mins <= 0) return null;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const length = m ? `${h}h ${m}m` : `${h}h`;
+  if (!range.endsNextDay) return length;
+  const endLabel = range.end.toLocaleString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `Ends next day — ${endLabel} · ${length}`;
+}
 
 type PayRateMode = "static" | "special_event" | "custom";
 
@@ -116,6 +137,10 @@ export function NewShiftModal({
     }
     setFormError(null);
   }, [open, editingShift, defaultDate, venues, week]);
+
+  // Overnight ends are resolved to the next day on save (resolveShiftRange);
+  // say so up front so an 18:00 → 01:00 shift doesn't look like a mistake.
+  const spanHint = describeShiftSpan(date, startTime, endTime);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -250,6 +275,18 @@ export function NewShiftModal({
             />
           </Field>
         </div>
+        {spanHint && (
+          <span
+            style={{
+              fontSize: 11,
+              color: tokens.color.ink600,
+              marginTop: -4,
+              lineHeight: 1.4,
+            }}
+          >
+            {spanHint}
+          </span>
+        )}
 
         <Field label="Officer (leave empty for open shift)">
           <select
