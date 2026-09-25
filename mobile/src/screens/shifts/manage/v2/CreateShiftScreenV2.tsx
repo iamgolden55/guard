@@ -49,6 +49,13 @@ import {
   VenuePickerModal,
   type VenuePickerOption,
 } from '../components/VenuePickerModal';
+import {
+  applyDate,
+  applyEndTimeOfDay,
+  applyTimeOfDay,
+  describeShiftSpan,
+  shiftEndWithStart,
+} from '../../../../utils/shiftTimes';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 type PayRateType = 'static' | 'standard' | 'custom';
@@ -190,28 +197,17 @@ export const CreateShiftScreenV2: React.FC = () => {
       if (Platform.OS === 'android') setPickerOpen(null);
       if (event.type === 'dismissed' || !selected) return;
 
-      const base =
-        which === 'startDate' || which === 'startTime' ? startTime : endTime;
-      const next = new Date(base);
-      if (which === 'startDate' || which === 'endDate') {
-        next.setFullYear(
-          selected.getFullYear(),
-          selected.getMonth(),
-          selected.getDate(),
-        );
-      } else {
-        next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
-      }
-
       if (which === 'startDate' || which === 'startTime') {
+        const next =
+          which === 'startDate'
+            ? applyDate(startTime, selected)
+            : applyTimeOfDay(startTime, selected);
         setStartTime(next);
-        if (next >= endTime) {
-          const bumped = new Date(next);
-          bumped.setHours(bumped.getHours() + 8);
-          setEndTime(bumped);
-        }
+        setEndTime(shiftEndWithStart(startTime, next, endTime));
+      } else if (which === 'endTime') {
+        setEndTime(applyEndTimeOfDay(startTime, selected));
       } else {
-        setEndTime(next);
+        setEndTime(applyDate(endTime, selected));
       }
     };
 
@@ -496,6 +492,20 @@ export const CreateShiftScreenV2: React.FC = () => {
               {formatDateTime(endTime)}
             </Text>
           </View>
+          {describeShiftSpan(startTime, endTime) ? (
+            <Text
+              allowFontScaling={false}
+              style={{
+                marginTop: 4,
+                fontFamily: theme.fonts.mono,
+                fontSize: 10,
+                letterSpacing: 1.4,
+                color: theme.colors.text.tertiary,
+              }}
+            >
+              {describeShiftSpan(startTime, endTime)}
+            </Text>
+          ) : null}
 
           {/* Role */}
           <Eyebrow style={{ marginLeft: 4, marginTop: 18, marginBottom: 8 }}>

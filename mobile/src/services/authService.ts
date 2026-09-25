@@ -368,7 +368,8 @@ class AuthService {
         staff_profile: {
           id: profileData.id,
           phone_number: profileData.phone_number || '',
-          profile_image_url: profileData.profile_image_url || null,
+          // The admin payload of /profiles/me used to carry only the camelCase key.
+          profile_image_url: profileData.profile_image_url || profileData.profileImageUrl || null,
           emergency_contact_name: profileData.emergency_contact_name,
           emergency_contact_phone: profileData.emergency_contact_phone,
           sia_license_number: firstSiaLicense?.license_number || firstSiaLicense?.licenseNumber || '',
