@@ -2476,3 +2476,10 @@ def flag_missed_capacity_checks():
             expected_at = start + timedelta(minutes=interval * slot_idx)
 
     return {'shift_groups_scanned': len(seen_groups), 'new_misses': new_misses_total}
+
+@shared_task
+def refresh_app_review_live_shift():
+    """Keep the App Store review account a shift it can check into right now.
+    Scoped to review accounts in the demo company; see api/app_review.py."""
+    from api.app_review import refresh_live_shift
+    return refresh_live_shift()
