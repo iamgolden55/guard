@@ -32,8 +32,20 @@ export const useAuth = () => {
         // Authenticate with backend
         const tokens = await authService.login(credentials);
 
-        // Fetch user profile
-        const userProfile = await authService.fetchUserProfile(tokens.access);
+        // Fetch user profile. The password was right by now, so one slow
+        // response must not turn into "Login Failed": try once more.
+        let userProfile;
+        try {
+          userProfile = await authService.fetchUserProfile(tokens.access, 20000);
+        } catch {
+          try {
+            userProfile = await authService.fetchUserProfile(tokens.access, 20000);
+          } catch {
+            throw new Error(
+              "You're signed in, but your profile didn't load. Please check your connection and try again.",
+            );
+          }
+        }
 
         // Update Redux state
         dispatch(

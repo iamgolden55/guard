@@ -682,6 +682,12 @@ CELERY_BEAT_SCHEDULE = {
         # alerts managers.
         'schedule': crontab(minute='*/5'),
     },
+    'refresh-app-review-live-shift': {
+        'task': 'api.tasks.refresh_app_review_live_shift',
+        # Keeps the App Store review account a shift it can check into now.
+        # No-op unless a review account exists (api/app_review.py).
+        'schedule': crontab(minute='*/15'),
+    },
 }
 
 # Report generation specific settings

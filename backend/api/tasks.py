@@ -1939,6 +1939,10 @@ def detect_attendance_exceptions():
         start_time__lte=no_show_threshold,
         check_in_time__isnull=True,
         staff_user__isnull=False,
+    ).exclude(
+        # Nobody may open the app for days during App Store review; a no-show
+        # every fifteen minutes would fill the reviewer's shift list and alerts.
+        staff_user__is_review_account=True,
     )
     for shift in no_show_shifts:
         shift.status = 'no_show'
@@ -2472,3 +2476,10 @@ def flag_missed_capacity_checks():
             expected_at = start + timedelta(minutes=interval * slot_idx)
 
     return {'shift_groups_scanned': len(seen_groups), 'new_misses': new_misses_total}
+
+@shared_task
+def refresh_app_review_live_shift():
+    """Keep the App Store review account a shift it can check into right now.
+    Scoped to review accounts in the demo company; see api/app_review.py."""
+    from api.app_review import refresh_live_shift
+    return refresh_live_shift()

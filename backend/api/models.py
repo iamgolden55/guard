@@ -894,6 +894,20 @@ class User(AbstractUser):
     # Account deletion
     deletion_scheduled_at = models.DateTimeField(null=True, blank=True, help_text="When account deletion was requested. Hard delete occurs 30 days after this date.")
 
+    # The App Store reviewer signs in from outside the UK, at an unknown time,
+    # and more than one person may mistype the password before it works. On
+    # this one account — never settable through the API, only by
+    # `seed_app_review_account` — the venue geofence, the failed-login lockout
+    # and automatic no-show marking are skipped. Everything else (tenant
+    # scoping, check-in time window, rate limits) applies as normal.
+    is_review_account = models.BooleanField(
+        default=False,
+        # A database default too, so rolling the code back past this column
+        # doesn't break user inserts from code that doesn't know about it.
+        db_default=False,
+        help_text="App Store review demo account. Exempt from geofence, login lockout and auto no-show.",
+    )
+
     groups = models.ManyToManyField(
         'auth.Group',
         related_name='api_user_set',
@@ -2198,6 +2212,12 @@ class Shift(models.Model):
     #: manager recorded.
     AUTO_NO_SHOW_MARKER = '[Auto] No-show detected'
 
+    def _geofence_exempt(self):
+        """The App Store review account checks in from wherever the reviewer
+        is. The location is still recorded; it just isn't required to be at
+        the venue. See `User.is_review_account`."""
+        return bool(self.staff_user and self.staff_user.is_review_account)
+
     def check_in(self, latitude, longitude, signature=None, photo=None,
                  accuracy=None, mocked=None, occurred_at=None,
                  offline_replay=False):
@@ -2297,7 +2317,7 @@ class Shift(models.Model):
         if self.status not in ['active', 'scheduled']:
             raise ValueError("Shift must be active or scheduled to check in")
         
-        if not self.venue.verify_location(latitude, longitude):
+        if not self._geofence_exempt() and not self.venue.verify_location(latitude, longitude):
             raise ValueError("Location verification failed")
         
         self.check_in_time = timezone.now()
@@ -2328,7 +2348,7 @@ class Shift(models.Model):
         if self.status != 'in_progress':
             raise ValueError("Shift must be in progress to check out")
         
-        if not self.venue.verify_location(latitude, longitude):
+        if not self._geofence_exempt() and not self.venue.verify_location(latitude, longitude):
             raise ValueError("Location verification failed")
         
         self.check_out_time = timezone.now()
