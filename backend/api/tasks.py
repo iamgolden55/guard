@@ -1939,6 +1939,10 @@ def detect_attendance_exceptions():
         start_time__lte=no_show_threshold,
         check_in_time__isnull=True,
         staff_user__isnull=False,
+    ).exclude(
+        # Nobody may open the app for days during App Store review; a no-show
+        # every fifteen minutes would fill the reviewer's shift list and alerts.
+        staff_user__is_review_account=True,
     )
     for shift in no_show_shifts:
         shift.status = 'no_show'

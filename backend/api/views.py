@@ -360,6 +360,13 @@ class LoginView(APIView):
                 )
 
                 return response
+            elif user.is_review_account:
+                # A typo by one App Store reviewer must not lock the account
+                # for the next. The per-IP and per-username rate limits above
+                # still apply, and the password is long and random.
+                return Response({
+                    'message': 'Invalid username/email or password'
+                }, status=status.HTTP_401_UNAUTHORIZED)
             else:
                 # SECURITY FIX: Increment failed login attempts
                 user.failed_login_attempts += 1
