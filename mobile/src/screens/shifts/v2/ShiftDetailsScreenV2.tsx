@@ -257,8 +257,27 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
     }
   };
 
+  // Denied once, iOS never shows the permission prompt again; "try again"
+  // just fails again. Say why location is needed and offer the way out.
+  const alertLocationNeeded = (action: 'check in' | 'check out') => {
+    Alert.alert(
+      'Location needed',
+      `Mead Security uses your location to confirm you're at the venue when you ${action}. ` +
+        'Allow location access for Mead Security in Settings, then try again.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open Settings', onPress: () => Linking.openSettings() },
+      ],
+    );
+  };
+
   // ─── Check-in flow ──────────────────────────────────────────
-  const handleCheckIn = () => {
+  const handleCheckIn = async () => {
+    // Before the photo and signature, not after them.
+    if (!(await locationService.requestPermissions())) {
+      alertLocationNeeded('check in');
+      return;
+    }
     // The venue's own radius, not a hardcoded 100 m. The server measures
     // against `venue.check_radius`, so anything else here either blocks
     // officers the server would accept or accepts ones it will refuse — and
@@ -323,7 +342,14 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
     try {
       const currentLocation = await locationService.getCurrentLocation();
       if (!currentLocation) {
-        Alert.alert('Error', 'Unable to get your location. Please try again.');
+        if (!(await locationService.requestPermissions())) {
+          alertLocationNeeded('check in');
+        } else {
+          Alert.alert(
+            'Location unavailable',
+            "We couldn't read your location. Make sure Location Services are on and try again.",
+          );
+        }
         return;
       }
       const checkInPayload = {
@@ -437,6 +463,10 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
   // for being off-site. Mirrors check-in's Step 1 (location_check) ordering.
   const runCheckOutLocationPreflight = async (): Promise<boolean> => {
     if (!shift) return false;
+    if (!(await locationService.requestPermissions())) {
+      alertLocationNeeded('check out');
+      return false;
+    }
     const venueLat = shift.venue?.latitude;
     const venueLng = shift.venue?.longitude;
     if (typeof venueLat !== 'number' || typeof venueLng !== 'number') {
@@ -450,9 +480,10 @@ export const ShiftDetailsScreenV2: React.FC<ShiftDetailsScreenV2Props> = ({ rout
     }
     setIsCheckingOut(true);
     try {
+      // The venue's radius, as check-in uses and the server enforces.
       const result = await locationService.verifyLocation(
         { latitude: venueLat, longitude: venueLng },
-        100,
+        shift.venue?.check_radius ?? 100,
       );
       if (!result.success) {
         Alert.alert(

@@ -12,6 +12,7 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
+  Linking,
   Platform,
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
@@ -136,11 +137,13 @@ export const CameraModal: React.FC<CameraModalProps> = ({
             <BodySmall color={colors.text.secondary} style={styles.permissionText}>
               We need access to your camera to take venue photos for check-in verification.
             </BodySmall>
+            {/* After a denial iOS won't prompt again, so asking again did
+                nothing. Settings is the only place it can be turned back on. */}
             <Button
               variant="primary"
               size="large"
-              onPress={requestPermission}
-              title="Grant Permission"
+              onPress={permission.canAskAgain ? requestPermission : () => Linking.openSettings()}
+              title={permission.canAskAgain ? 'Grant Permission' : 'Open Settings'}
             />
           </View>
         </View>
