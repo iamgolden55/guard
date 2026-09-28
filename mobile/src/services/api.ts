@@ -5,8 +5,8 @@
  */
 
 import * as SecureStore from 'expo-secure-store';
-import Constants from 'expo-constants';
 import authService from './authService';
+import { API_BASE_URL as RESOLVED_API_BASE_URL } from '../config/api.config';
 import { appVersionHeaders, notifyUpdateRequired, UPDATE_REQUIRED_STATUS } from '../utils/appVersion';
 
 /**
@@ -59,10 +59,11 @@ export class NetworkError extends Error {
   }
 }
 
-// API Base URL - Read from environment configuration (.env file)
-// To change the backend URL, update the .env file in the mobile directory
-// Find your IP with: ipconfig getifaddr en0 (Mac) or ipconfig (Windows)
-const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl ?? 'http://localhost:8000';
+// API base URL. In development it comes from mobile/.env (your LAN IP, see
+// switch-env.sh). A release build always talks to production, as the axios
+// clients already did: `.easignore` uploads .env to EAS, and a build profile
+// without API_BASE_URL would otherwise ship pointing at a local address.
+const API_BASE_URL = RESOLVED_API_BASE_URL;
 
 class ApiService {
   private baseUrl: string;
