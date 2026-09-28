@@ -32,10 +32,15 @@ class AuthService {
    */
   async login(credentials: LoginCredentials): Promise<AuthTokens> {
     try {
-      const response = await axios.post(API_ENDPOINTS.AUTH.LOGIN, {
-        username: credentials.username,
-        password: credentials.password,
-      });
+      const response = await axios.post(
+        API_ENDPOINTS.AUTH.LOGIN,
+        {
+          username: credentials.username,
+          password: credentials.password,
+        },
+        // The API can take a while to answer its first request after idling.
+        { timeout: 45000 },
+      );
 
       const tokens: AuthTokens = response.data;
 
@@ -44,10 +49,32 @@ class AuthService {
 
       return tokens;
     } catch (error: any) {
-      if (error.response?.data?.detail) {
-        throw new Error(error.response.data.detail);
+      throw new Error(this.describeLoginError(error));
+    }
+  }
+
+  /**
+   * Every failure used to read "please check your credentials", so a slow
+   * network looked like a wrong password and nobody could tell which.
+   */
+  private describeLoginError(error: any): string {
+    const response = error?.response;
+    if (!response) {
+      if (error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || '')) {
+        return 'The server took too long to respond. Please check your connection and try again.';
       }
-      throw new Error('Login failed. Please check your credentials.');
+      return "Can't reach Mead Security. Please check your internet connection and try again.";
+    }
+    const serverMessage = response.data?.detail || response.data?.message;
+    switch (response.status) {
+      case 400:
+      case 401:
+        return 'Incorrect email or password. Please try again.';
+      case 403:
+      case 429:
+        return serverMessage || 'Sign-in is temporarily unavailable. Please try again later.';
+      default:
+        return `Something went wrong signing in (error ${response.status}). Please try again.`;
     }
   }
 
@@ -314,13 +341,15 @@ class AuthService {
    * not the StaffProfile ID. Otherwise, shift exchanges and other features that
    * compare user IDs will fail.
    */
-  async fetchUserProfile(token: string): Promise<any> {
+  async fetchUserProfile(token: string, timeout: number = 15000): Promise<any> {
     try {
       const response = await axios.get(
         API_ENDPOINTS.AUTH.PROFILE,
         {
           headers: getAuthHeaders(token),
-          timeout: 5000, // 5 second timeout for auth checks
+          // Was 5s: a slow first response after a correct password showed
+          // "Login Failed", and at launch it signed the user out.
+          timeout,
         }
       );
 
