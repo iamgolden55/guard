@@ -60,7 +60,7 @@ module.exports = {
   
   // Transform ignore patterns
   transformIgnorePatterns: [
-    'node_modules/(?!(react-native|@react-native|expo|@expo|expo-modules-core|@react-navigation|react-native-svg|@expo/vector-icons|react-redux|@reduxjs/toolkit|uuid)/)',
+    'node_modules/(?!(react-native|@react-native|expo|@expo|expo-modules-core|@react-navigation|react-native-svg|@expo/vector-icons|react-redux|@reduxjs/toolkit|immer|redux|redux-thunk|reselect|uuid)/)',
   ],
   
   // Globals

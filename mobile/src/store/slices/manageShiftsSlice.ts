@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '../index';
 import { shiftsService } from '../../services/shiftsService';
 import type { Shift } from './shiftsSlice';
+import { describeShiftSaveError } from '../../utils/shiftSaveError';
 
 export type ManageShiftsFilter =
   | 'all'
@@ -99,9 +100,8 @@ export const createShiftThunk = createAsyncThunk(
       dispatch(fetchAllCompanyShifts({ page: 1, pageSize: 6, status }));
       return created;
     } catch (error: any) {
-      return rejectWithValue(
-        error?.response?.data?.detail || error?.message || 'Failed to create shift'
-      );
+      // The service already logged it; this is the text the manager sees.
+      return rejectWithValue(describeShiftSaveError(error).message);
     }
   }
 );
@@ -117,12 +117,8 @@ export const createMultiStaffShiftsThunk = createAsyncThunk(
       dispatch(fetchAllCompanyShifts({ page: 1, pageSize: 6, status }));
       return result;
     } catch (error: any) {
-      return rejectWithValue(
-        error?.response?.data?.detail ||
-          error?.response?.data?.error ||
-          error?.message ||
-          'Failed to create shifts'
-      );
+      // The service already logged it; this is the text the manager sees.
+      return rejectWithValue(describeShiftSaveError(error).message);
     }
   }
 );
@@ -168,9 +164,8 @@ export const updateShiftThunk = createAsyncThunk(
     try {
       return await shiftsService.updateShift(shiftId, patch);
     } catch (error: any) {
-      return rejectWithValue(
-        error?.response?.data?.detail || error?.message || 'Failed to update shift'
-      );
+      // The service already logged it; this is the text the manager sees.
+      return rejectWithValue(describeShiftSaveError(error).message);
     }
   }
 );
@@ -243,25 +238,25 @@ const manageShiftsSlice = createSlice({
       })
       .addCase(createShiftThunk.pending, (state) => {
         state.isMutating = true;
-        state.error = null;
       })
       .addCase(createShiftThunk.fulfilled, (state) => {
         state.isMutating = false;
       })
-      .addCase(createShiftThunk.rejected, (state, action) => {
+      // The form shows its own alert. Writing `error` here made the list
+      // screen report the same refusal to Sentry a second time.
+      .addCase(createShiftThunk.rejected, (state) => {
         state.isMutating = false;
-        state.error = action.payload as string;
       })
       .addCase(createMultiStaffShiftsThunk.pending, (state) => {
         state.isMutating = true;
-        state.error = null;
       })
       .addCase(createMultiStaffShiftsThunk.fulfilled, (state) => {
         state.isMutating = false;
       })
-      .addCase(createMultiStaffShiftsThunk.rejected, (state, action) => {
+      // The form shows its own alert. Writing `error` here made the list
+      // screen report the same refusal to Sentry a second time.
+      .addCase(createMultiStaffShiftsThunk.rejected, (state) => {
         state.isMutating = false;
-        state.error = action.payload as string;
       })
       .addCase(approveShiftThunk.pending, (state) => {
         state.isMutating = true;
@@ -279,7 +274,6 @@ const manageShiftsSlice = createSlice({
       })
       .addCase(updateShiftThunk.pending, (state) => {
         state.isMutating = true;
-        state.error = null;
       })
       .addCase(updateShiftThunk.fulfilled, (state, action) => {
         state.isMutating = false;
@@ -287,9 +281,10 @@ const manageShiftsSlice = createSlice({
         const idx = state.shifts.findIndex((s) => s.id === updated.id);
         if (idx !== -1) state.shifts[idx] = updated;
       })
-      .addCase(updateShiftThunk.rejected, (state, action) => {
+      // The form shows its own alert. Writing `error` here made the list
+      // screen report the same refusal to Sentry a second time.
+      .addCase(updateShiftThunk.rejected, (state) => {
         state.isMutating = false;
-        state.error = action.payload as string;
       })
       .addCase(cancelShiftThunk.pending, (state) => {
         state.isMutating = true;

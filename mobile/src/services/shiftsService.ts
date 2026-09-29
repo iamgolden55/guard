@@ -7,6 +7,7 @@ import { apiService } from './api';
 import { Shift } from '../store/slices/shiftsSlice';
 import notificationService from './notificationService';
 import { logger } from '../utils/logger';
+import { reportShiftSaveError } from '../utils/shiftSaveError';
 
 /**
  * Paginated response from the backend
@@ -227,7 +228,7 @@ class ShiftsService {
       const response = await apiService.post<any>('/api/v1/shifts/', payload);
       return this.transformShift(response);
     } catch (error) {
-      logger.error('[ShiftsService] Error creating shift:', error);
+      reportShiftSaveError('[ShiftsService] Error creating shift:', error);
       throw error;
     }
   }
@@ -291,7 +292,7 @@ class ShiftsService {
         shift_group: response?.shift_group ?? '',
       };
     } catch (error) {
-      logger.error('[ShiftsService] Error creating multi-staff shifts:', error);
+      reportShiftSaveError('[ShiftsService] Error creating multi-staff shifts:', error);
       throw error;
     }
   }
@@ -335,7 +336,7 @@ class ShiftsService {
       const response = await apiService.patch<any>(`/api/v1/shifts/${shiftId}/`, patch);
       return this.transformShift(response);
     } catch (error) {
-      logger.error('[ShiftsService] Error updating shift:', error);
+      reportShiftSaveError('[ShiftsService] Error updating shift:', error);
       throw error;
     }
   }

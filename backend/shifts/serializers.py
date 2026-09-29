@@ -3,7 +3,7 @@ from django.utils import timezone
 from api.models import Shift, Venue, User, ShiftExchange, OpenShiftRequest, ContractorUnavailability  # Import from api.models
 from api.utils import profile_photos
 from django.contrib.auth import get_user_model
-from api.utils.shift_validators import check_shift_overlap, check_exact_duplicate
+from api.utils.shift_validators import check_shift_overlap, check_exact_duplicate, local_window, overlap_message
 
 
 def check_staff_availability(staff_user, shift_date):
@@ -211,13 +211,7 @@ class ShiftSerializer(serializers.ModelSerializer):
             )
 
             if has_overlap:
-                first_conflict = overlapping_shifts.first()
-                venue_name = first_conflict.venue.name if first_conflict.venue else 'Unknown venue'
-                raise serializers.ValidationError(
-                    f"This staff member already has a shift during this time: "
-                    f"{first_conflict.start_time.strftime('%Y-%m-%d %H:%M')} - "
-                    f"{first_conflict.end_time.strftime('%H:%M')} at {venue_name}"
-                )
+                raise serializers.ValidationError(overlap_message(overlapping_shifts.first()))
 
         # Check if staff is on approved leave (explicit date-range overlap check)
         if staff_user and start_time:
@@ -488,13 +482,7 @@ class FrontendShiftSerializer(serializers.ModelSerializer):
             )
 
             if has_overlap:
-                first_conflict = overlapping_shifts.first()
-                venue_name = first_conflict.venue.name if first_conflict.venue else 'Unknown venue'
-                raise serializers.ValidationError(
-                    f"This staff member already has a shift during this time: "
-                    f"{first_conflict.start_time.strftime('%Y-%m-%d %H:%M')} - "
-                    f"{first_conflict.end_time.strftime('%H:%M')} at {venue_name}"
-                )
+                raise serializers.ValidationError(overlap_message(overlapping_shifts.first()))
 
         # Also check for shift_group duplicates (legacy check for multi-staff shifts)
         if (self.instance is None and
@@ -695,10 +683,11 @@ class MultiStaffShiftSerializer(serializers.Serializer):
             if has_overlap:
                 first_conflict = overlapping_shifts.first()
                 venue_name = first_conflict.venue.name if first_conflict.venue else 'Unknown venue'
+                start, end = local_window(first_conflict)
                 conflicts.append(
                     f"{user.get_full_name() or user.username}: "
                     f"already has shift at {venue_name} "
-                    f"({first_conflict.start_time.strftime('%H:%M')} - {first_conflict.end_time.strftime('%H:%M')})"
+                    f"({start:%H:%M} - {end:%H:%M})"
                 )
 
         # Report unavailable staff first (more important)
