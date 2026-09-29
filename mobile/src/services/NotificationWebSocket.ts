@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import { readToken } from './tokenStorage';
 import { AppState, AppStateStatus } from 'react-native';
 
 import { API_CONFIG } from '../utils/constants';
@@ -126,7 +126,7 @@ class NotificationWebSocketService {
     this.isConnecting = true;
 
     try {
-      const token = await SecureStore.getItemAsync('accessToken');
+      const token = await readToken('accessToken');
       if (!token) {
         logger.warn('[NotificationWebSocket] No access token available');
         this.isConnecting = false;

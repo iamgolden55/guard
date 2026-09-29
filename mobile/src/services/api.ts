@@ -4,7 +4,7 @@
  * Used by syncService for executing queued sync operations
  */
 
-import * as SecureStore from 'expo-secure-store';
+import { readToken } from './tokenStorage';
 import authService from './authService';
 import { API_BASE_URL as RESOLVED_API_BASE_URL } from '../config/api.config';
 import { appVersionHeaders, notifyUpdateRequired, UPDATE_REQUIRED_STATUS } from '../utils/appVersion';
@@ -84,7 +84,7 @@ class ApiService {
    * Get authorization headers with token
    */
   private async getHeaders(): Promise<HeadersInit> {
-    const token = await SecureStore.getItemAsync('accessToken');
+    const token = await readToken('accessToken');
 
     return {
       'Content-Type': 'application/json',
@@ -377,7 +377,7 @@ class ApiService {
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const token = await SecureStore.getItemAsync('accessToken');
+      const token = await readToken('accessToken');
 
       const headers: HeadersInit = {
         ...appVersionHeaders(),
