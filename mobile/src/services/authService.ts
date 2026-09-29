@@ -7,6 +7,7 @@ import { jwtDecode } from 'jwt-decode';
 import { API_ENDPOINTS, getAuthHeaders } from '../config/api.config';
 import notificationService from './notificationService';
 import { logger } from '../utils/logger';
+import { migrateTokenAccessibility, setToken } from './tokenStorage';
 
 export interface LoginCredentials {
   username: string;
@@ -17,6 +18,33 @@ export interface AuthTokens {
   access: string;
   refresh: string;
 }
+
+/**
+ * The session could not be checked right now (no signal, timeout, server
+ * error, keychain locked) — as opposed to the server rejecting it. The tokens
+ * are kept; the caller should retry later rather than sign the user out.
+ */
+export class SessionUnavailableError extends Error {
+  constructor(message: string, public cause?: unknown) {
+    super(message);
+    this.name = 'SessionUnavailableError';
+  }
+}
+
+/** Only these refresh responses mean the refresh token itself is dead. */
+const isRejectedRefresh = (error: any) => {
+  const status = error?.response?.status;
+  return status === 400 || status === 401;
+};
+
+export type RestoredSession =
+  | { status: 'signed-in'; user: any; accessToken: string; refreshToken: string }
+  | { status: 'signed-out' }
+  | { status: 'unavailable'; error: unknown };
+
+const PROFILE_ATTEMPTS = 3;
+const PROFILE_RETRY_DELAY_MS = 1500;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export interface DecodedToken {
   user_id: number;
@@ -96,8 +124,8 @@ class AuthService {
    * Store authentication tokens securely
    */
   async storeTokens(tokens: AuthTokens): Promise<void> {
-    await SecureStore.setItemAsync('accessToken', tokens.access);
-    await SecureStore.setItemAsync('refreshToken', tokens.refresh);
+    await setToken('accessToken', tokens.access);
+    await setToken('refreshToken', tokens.refresh);
   }
 
   /**
@@ -115,34 +143,119 @@ class AuthService {
   }
 
   /**
-   * Refresh access token using refresh token
+   * Refresh access token using refresh token.
+   *
+   * Returns the new access token, or null when the session is over (no
+   * refresh token, or the server rejected it) — the user is signed out then.
+   * Throws SessionUnavailableError when the refresh could not be attempted or
+   * answered (offline, timeout, 5xx, keychain locked): the tokens are kept.
+   * This used to sign the user out on any error, so a phone locked in a pocket
+   * or one slow Render response ended the session.
    */
   async refreshAccessToken(): Promise<string | null> {
+    let refreshToken: string | null;
     try {
-      const refreshToken = await this.getRefreshToken();
+      refreshToken = await this.getRefreshToken();
+    } catch (error) {
+      throw new SessionUnavailableError('Secure storage is unavailable', error);
+    }
 
-      if (!refreshToken) {
-        return null;
-      }
+    if (!refreshToken) {
+      return null;
+    }
 
-      const response = await axios.post(API_ENDPOINTS.AUTH.REFRESH_TOKEN, {
+    let response;
+    try {
+      response = await axios.post(API_ENDPOINTS.AUTH.REFRESH_TOKEN, {
         refresh: refreshToken,
       });
+    } catch (error) {
+      if (isRejectedRefresh(error)) {
+        // Refresh token is invalid, expired or blacklisted
+        await this.logout();
+        return null;
+      }
+      throw new SessionUnavailableError('Could not reach the server to refresh the session', error);
+    }
 
-      const newAccessToken = response.data.access;
-      await SecureStore.setItemAsync('accessToken', newAccessToken);
+    const newAccessToken = response.data.access;
+    try {
+      await setToken('accessToken', newAccessToken);
 
       // Backend rotates refresh tokens (BLACKLIST_AFTER_ROTATION) — persist the
       // new one or the next refresh sends a blacklisted token and force-logs out.
       if (response.data.refresh) {
-        await SecureStore.setItemAsync('refreshToken', response.data.refresh);
+        await setToken('refreshToken', response.data.refresh);
+      }
+    } catch (error) {
+      logger.warn('[AuthService] Could not persist refreshed tokens:', error);
+    }
+
+    return newAccessToken;
+  }
+
+  /**
+   * Restore the session at launch.
+   *
+   * 'signed-out' only when there are no tokens or the server rejected them.
+   * A launch with no signal, a cold Render start or a locked keychain is
+   * 'unavailable': the tokens stay put and the app offers a retry instead of
+   * the login screen.
+   */
+  async restoreSession(): Promise<RestoredSession> {
+    let accessToken: string | null;
+    let refreshToken: string | null;
+    try {
+      await migrateTokenAccessibility();
+    } catch (error) {
+      logger.warn('[AuthService] Token accessibility migration failed:', error);
+    }
+    try {
+      accessToken = await this.getAccessToken();
+      refreshToken = await this.getRefreshToken();
+    } catch (error) {
+      return { status: 'unavailable', error };
+    }
+
+    if (!accessToken || !refreshToken) {
+      return { status: 'signed-out' };
+    }
+
+    try {
+      if (this.isTokenExpired(accessToken)) {
+        const newAccessToken = await this.refreshAccessToken();
+        if (!newAccessToken) return { status: 'signed-out' };
+        accessToken = newAccessToken;
       }
 
-      return newAccessToken;
+      let lastError: unknown;
+      for (let attempt = 0; attempt < PROFILE_ATTEMPTS; attempt++) {
+        try {
+          const user = await this.fetchUserProfile(accessToken);
+          // A 401 on the profile may have been refreshed by the axios interceptor.
+          return {
+            status: 'signed-in',
+            user,
+            accessToken: (await this.getAccessToken()) ?? accessToken,
+            refreshToken: (await this.getRefreshToken()) ?? refreshToken,
+          };
+        } catch (error: any) {
+          if (error?.cause instanceof SessionUnavailableError) throw error.cause;
+          if (error?.status === 401) {
+            // The axios interceptor already refreshed (or found the refresh
+            // token rejected and signed out); a 401 now means the account
+            // itself is refused.
+            await this.logout();
+            return { status: 'signed-out' };
+          }
+          lastError = error;
+          if (attempt < PROFILE_ATTEMPTS - 1) await sleep(PROFILE_RETRY_DELAY_MS * (attempt + 1));
+        }
+      }
+      return { status: 'unavailable', error: lastError };
     } catch (error) {
-      // Refresh token is invalid or expired
-      await this.logout();
-      return null;
+      if (error instanceof SessionUnavailableError) return { status: 'unavailable', error };
+      throw error;
     }
   }
 
@@ -367,7 +480,11 @@ class AuthService {
       return normalizedProfile;
     } catch (error) {
       logger.error('[AuthService] Failed to fetch user profile:', error);
-      throw new Error('Failed to fetch user profile');
+      // Keep the status: at launch a 401 ends the session, anything else doesn't.
+      throw Object.assign(new Error('Failed to fetch user profile'), {
+        status: (error as any)?.response?.status as number | undefined,
+        cause: error,
+      });
     }
   }
 
