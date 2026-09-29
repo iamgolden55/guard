@@ -72,3 +72,83 @@ class IncidentSchemaDriftTests(TestCase):
         with connection.cursor() as c:
             c.execute("SELECT count(*) FROM information_schema.columns WHERE table_name='incident_reports'")
             self.assertEqual(c.fetchone()[0], len(IncidentReport._meta.concrete_fields))
+
+
+# The other seven 0035 columns production kept. They are nullable, so they never
+# blocked an insert, but the API test rebuilds the whole production table.
+NULLABLE_DRIFT_COLUMNS = {
+    'latitude': 'numeric(9,6)', 'longitude': 'numeric(9,6)',
+    'location_description': 'varchar(255)', 'occurred_at': 'timestamptz',
+    'police_reference': 'varchar(100)', 'title': 'varchar(200)',
+    'voice_note': 'varchar(100)',
+}
+
+
+class IncidentApiOnDriftedTableTests(TestCase):
+    """`POST /api/v1/incidents/` as it failed in production (Sentry PYTHON-DJANGO-1E).
+
+    The request carried only the fields the model knows, so none of the sixteen
+    orphan columns got a value, and `ambulance_called` (NOT NULL) raised
+    IntegrityError and a 500. The ORM-level test above pins the constraint; this
+    pins the endpoint an officer's report actually goes through.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        from api.models import UserCompanyMembership
+
+        company = SecurityCompany.objects.create(name='Riverside Co', registration_number='R1')
+        self.venue = Venue.objects.create(
+            company=company, name='Riverside Exchange', address='1 St', city='Bristol',
+            postal_code='BS1', country='UK', capacity=10, contact_name='C',
+            contact_phone='07700900000', contact_email='r@v.test', terms_and_conditions='T',
+        )
+        self.officer = User.objects.create_user(
+            username='riverside_officer', email='o@t.test', password='testpass123', role='staff',
+        )
+        UserCompanyMembership.objects.create(
+            user=self.officer, company=company, is_active=True, role='staff',
+        )
+        start = timezone.now()
+        self.shift = Shift.objects.create(
+            staff_user=self.officer, venue=self.venue, start_time=start,
+            end_time=start + timedelta(hours=8), required_security_role='ds', status='in_progress',
+        )
+        with connection.cursor() as c:
+            for col, typ in {**DRIFT_COLUMNS, **NULLABLE_DRIFT_COLUMNS}.items():
+                null = 'NOT NULL' if col in DRIFT_COLUMNS else ''
+                c.execute(f'ALTER TABLE incident_reports ADD COLUMN {col} {typ} {null}')
+            # What migration 0079 does in production.
+            c.execute(relax.RELAX_SQL)
+        self.client = APIClient()
+        self.client.force_authenticate(self.officer)
+
+    def test_the_production_request_saves(self):
+        # The payload from the failed request, field for field.
+        response = self.client.post('/api/v1/incidents/', {
+            'venue': self.venue.id,
+            'shift': self.shift.id,
+            'incident_time': timezone.now().isoformat(),
+            'description': 'Refused entry to intoxicated guest.',
+            'severity': 'low',
+            'actions_taken': 'Refused entry politely; guest left without incident.',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201, response.data)
+        report = IncidentReport.objects.get(pk=response.data['id'])
+        self.assertEqual(report.reported_by, self.officer)
+        with connection.cursor() as c:
+            c.execute(
+                'SELECT ambulance_called, police_notified, status, title '
+                'FROM incident_reports WHERE id = %s', [report.pk],
+            )
+            self.assertEqual(c.fetchone(), (None, None, None, None))
+
+    def test_every_orphan_column_accepts_null(self):
+        with connection.cursor() as c:
+            c.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'incident_reports' AND is_nullable = 'NO'"
+            )
+            not_null = {row[0] for row in c.fetchall()}
+        self.assertEqual(not_null & set(DRIFT_COLUMNS) | not_null & set(NULLABLE_DRIFT_COLUMNS), set())
