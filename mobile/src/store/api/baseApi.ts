@@ -1,6 +1,7 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import type { RootState } from '../index';
 import * as SecureStore from 'expo-secure-store';
+import { setToken } from '../../services/tokenStorage';
 
 // API Base URL - Update this based on your backend
 const API_BASE_URL = __DEV__
@@ -61,15 +62,16 @@ const baseQueryWithReauth = async (args: any, api: any, extraOptions: any) => {
       if (refreshResult.data && isRefreshTokenResponse(refreshResult.data)) {
         // Store the new tokens (refresh token may rotate)
         const { access, refresh } = refreshResult.data;
-        await SecureStore.setItemAsync('accessToken', access);
+        await setToken('accessToken', access);
         if (refresh) {
-          await SecureStore.setItemAsync('refreshToken', refresh);
+          await setToken('refreshToken', refresh);
         }
 
         // Retry the original query
         result = await baseQuery(args, api, extraOptions);
-      } else {
-        // Refresh failed - logout user
+      } else if (refreshResult.error?.status === 400 || refreshResult.error?.status === 401) {
+        // The server rejected the refresh token - logout user. Anything else
+        // (offline, timeout, 5xx) keeps the session.
         await SecureStore.deleteItemAsync('accessToken');
         await SecureStore.deleteItemAsync('refreshToken');
         // Dispatch logout action here

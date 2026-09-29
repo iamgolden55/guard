@@ -4,8 +4,8 @@
  * Shows AuthNavigator if not authenticated, MainNavigator if authenticated
  */
 
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import type { RootStackParamList } from '../types/navigation';
@@ -32,51 +32,71 @@ const Stack = createStackNavigator<RootStackParamList>();
 export const AppNavigator = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
+  // The server couldn't be reached at launch: the session is kept, and we
+  // offer a retry rather than sending a signed-in user to the login screen.
+  const [sessionUnavailable, setSessionUnavailable] = useState(false);
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const hasCompletedOnboarding = useAppSelector(selectHasCompletedOnboarding);
   const { checkAuthStatus } = useAuth();
 
   // Check if user is already authenticated on app startup
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        const result = await checkAuthStatus();
+  const initAuth = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const result = await checkAuthStatus();
 
-        // Defensive check - ensure result exists and has required properties
-        if (!result || typeof result.success === 'undefined') {
-          logger.error('[AppNavigator] checkAuthStatus returned invalid result:', result);
-          setAuthChecked(true);
-          setIsLoading(false);
-          return;
-        }
-
-        // Log the auth check result - safe to access properties now
-        logger.debug('[AppNavigator] Auth check complete:', {
-          success: result.success,
-          isAuthenticated: result.isAuthenticated
-        });
-
-        // Wait a tick to ensure Redux state is updated before rendering
-        // This prevents race condition with redux-persist rehydration
-        setTimeout(() => {
-          setAuthChecked(true);
-          setIsLoading(false);
-        }, 0);
-      } catch (error) {
-        logger.error('[AppNavigator] Auth check error:', error);
+      // Defensive check - ensure result exists and has required properties
+      if (!result || typeof result.success === 'undefined') {
+        logger.error('[AppNavigator] checkAuthStatus returned invalid result:', result);
         setAuthChecked(true);
         setIsLoading(false);
+        return;
       }
-    };
 
-    initAuth();
+      // Log the auth check result - safe to access properties now
+      logger.debug('[AppNavigator] Auth check complete:', {
+        success: result.success,
+        isAuthenticated: result.isAuthenticated
+      });
+
+      setSessionUnavailable(!!result.unavailable);
+
+      // Wait a tick to ensure Redux state is updated before rendering
+      // This prevents race condition with redux-persist rehydration
+      setTimeout(() => {
+        setAuthChecked(true);
+        setIsLoading(false);
+      }, 0);
+    } catch (error) {
+      logger.error('[AppNavigator] Auth check error:', error);
+      setAuthChecked(true);
+      setIsLoading(false);
+    }
   }, [checkAuthStatus]);
+
+  useEffect(() => {
+    initAuth();
+  }, [initAuth]);
 
   // Show loading screen while checking auth status
   if (isLoading || !authChecked) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#1E3A8A" />
+      </View>
+    );
+  }
+
+  if (sessionUnavailable && !isAuthenticated) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.unavailableTitle}>Can't reach Mead Security</Text>
+        <Text style={styles.unavailableBody}>
+          You're still signed in. Check your connection and try again.
+        </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={initAuth} accessibilityRole="button">
+          <Text style={styles.retryText}>Try again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -114,5 +134,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#F5F7FA',
+    paddingHorizontal: 32,
+  },
+  unavailableTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1E3A8A',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  unavailableBody: {
+    fontSize: 15,
+    color: '#4B5563',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

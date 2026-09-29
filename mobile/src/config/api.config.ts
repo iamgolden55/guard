@@ -58,7 +58,12 @@ const matchesNoRefresh = (url?: string): boolean =>
 // stale token from Redux state) so SecureStore is the single source of truth.
 axios.interceptors.request.use(async (config) => {
   if (matchesNoRefresh(config.url)) return config;
-  const token = await SecureStore.getItemAsync('accessToken');
+  let token: string | null = null;
+  try {
+    token = await SecureStore.getItemAsync('accessToken');
+  } catch {
+    // Keychain unreadable (phone locked): send the caller's header as-is.
+  }
   if (token) {
     config.headers = config.headers ?? {};
     (config.headers as any).Authorization = `Bearer ${token}`;

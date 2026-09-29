@@ -182,44 +182,31 @@ export const useAuth = () => {
   }, []);
 
   /**
-   * Check if user is authenticated (on app startup)
+   * Check if user is authenticated (on app startup).
+   *
+   * Signs the user out only when the session is really over. When the server
+   * can't be reached it returns `unavailable: true` and keeps the tokens, so
+   * AppNavigator can offer a retry instead of dropping them at the login screen.
    */
   const checkAuthStatus = useCallback(async () => {
     try {
-      let accessToken = await authService.getAccessToken();
-      const refreshToken = await authService.getRefreshToken();
+      const session = await authService.restoreSession();
 
-      // If no tokens, logout immediately
-      if (!accessToken || !refreshToken) {
-        logger.debug('[useAuth] No tokens found, logging out');
+      if (session.status === 'signed-out') {
+        logger.debug('[useAuth] No valid session, logging out');
         dispatch(logoutAction());
-        return { success: false, isAuthenticated: false, user: null };
+        return { success: false, isAuthenticated: false, unavailable: false, user: null };
       }
 
-      // If access token is expired, try to refresh it first
-      if (authService.isTokenExpired(accessToken)) {
-        logger.debug('[useAuth] Access token expired, attempting refresh...');
-        const newAccessToken = await authService.refreshAccessToken();
-
-        if (newAccessToken) {
-          logger.debug('[useAuth] Token refreshed successfully');
-          accessToken = newAccessToken;
-        } else {
-          logger.debug('[useAuth] Token refresh failed, logging out');
-          dispatch(logoutAction());
-          return { success: false, isAuthenticated: false, user: null };
-        }
+      if (session.status === 'unavailable') {
+        logger.warn('[useAuth] Session could not be checked, keeping tokens:', session.error);
+        return { success: false, isAuthenticated: false, unavailable: true, user: null };
       }
 
-      // Token exists and is valid - fetch user profile
-      logger.debug('[useAuth] Fetching user profile with valid token');
-      const userProfile = await authService.fetchUserProfile(accessToken);
-
-      // Use setCredentials to properly set authentication state
       dispatch(setCredentials({
-        user: userProfile,
-        accessToken,
-        refreshToken,
+        user: session.user,
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
       }));
 
       // Process any pending token deactivations from failed logouts (non-blocking)
@@ -232,12 +219,11 @@ export const useAuth = () => {
         logger.debug('[useAuth] Push token registration failed (non-critical):', error);
       });
 
-      return { success: true, isAuthenticated: true, user: userProfile };
+      return { success: true, isAuthenticated: true, unavailable: false, user: session.user };
     } catch (error) {
       logger.error('[useAuth] checkAuthStatus error:', error);
-      // Authentication check failed - clear Redux state
-      dispatch(logoutAction());
-      return { success: false, isAuthenticated: false, user: null };
+      // Unexpected — keep the tokens and let the user retry.
+      return { success: false, isAuthenticated: false, unavailable: true, user: null };
     }
   }, [dispatch]);
 
