@@ -29,6 +29,12 @@ import { useSelector } from 'react-redux';
 
 import { RootState } from '../../../store';
 import { logger } from '../../../utils/logger';
+import {
+  currentLicence,
+  isLicenceVerified,
+  LICENCE_STATE_LABEL,
+  licenceState,
+} from '../../../utils/siaLicence';
 import { useRedesignTheme } from '../../../theme/redesign';
 import { Eyebrow, GlassCard } from '../../../components/redesign';
 
@@ -310,17 +316,23 @@ export const VirtualIDScreenV2: React.FC = () => {
 
   const firstName = user.first_name || 'Security';
   const lastName = user.last_name || 'Staff';
-  const idNumber: string | undefined = profile?.sia_license_number;
-  const expiry: string | undefined = profile?.sia_license_expiry;
+  // The profile carries a list of licences; there are no flat
+  // `sia_license_number` / `sia_license_expiry` fields to read.
+  const licence = currentLicence(profile?.sia_licenses);
+  const idNumber: string | undefined = licence?.license_number ?? undefined;
+  const expiry: string | undefined = licence?.expiry_date ?? undefined;
   const photo: string | null | undefined = profile?.profile_image_url;
-  const isLicenseValid = expiry ? new Date(expiry) > new Date() : false;
+  const state = licenceState(licence);
+  const stateColor =
+    state === 'active' ? '#4ade80' : state === 'expired' ? theme.colors.accent : '#f59e0b';
 
   const qrData = JSON.stringify({
     id: user.id,
     name: `${firstName} ${lastName}`,
     license: idNumber,
     expiry,
-    verified: true,
+    // Only a checked, in-date licence is presented as verified.
+    verified: isLicenceVerified(licence),
     timestamp: new Date().toISOString(),
   });
 
@@ -460,7 +472,7 @@ export const VirtualIDScreenV2: React.FC = () => {
                     width: 5,
                     height: 5,
                     borderRadius: 2.5,
-                    backgroundColor: isLicenseValid ? '#4ade80' : theme.colors.accent,
+                    backgroundColor: stateColor,
                   }}
                 />
                 <Text
@@ -470,11 +482,11 @@ export const VirtualIDScreenV2: React.FC = () => {
                     fontSize: 9,
                     letterSpacing: 1.6,
                     textTransform: 'uppercase',
-                    color: isLicenseValid ? '#4ade80' : theme.colors.accent,
+                    color: stateColor,
                     fontWeight: '500',
                   }}
                 >
-                  {isLicenseValid ? 'Active' : 'Expired'}
+                  {state ? LICENCE_STATE_LABEL[state] : ''}
                 </Text>
               </View>
             </View>
