@@ -1,3 +1,4 @@
+import { extractApiError } from "@/lib/apiError";
 import { resolveShiftRange } from "@/lib/shiftTime";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 // SchedulingState — context holding the live mutable shifts list plus the
@@ -339,12 +340,12 @@ export function SchedulingProvider({
       dispatch({ type: "assign", shiftId, officerId });
       return { prev };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.prev) dispatch({ type: "set", shifts: ctx.prev });
       showToast({
         tone: "danger",
         title: "Couldn't save assignment",
-        body: "The server rejected the change. Please try again.",
+        body: extractApiError(err, "The server rejected the change. Please try again."),
       });
     },
     onSettled: () => invalidateShifts(),
@@ -366,12 +367,12 @@ export function SchedulingProvider({
       dispatch({ type: "unassign", shiftId });
       return { prev };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.prev) dispatch({ type: "set", shifts: ctx.prev });
       showToast({
         tone: "danger",
         title: "Couldn't unassign",
-        body: "Server rejected the change.",
+        body: extractApiError(err, "Server rejected the change."),
       });
     },
     onSettled: () => invalidateShifts(),
@@ -419,12 +420,12 @@ export function SchedulingProvider({
       dispatch({ type: "move", shiftId, patch });
       return { prev };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.prev) dispatch({ type: "set", shifts: ctx.prev });
       showToast({
         tone: "danger",
         title: "Couldn't move shift",
-        body: "Server rejected the change.",
+        body: extractApiError(err, "Server rejected the change."),
       });
     },
     onSettled: () => invalidateShifts(),
@@ -497,7 +498,7 @@ export function SchedulingProvider({
       showToast({
         tone: "danger",
         title: "Couldn't create shift",
-        body: err?.message ?? "Server rejected the request.",
+        body: extractApiError(err, "Server rejected the request."),
       }),
   });
 
@@ -575,7 +576,7 @@ export function SchedulingProvider({
       showToast({
         tone: "danger",
         title: "Couldn't update shift",
-        body: err?.message ?? "Server rejected the request.",
+        body: extractApiError(err, "Server rejected the request."),
       }),
   });
 
@@ -590,8 +591,11 @@ export function SchedulingProvider({
       onError: (err, _id, ctx) => {
         if (ctx?.prev) dispatch({ type: "set", shifts: ctx.prev });
         // 409 when the shift is on an invoice or has a signed time adjustment.
-        const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-        showToast({ tone: "danger", title: "Couldn't delete shift", body: detail });
+        showToast({
+          tone: "danger",
+          title: "Couldn't delete shift",
+          body: extractApiError(err, "Server rejected the request."),
+        });
       },
       onSuccess: () => {
         showToast({ tone: "success", title: "Shift deleted" });
@@ -674,7 +678,7 @@ export function SchedulingProvider({
       showToast({
         tone: "warning",
         title: "Couldn't copy last week",
-        body: err?.message ?? "Try again.",
+        body: extractApiError(err, "Try again."),
       }),
   });
 
@@ -693,12 +697,12 @@ export function SchedulingProvider({
       dispatch({ type: "publish", shiftIds });
       return { prev };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.prev) dispatch({ type: "set", shifts: ctx.prev });
       showToast({
         tone: "danger",
         title: "Couldn't publish",
-        body: "Server rejected the change.",
+        body: extractApiError(err, "Server rejected the change."),
       });
     },
     onSuccess: () => {
