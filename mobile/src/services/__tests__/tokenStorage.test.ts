@@ -148,3 +148,44 @@ describe('saveTokens', () => {
     await expect(readToken('refreshToken')).resolves.toBeNull();
   });
 });
+
+// CodeRabbit on #22: a keychain write still in flight when the user logs out
+// finished after the logout's delete and put the refresh token back, so the
+// next launch signed them straight in again.
+describe('keychain changes happen one at a time', () => {
+  const deferredWrites = () => {
+    const pending: Array<() => void> = [];
+    setItem.mockImplementation((k, v) =>
+      new Promise<void>((resolve) => pending.push(() => { store[k] = v; resolve(); })),
+    );
+    return pending;
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it('a logout during a pending save leaves no token behind', async () => {
+    setItem.mockImplementation(() => locked());
+    await saveTokens('a2', 'r2'); // keychain refused: waiting in memory
+    const pending = deferredWrites();
+    const reading = readToken('refreshToken'); // starts writing r2
+    await settle();
+    const clearing = clearTokens();
+    // Let the logout run as far as it can before the old write lands.
+    await settle();
+    await settle();
+    while (pending.length) { pending.shift()!(); await settle(); }
+    await reading;
+    await clearing;
+    expect(store.refreshToken).toBeUndefined();
+    expect(store.accessToken).toBeUndefined();
+    await expect(readToken('refreshToken')).resolves.toBeNull();
+  });
+
+  it('concurrent readers write a waiting token once', async () => {
+    setItem.mockImplementation(() => locked());
+    await saveTokens('a2', 'r2');
+    setItem.mockReset().mockImplementation((k, v) => { store[k] = v; return Promise.resolve(); });
+    const reads = await Promise.all([1, 2, 3].map(() => readToken('refreshToken')));
+    expect(reads).toEqual(['r2', 'r2', 'r2']);
+    expect(setItem.mock.calls.filter(([k]) => k === 'refreshToken')).toHaveLength(1);
+  });
+});

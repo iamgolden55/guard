@@ -34,6 +34,23 @@ const unsaved: Partial<Record<TokenKey, string>> = {};
 export const setToken = (key: TokenKey, value: string) =>
   SecureStore.setItemAsync(key, value, TOKEN_STORE_OPTIONS);
 
+/**
+ * Every read, save, clear and migration runs one at a time.
+ *
+ * Without this, a write still in flight when the user logged out finished
+ * after the logout's delete and put the refresh token back, so the next
+ * launch signed them straight in again; and each concurrent reader started
+ * its own write of the same waiting token. Functions below that are only
+ * called from inside the queue must not queue again (it would wait on itself).
+ */
+let queue: Promise<unknown> = Promise.resolve();
+
+function oneAtATime<T>(task: () => Promise<T>): Promise<T> {
+  const run = queue.then(task, task);
+  queue = run.catch(() => undefined);
+  return run;
+}
+
 async function flushUnsaved(): Promise<void> {
   // Refresh token first: a stored refresh token that works is what keeps the
   // session; a stale stored access token only costs one more refresh.
@@ -50,19 +67,21 @@ async function flushUnsaved(): Promise<void> {
  * a migration backup left by an interrupted launch. Throws when the keychain
  * can't be read (the caller decides what that means).
  */
-export async function readToken(key: TokenKey): Promise<string | null> {
-  if (unsaved.accessToken !== undefined || unsaved.refreshToken !== undefined) {
-    try {
-      await flushUnsaved();
-    } catch {
-      // Still not writable; keep serving the in-memory copy.
+export function readToken(key: TokenKey): Promise<string | null> {
+  return oneAtATime(async () => {
+    if (unsaved.accessToken !== undefined || unsaved.refreshToken !== undefined) {
+      try {
+        await flushUnsaved();
+      } catch {
+        // Still not writable; keep serving the in-memory copy.
+      }
     }
-  }
-  const pending = unsaved[key];
-  if (pending !== undefined) return pending;
-  const stored = await SecureStore.getItemAsync(key);
-  if (stored) return stored;
-  return await SecureStore.getItemAsync(backupKey(key));
+    const pending = unsaved[key];
+    if (pending !== undefined) return pending;
+    const stored = await SecureStore.getItemAsync(key);
+    if (stored) return stored;
+    return await SecureStore.getItemAsync(backupKey(key));
+  });
 }
 
 /**
@@ -72,26 +91,30 @@ export async function readToken(key: TokenKey): Promise<string | null> {
  * still waiting to be saved. Returns false when the keychain refused; the
  * tokens are then kept in memory (see `unsaved`) and every reader gets them.
  */
-export async function saveTokens(access: string, refresh?: string): Promise<boolean> {
-  delete unsaved.refreshToken;
-  if (refresh !== undefined) unsaved.refreshToken = refresh;
-  unsaved.accessToken = access;
-  try {
-    await flushUnsaved();
-    return true;
-  } catch (error) {
-    logger.warn('[tokenStorage] Could not save refreshed tokens; keeping them in memory', error);
-    return false;
-  }
+export function saveTokens(access: string, refresh?: string): Promise<boolean> {
+  return oneAtATime(async () => {
+    delete unsaved.refreshToken;
+    if (refresh !== undefined) unsaved.refreshToken = refresh;
+    unsaved.accessToken = access;
+    try {
+      await flushUnsaved();
+      return true;
+    } catch (error) {
+      logger.warn('[tokenStorage] Could not save refreshed tokens; keeping them in memory', error);
+      return false;
+    }
+  });
 }
 
 /** Forget the tokens everywhere: memory, keychain and any migration backup. */
-export async function clearTokens(): Promise<void> {
-  for (const key of TOKEN_KEYS) {
-    delete unsaved[key];
-    await SecureStore.deleteItemAsync(key);
-    await SecureStore.deleteItemAsync(backupKey(key));
-  }
+export function clearTokens(): Promise<void> {
+  return oneAtATime(async () => {
+    for (const key of TOKEN_KEYS) {
+      delete unsaved[key];
+      await SecureStore.deleteItemAsync(key);
+      await SecureStore.deleteItemAsync(backupKey(key));
+    }
+  });
 }
 
 /**
@@ -110,7 +133,11 @@ export async function clearTokens(): Promise<void> {
  */
 const MIGRATION_FLAG = 'tokenAccessibilityMigrated';
 
-export async function migrateTokenAccessibility(): Promise<void> {
+export function migrateTokenAccessibility(): Promise<void> {
+  return oneAtATime(migrate);
+}
+
+async function migrate(): Promise<void> {
   if (await SecureStore.getItemAsync(MIGRATION_FLAG)) return;
   for (const key of TOKEN_KEYS) {
     const backup = await SecureStore.getItemAsync(backupKey(key));
