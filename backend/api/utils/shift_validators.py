@@ -113,6 +113,45 @@ def check_exact_duplicate(staff_user, venue, start_time, end_time, exclude_shift
     return duplicate is not None, duplicate
 
 
+def _display_timezone(shift):
+    """The zone a manager reads this shift's times in.
+
+    Times are stored in UTC (`TIME_ZONE = 'UTC'`). `SecurityCompany.timezone`
+    defaults to 'UTC' and is rarely changed, and every tenant is UK-based (SIA
+    licensing), so 'UTC' or blank means "not set" and reads as Europe/London.
+    """
+    import zoneinfo
+
+    company = getattr(getattr(shift, 'venue', None), 'company', None)
+    name = getattr(company, 'timezone', None)
+    if not name or name == 'UTC':
+        name = 'Europe/London'
+    try:
+        return zoneinfo.ZoneInfo(name)
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+        return zoneinfo.ZoneInfo('Europe/London')
+
+
+def local_window(shift):
+    """(start, end) of a shift in the zone its manager reads times in."""
+    tz = _display_timezone(shift)
+    return shift.start_time.astimezone(tz), shift.end_time.astimezone(tz)
+
+
+def overlap_message(conflict):
+    """The refusal for a shift that overlaps `conflict`, in the manager's local time.
+
+    Built from UTC before, so an 18:00-01:00 shift in summer read "17:00 - 00:00".
+    The shape is unchanged; the staff app parses it into "Already on shift …".
+    """
+    start, end = local_window(conflict)
+    venue_name = conflict.venue.name if conflict.venue else 'Unknown venue'
+    return (
+        f"This staff member already has a shift during this time: "
+        f"{start:%Y-%m-%d %H:%M} - {end:%H:%M} at {venue_name}"
+    )
+
+
 def validate_shift_no_overlap(staff_user, start_time, end_time, exclude_shift_id=None):
     """
     Validate that a shift doesn't overlap with existing shifts.
@@ -135,14 +174,7 @@ def validate_shift_no_overlap(staff_user, start_time, end_time, exclude_shift_id
     )
 
     if has_overlap:
-        first_conflict = overlapping_shifts.first()
-        venue_name = first_conflict.venue.name if first_conflict.venue else 'Unknown'
-
-        raise ValueError(
-            f"This staff member already has a shift during this time: "
-            f"{first_conflict.start_time.strftime('%Y-%m-%d %H:%M')} - "
-            f"{first_conflict.end_time.strftime('%H:%M')} at {venue_name}"
-        )
+        raise ValueError(overlap_message(overlapping_shifts.first()))
 
 
 def get_staff_schedule_conflicts(staff_user, proposed_shifts):

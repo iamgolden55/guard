@@ -2,7 +2,7 @@ import re
 
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .utils.shift_validators import check_shift_overlap
+from .utils.shift_validators import check_shift_overlap, overlap_message
 from .utils import profile_photos
 from .models import (
     User, StaffProfile, EmergencyContact, BankDetails, SIALicense,
@@ -875,12 +875,8 @@ class ShiftSerializer(serializers.ModelSerializer):
             )
 
             if has_overlap:
-                first_conflict = overlapping_shifts.first()
-                venue_name = first_conflict.venue.name if first_conflict.venue else 'Unknown venue'
                 raise serializers.ValidationError({
-                    "staff_user": f"This staff member already has a shift during this time: "
-                    f"{first_conflict.start_time.strftime('%Y-%m-%d %H:%M')} - "
-                    f"{first_conflict.end_time.strftime('%H:%M')} at {venue_name}"
+                    "staff_user": overlap_message(overlapping_shifts.first())
                 })
 
         # Check if staff is on approved leave

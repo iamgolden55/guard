@@ -133,8 +133,10 @@ export const ManageShiftsListScreenV2: React.FC = () => {
   );
 
   useEffect(() => {
+    // Only a failed list fetch lands here, and shiftsService has already sent
+    // that to Sentry; a second event per failure is noise (REACT-NATIVE-N).
     if (error) {
-      logger.error('[ManageShifts] error', error);
+      logger.warn(`[ManageShifts] list failed to load: ${error}`);
     }
   }, [error]);
 
