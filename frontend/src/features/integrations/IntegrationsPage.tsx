@@ -2,6 +2,7 @@
 // Composition matches RecruitmentPage / VenuesPage / IncidentsPage:
 // header (with tabs inside) + view-per-tab + drawer + modals.
 import { useEffect, useMemo, useState } from "react";
+import { extractApiError } from "@/lib/apiError";
 import { tokens } from "../../design-system/tokens";
 import { Card } from "../../design-system/primitives/Card";
 import { useAuth } from "../../contexts/AuthContext";
@@ -112,8 +113,8 @@ export default function IntegrationsPage() {
     try {
       await data.syncDeputyEmployees.mutateAsync();
       setToast("Deputy employee sync queued.");
-    } catch {
-      setToast("Couldn't start the employee sync.");
+    } catch (err) {
+      setToast(extractApiError(err, "Couldn't start the employee sync."));
     }
   };
 
@@ -121,8 +122,8 @@ export default function IntegrationsPage() {
     try {
       await data.syncDeputyTimesheets.mutateAsync();
       setToast("Deputy timesheet sync queued.");
-    } catch {
-      setToast("Couldn't start the timesheet sync.");
+    } catch (err) {
+      setToast(extractApiError(err, "Couldn't start the timesheet sync."));
     }
   };
 

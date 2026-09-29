@@ -2,6 +2,7 @@
 // Composition mirrors AttendancePage / RecruitmentPage: header (with tabs
 // inside it) + view-per-tab + drawer + form modal + delete modal + toast.
 import { useEffect, useMemo, useState } from "react";
+import { extractApiError } from "@/lib/apiError";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { Card } from "../../design-system/primitives/Card";
@@ -181,8 +182,8 @@ export default function VenuesPage() {
       setToast(
         v.is_active ? `${v.name} deactivated.` : `${v.name} reactivated.`,
       );
-    } catch {
-      setToast("Couldn't update status. Please try again.");
+    } catch (err) {
+      setToast(extractApiError(err, "Couldn't update status. Please try again."));
     }
   };
 

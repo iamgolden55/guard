@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { extractApiError } from "@/lib/apiError";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -91,8 +92,8 @@ export function RequestLeaveModal({
         reason: values.reason,
       });
       onClose();
-    } catch {
-      setSubmitError("Couldn't submit your request. Please try again.");
+    } catch (err) {
+      setSubmitError(extractApiError(err, "Couldn't submit your request. Please try again."));
     }
   };
 

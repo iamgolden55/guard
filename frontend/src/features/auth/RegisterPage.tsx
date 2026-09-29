@@ -3,6 +3,7 @@
 // redirect logic kicks in (we navigate to /login after success since
 // register doesn't auto-create a session in the backend).
 import { useState } from "react";
+import { extractApiError } from "@/lib/apiError";
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -59,8 +60,8 @@ export default function RegisterPage() {
       });
       setSubmitted(true);
       window.setTimeout(() => navigate("/login"), 1200);
-    } catch {
-      setSubmitError("Registration failed. The username or email may already exist.");
+    } catch (err) {
+      setSubmitError(extractApiError(err, "Registration failed. The username or email may already exist."));
     }
   };
 

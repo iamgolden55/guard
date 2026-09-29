@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { extractApiError } from "@/lib/apiError";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -54,8 +55,8 @@ export function RejectReasonModal({
     try {
       await onSubmit(application.id, values.notes.trim());
       onClose();
-    } catch {
-      setSubmitError("Couldn't reject the application. Please try again.");
+    } catch (err) {
+      setSubmitError(extractApiError(err, "Couldn't reject the application. Please try again."));
     }
   };
 
