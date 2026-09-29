@@ -104,6 +104,7 @@ jobs:
           finance_integrations/test_webhook_payments.py
           api/tests/test_tenancy_ratchet.py
           shifts/test_shift_authz.py
+          shifts/test_shift_list_queries.py
           shifts/test_overnight_attendance.py
           shifts/test_checkin_window.py
           shifts/test_offline_no_show_recovery.py

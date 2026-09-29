@@ -2468,7 +2468,75 @@ class Shift(models.Model):
 
     def get_latest_time_adjustment(self):
         """Get the most recent time adjustment for this shift"""
+        # A shift list prefetches `time_adjustments` (same -created_at order)
+        # so this is not a query per shift; see `prime_shift_pay_lookups`.
+        if 'time_adjustments' in getattr(self, '_prefetched_objects_cache', {}):
+            adjustments = self.time_adjustments.all()
+            return adjustments[0] if adjustments else None
         return self.time_adjustments.first()  # Already ordered by -created_at
+
+    # -- per-list lookups for pay ------------------------------------------
+    #
+    # `calculate_payment_breakdown` and `get_effective_hourly_rate` read the
+    # system settings, the working-hours regulation, the officer's pay rates
+    # and their earlier hours in the week. Listing N shifts did each of those
+    # N times. `api.utils.shift_pay_lookups.prime_shift_pay_lookups` fetches
+    # them once for a whole list and hangs them on each shift as
+    # `_pay_lookups`; without it every method below queries exactly as before.
+
+    def _pay_system_settings(self):
+        lookups = getattr(self, '_pay_lookups', None)
+        if lookups is not None:
+            return lookups.system_settings
+        return SystemSettings.objects.first()
+
+    def _pay_regulation(self, country_code):
+        lookups = getattr(self, '_pay_lookups', None)
+        if lookups is not None:
+            return lookups.regulation_for(country_code)
+        return (
+            WorkingHoursRegulation.objects.filter(
+                country_code__iexact=country_code,
+                is_active=True,
+            ).first()
+            or WorkingHoursRegulation.objects.filter(
+                country_code__iexact=country_code[:2],
+                is_active=True,
+            ).first()
+        )
+
+    def _pay_rate(self, venue=None, default=False):
+        """The officer's PayRate for a venue, or their default one."""
+        if 'pay_rates' in getattr(self.staff_user, '_prefetched_objects_cache', {}):
+            for rate in self.staff_user.pay_rates.all():  # -created_at, as .first()
+                if default and rate.venue_id is None and rate.is_default:
+                    return rate
+                if not default and venue is not None and rate.venue_id == venue.id:
+                    return rate
+            return None
+        if default:
+            return PayRate.objects.filter(
+                staff_user=self.staff_user, venue=None, is_default=True,
+            ).first()
+        return PayRate.objects.filter(staff_user=self.staff_user, venue=venue).first()
+
+    def _pay_prior_week_hours(self, week_start, week_end, accumulator_field):
+        """Hours this officer worked earlier in the same week (Decimal or None)."""
+        lookups = getattr(self, '_pay_lookups', None)
+        if lookups is not None:
+            return lookups.prior_week_hours(self, week_start, week_end, accumulator_field)
+        from django.db.models import Sum as _Sum
+        return (
+            Shift.objects.filter(
+                staff_user=self.staff_user,
+                start_time__date__gte=week_start,
+                start_time__date__lte=week_end,
+                start_time__lt=self.start_time,
+                status__in=['completed', 'approved', 'in_progress'],
+            )
+            .exclude(pk=self.pk)
+            .aggregate(total=_Sum(accumulator_field))['total']
+        )
 
     def get_effective_check_in_time(self):
         """Return adjusted check-in time if exists, otherwise original"""
@@ -2532,16 +2600,7 @@ class Shift(models.Model):
         try:
             company = getattr(self.venue, 'company', None) if self.venue else None
             if company and company.country_code:
-                regulation = (
-                    WorkingHoursRegulation.objects.filter(
-                        country_code__iexact=company.country_code,
-                        is_active=True,
-                    ).first()
-                    or WorkingHoursRegulation.objects.filter(
-                        country_code__iexact=company.country_code[:2],
-                        is_active=True,
-                    ).first()
-                )
+                regulation = self._pay_regulation(company.country_code)
 
                 if regulation and regulation.overtime_threshold_hours is not None and self.staff_user:
                     from datetime import timedelta as td
@@ -2564,7 +2623,6 @@ class Shift(models.Model):
                         week_start = shift_date - td(days=shift_date.weekday())
                         week_end = week_start + td(days=6)
 
-                        from django.db.models import Sum as _Sum
                         # P3.5: only count shifts that started BEFORE this one
                         # in the same ISO week. Without start_time__lt the same
                         # threshold-overflow gets booked once per shift in the
@@ -2584,16 +2642,8 @@ class Shift(models.Model):
                             if getattr(settings, 'OT_BASIS_ALIGNED', False)
                             else 'actual_hours_worked'
                         )
-                        other_hours = (
-                            Shift.objects.filter(
-                                staff_user=self.staff_user,
-                                start_time__date__gte=week_start,
-                                start_time__date__lte=week_end,
-                                start_time__lt=self.start_time,
-                                status__in=['completed', 'approved', 'in_progress'],
-                            )
-                            .exclude(pk=self.pk)
-                            .aggregate(total=_Sum(accumulator_field))['total']
+                        other_hours = self._pay_prior_week_hours(
+                            week_start, week_end, accumulator_field,
                         ) or Decimal('0')
 
                         prior_hours = Decimal(str(other_hours))
@@ -2769,7 +2819,7 @@ class Shift(models.Model):
         # configured special_event_pay_rate.
         if self.is_special_event:
             try:
-                settings = SystemSettings.objects.first()
+                settings = self._pay_system_settings()
                 if settings and settings.special_event_pay_rate:
                     return settings.special_event_pay_rate
             except Exception:
@@ -2777,26 +2827,19 @@ class Shift(models.Model):
 
         # Check for venue-specific pay rate for this staff member
         if self.staff_user and self.venue:
-            venue_rate = PayRate.objects.filter(
-                staff_user=self.staff_user,
-                venue=self.venue
-            ).first()
+            venue_rate = self._pay_rate(venue=self.venue)
             if venue_rate:
                 return venue_rate.hourly_rate
 
         # Check for default pay rate for this staff member
         if self.staff_user:
-            default_rate = PayRate.objects.filter(
-                staff_user=self.staff_user,
-                venue=None,
-                is_default=True
-            ).first()
+            default_rate = self._pay_rate(default=True)
             if default_rate:
                 return default_rate.hourly_rate
 
         # Fallback to system settings if no pay rates are set
         try:
-            settings = SystemSettings.objects.first()
+            settings = self._pay_system_settings()
             if settings:
                 return settings.special_event_pay_rate if self.is_special_event else settings.default_hourly_rate
         except Exception:

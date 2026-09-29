@@ -14,16 +14,31 @@ from .serializers import (
     FrontendShiftDetailSerializer,
     MultiStaffShiftSerializer,
     ManagerAttendanceOverrideSerializer,
+    prime_shift_list,
+    shift_list_queryset,
 )
 from api.permissions import IsManagerOrAdmin
 from api.middleware.tenant_middleware import resolve_request_company
 from .filters import ShiftFilter
-from django.db.models import Q
+from django.db.models import Count, IntegerField, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 from django.db import IntegrityError
 from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _count_checks(model, **conditions):
+    """How many of a shift's `model` checks match `conditions`, as a subquery."""
+    counted = (
+        model.objects.filter(shift=OuterRef('pk'), **conditions)
+        .order_by()
+        .values('shift')
+        .annotate(n=Count('pk'))
+        .values('n')
+    )
+    return Coalesce(Subquery(counted, output_field=IntegerField()), 0)
 
 #: How late an officer may still start a shift themselves. Past this the shift
 #: is over and attendance is a manager's record, not a self-service action.
@@ -298,21 +313,27 @@ class ShiftViewSet(viewsets.ModelViewSet):
         # Apply any additional filters from the filter backend
         shifts = self.filter_queryset(shifts)
 
+        # Join and prefetch what each row reads, then batch the rest per page,
+        # so the page costs the same for 1 shift as for 50 (PYTHON-DJANGO-1B).
+        shifts = shift_list_queryset(shifts)
+        context = self.get_serializer_context()
+
         # Use pagination if available
         page = self.paginate_queryset(shifts)
         if page is not None:
-            serializer = self.get_serializer(page, many=True)
+            page = prime_shift_list(page, context)
+            serializer = self.get_serializer(page, many=True, context=context)
             return self.get_paginated_response(serializer.data)
 
-        serializer = self.get_serializer(shifts, many=True)
+        shifts = prime_shift_list(shifts, context)
+        serializer = self.get_serializer(shifts, many=True, context=context)
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'], url_path='manager/all')
     def manager_all(self, request):
         """Get all shifts for manager/admin view with venue check summaries"""
-        from django.db.models import Count, Q
         from api.models import FireExitCheck, CapacityCheck, ToiletCheck
-        
+
         if not request.user.is_authenticated:
             return Response(
                 {"detail": "Authentication required"}, 
@@ -327,27 +348,44 @@ class ShiftViewSet(viewsets.ModelViewSet):
             )
         
         # SECURITY FIX: Use get_queryset() for company-scoped filtering
-        shifts = self.get_queryset().select_related('venue', 'staff_user').prefetch_related(
-            'fireexitcheck_set', 'capacitycheck_set', 'toiletcheck_set'
-        )
-        
+        shifts = self.get_queryset().select_related('venue', 'staff_user')
+
         # Apply any filters
         shifts = self.filter_queryset(shifts)
-        
+
+        # Check counts come from subqueries and the page is cut in the
+        # database. This used to run three COUNTs per shift and build every
+        # shift in the company in Python before slicing (PYTHON-DJANGO-1A).
+        shifts = shifts.annotate(
+            fire_checks=_count_checks(FireExitCheck),
+            capacity_checks=_count_checks(CapacityCheck),
+            toilet_checks=_count_checks(ToiletCheck),
+            critical_fire=_count_checks(FireExitCheck, is_clear=False),
+            critical_capacity=_count_checks(CapacityCheck, is_at_capacity=True),
+            critical_toilet=_count_checks(ToiletCheck, condition__in=['poor', 'critical']),
+        )
+        # A tiebreak so equal start times can't move between pages.
+        ordering = list(shifts.query.order_by) or ['-start_time']
+        shifts = shifts.order_by(*ordering, '-id')
+
+        # Server-side pagination
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 25))
+        total = shifts.count()
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_shifts = list(shifts[start:end]) if start >= 0 and page_size > 0 else []
+
         # Prepare response data with venue check summaries
         shift_data = []
-        for shift in shifts:
-            # Count venue checks
-            fire_checks = shift.fireexitcheck_set.count()
-            capacity_checks = shift.capacitycheck_set.count()
-            toilet_checks = shift.toiletcheck_set.count()
-            
-            # Count critical issues (failed fire exits, at-capacity situations, poor toilet conditions)
-            critical_issues = 0
-            critical_issues += shift.fireexitcheck_set.filter(is_clear=False).count()
-            critical_issues += shift.capacitycheck_set.filter(is_at_capacity=True).count()
-            critical_issues += shift.toiletcheck_set.filter(condition__in=['poor', 'critical']).count()
-            
+        for shift in page_shifts:
+            fire_checks = shift.fire_checks
+            capacity_checks = shift.capacity_checks
+            toilet_checks = shift.toilet_checks
+
+            # Critical issues: failed fire exits, at-capacity situations, poor toilet conditions
+            critical_issues = shift.critical_fire + shift.critical_capacity + shift.critical_toilet
+
             # Calculate duration in hours
             duration_hours = None
             if shift.check_in_time and shift.check_out_time:
@@ -387,19 +425,12 @@ class ShiftViewSet(viewsets.ModelViewSet):
             }
             shift_data.append(shift_info)
 
-        # Server-side pagination
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 25))
-        total = len(shift_data)
-        start = (page - 1) * page_size
-        end = start + page_size
-
         return Response({
             'count': total,
             'total_pages': (total + page_size - 1) // page_size,
             'current_page': page,
             'page_size': page_size,
-            'results': shift_data[start:end],
+            'results': shift_data,
         })
 
     @action(detail=False, methods=['get'], url_path='reports/compliance')

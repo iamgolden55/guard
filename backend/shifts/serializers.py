@@ -1,4 +1,6 @@
 from rest_framework import serializers
+from datetime import timedelta
+
 from django.utils import timezone
 from api.models import Shift, Venue, User, ShiftExchange, OpenShiftRequest, ContractorUnavailability  # Import from api.models
 from api.utils import profile_photos
@@ -103,6 +105,78 @@ def resolve_request_company(request):
     """
     from api.middleware.tenant_middleware import resolve_request_company as resolve
     return resolve(request)
+
+
+PENDING_EXCHANGE_STATUSES = ('pending', 'accepted_by_target')
+PENDING_RELEASE_STATUSES = ('open', 'claimed')
+APPROVED_TRANSFER_DAYS = 7
+
+
+def _first_prefetched(obj, attr, query):
+    """The first row of a list the view prefetched onto `obj`, else run `query`."""
+    rows = getattr(obj, attr, None)
+    if rows is None:
+        return query()
+    return rows[0] if rows else None
+
+
+def shift_list_queryset(queryset):
+    """`queryset` with everything a `ShiftSerializer` row reads joined or prefetched.
+
+    Sentry PYTHON-DJANGO-1B: listing N shifts ran each of these once per shift.
+    Only adds joins and prefetches; which shifts come back is up to the caller.
+    """
+    from django.db.models import Prefetch
+    from api.utils.shift_pay_lookups import pay_prefetches
+
+    recent_cutoff = timezone.now() - timedelta(days=APPROVED_TRANSFER_DAYS)
+    return queryset.select_related('venue', 'venue__company', 'staff_user').prefetch_related(
+        Prefetch(
+            'exchange_requests',
+            queryset=ShiftExchange.objects.filter(
+                status__in=PENDING_EXCHANGE_STATUSES,
+            ).select_related('target_user'),
+            to_attr='_pending_exchanges',
+        ),
+        Prefetch(
+            'exchange_requests',
+            queryset=ShiftExchange.objects.filter(
+                status='approved', updated_at__gte=recent_cutoff,
+            ).select_related('target_user'),
+            to_attr='_approved_exchanges',
+        ),
+        Prefetch(
+            'open_requests',
+            queryset=OpenShiftRequest.objects.filter(
+                status__in=PENDING_RELEASE_STATUSES,
+            ).select_related('claimed_by'),
+            to_attr='_pending_releases',
+        ),
+        *pay_prefetches(),
+    )
+
+
+def prime_shift_list(shifts, context):
+    """Batch the lookups left after `shift_list_queryset` for one page of shifts.
+
+    Adds the co-workers of every shift group on the page to `context` in one
+    query, and shares one set of pay lookups across the page. Returns the page
+    as a list.
+    """
+    from api.utils.shift_pay_lookups import prime_shift_pay_lookups
+
+    shifts = prime_shift_pay_lookups(shifts)
+    groups = {s.shift_group for s in shifts if s.shift_group}
+    by_group = {group: [] for group in groups}
+    if groups:
+        # Unscoped by company, exactly like the per-shift query it replaces:
+        # a shift group id is only ever shared by one venue's shifts.
+        for shift in Shift.objects.filter(shift_group__in=groups).select_related(
+            'staff_user', 'staff_user__profile',
+        ):
+            by_group[shift.shift_group].append(shift)
+    context['coworker_shifts_by_group'] = by_group
+    return shifts
 
 
 class ShiftSerializer(serializers.ModelSerializer):
@@ -271,10 +345,10 @@ class ShiftSerializer(serializers.ModelSerializer):
     def get_pending_exchange(self, obj):
         """Get pending/in-progress exchange for this shift (if any)"""
         # Look for pending/accepted exchanges where this shift is the original_shift
-        exchange = ShiftExchange.objects.filter(
+        exchange = _first_prefetched(obj, '_pending_exchanges', lambda: ShiftExchange.objects.filter(
             original_shift=obj,
-            status__in=['pending', 'accepted_by_target']
-        ).select_related('target_user').first()
+            status__in=PENDING_EXCHANGE_STATUSES
+        ).select_related('target_user').first())
 
         if exchange:
             result = {
@@ -297,10 +371,10 @@ class ShiftSerializer(serializers.ModelSerializer):
 
     def get_pending_release(self, obj):
         """Get pending open shift request for this shift (if any)"""
-        release = OpenShiftRequest.objects.filter(
+        release = _first_prefetched(obj, '_pending_releases', lambda: OpenShiftRequest.objects.filter(
             original_shift=obj,
-            status__in=['open', 'claimed']
-        ).select_related('claimed_by').first()
+            status__in=PENDING_RELEASE_STATUSES
+        ).select_related('claimed_by').first())
 
         if release:
             result = {
@@ -323,13 +397,13 @@ class ShiftSerializer(serializers.ModelSerializer):
         from datetime import timedelta
 
         # Look for recently approved exchanges (within last 7 days)
-        recent_cutoff = timezone.now() - timedelta(days=7)
+        recent_cutoff = timezone.now() - timedelta(days=APPROVED_TRANSFER_DAYS)
 
-        exchange = ShiftExchange.objects.filter(
+        exchange = _first_prefetched(obj, '_approved_exchanges', lambda: ShiftExchange.objects.filter(
             original_shift=obj,
             status='approved',
             updated_at__gte=recent_cutoff
-        ).select_related('target_user').first()
+        ).select_related('target_user').first())
 
         if exchange:
             result = {
@@ -361,9 +435,13 @@ class ShiftSerializer(serializers.ModelSerializer):
 
         # Query shifts with same shift_group, excluding current user's shift
         # Note: Related name is 'profile' not 'staffprofile'
-        coworker_shifts = Shift.objects.filter(
-            shift_group=obj.shift_group
-        ).exclude(id=obj.id).select_related('staff_user', 'staff_user__profile')
+        by_group = self.context.get('coworker_shifts_by_group')
+        if by_group is not None and obj.shift_group in by_group:
+            coworker_shifts = [s for s in by_group[obj.shift_group] if s.id != obj.id]
+        else:
+            coworker_shifts = Shift.objects.filter(
+                shift_group=obj.shift_group
+            ).exclude(id=obj.id).select_related('staff_user', 'staff_user__profile')
 
         coworkers = []
         for shift in coworker_shifts:
