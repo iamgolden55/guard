@@ -26,6 +26,7 @@
     },
     "production": {
       "distribution": "store",
+      "channel": "production",
       "env": {
         "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "API_BASE_URL": "https://mead-security-api.onrender.com",
