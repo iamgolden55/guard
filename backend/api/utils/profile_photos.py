@@ -90,6 +90,33 @@ def delete_quietly(key):
         logger.exception('Could not delete profile photo %s', key)
 
 
+def delete_all_for_user(user_id):
+    """Remove every photo `store()` ever saved for a user; return how many went.
+
+    The profile row only points at the current photo. Earlier ones whose delete
+    failed on replacement are still named `user_<id>_…`, and erasing the account
+    has to take them too. Failures are logged, never raised.
+    """
+    stem = f'user_{int(user_id)}_'
+    try:
+        _, files = default_storage.listdir(PREFIX)
+    except FileNotFoundError:
+        return 0
+    except Exception:
+        logger.exception('Could not list profile photos')
+        return 0
+    removed = 0
+    for name in files:
+        if not name.startswith(stem):
+            continue
+        try:
+            default_storage.delete(f'{PREFIX}/{name}')
+            removed += 1
+        except Exception:
+            logger.exception('Could not delete profile photo %s/%s', PREFIX, name)
+    return removed
+
+
 def extension_for(filename):
     """The stored extension for an uploaded filename, defaulting to .jpg."""
     ext = os.path.splitext(filename or '')[1].lower()
