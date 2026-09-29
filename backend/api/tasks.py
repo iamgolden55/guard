@@ -2019,27 +2019,42 @@ def hard_delete_expired_accounts():
     Permanently anonymize accounts that were scheduled for deletion more than 30 days ago.
     Deletes PII (StaffProfile cascades to bank details, SIA licenses, emergency contacts, etc.)
     and anonymizes the User record to preserve business record FK references (shifts, invoices).
-    Runs daily at 2 AM.
+    Runs daily at 02:30 (CELERY_BEAT_SCHEDULE).
+
+    Stored files go once each account's erasure commits: every licence scan in
+    the officer's directory, attached to a licence or not, and every profile
+    photo saved for them. Each account is its own transaction and is re-checked
+    under a row lock, so an account reactivated mid-run is left alone, one
+    failure doesn't stop the rest, and a second run finds nothing to do.
     """
+    from .models import PasswordResetToken, SNSDeviceToken, StaffProfile
+    from .utils import profile_photos, sia_documents
+
     cutoff = timezone.now() - timedelta(days=30)
-    users_to_delete = User.objects.filter(
+    due = dict(
         is_active=False,
         deletion_scheduled_at__isnull=False,
         deletion_scheduled_at__lte=cutoff,
     )
+    user_ids = list(User.objects.filter(**due).values_list('id', flat=True))
 
     deleted_count = 0
     failed_count = 0
-    for user in users_to_delete:
+    for user_id in user_ids:
         try:
             with transaction.atomic():
-                user_id = user.id
+                user = User.objects.select_for_update().filter(id=user_id, **due).first()
+                if user is None:
+                    continue
                 logger.info(f"Hard-deleting account for user_id={user_id}")
 
                 # Delete StaffProfile (cascades to emergency contacts, bank details,
                 # SIA licenses, qualifications, availability, preferred venues)
-                if hasattr(user, 'profile') and user.profile:
+                if StaffProfile.objects.filter(user_id=user_id).exists():
                     user.profile.delete()
+
+                SNSDeviceToken.objects.filter(user_id=user_id).delete()
+                PasswordResetToken.objects.filter(user_id=user_id).delete()
 
                 # Anonymize user record (preserve row for FK references in shifts/invoices)
                 user.username = f"deleted_user_{user_id}"
@@ -2050,10 +2065,16 @@ def hard_delete_expired_accounts():
                 user.deletion_scheduled_at = None  # Mark as completed
                 user.save()
 
+                transaction.on_commit(
+                    lambda uid=user_id: (
+                        sia_documents.delete_owner_directory(uid),
+                        profile_photos.delete_all_for_user(uid),
+                    )
+                )
                 deleted_count += 1
         except Exception as e:
             failed_count += 1
-            logger.error(f"Failed to hard-delete user_id={user.id}: {e}")
+            logger.error(f"Failed to hard-delete user_id={user_id}: {e}")
 
     logger.info(f"Hard-delete task completed: {deleted_count} accounts anonymized, {failed_count} failed")
     return {'anonymized': deleted_count, 'failed': failed_count}

@@ -152,6 +152,33 @@ def delete_quietly(key):
         logger.exception('Could not delete SIA document %s', key)
 
 
+def delete_owner_directory(owner_user_id):
+    """Remove every document under an officer's directory; return how many went.
+
+    Erasing an account has to take the scans that are no longer attached to a
+    licence too: cards uploaded through the legacy `/upload/` view, which can't
+    be attached, and any old card whose delete failed when it was replaced.
+    Failures are logged, never raised.
+    """
+    directory = f'{PREFIX}/{int(owner_user_id)}'
+    try:
+        _, files = default_storage.listdir(directory)
+    except FileNotFoundError:
+        return 0
+    except Exception:
+        logger.exception('Could not list SIA documents in %s', directory)
+        return 0
+    removed = 0
+    for name in files:
+        key = f'{directory}/{name}'
+        try:
+            default_storage.delete(key)
+            removed += 1
+        except Exception:
+            logger.exception('Could not delete SIA document %s', key)
+    return removed
+
+
 def display_name(filename):
     """A tidy version of the client's filename, for echoing back only."""
     name, ext = os.path.splitext(filename or '')
