@@ -52,6 +52,7 @@ import {
   Eyebrow,
   GlassCard,
 } from '../../../components/redesign';
+import { currentLicence, LICENCE_STATE_LABEL, licenceState } from '../../../utils/siaLicence';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -103,8 +104,7 @@ export const ProfileScreenV2: React.FC = () => {
   );
 
   const staffProfile = user?.staff_profile as any;
-  const siaLicenses = staffProfile?.sia_licenses || [];
-  const siaLicense = siaLicenses[0];
+  const siaLicense = currentLicence(staffProfile?.sia_licenses);
 
   const employmentCategory = staffProfile?.employment_type?.employment_category;
   const isContractor =
@@ -119,16 +119,11 @@ export const ProfileScreenV2: React.FC = () => {
 
   // Licence status
   const licenseStatus = (() => {
-    if (!siaLicense) return null;
-    if (!siaLicense.expiry_date) {
-      return { label: 'Active', color: '#4ade80' };
-    }
-    const expiry = new Date(siaLicense.expiry_date);
-    const now = new Date();
-    const daysLeft = Math.floor((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysLeft < 0) return { label: 'Expired', color: theme.colors.accent };
-    if (daysLeft <= 30) return { label: 'Expiring soon', color: '#f59e0b' };
-    return { label: 'Active', color: '#4ade80' };
+    const state = licenceState(siaLicense);
+    if (!state) return null;
+    const color =
+      state === 'active' ? '#4ade80' : state === 'expired' ? theme.colors.accent : '#f59e0b';
+    return { label: LICENCE_STATE_LABEL[state], color };
   })();
 
   // Handlers (preserved)

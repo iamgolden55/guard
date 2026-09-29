@@ -30,6 +30,7 @@ import authService from '../../../services/authService';
 import { logger } from '../../../utils/logger';
 import { useRedesignTheme } from '../../../theme/redesign';
 import { Eyebrow, GlassCard } from '../../../components/redesign';
+import { currentLicence } from '../../../utils/siaLicence';
 
 const ROLE_LABEL: Record<string, string> = {
   door_supervisor: 'Door supervisor',
@@ -68,8 +69,10 @@ export const EditProfileScreenV2: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
-  const siaLicenseNumber = staffProfile?.sia_license_number || '';
-  const siaExpiryDate = staffProfile?.sia_license_expiry || '';
+  // The profile carries a list of licences, not flat number/expiry fields.
+  const siaLicence = currentLicence(staffProfile?.sia_licenses);
+  const siaLicenseNumber = siaLicence?.license_number || '';
+  const siaExpiryDate = siaLicence?.expiry_date || '';
   const securityRoles = useMemo(
     () => formatSecurityRoles(staffProfile?.security_roles || user?.security_roles),
     [staffProfile?.security_roles, user?.security_roles],
