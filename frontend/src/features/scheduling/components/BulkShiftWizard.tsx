@@ -4,6 +4,7 @@
 import * as Popover from "@radix-ui/react-popover";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { extractApiError } from "@/lib/apiError";
 import { Button } from "../../../design-system/primitives/Button";
 import { Modal } from "../../../design-system/primitives/Modal";
 import { tokens } from "../../../design-system/tokens";
@@ -436,7 +437,7 @@ export function BulkShiftWizard({
         setEditedShifts(res.shifts.map(cloneShift));
         setEditedIds(new Set());
       } catch (e) {
-        setPreviewError(extractErrorMessage(e) ?? "Couldn't load preview.");
+        setPreviewError(extractApiError(e, "Couldn't load preview."));
       } finally {
         setPreviewLoading(false);
       }
@@ -459,7 +460,7 @@ export function BulkShiftWizard({
       setEditedShifts(res.shifts.map(cloneShift));
       setEditedIds(new Set());
     } catch (e) {
-      setPreviewError(extractErrorMessage(e) ?? "Couldn't load preview.");
+      setPreviewError(extractApiError(e, "Couldn't load preview."));
     } finally {
       setPreviewLoading(false);
     }
@@ -539,7 +540,7 @@ export function BulkShiftWizard({
       };
       showToast(toast);
     } catch (e) {
-      setCommitError(extractErrorMessage(e) ?? "Couldn't create shifts.");
+      setCommitError(extractApiError(e, "Couldn't create shifts."));
     } finally {
       setCommitting(false);
     }
@@ -816,26 +817,6 @@ export function BulkShiftWizard({
       )}
     </Modal>
   );
-}
-
-function extractErrorMessage(e: unknown): string | null {
-  if (!e) return null;
-  // axios error shape
-  const anyErr = e as {
-    response?: { data?: Record<string, unknown> | string };
-    message?: string;
-  };
-  const data = anyErr.response?.data;
-  if (typeof data === "string") return data;
-  if (data && typeof data === "object") {
-    if (typeof data.detail === "string") return data.detail;
-    if (typeof data.error === "string") return data.error;
-    const firstFieldErrors = Object.values(data).find(
-      (v) => Array.isArray(v) && v.length > 0 && typeof v[0] === "string",
-    ) as string[] | undefined;
-    if (firstFieldErrors) return firstFieldErrors[0];
-  }
-  return anyErr.message ?? null;
 }
 
 interface ConfigStepProps {

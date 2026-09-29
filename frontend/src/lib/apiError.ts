@@ -28,6 +28,9 @@ function humaniseField(key: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/** Keys that carry context for code, not a sentence for the operator. */
+const METADATA_FIELDS = new Set(["code", "details", "unavailable_count"]);
+
 /**
  * The first message out of a DRF validation body.
  *
@@ -42,8 +45,14 @@ function firstFieldError(data: unknown): string | undefined {
   const body = plainObject(data);
   if (!body) return undefined;
   for (const [key, value] of Object.entries(body)) {
-    if (key === "code" || !Array.isArray(value)) continue;
-    const first = value.find((v): v is string => typeof v === "string");
+    if (METADATA_FIELDS.has(key)) continue;
+    // Most refusals are `{field: ["…"]}`; a few views send the reason as a
+    // plain string, e.g. `{staff_unavailable: "Sam is on leave …", details}`.
+    const first = Array.isArray(value)
+      ? value.find((v): v is string => typeof v === "string")
+      : typeof value === "string" && value
+        ? value
+        : undefined;
     if (!first) continue;
     // DRF's stock messages ("This field is required.") don't name the field.
     if (/^This field\b/.test(first) && key !== "non_field_errors") {
