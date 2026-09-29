@@ -2,6 +2,7 @@
 // Composition mirrors RecruitmentPage / VenuesPage:
 // header (with tabs inside) + view-per-tab + drawer + modals.
 import { useEffect, useMemo, useState } from "react";
+import { extractApiError } from "@/lib/apiError";
 import { tokens } from "../../design-system/tokens";
 import { Card } from "../../design-system/primitives/Card";
 import { useAuth } from "../../contexts/AuthContext";
@@ -222,8 +223,8 @@ export default function CompliancePage() {
     try {
       await data.setActiveProfile.mutateAsync(profile.id);
       setToast(`${profile.name} is now the active profile.`);
-    } catch {
-      setToast("Couldn't set active profile.");
+    } catch (err) {
+      setToast(extractApiError(err, "Couldn't set active profile."));
     }
   };
 

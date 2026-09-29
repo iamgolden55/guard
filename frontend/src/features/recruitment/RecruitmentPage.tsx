@@ -1,6 +1,7 @@
 // RecruitmentPage — admin "People → Recruitment" review surface.
 // Composition mirrors AttendancePage: header (with tabs inside it) + view-per-tab + drawer + modals.
 import { useEffect, useMemo, useState } from "react";
+import { extractApiError } from "@/lib/apiError";
 import { tokens } from "../../design-system/tokens";
 import { Card } from "../../design-system/primitives/Card";
 import { useAuth } from "../../contexts/AuthContext";
@@ -192,8 +193,8 @@ export default function RecruitmentPage() {
     try {
       await data.approveApplication.mutateAsync({ id: app.id });
       setToast(`${app.full_name} approved.`);
-    } catch {
-      setToast("Couldn't approve. Please try again.");
+    } catch (err) {
+      setToast(extractApiError(err, "Couldn't approve. Please try again."));
     }
   };
 
@@ -222,8 +223,8 @@ export default function RecruitmentPage() {
         u?.username ||
         "the new user";
       setToast(`Created staff account for ${name}.`);
-    } catch {
-      setToast("Couldn't convert to user. Please try again.");
+    } catch (err) {
+      setToast(extractApiError(err, "Couldn't convert to user. Please try again."));
     }
   };
 

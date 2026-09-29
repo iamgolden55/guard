@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { extractApiError } from "@/lib/apiError";
 import { Button } from "../../../../design-system/primitives/Button";
 import { Icon } from "../../../../design-system/Icon";
 import { tokens } from "../../../../design-system/tokens";
@@ -144,8 +145,8 @@ export function AddressTab({
       }
       await onSave(staffProfileId, changed);
       setEditing(false);
-    } catch {
-      setError("Couldn't save address. Try again.");
+    } catch (err) {
+      setError(extractApiError(err, "Couldn't save address. Try again."));
     }
   };
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { extractApiError } from "@/lib/apiError";
 import { Button } from "../../../../design-system/primitives/Button";
 import { tokens } from "../../../../design-system/tokens";
 import type { StaffRow } from "../StaffTable";
@@ -130,8 +131,8 @@ export function ProfileTab({
     setPayFreqSaving(true);
     try {
       await onUpdatePayFrequency(row.staffProfileId, next);
-    } catch {
-      setPayFreqError("Couldn't save pay frequency. Try again.");
+    } catch (err) {
+      setPayFreqError(extractApiError(err, "Couldn't save pay frequency. Try again."));
     } finally {
       setPayFreqSaving(false);
     }

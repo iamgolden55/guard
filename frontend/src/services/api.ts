@@ -1,5 +1,6 @@
 import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
 import type { Shift } from '../types/shift';
+import { extractApiError } from '../lib/apiError';
 import { logger } from '../lib/logger';
 
 // Base API configuration
@@ -196,6 +197,16 @@ api.interceptors.response.use(
       enhancedError.request = error.request;
       
       return Promise.reject(enhancedError);
+    }
+
+    // A refusal carries the server's reason, but axios's own message is
+    // "Request failed with status code 400", and that is what every screen
+    // showing `err.message` put in front of the user. Swap in the server's
+    // reason when it gave one; `response` stays as it was for callers that
+    // read the status or body.
+    if (error.response) {
+      const reason = extractApiError(error, "");
+      if (reason) error.message = reason;
     }
 
     return Promise.reject(error);
