@@ -11,7 +11,7 @@
 
 import Constants from 'expo-constants';
 import axios from 'axios';
-import * as SecureStore from 'expo-secure-store';
+import { readToken } from '../services/tokenStorage';
 
 // ============================================
 // API Base URLs - Read from .env file
@@ -60,7 +60,7 @@ axios.interceptors.request.use(async (config) => {
   if (matchesNoRefresh(config.url)) return config;
   let token: string | null = null;
   try {
-    token = await SecureStore.getItemAsync('accessToken');
+    token = await readToken('accessToken');
   } catch {
     // Keychain unreadable (phone locked): send the caller's header as-is.
   }

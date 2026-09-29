@@ -7,7 +7,7 @@ import { jwtDecode } from 'jwt-decode';
 import { API_ENDPOINTS, getAuthHeaders } from '../config/api.config';
 import notificationService from './notificationService';
 import { logger } from '../utils/logger';
-import { migrateTokenAccessibility, setToken } from './tokenStorage';
+import { clearTokens, migrateTokenAccessibility, readToken, saveTokens } from './tokenStorage';
 
 export interface LoginCredentials {
   username: string;
@@ -124,22 +124,21 @@ class AuthService {
    * Store authentication tokens securely
    */
   async storeTokens(tokens: AuthTokens): Promise<void> {
-    await setToken('accessToken', tokens.access);
-    await setToken('refreshToken', tokens.refresh);
+    await saveTokens(tokens.access, tokens.refresh);
   }
 
   /**
    * Get stored access token
    */
   async getAccessToken(): Promise<string | null> {
-    return await SecureStore.getItemAsync('accessToken');
+    return await readToken('accessToken');
   }
 
   /**
    * Get stored refresh token
    */
   async getRefreshToken(): Promise<string | null> {
-    return await SecureStore.getItemAsync('refreshToken');
+    return await readToken('refreshToken');
   }
 
   /**
@@ -179,17 +178,11 @@ class AuthService {
     }
 
     const newAccessToken = response.data.access;
-    try {
-      await setToken('accessToken', newAccessToken);
-
-      // Backend rotates refresh tokens (BLACKLIST_AFTER_ROTATION) — persist the
-      // new one or the next refresh sends a blacklisted token and force-logs out.
-      if (response.data.refresh) {
-        await setToken('refreshToken', response.data.refresh);
-      }
-    } catch (error) {
-      logger.warn('[AuthService] Could not persist refreshed tokens:', error);
-    }
+    // Backend rotates refresh tokens (BLACKLIST_AFTER_ROTATION): the old one is
+    // dead now, so the new pair is kept even if the keychain won't take it yet
+    // (see `saveTokens`). Failing the refresh here would only sign the user
+    // out on the next one.
+    await saveTokens(newAccessToken, response.data.refresh);
 
     return newAccessToken;
   }
@@ -313,8 +306,7 @@ class AuthService {
       // no-op — safe if no session is open
     }
 
-    await SecureStore.deleteItemAsync('accessToken');
-    await SecureStore.deleteItemAsync('refreshToken');
+    await clearTokens();
     await SecureStore.deleteItemAsync('biometricEnabled');
   }
 

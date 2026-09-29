@@ -19,8 +19,10 @@ jest.mock('../notificationService', () => ({
   default: { unregisterPushToken: jest.fn(() => Promise.resolve()) },
 }));
 jest.mock('expo-web-browser', () => ({ maybeCompleteAuthSession: jest.fn(), dismissAuthSession: jest.fn() }));
+// The real token module over the mocked keychain; only the one-off
+// migration is stubbed.
 jest.mock('../tokenStorage', () => ({
-  setToken: jest.fn(() => Promise.resolve()),
+  ...jest.requireActual('../tokenStorage'),
   migrateTokenAccessibility: jest.fn(() => Promise.resolve()),
 }));
 
@@ -54,6 +56,19 @@ describe('refreshAccessToken', () => {
     post.mockResolvedValueOnce({ data: { access: 'new', refresh: 'r2' } });
     await expect(authService.refreshAccessToken()).resolves.toBe('new');
     expect(signedOut()).toBe(false);
+  });
+
+  it('keeps the rotated tokens when the keychain will not save them', async () => {
+    keychain({ accessToken: EXPIRED, refreshToken: 'r' });
+    (SecureStore.setItemAsync as jest.Mock).mockRejectedValue(new Error('keychain locked'));
+    post.mockResolvedValueOnce({ data: { access: 'new', refresh: 'r2' } });
+    await expect(authService.refreshAccessToken()).resolves.toBe('new');
+    // The server blacklisted 'r'; every later read must get 'r2'.
+    await expect(authService.getRefreshToken()).resolves.toBe('r2');
+    await expect(authService.getAccessToken()).resolves.toBe('new');
+    expect(signedOut()).toBe(false);
+    (SecureStore.setItemAsync as jest.Mock).mockReset();
+    await authService.logout();
   });
 
   it.each([400, 401])('signs out when the server rejects the refresh token (%s)', async (status) => {
