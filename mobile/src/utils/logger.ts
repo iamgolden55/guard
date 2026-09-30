@@ -7,6 +7,76 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 // Sentry integration - lazy loaded to handle case where package isn't installed
 let Sentry: any = null;
+
+/** Keys never sent to Sentry, at any depth (compared lower-cased). */
+const SENSITIVE_KEYS = new Set([
+  'password', 'token', 'accesstoken', 'refreshtoken', 'access', 'refresh',
+  'authorization', 'cookie', 'headers', 'config', 'request',
+  'bankdetails', 'bank_details', 'accountnumber', 'account_number', 'sortcode', 'sort_code',
+  'national_insurance_number', 'date_of_birth', 'phone_number', 'email', 'street',
+  'postal_code', 'sialicenses', 'sia_licenses',
+]);
+const MAX_ATTRIBUTE_LENGTH = 500;
+const MAX_DEPTH = 5;
+
+const truncate = (value: string) =>
+  value.length > MAX_ATTRIBUTE_LENGTH ? `${value.slice(0, MAX_ATTRIBUTE_LENGTH)}…` : value;
+
+/**
+ * A copy of a logged value that is safe to send: sensitive keys dropped at
+ * every depth, and an error reduced to what explains it (name, message, HTTP
+ * status, the server's answer) — an axios error also carries the request
+ * config, whose headers hold the user's bearer token.
+ */
+function scrub(value: any, depth = 0): any {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') return truncate(value);
+  if (typeof value !== 'object') return value;
+  if (depth >= MAX_DEPTH) return '[…]';
+  if (value instanceof Error || (typeof value.message === 'string' && ('stack' in value || 'response' in value))) {
+    const status = value.statusCode ?? value.status ?? value.response?.status;
+    // axios nests the server's answer in `response.data`; ApiError keeps it
+    // in `response` itself.
+    const isAxiosResponse =
+      value.response && typeof value.response === 'object' && ('data' in value.response || 'status' in value.response);
+    const answer = isAxiosResponse ? value.response.data : value.response;
+    return {
+      name: value.name,
+      message: truncate(String(value.message)),
+      ...(status !== undefined && { status }),
+      ...(value.code !== undefined && { code: value.code }),
+      ...(answer !== undefined && { response: scrub(answer, depth + 1) }),
+    };
+  }
+  if (Array.isArray(value)) return value.slice(0, 20).map((item) => scrub(item, depth + 1));
+  const out: Record<string, any> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (SENSITIVE_KEYS.has(key.toLowerCase())) continue;
+    out[key] = scrub(item, depth + 1);
+  }
+  return out;
+}
+
+/**
+ * Sentry log attributes are flat primitives: an object's own keys become
+ * attributes, anything nested is sent as JSON.
+ */
+export function logAttributes(args: any[]): Record<string, string | number | boolean> {
+  const attributes: Record<string, string | number | boolean> = {};
+  args.forEach((arg, index) => {
+    const clean = scrub(arg);
+    if (clean === undefined || clean === null) return;
+    if (typeof clean !== 'object' || Array.isArray(clean)) {
+      attributes[`arg${index}`] = typeof clean === 'object' ? truncate(JSON.stringify(clean)) : clean;
+      return;
+    }
+    for (const [key, item] of Object.entries(clean as Record<string, any>)) {
+      if (item === undefined || item === null) continue;
+      attributes[key] = typeof item === 'object' ? truncate(JSON.stringify(item)) : item;
+    }
+  });
+  return attributes;
+}
 try {
   Sentry = require('@sentry/react-native');
 } catch {
@@ -39,6 +109,12 @@ class Logger {
       // captured in these environments regardless of this flag.
       replaysSessionSampleRate: 0,
       replaysOnErrorSampleRate: 0,
+      // Warnings and errors from `logger` go to Sentry Logs, searchable per
+      // user. A warning used to be only a breadcrumb, seen only if an error
+      // followed — a refused incident report sat in the sync queue with no
+      // trace anywhere. Native SDK logs stay out.
+      enableLogs: true,
+      logsOrigin: 'js',
     });
   }
 
@@ -78,9 +154,11 @@ class Logger {
     } else {
       console.warn(`[WARN] ${message}`);
     }
-    // Report warnings to Sentry as breadcrumbs
+    // Report warnings to Sentry: as a log (searchable on its own) and as a
+    // breadcrumb (context for any error that follows).
     if (Sentry) {
       Sentry.addBreadcrumb({ category: 'warning', message, level: 'warning' });
+      Sentry.logger?.warn(message, logAttributes(args));
     }
   }
 
@@ -97,6 +175,7 @@ class Logger {
     }
     // Report to Sentry
     if (Sentry) {
+      Sentry.logger?.error(message, logAttributes(error === undefined ? [] : [error]));
       if (error instanceof Error) {
         Sentry.captureException(error, { extra: { message } });
       } else {
