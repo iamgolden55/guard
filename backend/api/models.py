@@ -3180,14 +3180,14 @@ class CapacityCheck(ShiftCheck):
     )
     counter_reset = models.BooleanField(
         default=False,
-        help_text="This reading is lower than the previous one, so the clicker "
-                  "was reset. Occupancy carries forward from before the reset.",
+        help_text="This reading is lower than the previous one. It is taken "
+                  "as the true figure; nothing is carried forward.",
     )
     baseline_occupancy = models.IntegerField(
         default=0,
-        help_text="Occupancy banked from before the current clicker segment. "
-                  "Stored per row so the logbook reconstructs without replaying "
-                  "every earlier check.",
+        help_text="Occupancy recorded before in/out readings began (a "
+                  "headcount logged the old way). Stored per row so the logbook "
+                  "reconstructs without replaying every earlier check.",
     )
 
     #: Derived: `baseline_occupancy + count_in - count_out`. Still the number
@@ -3217,7 +3217,7 @@ class CapacityCheck(ShiftCheck):
         )
 
     def derive_occupancy(self):
-        """Work out occupancy, banking the previous segment across a reset.
+        """Work out occupancy from the readings: baseline + in - out.
 
         Sets `counter_reset`, `baseline_occupancy` and `current_count`. Safe to
         call before the row is saved.
@@ -3246,10 +3246,11 @@ class CapacityCheck(ShiftCheck):
                 previous.current_count if previous is not None else 0
             )
         elif count_in < previous.count_in or count_out < previous.count_out:
-            # The clicker went backwards, so it was reset. Bank what was
-            # inside and start counting again from there.
+            # The reading went backwards. Take it as the true figure — a
+            # correction, not a zeroed clicker to count on from — so nothing
+            # already inside is added on top. The flag records the drop.
             self.counter_reset = True
-            self.baseline_occupancy = previous.current_count
+            self.baseline_occupancy = previous.baseline_occupancy
         else:
             # Same clicker segment: carry the same baseline.
             self.counter_reset = False

@@ -44,9 +44,9 @@ export interface CapacityCheck extends BaseCheck {
   /** Clicker readings, as the officer read them. Running totals for the night. */
   count_in?: number | null;
   count_out?: number | null;
-  /** Set when this reading was lower than the last, i.e. the clicker was reset. */
+  /** Set when this reading was lower than the last. The reading still stands as-is. */
   counter_reset?: boolean;
-  /** Occupancy banked from before the current clicker segment. */
+  /** Occupancy recorded the old way, before in/out readings began. */
   baseline_occupancy?: number;
   /** Occupancy: `baseline_occupancy + count_in - count_out`. Server-derived. */
   current_count: number;
