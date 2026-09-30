@@ -139,10 +139,10 @@ export const CapacityCheckScreen = () => {
     return isNaN(n) ? null : n;
   }, [countOut]);
 
-  // A reading lower than the last one means the clicker was reset. Never a
-  // reason to block: an officer on a door at 2am must always be able to record
-  // what the device says. The occupancy from before the reset is banked and
-  // the fresh clicker counts onward from it.
+  // A reading lower than the last one is taken as the true figure (a
+  // correction), never added on top of what was inside before. Never a reason
+  // to block: an officer on a door at 2am must always be able to record what
+  // the device says. Flagged so the drop is visible.
   const isReset = useMemo(() => {
     if (!lastCheck || lastCheck.count_in == null || lastCheck.count_out == null) return false;
     if (parsedIn === null || parsedOut === null) return false;
@@ -154,9 +154,8 @@ export const CapacityCheckScreen = () => {
   const baselineOccupancy = useMemo(() => {
     if (!lastCheck) return 0;
     if (lastCheck.count_in == null) return lastCheck.current_count ?? 0;
-    if (isReset) return lastCheck.current_count ?? 0;
     return lastCheck.baseline_occupancy ?? 0;
-  }, [lastCheck, isReset]);
+  }, [lastCheck]);
 
   const parsedCount = useMemo(() => {
     if (parsedIn === null || parsedOut === null) return null;
@@ -167,7 +166,9 @@ export const CapacityCheckScreen = () => {
 
   const capacityPct = useMemo(() => {
     if (parsedCount === null || venueCapacity <= 0) return 0;
-    return Math.min((parsedCount / venueCapacity) * 100, 100);
+    // Uncapped: 242 of 200 is 121% full, and the label must say so. Only the
+    // bar is clamped, since it cannot draw past its track.
+    return (parsedCount / venueCapacity) * 100;
   }, [parsedCount, venueCapacity]);
 
   const capacityColor = useMemo(() => {
@@ -366,7 +367,7 @@ export const CapacityCheckScreen = () => {
               >
                 <View
                   style={{
-                    width: `${capacityPct}%`,
+                    width: `${Math.min(capacityPct, 100)}%`,
                     height: '100%',
                     backgroundColor: capacityColor,
                     borderRadius: 4,
@@ -436,8 +437,8 @@ export const CapacityCheckScreen = () => {
                 </View>
               </View>
 
-              {/* A reset is normal. Say what the numbers now mean, so nobody
-                  wonders why the occupancy did not drop with the reading. */}
+              {/* Say that the lower reading replaced the count, so a typo is
+                  caught before submitting. */}
               {isReset ? (
                 <Text
                   allowFontScaling={false}
@@ -450,9 +451,8 @@ export const CapacityCheckScreen = () => {
                     color: theme.colors.text.secondary,
                   }}
                 >
-                  {`Lower than the last reading, so the clicker was reset. `}
-                  {`The ${baselineOccupancy} already inside are carried forward `}
-                  {`and this clicker counts on from there.`}
+                  {`Lower than the last reading (IN ${lastCheck?.count_in} / OUT ${lastCheck?.count_out}). `}
+                  {`Occupancy is worked out from these numbers — check the clicker if that's not right.`}
                 </Text>
               ) : null}
             </GlassCard>

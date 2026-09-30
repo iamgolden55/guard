@@ -312,18 +312,26 @@ class CapacityInOutTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
-    def test_a_reset_banks_the_previous_occupancy_and_counts_onward(self):
-        """180/30 then a reset to 50/10 is 190 inside, not 40."""
+    def test_a_lower_reading_replaces_the_count(self):
+        """180/30 then 50/10 is 40 inside, not 190: nothing is carried forward."""
         self._log(180, 30)
 
         response = self._log(50, 10)
 
         check = CapacityCheck.objects.get(id=response.data["id"])
         self.assertTrue(check.counter_reset)
-        self.assertEqual(check.baseline_occupancy, 150)
-        self.assertEqual(check.current_count, 190)
+        self.assertEqual(check.baseline_occupancy, 0)
+        self.assertEqual(check.current_count, 40)
 
-    def test_counting_continues_normally_after_a_reset(self):
+    def test_a_lower_reading_is_not_added_on_top_of_the_last(self):
+        """The reported case: 200/100 then 172/30 is 142 inside, not 242."""
+        self._log(200, 100)
+
+        response = self._log(172, 30)
+
+        self.assertEqual(self._occupancy(response), 142)
+
+    def test_counting_continues_normally_after_a_lower_reading(self):
         self._log(180, 30)
         self._log(50, 10)
 
@@ -331,28 +339,19 @@ class CapacityInOutTests(APITestCase):
 
         check = CapacityCheck.objects.get(id=response.data["id"])
         self.assertFalse(check.counter_reset)
-        self.assertEqual(check.baseline_occupancy, 150)
-        self.assertEqual(check.current_count, 195)
+        self.assertEqual(check.baseline_occupancy, 0)
+        self.assertEqual(check.current_count, 45)
 
-    def test_a_drop_on_either_counter_is_treated_as_a_reset(self):
-        """Detection triggers on either reading falling, not just the in one.
-
-        Note what this cannot resolve: if only the out counter was zeroed, the
-        in counter is still a running total for the night, so adding it to the
-        banked occupancy over-counts. A single-counter drop is more often a
-        typo than a partial reset, and the system does not pretend to know
-        which. It records the reading, flags the reset, and shows the officer
-        the resulting occupancy before they submit — over-capacity then demands
-        a written action, so an inflated figure surfaces rather than passing
-        quietly.
-        """
+    def test_a_drop_on_either_counter_is_flagged(self):
+        """Either reading falling sets the flag, and the reading still stands."""
         self._log(100, 30)
 
         response = self._log(105, 2)
 
         check = CapacityCheck.objects.get(id=response.data["id"])
         self.assertTrue(check.counter_reset)
-        self.assertEqual(check.baseline_occupancy, 70)
+        self.assertEqual(check.baseline_occupancy, 0)
+        self.assertEqual(check.current_count, 103)
 
     def test_an_ordinary_reading_is_not_mistaken_for_a_reset(self):
         self._log(40, 0)
@@ -385,6 +384,12 @@ class CapacityInOutTests(APITestCase):
         self.assertEqual(check.baseline_occupancy, 120)
         self.assertEqual(check.current_count, 135)
 
+        # A later lower reading keeps the old-way headcount it started from.
+        check = CapacityCheck.objects.get(id=self._log(10, 5).data["id"])
+        self.assertTrue(check.counter_reset)
+        self.assertEqual(check.baseline_occupancy, 120)
+        self.assertEqual(check.current_count, 125)
+
     def test_both_readings_are_required_together(self):
         response = self.client.post(
             "/api/v1/capacity-checks/",
@@ -413,9 +418,13 @@ class CapacityInOutTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("action_taken", response.data)
 
-    def test_a_reset_that_pushes_the_venue_over_capacity_demands_an_action(self):
-        """The action requirement has to see the banked occupancy too."""
-        self._log(190, 10, action_taken="Monitoring.")
+    def test_a_baseline_that_pushes_the_venue_over_capacity_demands_an_action(self):
+        """The action requirement has to see the baseline occupancy too."""
+        CapacityCheck.objects.create(
+            shift=self.shift, current_count=190, venue_capacity=200,
+            shift_group=f"shift_{self.shift.id}", performed_by=self.staff,
+            timestamp=timezone.now() - timedelta(minutes=30),
+        )
 
         response = self._log(30, 5)
 
