@@ -19,6 +19,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useAppDispatch, useAppSelector } from '../hooks/useRedux';
 import { logout, selectIsAuthenticated } from '../store/slices/authSlice';
 import authService from '../services/authService';
+import { syncService } from '../services/syncService';
 import { ERROR_MESSAGES } from '../utils/constants';
 import { selectHasCompletedOnboarding } from '../store/slices/onboardingSlice';
 
@@ -38,9 +39,16 @@ export const AppNavigator = () => {
   // offer a retry rather than sending a signed-in user to the login screen.
   const [sessionUnavailable, setSessionUnavailable] = useState(false);
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const userId = useAppSelector((state) => state.auth.user?.id ?? null);
   const hasCompletedOnboarding = useAppSelector(selectHasCompletedOnboarding);
   const { checkAuthStatus } = useAuth();
   const dispatch = useAppDispatch();
+
+  // Waiting items belong to the account that made them: when the account
+  // changes, the banner counts the new one's and sends what it left waiting.
+  useEffect(() => {
+    syncService.accountChanged();
+  }, [userId, isAuthenticated]);
 
   // The server refused the refresh token mid-use and the tokens are gone:
   // show the login screen rather than a signed-in app where nothing loads.
