@@ -150,8 +150,25 @@ class AuthService {
    * answered (offline, timeout, 5xx, keychain locked): the tokens are kept.
    * This used to sign the user out on any error, so a phone locked in a pocket
    * or one slow Render response ended the session.
+   *
+   * Every caller shares one refresh in flight. The server rotates refresh
+   * tokens and blacklists the old one, so a second refresh sent alongside the
+   * first was refused, read as "session over", and deleted the pair the first
+   * had just saved: the app looked signed in with no token and every screen
+   * failed (Sentry REACT-NATIVE-Q/-S, build 18).
    */
-  async refreshAccessToken(): Promise<string | null> {
+  refreshAccessToken(): Promise<string | null> {
+    if (!this.refreshInFlight) {
+      this.refreshInFlight = this.refreshOnce().finally(() => {
+        this.refreshInFlight = null;
+      });
+    }
+    return this.refreshInFlight;
+  }
+
+  private refreshInFlight: Promise<string | null> | null = null;
+
+  private async refreshOnce(): Promise<string | null> {
     let refreshToken: string | null;
     try {
       refreshToken = await this.getRefreshToken();
@@ -170,8 +187,19 @@ class AuthService {
       });
     } catch (error) {
       if (isRejectedRefresh(error)) {
-        // Refresh token is invalid, expired or blacklisted
+        // Refresh token is invalid, expired or blacklisted. If a newer pair
+        // was saved meanwhile, it was only this token that went stale.
+        let current: string | null;
+        try {
+          current = await this.getRefreshToken();
+        } catch (readError) {
+          throw new SessionUnavailableError('Secure storage is unavailable', readError);
+        }
+        if (current && current !== refreshToken) {
+          return await this.getAccessToken();
+        }
         await this.logout();
+        this.sessionEndedListeners.forEach((listener) => listener());
         return null;
       }
       throw new SessionUnavailableError('Could not reach the server to refresh the session', error);
@@ -185,6 +213,20 @@ class AuthService {
     await saveTokens(newAccessToken, response.data.refresh);
 
     return newAccessToken;
+  }
+
+  private sessionEndedListeners = new Set<() => void>();
+
+  /**
+   * Called when the server refuses the refresh token mid-use and the tokens
+   * are cleared, so the UI can go back to the login screen instead of staying
+   * "signed in" with every request failing. Returns an unsubscribe function.
+   */
+  onSessionEnded(listener: () => void): () => void {
+    this.sessionEndedListeners.add(listener);
+    return () => {
+      this.sessionEndedListeners.delete(listener);
+    };
   }
 
   /**

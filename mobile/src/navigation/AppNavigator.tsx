@@ -5,7 +5,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, View, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, Alert, View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import type { RootStackParamList } from '../types/navigation';
@@ -16,8 +16,10 @@ import { MainNavigator } from './MainNavigator';
 
 // Hooks
 import { useAuth } from '../hooks/useAuth';
-import { useAppSelector } from '../hooks/useRedux';
-import { selectIsAuthenticated } from '../store/slices/authSlice';
+import { useAppDispatch, useAppSelector } from '../hooks/useRedux';
+import { logout, selectIsAuthenticated } from '../store/slices/authSlice';
+import authService from '../services/authService';
+import { ERROR_MESSAGES } from '../utils/constants';
 import { selectHasCompletedOnboarding } from '../store/slices/onboardingSlice';
 
 // Onboarding
@@ -38,6 +40,18 @@ export const AppNavigator = () => {
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const hasCompletedOnboarding = useAppSelector(selectHasCompletedOnboarding);
   const { checkAuthStatus } = useAuth();
+  const dispatch = useAppDispatch();
+
+  // The server refused the refresh token mid-use and the tokens are gone:
+  // show the login screen rather than a signed-in app where nothing loads.
+  useEffect(
+    () =>
+      authService.onSessionEnded(() => {
+        dispatch(logout());
+        Alert.alert('Signed out', ERROR_MESSAGES.SESSION_EXPIRED);
+      }),
+    [dispatch],
+  );
 
   // Check if user is already authenticated on app startup
   const initAuth = useCallback(async () => {
