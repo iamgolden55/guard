@@ -102,6 +102,7 @@ jobs:
           api/tests/test_app_review_account.py
           api/tests/test_incident_schema_drift.py
           api/tests/test_hard_delete_expired_accounts.py
+          api/tests/test_evidence_photos.py
           finance_integrations/test_webhook_payments.py
           api/tests/test_tenancy_ratchet.py
           shifts/test_shift_authz.py

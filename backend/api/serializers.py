@@ -3227,7 +3227,7 @@ class IncidentReportSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'venue', 'venue_name', 'reported_by', 'reported_by_name',
             'shift', 'incident_time', 'description', 'severity',
-            'actions_taken', 'requires_followup', 'followup_notes',
+            'actions_taken', 'photos', 'requires_followup', 'followup_notes',
             'resolved', 'resolved_at', 'resolved_by', 'resolved_by_name',
             'created_at', 'updated_at',
         )
@@ -3237,6 +3237,15 @@ class IncidentReportSerializer(serializers.ModelSerializer):
             'reported_by', 'created_at', 'updated_at',
             'resolved', 'resolved_by', 'resolved_at',
         )
+
+    photos = serializers.ListField(
+        child=serializers.URLField(max_length=500), required=False, allow_empty=True,
+    )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['photos'] = data.get('photos') or []
+        return data
 
     def get_reported_by_name(self, obj):
         return f"{obj.reported_by.first_name} {obj.reported_by.last_name}".strip() or obj.reported_by.username
