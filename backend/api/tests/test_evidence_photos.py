@@ -129,6 +129,21 @@ class EvidencePhotoTests(APITestCase):
         self.client.force_authenticate(None)
         self.assertEqual(self.client.get(path).status_code, 401)
 
+    def test_managing_another_company_gives_no_access_here(self):
+        # Manager at another company, staff at this one: the membership role
+        # for the photo's company decides, not the account's role.
+        UserCompanyMembership.objects.create(
+            user=self.outside_manager, company=self.company, is_active=True, role='staff',
+        )
+        path = self._path(self._upload(self.officer).data['url'])
+        self.assertEqual(self._get(self.outside_manager, path).status_code, 404)
+
+    def test_the_companys_owner_can_see_it(self):
+        owner = User.objects.create_user(username='ev_owner', email='o@test.test', password='x', role='admin')
+        UserCompanyMembership.objects.create(user=owner, company=self.company, is_active=True, role='owner')
+        path = self._path(self._upload(self.officer).data['url'])
+        self.assertEqual(self._get(owner, path).status_code, 200)
+
     def test_malformed_and_climbing_paths_are_not_found(self):
         base = f'/api/v1/evidence-photos/{self.company.id}/{self.officer.id}/'
         for tail in ('../../sia_licenses/1/x.jpg', 'x.jpg', 'a' * 32 + '.html'):

@@ -4667,10 +4667,13 @@ class EvidencePhotoUploadView(APIView):
 class EvidencePhotoView(APIView):
     """Serve an evidence photo to someone entitled to see it.
 
-    Entitled: an active member of the photo's company who either took it or is
-    a manager/admin. Anything else is a 404, so a URL reveals nothing.
+    Entitled: an active member of the photo's company who either took it or
+    manages that company. "Manages" is the role on that company's membership,
+    not the account's own role: someone can manage one company and be staff
+    at another. Anything else is a 404, so a URL reveals nothing.
     """
     permission_classes = [IsAuthenticated]
+    MANAGING_ROLES = ('owner', 'admin', 'manager')
 
     def get(self, request, path):
         parsed = evidence_photos.parse(path)
@@ -4678,10 +4681,12 @@ class EvidencePhotoView(APIView):
             raise Http404
         company_id, uploader_id, key = parsed
         user = request.user
-        member = UserCompanyMembership.objects.filter(
+        membership_role = UserCompanyMembership.objects.filter(
             user=user, company_id=company_id, is_active=True,
-        ).exists()
-        if not member or (user.id != uploader_id and getattr(user, 'role', None) not in ('admin', 'manager')):
+        ).values_list('role', flat=True).first()
+        if membership_role is None:
+            raise Http404
+        if user.id != uploader_id and membership_role not in self.MANAGING_ROLES:
             raise Http404
         response = evidence_photos.serve(key)
         if response is None:
