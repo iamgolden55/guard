@@ -77,7 +77,7 @@ docker compose exec api pytest -k test_name                        # single test
 
 **Frontend (`frontend/`)** — `npm run dev` (Vite, 0.0.0.0:3000) · `npm run build` (`tsc --noEmit && vite build`) · `npm run lint` (`biome lint --write && tsc --noEmit`) · `npm run format`.
 
-**Mobile (`mobile/`)** — `npm start` · `npm run ios` / `npm run android` · `npm test` · `npm run build:ios` / `npm run build:android:prod` (EAS). Use `./switch-env.sh local` (auto-detects your LAN IP) or `./switch-env.sh prod` to point the app at a local API vs Render. See `mobile/DEVELOPMENT_BUILD_SETUP.md` and `mobile/ENV_SETUP.md`.
+**Mobile (`mobile/`)** — `npm start` · `npm run ios` / `npm run android` · `npm test` · `npm run build:ios` / `npm run build:android:prod` (EAS). Over-the-air updates: **always** `npm run update:prod -- "message (#PR)"` (add `--dry-run` to check first) — never a bare `eas update`, which bundles with the local `mobile/.env` and ships without Sentry or Google sign-in (see `mobile/scripts/publish-update.sh`). Use `./switch-env.sh local` (auto-detects your LAN IP) or `./switch-env.sh prod` to point the app at a local API vs Render. See `mobile/DEVELOPMENT_BUILD_SETUP.md` and `mobile/ENV_SETUP.md`.
 
 **Backend (`backend/`)** — `daphne -b 0.0.0.0 -p 8000 core.asgi:application` matches prod. `python manage.py runserver` is WSGI and **will not serve WebSockets**. Dependencies live in `backend/requirements/{base,dev,prod}.txt` (`backend/requirements.txt` is the pinned Render install); the **root `requirements.txt` is vestigial and stale** — ignore it.
 
