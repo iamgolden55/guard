@@ -5,23 +5,23 @@
 
 import { useState, useEffect } from 'react';
 import { Alert } from 'react-native';
-import { syncService, type SyncFailure } from '../services/syncService';
+import { syncService, type SyncFailure, type SyncState } from '../services/syncService';
 import { logger } from '../utils/logger';
 
 /** Actions whose permanent failure means an attendance record does not exist. */
 const ATTENDANCE_ACTIONS: SyncFailure['type'][] = ['check_in', 'check_out'];
 
-export interface NetworkStatus {
-  isOnline: boolean;
-  isSyncing: boolean;
-  queueCount: number;
-}
+export type NetworkStatus = SyncState;
+
+/** The server's reason, without the "HTTP 400:" prefix ApiError adds. */
+const serverReason = (message: string) => message.replace(/^HTTP \d+:\s*/, '');
 
 export const useNetworkStatus = () => {
   const [status, setStatus] = useState<NetworkStatus>({
     isOnline: true,
     isSyncing: false,
     queueCount: 0,
+    failedCount: 0,
   });
 
   useEffect(() => {
@@ -29,13 +29,7 @@ export const useNetworkStatus = () => {
     syncService.init();
 
     // Subscribe to sync service updates
-    const unsubscribe = syncService.subscribe((state) => {
-      setStatus({
-        isOnline: state.isOnline,
-        isSyncing: state.isSyncing,
-        queueCount: state.queueCount,
-      });
-    });
+    const unsubscribe = syncService.subscribe(setStatus);
 
     // A queued attendance action that exhausts its retries used to end at a
     // logger.warn. The officer had been told "saved locally, will sync when
@@ -45,6 +39,16 @@ export const useNetworkStatus = () => {
     const unsubscribeFailures = syncService.onPermanentFailure(
       (failure: SyncFailure) => {
         logger.error('[useNetworkStatus] Sync gave up on a queued action', failure);
+        if (failure.type === 'create_incident') {
+          // The officer was told the report was submitted. Say it wasn't, and why.
+          Alert.alert(
+            'Your incident report was not sent',
+            `The office did not accept it: ${serverReason(failure.message)}\n\n` +
+            'It is kept on this phone. Tap the banner at the top to try again or ' +
+            'discard it, and tell your manager if it is urgent.',
+          );
+          return;
+        }
         if (!ATTENDANCE_ACTIONS.includes(failure.type)) {
           return;
         }
