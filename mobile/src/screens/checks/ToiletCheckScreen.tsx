@@ -75,7 +75,6 @@ export const ToiletCheckScreen = () => {
   const [suppliesNeeded, setSuppliesNeeded] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -107,8 +106,6 @@ export const ToiletCheckScreen = () => {
       const result = await photoService.capturePhoto();
       if (result && result.uri) {
         setPhotoUri(result.uri);
-        const base64 = await photoService.convertToBase64(result.uri);
-        setPhotoBase64(base64);
       }
     } catch (error) {
       logger.error('[ToiletCheck] Error taking photo:', error);
@@ -118,7 +115,6 @@ export const ToiletCheckScreen = () => {
 
   const handleRemovePhoto = () => {
     setPhotoUri(null);
-    setPhotoBase64(null);
   };
 
   const toggleSupply = (supplyId: string) => {
@@ -163,7 +159,7 @@ export const ToiletCheckScreen = () => {
         needs_attention: needsAttention,
         is_out_of_order: isOutOfOrder,
         supplies_needed: suppliesNeeded,
-        photo_evidence: photoBase64 || undefined,
+        photo_uri: photoUri || undefined,
         location,
         notes: notes.trim() || undefined,
       });

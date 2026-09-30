@@ -13,6 +13,7 @@ import { apiService } from './api';
 import { logger } from '../utils/logger';
 import { API_ENDPOINTS } from '../config/api.config';
 import { readToken } from './tokenStorage';
+import { missingPhotosNote, uploadEvidencePhotos } from './evidencePhotoService';
 
 // Sync action types.
 //
@@ -312,7 +313,7 @@ class SyncService {
         });
         break;
       case 'create_incident':
-        await apiService.post(API_ENDPOINTS.INCIDENTS.CREATE, payload);
+        await apiService.post(API_ENDPOINTS.INCIDENTS.CREATE, await this.withUploadedPhotos(payload));
         break;
       case 'update_incident':
         await apiService.put(API_ENDPOINTS.INCIDENTS.UPDATE(payload.id), payload);
@@ -329,6 +330,24 @@ class SyncService {
       default:
         throw new Error(`Unknown action type: ${type}`);
     }
+  }
+
+  /**
+   * A queued report's photos are paths on this phone. Upload them and send
+   * their URLs. A failure worth retrying throws, so the report is retried
+   * with its photos; a photo that can never be stored (no storage configured,
+   * refused) is left out and the report says so, rather than holding the
+   * report back.
+   */
+  private async withUploadedPhotos(payload: any) {
+    const { photo_uris: photoUris, ...body } = payload ?? {};
+    if (!Array.isArray(photoUris) || photoUris.length === 0) return body;
+    const { urls, missing } = await uploadEvidencePhotos(photoUris);
+    if (urls.length > 0) body.photos = urls;
+    if (missing > 0) {
+      body.description = [body.description, missingPhotosNote(missing)].filter(Boolean).join('\n\n');
+    }
+    return body;
   }
 
   /**

@@ -291,8 +291,10 @@ class PhotoService {
     try {
       logger.info('[PhotoService] Converting photo to base64', { uri });
 
+      // base64(), not text(): a JPEG isn't text, and iOS refused to decode
+      // it, so every venue-check photo failed here (Sentry REACT-NATIVE-P).
       const file = new File(uri);
-      const base64 = await file.text();
+      const base64 = await file.base64();
 
       logger.info('[PhotoService] Base64 conversion successful', {
         length: base64.length,

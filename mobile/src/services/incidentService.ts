@@ -66,6 +66,9 @@ class IncidentService {
         description: `${titlePrefix}${incident.description ?? ''}`.trim(),
         severity: incident.severity,
         actions_taken: incident.actions_taken?.trim() || '',
+        // Photos on this phone. They are uploaded when the report is sent
+        // (see syncService), so a report made offline keeps its photos.
+        ...(incident.photos?.length ? { photo_uris: incident.photos } : {}),
       };
 
       // Add to sync queue

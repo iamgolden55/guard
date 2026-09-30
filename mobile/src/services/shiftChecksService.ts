@@ -5,6 +5,7 @@
 
 import { apiService } from './api';
 import { logger } from '../utils/logger';
+import { missingPhotosNote, uploadEvidencePhotos } from './evidencePhotoService';
 
 /**
  * Details of the staff member who performed a check
@@ -122,6 +123,27 @@ export interface ToiletCheck extends BaseCheck {
 
 class ShiftChecksService {
   /**
+   * Upload the check's photo and put its URL on the payload. A photo that
+   * can't be uploaded never stops the check: it is sent without, and its
+   * notes say the photo is missing.
+   */
+  private async attachPhoto(payload: any, photoUri?: string): Promise<void> {
+    if (!photoUri) return;
+    let missing = 0;
+    try {
+      const result = await uploadEvidencePhotos([photoUri]);
+      if (result.urls[0]) payload.photo_evidence = result.urls[0];
+      missing = result.missing;
+    } catch (error) {
+      logger.warn('[ShiftChecksService] Photo upload failed; sending the check without it', error);
+      missing = 1;
+    }
+    if (missing > 0) {
+      payload.notes = [payload.notes, missingPhotosNote(missing)].filter(Boolean).join('\n\n');
+    }
+  }
+
+  /**
    * Submit Fire Exit Check
    */
   async submitFireExitCheck(data: {
@@ -130,7 +152,8 @@ class ShiftChecksService {
     is_clear: boolean;
     is_properly_marked: boolean;
     is_accessible: boolean;
-    photo_evidence?: string;
+    /** The photo on this phone; uploaded before the check is sent. */
+    photo_uri?: string;
     location?: {
       latitude: number;
       longitude: number;
@@ -149,9 +172,6 @@ class ShiftChecksService {
       };
 
       // Only add optional fields if they exist
-      if (data.photo_evidence) {
-        payload.photo_evidence = data.photo_evidence;
-      }
 
       if (data.location) {
         // Location is stored as JSONField in backend - send as object
@@ -165,9 +185,11 @@ class ShiftChecksService {
         payload.notes = data.notes.trim();
       }
 
+      await this.attachPhoto(payload, data.photo_uri);
+
       logger.debug('[ShiftChecksService] Submitting fire exit check payload:', {
         ...payload,
-        photo_evidence: payload.photo_evidence ? `${payload.photo_evidence.length} chars` : 'none',
+        photo_evidence: payload.photo_evidence ?? 'none',
       });
 
       const response = await apiService.post<FireExitCheck>(
@@ -195,7 +217,8 @@ class ShiftChecksService {
     count_in: number;
     count_out: number;
     action_taken?: string;
-    photo_evidence?: string;
+    /** The photo on this phone; uploaded before the check is sent. */
+    photo_uri?: string;
     location?: {
       latitude: number;
       longitude: number;
@@ -214,10 +237,6 @@ class ShiftChecksService {
         payload.action_taken = data.action_taken.trim();
       }
 
-      if (data.photo_evidence) {
-        payload.photo_evidence = data.photo_evidence;
-      }
-
       if (data.location) {
         payload.location = {
           latitude: data.location.latitude,
@@ -229,9 +248,11 @@ class ShiftChecksService {
         payload.notes = data.notes.trim();
       }
 
+      await this.attachPhoto(payload, data.photo_uri);
+
       logger.debug('[ShiftChecksService] Submitting capacity check payload:', {
         ...payload,
-        photo_evidence: payload.photo_evidence ? `${payload.photo_evidence.length} chars` : 'none',
+        photo_evidence: payload.photo_evidence ?? 'none',
       });
 
       const response = await apiService.post<CapacityCheck>(
@@ -256,7 +277,8 @@ class ShiftChecksService {
     needs_attention: boolean;
     is_out_of_order: boolean;
     supplies_needed: string[];
-    photo_evidence?: string;
+    /** The photo on this phone; uploaded before the check is sent. */
+    photo_uri?: string;
     location?: {
       latitude: number;
       longitude: number;
@@ -285,9 +307,6 @@ class ShiftChecksService {
       };
 
       // Only add optional fields if they exist
-      if (data.photo_evidence) {
-        payload.photo_evidence = data.photo_evidence;
-      }
 
       if (data.location) {
         payload.location = {
@@ -300,9 +319,11 @@ class ShiftChecksService {
         payload.notes = data.notes.trim();
       }
 
+      await this.attachPhoto(payload, data.photo_uri);
+
       logger.debug('[ShiftChecksService] Submitting toilet check payload:', {
         ...payload,
-        photo_evidence: payload.photo_evidence ? `${payload.photo_evidence.length} chars` : 'none',
+        photo_evidence: payload.photo_evidence ?? 'none',
       });
 
       const response = await apiService.post<ToiletCheck>(
