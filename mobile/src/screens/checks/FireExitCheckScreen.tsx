@@ -43,7 +43,6 @@ export const FireExitCheckScreen = () => {
   const [isAccessible, setIsAccessible] = useState(true);
   const [notes, setNotes] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -81,10 +80,6 @@ export const FireExitCheckScreen = () => {
       if (result && result.uri) {
         setPhotoUri(result.uri);
 
-        // Convert to base64 for API
-        const base64 = await photoService.convertToBase64(result.uri);
-        setPhotoBase64(base64);
-
         logger.info('[FireExitCheck] Photo captured successfully');
       }
     } catch (error) {
@@ -95,7 +90,6 @@ export const FireExitCheckScreen = () => {
 
   const handleRemovePhoto = () => {
     setPhotoUri(null);
-    setPhotoBase64(null);
     logger.info('[FireExitCheck] Photo removed');
   };
 
@@ -134,7 +128,7 @@ export const FireExitCheckScreen = () => {
         is_clear: isClear,
         is_properly_marked: isProperlyMarked,
         is_accessible: isAccessible,
-        photo_evidence: photoBase64 || undefined,
+        photo_uri: photoUri || undefined,
         location,
         notes: notes.trim() || undefined,
       });

@@ -25,9 +25,15 @@ jest.mock('../api', () => {
 
 // Who is signed in: a JWT naming `user_id`, as the keychain would hold.
 jest.mock('../tokenStorage', () => ({ readToken: jest.fn() }));
+jest.mock('../evidencePhotoService', () => ({
+  ...jest.requireActual('../evidencePhotoService'),
+  uploadEvidencePhoto: jest.fn(),
+  uploadEvidencePhotos: jest.fn(),
+}));
 
 import { ApiError, apiService } from '../api';
 import { readToken } from '../tokenStorage';
+import { uploadEvidencePhotos } from '../evidencePhotoService';
 import { database } from '../database';
 import { syncService } from '../syncService';
 
@@ -303,6 +309,61 @@ describe('syncService', () => {
 
       expect(await syncService.getQueueStats()).toMatchObject({ pending: 1 });
       expect((await queue())[0].ownerId).toBe(5);
+    });
+  });
+
+  describe('an incident report with photos', () => {
+    const REPORT = {
+      type: 'create_incident' as const,
+      entityType: 'incidents',
+      entityId: '8',
+      payload: {
+        venue: 3, shift: 42, description: 'Glass on the floor', severity: 'low',
+        photo_uris: ['file:///a.jpg', 'file:///b.jpg'],
+      },
+      priority: 1,
+    };
+    const upload = uploadEvidencePhotos as jest.Mock;
+    beforeEach(() => upload.mockReset());
+
+    it('uploads the photos when it is sent and sends their URLs', async () => {
+      upload.mockResolvedValueOnce({ urls: ['https://api.test/p/1.jpg', 'https://api.test/p/2.jpg'], missing: 0 });
+      post.mockResolvedValueOnce({ id: 1 });
+      await syncService.addToQueue(REPORT);
+      goOnline(true);
+      await syncService.startSync();
+
+      expect(upload).toHaveBeenCalledWith(['file:///a.jpg', 'file:///b.jpg']);
+      const [, body] = post.mock.calls[0];
+      expect(body.photos).toEqual(['https://api.test/p/1.jpg', 'https://api.test/p/2.jpg']);
+      expect(body).not.toHaveProperty('photo_uris');
+      expect(await queue()).toHaveLength(0);
+    });
+
+    it('sends the report without photos that can never be stored, and says so', async () => {
+      upload.mockResolvedValueOnce({ urls: [], missing: 2 });
+      post.mockResolvedValueOnce({ id: 1 });
+      await syncService.addToQueue(REPORT);
+      goOnline(true);
+      await syncService.startSync();
+
+      const [, body] = post.mock.calls[0];
+      expect(body).not.toHaveProperty('photos');
+      expect(body.description).toBe('Glass on the floor\n\n(2 photos could not be uploaded.)');
+    });
+
+    it('keeps the report, photos and all, to try again when there is no signal', async () => {
+      jest.useFakeTimers();
+      upload.mockRejectedValueOnce(Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' }));
+      await syncService.addToQueue(REPORT);
+      goOnline(true);
+      await syncService.startSync();
+      jest.useRealTimers();
+
+      expect(post).not.toHaveBeenCalled();
+      const [item] = await queue();
+      expect(item).toMatchObject({ status: 'pending', attempts: 1 });
+      expect(item.payload.photo_uris).toEqual(['file:///a.jpg', 'file:///b.jpg']);
     });
   });
 });

@@ -24,6 +24,7 @@ const mockFileInfo = jest.fn();
 const mockFileCopy = jest.fn();
 const mockFileDelete = jest.fn();
 const mockFileText = jest.fn();
+const mockFileBase64 = jest.fn();
 
 const mockDirectoryInfo = jest.fn();
 const mockDirectoryCreate = jest.fn();
@@ -47,6 +48,7 @@ jest.mock('expo-file-system', () => {
     this.copy = (...a: unknown[]) => mockFileCopy(...a);
     this.delete = (...a: unknown[]) => mockFileDelete(...a);
     this.text = (...a: unknown[]) => mockFileText(...a);
+    this.base64 = (...a: unknown[]) => mockFileBase64(...a);
   });
 
   const Directory = jest.fn(function (this: any, ...args: unknown[]) {
@@ -73,6 +75,7 @@ describe('PhotoService', () => {
     mockFileCopy.mockReset();
     mockFileDelete.mockReset();
     mockFileText.mockReset();
+    mockFileBase64.mockReset();
     mockDirectoryInfo.mockReset();
     mockDirectoryCreate.mockReset();
     mockDirectoryList.mockReset();
@@ -197,39 +200,57 @@ describe('PhotoService', () => {
   });
 
   describe('toBase64', () => {
-    it('should convert photo to base64 data URI', async () => {
-      const mockUri = 'file:///mock/photo.jpg';
-      const mockBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    // The start of a real JPEG: SOI and APP0/JFIF markers, then bytes that
+    // are not valid UTF-8 (0xFF, 0xD8 …), as every camera photo has.
+    const JPEG = Buffer.from([
+      0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+      0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43,
+    ]);
 
-      mockFileText.mockResolvedValue(mockBase64);
+    /** A file on disk holding `bytes`, read the way the phone reads it. */
+    const onDisk = (bytes: Buffer) => {
+      // iOS refuses to read binary as text: "The file … couldn't be opened
+      // because the text encoding of its contents can't be determined."
+      mockFileText.mockImplementation(async () => {
+        const text = new TextDecoder('utf-8', { fatal: true });
+        try {
+          return text.decode(bytes);
+        } catch {
+          throw new Error(
+            'The file “photo.jpg” couldn’t be opened because the text encoding of its contents can’t be determined.',
+          );
+        }
+      });
+      mockFileBase64.mockImplementation(async () => bytes.toString('base64'));
+    };
 
-      const result = await photoService.toBase64(mockUri);
+    it('turns a camera photo into a JPEG data URI of its bytes', async () => {
+      // Venue checks attach photo evidence through this. Reading the JPEG as
+      // text threw on every photo (Sentry REACT-NATIVE-P), so no check ever
+      // carried its photo.
+      onDisk(JPEG);
 
-      expect(result).toBe(`data:image/jpeg;base64,${mockBase64}`);
-      expect(File).toHaveBeenCalledWith(mockUri);
-      expect(mockFileText).toHaveBeenCalled();
+      const result = await photoService.toBase64('file:///mock/photo.jpg');
+
+      expect(File).toHaveBeenCalledWith('file:///mock/photo.jpg');
+      expect(result).toBe(`data:image/jpeg;base64,${JPEG.toString('base64')}`);
+      expect(Buffer.from(result.split(',')[1], 'base64').equals(JPEG)).toBe(true);
     });
 
-    it('should handle read errors', async () => {
-      const mockUri = 'file:///mock/photo.jpg';
+    it('passes a read error on to the caller', async () => {
+      mockFileBase64.mockRejectedValue(new Error('Read failed'));
 
-      mockFileText.mockRejectedValue(new Error('Read failed'));
-
-      await expect(photoService.toBase64(mockUri)).rejects.toThrow();
+      await expect(photoService.toBase64('file:///mock/photo.jpg')).rejects.toThrow('Read failed');
     });
   });
 
   describe('convertToBase64', () => {
-    it('should be an alias for toBase64', async () => {
-      const mockUri = 'file:///mock/photo.jpg';
-      const mockBase64 = 'base64data';
+    it('is an alias for toBase64', async () => {
+      mockFileBase64.mockResolvedValue('AAEC');
 
-      mockFileText.mockResolvedValue(mockBase64);
+      const result = await photoService.convertToBase64('file:///mock/photo.jpg');
 
-      const result = await photoService.convertToBase64(mockUri);
-
-      expect(result).toBe(`data:image/jpeg;base64,${mockBase64}`);
-      expect(mockFileText).toHaveBeenCalled();
+      expect(result).toBe('data:image/jpeg;base64,AAEC');
     });
   });
 

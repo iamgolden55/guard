@@ -62,7 +62,6 @@ export const CapacityCheckScreen = () => {
   const [actionTaken, setActionTaken] = useState('');
   const [notes, setNotes] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -115,8 +114,6 @@ export const CapacityCheckScreen = () => {
       const result = await photoService.capturePhoto();
       if (result && result.uri) {
         setPhotoUri(result.uri);
-        const base64 = await photoService.convertToBase64(result.uri);
-        setPhotoBase64(base64);
       }
     } catch (error) {
       logger.error('[CapacityCheck] Error taking photo:', error);
@@ -126,7 +123,6 @@ export const CapacityCheckScreen = () => {
 
   const handleRemovePhoto = () => {
     setPhotoUri(null);
-    setPhotoBase64(null);
   };
 
   const parsedIn = useMemo(() => {
@@ -242,7 +238,7 @@ export const CapacityCheckScreen = () => {
         count_in: parsedIn!,
         count_out: parsedOut!,
         action_taken: actionTaken.trim() || undefined,
-        photo_evidence: photoBase64 || undefined,
+        photo_uri: photoUri || undefined,
         location: location!,
         notes: notes.trim() || undefined,
       });
