@@ -71,10 +71,6 @@ axios.interceptors.request.use(async (config) => {
   return config;
 });
 
-// Single-flight refresh — concurrent 401s share one in-flight refresh so
-// we never double-rotate (which would blacklist the just-issued token).
-let refreshPromise: Promise<string | null> | null = null;
-
 axios.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -90,15 +86,11 @@ axios.interceptors.response.use(
     original._retry = true;
 
     // Lazy-import authService to break the api.config.ts ↔ authService.ts cycle.
+    // refreshAccessToken shares one refresh between every caller, so
+    // concurrent 401s never double-rotate the refresh token.
     const authService = (await import('../services/authService')).default;
 
-    if (!refreshPromise) {
-      refreshPromise = authService.refreshAccessToken().finally(() => {
-        refreshPromise = null;
-      });
-    }
-
-    const newToken = await refreshPromise;
+    const newToken = await authService.refreshAccessToken();
     if (!newToken) return Promise.reject(error);
 
     original.headers = original.headers ?? {};
