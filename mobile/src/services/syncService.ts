@@ -5,6 +5,7 @@
  */
 
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
+import { AppState } from 'react-native';
 import { database } from './database';
 import type { SyncQueueItem } from './database';
 import { apiService } from './api';
@@ -36,14 +37,34 @@ export interface SyncFailure {
   entityId: string;
   attempts: number;
   message: string;
+  /** HTTP status when the server refused it; absent for network failures. */
+  status?: number;
 }
+
+/** What the banner shows: how many items are still to send, and how many gave up. */
+export interface SyncState {
+  isOnline: boolean;
+  isSyncing: boolean;
+  queueCount: number;
+  failedCount: number;
+}
+
+/**
+ * The server looked at the request and said no (validation, permissions, not
+ * found). Sending the same payload again gets the same answer, so there is no
+ * point retrying it. 401 (session), 408 (timeout) and 429 (rate limit) can
+ * succeed later and are retried.
+ */
+const isRefusedByServer = (status: unknown): status is number =>
+  typeof status === 'number' && status >= 400 && status < 500 &&
+  status !== 401 && status !== 408 && status !== 429;
 
 class SyncService {
   private isSyncing = false;
   private isOnline = false;
   private maxRetries = 5;
   private retryDelays = [1000, 2000, 5000, 10000, 30000]; // Exponential backoff in ms
-  private listeners: Set<(state: { isOnline: boolean; isSyncing: boolean; queueCount: number }) => void> = new Set();
+  private listeners: Set<(state: SyncState) => void> = new Set();
   private failureListeners: Array<(failure: SyncFailure) => void> = [];
   private initialized = false;
 
@@ -61,6 +82,14 @@ class SyncService {
     this.initialized = true;
     void this.recoverInterruptedItems();
     this.setupNetworkListener();
+    // A retry is a timer, and timers stop while the app is in the background,
+    // so an item could sit "waiting to sync" for as long as the app stayed
+    // open. Try again whenever the app comes back to the foreground.
+    AppState.addEventListener('change', (next) => {
+      if (next === 'active' && this.isOnline) {
+        void this.startSync();
+      }
+    });
   }
 
   /**
@@ -351,6 +380,7 @@ class SyncService {
       entityId: queueItem.entityId,
       attempts: queueItem.attempts + 1,
       message: error?.message || 'Unknown error',
+      status: error?.statusCode ?? error?.response?.status,
     };
     for (const listener of this.failureListeners) {
       try {
@@ -378,9 +408,10 @@ class SyncService {
     }
 
     const newAttempts = queueItem.attempts + 1;
+    const status = error?.statusCode ?? error?.response?.status;
 
-    if (newAttempts >= this.maxRetries) {
-      logger.warn('[SyncService] Max retries reached, marking as failed');
+    if (newAttempts >= this.maxRetries || isRefusedByServer(status)) {
+      logger.warn('[SyncService] Giving up on action, marking as failed', { status });
       await database.updateSyncQueueItem(queueItem.id, {
         status: 'failed',
         attempts: newAttempts,
@@ -493,7 +524,7 @@ class SyncService {
   /**
    * Subscribe to sync state changes
    */
-  subscribe(listener: (state: { isOnline: boolean; isSyncing: boolean; queueCount: number }) => void) {
+  subscribe(listener: (state: SyncState) => void) {
     this.listeners.add(listener);
 
     // Immediately notify with current state
@@ -517,15 +548,22 @@ class SyncService {
   /**
    * Notify single listener with current state
    */
-  private async notifyListener(
-    listener: (state: { isOnline: boolean; isSyncing: boolean; queueCount: number }) => void
-  ) {
+  private async notifyListener(listener: (state: SyncState) => void) {
     const stats = await this.getQueueStats();
     listener({
       isOnline: this.isOnline,
       isSyncing: this.isSyncing,
-      queueCount: stats.total,
+      queueCount: stats.pending,
+      failedCount: stats.failed,
     });
+  }
+
+  /** Items the queue has given up on, oldest first, for the officer to review. */
+  async getFailedItems(): Promise<SyncQueueItem[]> {
+    const queue = await database.getSyncQueue();
+    return queue
+      .filter((item) => item.status === 'failed')
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }
 
   /**

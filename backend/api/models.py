@@ -4433,7 +4433,9 @@ class IncidentReport(models.Model):
     incident_time = models.DateTimeField()
     description = models.TextField()
     severity = models.CharField(max_length=20, choices=SEVERITY_LEVELS)
-    actions_taken = models.TextField()
+    # Optional on the staff app's form; required here, every report with it
+    # left empty was refused and sat in the app's sync queue forever.
+    actions_taken = models.TextField(blank=True, default='')
     requires_followup = models.BooleanField(default=False)
     followup_notes = models.TextField(null=True, blank=True)
     resolved = models.BooleanField(default=False)

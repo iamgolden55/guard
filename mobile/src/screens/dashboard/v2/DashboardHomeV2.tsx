@@ -889,7 +889,7 @@ const NextShiftCard: React.FC<NextShiftCardProps> = ({ shift, onOpen }) => {
                 </Eyebrow>
               </View>
               <Eyebrow color={theme.colors.text.secondary} tracking={1.6}>
-                {shift.required_security_role}
+                {shift.required_security_role || 'Security'}
               </Eyebrow>
             </View>
             <Text
@@ -997,7 +997,7 @@ const StatCard: React.FC<{ eyebrow: string; value: string; support?: string }> =
 const UpNextRow: React.FC<{ shift: Shift; onPress: () => void }> = ({ shift, onPress }) => {
   const theme = useRedesignTheme();
   const venue = shift.venue?.name ?? 'Post';
-  const time = `${formatTimeRange(shift.start_time, shift.end_time)} · ${shift.required_security_role}`;
+  const time = `${formatTimeRange(shift.start_time, shift.end_time)} · ${shift.required_security_role || 'Security'}`;
   const tag = 'Scheduled';
   const day = dayTag(shift.start_time);
 

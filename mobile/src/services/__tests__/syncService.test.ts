@@ -129,4 +129,103 @@ describe('syncService', () => {
     const [after] = await queue();
     expect(after.status).toBe('pending');
   });
+
+  describe('an incident report the server refuses', () => {
+    const INCIDENT = {
+      type: 'create_incident' as const,
+      entityType: 'incidents',
+      entityId: '7',
+      payload: { venue: 3, shift: 42, description: 'Fight at the door', severity: 'medium', actions_taken: '' },
+      priority: 1,
+    };
+    const REFUSED = new ApiError(400, 'Bad Request', '/api/v1/incidents/', {
+      actions_taken: ['This field may not be blank.'],
+    });
+
+    it('gives up at once, says why, and stops counting it as waiting', async () => {
+      await syncService.addToQueue(INCIDENT);
+      post.mockRejectedValue(REFUSED);
+
+      const failures: any[] = [];
+      const unsubscribe = syncService.onPermanentFailure((f) => failures.push(f));
+      const states: any[] = [];
+      const unsubscribeState = syncService.subscribe((state) => states.push(state));
+      goOnline(true);
+      await syncService.startSync();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      unsubscribe();
+      unsubscribeState();
+
+      // One request, not five: the same payload gets the same answer.
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(failures).toEqual([
+        expect.objectContaining({
+          type: 'create_incident',
+          status: 400,
+          message: 'HTTP 400: actions_taken: This field may not be blank.',
+        }),
+      ]);
+      expect(states[states.length - 1]).toMatchObject({ queueCount: 0, failedCount: 1 });
+      expect(await syncService.getFailedItems()).toEqual([
+        expect.objectContaining({ type: 'create_incident', status: 'failed' }),
+      ]);
+    });
+
+    it('can be sent again once the server accepts it', async () => {
+      await syncService.addToQueue(INCIDENT);
+      post.mockRejectedValueOnce(REFUSED);
+      goOnline(true);
+      await syncService.startSync();
+
+      post.mockResolvedValueOnce({ id: 99 });
+      await syncService.retryFailedItems();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(post).toHaveBeenCalledTimes(2);
+      expect(await queue()).toHaveLength(0);
+    });
+
+    it('can be discarded by the officer', async () => {
+      await syncService.addToQueue(INCIDENT);
+      post.mockRejectedValueOnce(REFUSED);
+      goOnline(true);
+      await syncService.startSync();
+
+      await syncService.clearFailedItems();
+
+      expect(await queue()).toHaveLength(0);
+    });
+  });
+
+  it('keeps retrying a server error rather than giving up', async () => {
+    jest.useFakeTimers();
+    await syncService.addToQueue(CHECK_IN);
+    post.mockRejectedValueOnce(new ApiError(503, 'Service Unavailable', '/x'));
+    goOnline(true);
+    await syncService.startSync();
+    jest.useRealTimers();
+
+    const [item] = await queue();
+    expect(item).toMatchObject({ status: 'pending', attempts: 1 });
+  });
+
+  it('sends what is waiting when the app comes back to the foreground', async () => {
+    const { AppState } = require('react-native');
+    const listen = jest.spyOn(AppState, 'addEventListener');
+    (syncService as any).initialized = false;
+    syncService.init();
+    const onChange = listen.mock.calls.find(([event]) => event === 'change')?.[1] as (s: string) => void;
+    expect(onChange).toBeDefined();
+
+    await syncService.addToQueue(CHECK_IN);
+    post.mockResolvedValueOnce({});
+    goOnline(true);
+    onChange('active');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(await queue()).toHaveLength(0);
+    listen.mockRestore();
+  });
 });
+
