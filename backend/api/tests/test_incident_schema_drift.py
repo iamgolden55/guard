@@ -19,6 +19,20 @@ from api.models import IncidentReport, SecurityCompany, Shift, Venue
 
 User = get_user_model()
 relax = importlib.import_module('api.migrations.0079_relax_orphan_incident_report_columns')
+adopt_photos = importlib.import_module('api.migrations.0082_incident_report_photos')
+ADOPT_PHOTOS_SQL = adopt_photos.Migration.operations[0].database_operations[0].sql
+
+
+def _as_production(cursor, columns):
+    """Give incident_reports production's leftover columns.
+
+    `photos` is one of them, and is now also a model field (0082), so the test
+    database has it already: drop it first, so it comes back as production has
+    it (jsonb NOT NULL), not as 0082 would create it.
+    """
+    cursor.execute('ALTER TABLE incident_reports DROP COLUMN IF EXISTS photos')
+    for col, (typ, null) in columns.items():
+        cursor.execute(f'ALTER TABLE incident_reports ADD COLUMN {col} {typ} {null}')
 
 # As found in production (information_schema), minus the nullable ones.
 DRIFT_COLUMNS = {
@@ -52,12 +66,13 @@ class IncidentSchemaDriftTests(TestCase):
 
     def _add_drift(self):
         with connection.cursor() as c:
-            for col, typ in DRIFT_COLUMNS.items():
-                c.execute(f'ALTER TABLE incident_reports ADD COLUMN {col} {typ} NOT NULL')
+            _as_production(c, {col: (typ, 'NOT NULL') for col, typ in DRIFT_COLUMNS.items()})
 
     def _relax(self):
         with connection.cursor() as c:
             c.execute(relax.RELAX_SQL)
+            # Then 0082, which must adopt the existing `photos`, not fail on it.
+            c.execute(ADOPT_PHOTOS_SQL)
 
     def test_drifted_table_rejects_inserts_until_relaxed(self):
         self._add_drift()
@@ -98,6 +113,7 @@ class IncidentApiOnDriftedTableTests(TestCase):
         from api.models import UserCompanyMembership
 
         company = SecurityCompany.objects.create(name='Riverside Co', registration_number='R1')
+        self.company = company
         self.venue = Venue.objects.create(
             company=company, name='Riverside Exchange', address='1 St', city='Bristol',
             postal_code='BS1', country='UK', capacity=10, contact_name='C',
@@ -115,11 +131,13 @@ class IncidentApiOnDriftedTableTests(TestCase):
             end_time=start + timedelta(hours=8), required_security_role='ds', status='in_progress',
         )
         with connection.cursor() as c:
-            for col, typ in {**DRIFT_COLUMNS, **NULLABLE_DRIFT_COLUMNS}.items():
-                null = 'NOT NULL' if col in DRIFT_COLUMNS else ''
-                c.execute(f'ALTER TABLE incident_reports ADD COLUMN {col} {typ} {null}')
-            # What migration 0079 does in production.
+            _as_production(c, {
+                col: (typ, 'NOT NULL' if col in DRIFT_COLUMNS else '')
+                for col, typ in {**DRIFT_COLUMNS, **NULLABLE_DRIFT_COLUMNS}.items()
+            })
+            # What migrations 0079 and 0082 do in production.
             c.execute(relax.RELAX_SQL)
+            c.execute(ADOPT_PHOTOS_SQL)
         self.client = APIClient()
         self.client.force_authenticate(self.officer)
 
@@ -152,3 +170,25 @@ class IncidentApiOnDriftedTableTests(TestCase):
             )
             not_null = {row[0] for row in c.fetchall()}
         self.assertEqual(not_null & set(DRIFT_COLUMNS) | not_null & set(NULLABLE_DRIFT_COLUMNS), set())
+
+    def test_a_report_with_photos_saves_in_the_adopted_column(self):
+        # 0082 adopts production's leftover `photos` column rather than adding
+        # one; a report's photos must land in it and read back.
+        photo = (
+            'https://mead-security-api.onrender.com/api/v1/evidence-photos/'
+            f'{self.company.id}/{self.officer.id}/{"b" * 32}.jpg'
+        )
+        response = self.client.post('/api/v1/incidents/', {
+            'venue': self.venue.id,
+            'shift': self.shift.id,
+            'incident_time': timezone.now().isoformat(),
+            'description': 'Glass on the dance floor.',
+            'severity': 'low',
+            'photos': [photo],
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201, response.data)
+        with connection.cursor() as c:
+            c.execute('SELECT photos FROM incident_reports WHERE id = %s', [response.data['id']])
+            stored = c.fetchone()[0]
+        self.assertEqual(stored if isinstance(stored, list) else __import__('json').loads(stored), [photo])

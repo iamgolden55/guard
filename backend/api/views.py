@@ -23,7 +23,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, B
 from rest_framework.exceptions import MethodNotAllowed
 from api.permissions import IsManagerOrAdmin, IsAdminRole, ManagerOnlyWritesMixin
 from api.middleware.tenant_middleware import resolve_request_company
-from api.utils import profile_photos, sia_documents
+from api.utils import evidence_photos, profile_photos, sia_documents
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -2432,6 +2432,22 @@ class CompanyScopedCheckMixin:
     """Mixin to add company scoping to venue check viewsets."""
 
     def _validated_check_shift(self, serializer):
+        """The shift a statutory check may be filed against, or 403; and its photo.
+
+        A check's `photo_evidence` must be a photo the caller uploaded for the
+        company that owns the shift's venue (`api.utils.evidence_photos`).
+        """
+        shift = self._check_shift_for_caller(serializer)
+        photo = serializer.validated_data.get('photo_evidence')
+        if photo:
+            company_id = shift.venue.company_id if shift.venue else None
+            try:
+                evidence_photos.check_reference(photo, company_id, self.request.user.id)
+            except evidence_photos.PhotoRejected as exc:
+                raise ValidationError({'photo_evidence': [str(exc)]})
+        return shift
+
+    def _check_shift_for_caller(self, serializer):
         """The shift a statutory check may be filed against, or 403.
 
         `perform_create` used to call `serializer.save()` with no check on the
@@ -4621,6 +4637,56 @@ class FileUploadView(APIView):
             },
             status=201,
         )
+
+
+class EvidencePhotoUploadView(APIView):
+    """Store a photo taken as evidence for a venue check or incident report.
+
+    Returns the URL to put in the check's `photo_evidence` or the report's
+    `photos`. The photo belongs to the caller's current company; see
+    `api.utils.evidence_photos` for the rules.
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, format=None):
+        if not settings.MEDIA_STORAGE_IS_DURABLE:
+            raise StorageUnavailable('Photo storage is not configured.')
+        company = _resolve_request_company(request)
+        if company is None:
+            return Response({'error': 'You are not a member of a company.'}, status=403)
+        upload = request.FILES.get('file')
+        try:
+            extension, _ = evidence_photos.validate_upload(upload)
+        except evidence_photos.PhotoRejected as exc:
+            return Response({'file': [str(exc)]}, status=400)
+        key = evidence_photos.store(upload, company.id, request.user.id, extension)
+        return Response({'url': evidence_photos.url_for(request, key)}, status=201)
+
+
+class EvidencePhotoView(APIView):
+    """Serve an evidence photo to someone entitled to see it.
+
+    Entitled: an active member of the photo's company who either took it or is
+    a manager/admin. Anything else is a 404, so a URL reveals nothing.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, path):
+        parsed = evidence_photos.parse(path)
+        if parsed is None:
+            raise Http404
+        company_id, uploader_id, key = parsed
+        user = request.user
+        member = UserCompanyMembership.objects.filter(
+            user=user, company_id=company_id, is_active=True,
+        ).exists()
+        if not member or (user.id != uploader_id and getattr(user, 'role', None) not in ('admin', 'manager')):
+            raise Http404
+        response = evidence_photos.serve(key)
+        if response is None:
+            raise Http404
+        return response
 
 
 class SIALicenseDocumentView(APIView):
@@ -9767,6 +9833,17 @@ class IncidentReportViewSet(ManagerOnlyWritesMixin, viewsets.ModelViewSet):
                 raise serializers.ValidationError({'shift': 'Shift does not belong to your company.'})
             if self.request.user.role not in ('manager', 'admin') and shift.staff_user_id != self.request.user.id:
                 raise serializers.ValidationError({'shift': 'You can only report against your own shift.'})
+        # Photos must be ones the reporter uploaded for this company.
+        photos = serializer.validated_data.get('photos') or []
+        if len(photos) > evidence_photos.MAX_PER_RECORD:
+            raise serializers.ValidationError(
+                {'photos': [f'At most {evidence_photos.MAX_PER_RECORD} photos per report.']}
+            )
+        for url in photos:
+            try:
+                evidence_photos.check_reference(url, company.id, self.request.user.id)
+            except evidence_photos.PhotoRejected as exc:
+                raise serializers.ValidationError({'photos': [str(exc)]})
         serializer.save(reported_by=self.request.user)
 
     @action(detail=True, methods=['post'])

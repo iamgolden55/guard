@@ -4437,6 +4437,9 @@ class IncidentReport(models.Model):
     # Optional on the staff app's form; required here, every report with it
     # left empty was refused and sat in the app's sync queue forever.
     actions_taken = models.TextField(blank=True, default='')
+    # URLs of evidence photos (`api.utils.evidence_photos`). Production already
+    # has a `photos` jsonb column left from migration 0035; 0082 adopts it.
+    photos = models.JSONField(default=list, blank=True, null=True)
     requires_followup = models.BooleanField(default=False)
     followup_notes = models.TextField(null=True, blank=True)
     resolved = models.BooleanField(default=False)

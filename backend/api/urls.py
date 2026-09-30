@@ -15,7 +15,8 @@ from .views import (
     DeputyConfigViewSet, DeputyEmployeeViewSet, DeputyTimesheetViewSet,
     ShiftTemplateViewSet, DeputyConfigView, SystemSettingsView,
     my_profile, update_my_user, change_password, request_account_deletion,
-    FileUploadView, SIALicenseDocumentView, ProfilePhotoUploadView, payroll_preview, payroll_generate,
+    FileUploadView, SIALicenseDocumentView, ProfilePhotoUploadView,
+    EvidencePhotoUploadView, EvidencePhotoView, payroll_preview, payroll_generate,
     EmploymentTypeViewSet, RecruitmentApplicationViewSet, RecruitmentApplicationPublicViewSet,
     # Compliance system views
     WorkingHoursRegulationViewSet, ComplianceProfileViewSet, ComplianceViolationViewSet,
@@ -142,6 +143,10 @@ urlpatterns = [
         SIALicenseDocumentView.as_view(),
         name='sia-license-document',
     ),
+    # Photos taken as evidence for checks and incident reports: private,
+    # served only to the uploader and their company's managers.
+    path('evidence-photos/', EvidencePhotoUploadView.as_view(), name='evidence-photo-upload'),
+    path('evidence-photos/<path:path>', EvidencePhotoView.as_view(), name='evidence-photo'),
     path('staff/profile/upload-photo/', ProfilePhotoUploadView.as_view(), name='profile-photo-upload'),
     path('admin/payroll/preview/', payroll_preview, name='payroll-preview'),
     path('admin/payroll/generate/', payroll_generate, name='payroll-generate'),
