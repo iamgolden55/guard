@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { Alert, Text, StyleSheet, Animated, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { syncService } from '../../services/syncService';
 import type { SyncQueueItem } from '../../services/database';
@@ -50,8 +51,13 @@ const reviewFailed = async () => {
 
 export const NetworkStatusBanner = () => {
   const { isOnline, isSyncing, queueCount, failedCount } = useNetworkStatus();
+  // The banner's colour runs up behind the status bar, but its text and tap
+  // target start below it: iOS doesn't deliver taps in the status bar, so a
+  // "tap to review" drawn there couldn't be tapped.
+  const insets = useSafeAreaInsets();
+  const hiddenOffset = -(insets.top + 60);
   const [visible, setVisible] = React.useState(false);
-  const slideAnim = React.useRef(new Animated.Value(-60)).current;
+  const slideAnim = React.useRef(new Animated.Value(hiddenOffset)).current;
 
   React.useEffect(() => {
     const shouldShow = !isOnline || isSyncing || queueCount > 0 || failedCount > 0;
@@ -66,12 +72,12 @@ export const NetworkStatusBanner = () => {
       }).start();
     } else if (!shouldShow && visible) {
       Animated.timing(slideAnim, {
-        toValue: -60,
+        toValue: hiddenOffset,
         duration: 300,
         useNativeDriver: true,
       }).start(() => setVisible(false));
     }
-  }, [isOnline, isSyncing, queueCount, failedCount, visible]);
+  }, [isOnline, isSyncing, queueCount, failedCount, visible, hiddenOffset]);
 
   if (!visible) {
     return null;
@@ -128,6 +134,7 @@ export const NetworkStatusBanner = () => {
       style={[
         styles.banner,
         {
+          paddingTop: insets.top + 12,
           backgroundColor: config.backgroundColor,
           transform: [{ translateY: slideAnim }],
         },

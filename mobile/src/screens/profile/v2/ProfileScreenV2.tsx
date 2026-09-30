@@ -39,6 +39,7 @@ import { fetchShifts } from '../../../store/slices/shiftsSlice';
 import { useAuth } from '../../../hooks/useAuth';
 import { logger } from '../../../utils/logger';
 import { database } from '../../../services/database';
+import { syncService } from '../../../services/syncService';
 import {
   ApiError,
   ApiTimeoutError,
@@ -131,9 +132,22 @@ export const ProfileScreenV2: React.FC = () => {
   const handleViewVirtualID = () => navigation.navigate('VirtualID');
   const handleOpenEarnings = () => navigation.navigate('Earnings');
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
+  const handleLogout = async () => {
+    // Waiting items stay on the phone and are sent only as this account, so
+    // signing out is safe — but they won't go until this person is back.
+    let waiting = 0;
+    try {
+      waiting = (await syncService.getQueueStats()).total;
+    } catch {
+      // Can't tell; fall through to the usual confirmation.
+    }
+    const message =
+      waiting > 0
+        ? `${waiting} ${waiting === 1 ? 'item from this account has' : 'items from this account have'} not been sent yet. ` +
+          'They stay on this phone and are sent the next time you sign in. Logout anyway?'
+        : 'Are you sure you want to logout?';
+    Alert.alert('Logout', message, [
+      { text: waiting > 0 ? 'Stay signed in' : 'Cancel', style: 'cancel' },
       { text: 'Logout', style: 'destructive', onPress: () => logout() },
     ]);
   };

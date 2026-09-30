@@ -6,11 +6,13 @@
 
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { AppState } from 'react-native';
+import { jwtDecode } from 'jwt-decode';
 import { database } from './database';
 import type { SyncQueueItem } from './database';
 import { apiService } from './api';
 import { logger } from '../utils/logger';
 import { API_ENDPOINTS } from '../config/api.config';
+import { readToken } from './tokenStorage';
 
 // Sync action types.
 //
@@ -160,7 +162,7 @@ class SyncService {
     priority: number;
   }): Promise<string> {
     try {
-      await database.addToSyncQueue(action);
+      await database.addToSyncQueue({ ...action, ownerId: await this.currentUserId() });
 
       logger.info('[SyncService] Added action to queue', { type: action.type });
 
@@ -200,6 +202,12 @@ class SyncService {
           logger.info('[SyncService] Device went offline, pausing sync');
           break;
         }
+        // Signed out, or someone else signed in, mid-sync: the rest wait for
+        // their owner.
+        if (action.ownerId !== (await this.currentUserId())) {
+          logger.info('[SyncService] Account changed, pausing sync');
+          break;
+        }
 
         await this.processAction(action);
       }
@@ -218,7 +226,7 @@ class SyncService {
    * Get pending actions sorted by priority
    */
   private async getPendingActions(): Promise<SyncQueueItem[]> {
-    const queue = await database.getSyncQueue();
+    const queue = await this.myQueue();
 
     return queue
       .filter((item) =>
@@ -467,7 +475,7 @@ class SyncService {
    * Get sync queue statistics
    */
   async getQueueStats() {
-    const queue = await database.getSyncQueue();
+    const queue = await this.myQueue();
 
     const pendingCount = queue.filter((item) => item.status === 'pending').length;
     const failedCount = queue.filter((item) => item.status === 'failed').length;
@@ -487,7 +495,7 @@ class SyncService {
    * on launch erased the evidence. Keep this for an explicit user action.
    */
   async clearFailedItems() {
-    const queue = await database.getSyncQueue();
+    const queue = await this.myQueue();
     const failedItems = queue.filter((item) => item.status === 'failed');
 
     for (const item of failedItems) {
@@ -502,7 +510,7 @@ class SyncService {
    * Retry all failed items
    */
   async retryFailedItems() {
-    const queue = await database.getSyncQueue();
+    const queue = await this.myQueue();
     const failedItems = queue.filter((item) => item.status === 'failed');
 
     for (const item of failedItems) {
@@ -560,10 +568,55 @@ class SyncService {
 
   /** Items the queue has given up on, oldest first, for the officer to review. */
   async getFailedItems(): Promise<SyncQueueItem[]> {
-    const queue = await database.getSyncQueue();
+    const queue = await this.myQueue();
     return queue
       .filter((item) => item.status === 'failed')
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }
+
+  /**
+   * The signed-in account, from the stored access token (only its `user_id`
+   * claim is read; an expired token still names its owner). Null when nobody
+   * is signed in or the keychain can't be read.
+   */
+  private async currentUserId(): Promise<number | null> {
+    try {
+      const token = await readToken('accessToken');
+      if (!token) return null;
+      const userId = Number(jwtDecode<{ user_id?: number | string }>(token).user_id);
+      return Number.isFinite(userId) ? userId : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The signed-in account's items. Nothing when nobody is signed in; other
+   * accounts' items wait on the phone until their owner signs in again.
+   *
+   * Items queued before owners were recorded are claimed by the account
+   * signed in now, which is who the old code would have sent them as.
+   */
+  private async myQueue(): Promise<SyncQueueItem[]> {
+    const userId = await this.currentUserId();
+    if (userId === null) return [];
+    const queue = await database.getSyncQueue();
+    for (const item of queue) {
+      if (item.ownerId === undefined || item.ownerId === null) {
+        await database.updateSyncQueueItem(item.id, { ownerId: userId });
+        item.ownerId = userId;
+      }
+    }
+    return queue.filter((item) => item.ownerId === userId);
+  }
+
+  /**
+   * Call after signing in or out: the banner counts the new account's items,
+   * and anything that account left waiting is sent.
+   */
+  accountChanged() {
+    this.notifyListeners();
+    void this.startSync();
   }
 
   /**

@@ -34,6 +34,13 @@ export interface SyncQueueItem {
   attempts: number;
   status: 'pending' | 'processing' | 'failed';
   error?: string;
+  /**
+   * The account that made it. It is sent only while that account is signed
+   * in: the request carries whoever's token is current, so an officer's
+   * report used to be filed under the next person to sign in on the phone.
+   * Missing on items queued before this existed; see `syncService`.
+   */
+  ownerId?: number | null;
 }
 
 class DatabaseService {

@@ -23,7 +23,11 @@ jest.mock('../api', () => {
   };
 });
 
+// Who is signed in: a JWT naming `user_id`, as the keychain would hold.
+jest.mock('../tokenStorage', () => ({ readToken: jest.fn() }));
+
 import { ApiError, apiService } from '../api';
+import { readToken } from '../tokenStorage';
 import { database } from '../database';
 import { syncService } from '../syncService';
 
@@ -46,6 +50,13 @@ async function queue() {
   return database.getSyncQueue();
 }
 
+const jwtFor = (userId: number) =>
+  `h.${Buffer.from(JSON.stringify({ user_id: userId, exp: 0 })).toString('base64')}.s`;
+
+function signIn(userId: number | null) {
+  (readToken as jest.Mock).mockResolvedValue(userId === null ? null : jwtFor(userId));
+}
+
 function goOnline(online: boolean) {
   (syncService as any).isOnline = online;
 }
@@ -55,6 +66,7 @@ beforeEach(async () => {
   post.mockReset();
   goOnline(false);
   (syncService as any).isSyncing = false;
+  signIn(1);
 });
 
 describe('syncService', () => {
@@ -226,6 +238,72 @@ describe('syncService', () => {
     expect(post).toHaveBeenCalledTimes(1);
     expect(await queue()).toHaveLength(0);
     listen.mockRestore();
+  });
+
+  describe('belongs to the account that made it', () => {
+    it("sends an officer's report only while that officer is signed in", async () => {
+      signIn(1);
+      await syncService.addToQueue(CHECK_IN);
+      expect((await queue())[0].ownerId).toBe(1);
+
+      // A manager signs in on the officer's phone: nothing is sent as them.
+      signIn(2);
+      goOnline(true);
+      await syncService.startSync();
+      expect(post).not.toHaveBeenCalled();
+      expect(await syncService.getQueueStats()).toMatchObject({ total: 0 });
+
+      // The officer signs back in: it goes.
+      signIn(1);
+      post.mockResolvedValueOnce({});
+      await syncService.startSync();
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(await queue()).toHaveLength(0);
+    });
+
+    it('keeps items waiting while nobody is signed in', async () => {
+      await syncService.addToQueue(CHECK_IN);
+      signIn(null);
+      goOnline(true);
+      await syncService.startSync();
+
+      expect(post).not.toHaveBeenCalled();
+      expect(await queue()).toHaveLength(1);
+    });
+
+    it('stops part-way if the account changes mid-sync', async () => {
+      await syncService.addToQueue(CHECK_IN);
+      await syncService.addToQueue({ ...CHECK_IN, entityId: '43', payload: { ...CHECK_IN.payload, shift_id: 43 } });
+      post.mockImplementationOnce(async () => {
+        signIn(2);
+        return {};
+      });
+      goOnline(true);
+      await syncService.startSync();
+
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(await queue()).toHaveLength(1);
+    });
+
+    it('lets one account discard or retry only its own failed items', async () => {
+      await syncService.addToQueue(CHECK_IN);
+      const [mine] = await queue();
+      await database.updateSyncQueueItem(mine.id, { status: 'failed', attempts: 5 });
+      signIn(2);
+
+      expect(await syncService.getFailedItems()).toEqual([]);
+      await syncService.clearFailedItems();
+      expect(await queue()).toHaveLength(1);
+    });
+
+    it('gives items queued before owners existed to the account signed in now', async () => {
+      await database.addToSyncQueue(CHECK_IN);
+      expect((await queue())[0].ownerId).toBeUndefined();
+      signIn(5);
+
+      expect(await syncService.getQueueStats()).toMatchObject({ pending: 1 });
+      expect((await queue())[0].ownerId).toBe(5);
+    });
   });
 });
 
